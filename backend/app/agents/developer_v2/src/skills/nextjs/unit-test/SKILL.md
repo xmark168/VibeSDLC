@@ -1,379 +1,241 @@
 ---
 name: unit-test
-description: Write unit tests with Jest 30 and React Testing Library for Next.js 16 components and utilities
-triggers:
-  - test
-  - jest
-  - testing
-  - spec
-  - unit test
-  - testing-library
-  - describe
-  - it
-  - expect
-version: "2.0"
-author: VibeSDLC
+description: Write unit tests with Jest and React Testing Library. Use when testing components, utilities, server actions, or API routes. CRITICAL - Uses Jest (NOT Vitest).
 ---
 
-# Unit Test Skill (Jest 30 + React Testing Library)
+This skill guides creation of comprehensive unit tests that cover all important scenarios.
 
-## Critical Rules
+The user needs to test components, utility functions, or server-side logic.
 
-1. **File location** - `__tests__/` folder or co-locate with `*.test.tsx`
-2. **Naming** - `ComponentName.test.tsx` or `utils.test.ts`
-3. **Structure** - Use `describe` blocks with descriptive `it` statements
-4. **User events** - Use `userEvent` over `fireEvent`
-5. **Queries** - Prefer `getByRole`, `getByLabelText` over `getByTestId`
-6. **Async** - Use `await` with `userEvent` and async operations
-7. **Run tests** - `bun test` before committing
+## Before You Start
 
-## Basic Component Test
+**CRITICAL**: This project uses Jest, NOT Vitest.
 
-```typescript
-// components/__tests__/Button.test.tsx
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { Button } from '@/components/ui/button';
+NEVER use: `import { vi } from 'vitest'`, `vi.fn()`, `vi.mock()`
 
-describe('Button', () => {
-  it('renders with correct text', () => {
-    render(<Button>Click me</Button>);
-    
-    expect(screen.getByRole('button', { name: /click me/i })).toBeInTheDocument();
-  });
+ALWAYS use: `jest.fn()`, `jest.mock()`, `jest.spyOn()`, `jest.clearAllMocks()` in beforeEach
 
-  it('handles click events', async () => {
-    const user = userEvent.setup();
-    const handleClick = jest.fn();
+## Think Before Writing
 
-    render(<Button onClick={handleClick}>Click me</Button>);
-    
-    await user.click(screen.getByRole('button'));
-    
-    expect(handleClick).toHaveBeenCalledTimes(1);
-  });
+Before writing tests, answer these questions:
+1. What should be tested in this code?
+2. What edge cases could exist?
+3. What might fail?
 
-  it('can be disabled', () => {
-    render(<Button disabled>Click me</Button>);
-    
-    expect(screen.getByRole('button')).toBeDisabled();
-  });
+This ensures comprehensive coverage, not just happy path.
 
-  it('applies variant styles', () => {
-    render(<Button variant="destructive">Delete</Button>);
-    
-    const button = screen.getByRole('button');
-    expect(button).toHaveClass('bg-destructive');
-  });
-});
-```
+## Required Test Categories
 
-## Form Component Test
+For each function, include these test types:
 
-```typescript
-// components/__tests__/LoginForm.test.tsx
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { LoginForm } from '@/components/LoginForm';
+**1. Happy Path** - Core logic with valid input
+- Normal, expected input
+- Correct result per business requirements
 
-describe('LoginForm', () => {
-  const user = userEvent.setup();
+**2. Edge Cases** - Boundary and extreme values
+- Empty input ([], "", null, undefined)
+- Single item vs many items
+- Very small / very large values
 
-  it('renders all form fields', () => {
-    render(<LoginForm onSubmit={jest.fn()} />);
+**3. Invalid Input** - Error handling
+- Wrong type, null, undefined
+- Invalid format, non-existent data
+- Must throw correct error or return error state
 
-    expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /login/i })).toBeInTheDocument();
-  });
+**4. Business Rules** - Domain logic branches
+- Each if/else condition
+- VIP vs regular, thresholds, discounts
 
-  it('shows validation errors for empty fields', async () => {
-    render(<LoginForm onSubmit={jest.fn()} />);
+**5. Boundary Testing** - Values at threshold
+- If condition `>= N`: test N-1, N, N+1
+- Catches off-by-one bugs
 
-    await user.click(screen.getByRole('button', { name: /login/i }));
+**6. Side Effects** - Dependencies (DB, API)
+- Mock returns success -> verify behavior
+- Mock returns error -> verify error handling
 
-    await waitFor(() => {
-      expect(screen.getByText(/email is required/i)).toBeInTheDocument();
-    });
-  });
+## Heuristics for Test Generation
 
-  it('shows error for invalid email', async () => {
-    render(<LoginForm onSubmit={jest.fn()} />);
+**For each public function:**
+- Min 1 happy path test
+- Min 1 test per important if/else branch
+- Min 1 test for empty/null input
 
-    await user.type(screen.getByLabelText(/email/i), 'invalid-email');
-    await user.click(screen.getByRole('button', { name: /login/i }));
+**Code pattern rules:**
+- `if x > N` -> test x = N-1, N, N+1
+- Loop on list -> test [], [1], [many items]
+- Try/catch -> test exception path
 
-    await waitFor(() => {
-      expect(screen.getByText(/invalid email/i)).toBeInTheDocument();
-    });
-  });
+**Dependency calls:**
+- Test success response
+- Test error response
 
-  it('calls onSubmit with form data when valid', async () => {
-    const handleSubmit = jest.fn();
-    render(<LoginForm onSubmit={handleSubmit} />);
+## Priority Functions
 
-    await user.type(screen.getByLabelText(/email/i), 'test@example.com');
-    await user.type(screen.getByLabelText(/password/i), 'password123');
-    await user.click(screen.getByRole('button', { name: /login/i }));
+Focus testing on:
+- **Hot paths**: Frequently called functions
+- **Money/stats**: Calculations, points, balances
+- **Security**: Auth, permissions, validation
 
-    await waitFor(() => {
-      expect(handleSubmit).toHaveBeenCalledWith({
-        email: 'test@example.com',
-        password: 'password123',
-      });
-    });
-  });
+## Test Count Guideline
 
-  it('disables submit button while submitting', async () => {
-    const handleSubmit = jest.fn(() => new Promise(resolve => setTimeout(resolve, 100)));
-    render(<LoginForm onSubmit={handleSubmit} />);
+- Simple utility: 3-5 tests
+- Function with conditions: 6-8 tests
+- Complex business logic: 8-12 tests
 
-    await user.type(screen.getByLabelText(/email/i), 'test@example.com');
-    await user.type(screen.getByLabelText(/password/i), 'password123');
-    await user.click(screen.getByRole('button', { name: /login/i }));
-
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
-  });
-});
-```
-
-## Utility Function Test
+## Test File Structure
 
 ```typescript
-// lib/__tests__/utils.test.ts
-import { cn, formatDate, truncate } from '@/lib/utils';
-
-describe('cn utility', () => {
-  it('merges class names', () => {
-    expect(cn('foo', 'bar')).toBe('foo bar');
-  });
-
-  it('handles conditional classes', () => {
-    expect(cn('base', true && 'active', false && 'hidden')).toBe('base active');
-  });
-
-  it('handles Tailwind conflicts', () => {
-    expect(cn('p-2', 'p-4')).toBe('p-4');
-  });
-
-  it('handles undefined and null', () => {
-    expect(cn('foo', undefined, null, 'bar')).toBe('foo bar');
-  });
-});
-
-describe('formatDate', () => {
-  it('formats date correctly', () => {
-    const date = new Date('2024-01-15');
-    expect(formatDate(date)).toBe('January 15, 2024');
-  });
-
-  it('handles string input', () => {
-    expect(formatDate('2024-01-15')).toBe('January 15, 2024');
-  });
-});
-
-describe('truncate', () => {
-  it('truncates long strings', () => {
-    expect(truncate('Hello World', 5)).toBe('Hello...');
-  });
-
-  it('does not truncate short strings', () => {
-    expect(truncate('Hi', 5)).toBe('Hi');
-  });
-});
-```
-
-## Testing with Mocks
-
-```typescript
-// components/__tests__/UserProfile.test.tsx
-import { render, screen, waitFor } from '@testing-library/react';
-import { UserProfile } from '@/components/UserProfile';
-
-// Mock fetch
-global.fetch = jest.fn();
-
-// Mock next/navigation
-jest.mock('next/navigation', () => ({
-  useRouter: () => ({
-    push: jest.fn(),
-    refresh: jest.fn(),
-  }),
-  usePathname: () => '/users/1',
-}));
-
-describe('UserProfile', () => {
+describe('FeatureName', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('displays loading state initially', () => {
-    (fetch as jest.Mock).mockImplementation(() => new Promise(() => {}));
-    
-    render(<UserProfile userId="1" />);
-    
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+  describe('happy path', () => {
+    it('returns correct result with valid input', () => { });
   });
 
-  it('displays user data after loading', async () => {
-    (fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ id: '1', name: 'John Doe', email: 'john@example.com' }),
-    });
-
-    render(<UserProfile userId="1" />);
-
-    await waitFor(() => {
-      expect(screen.getByText('John Doe')).toBeInTheDocument();
-      expect(screen.getByText('john@example.com')).toBeInTheDocument();
-    });
+  describe('edge cases', () => {
+    it('handles empty array', () => { });
+    it('handles null input', () => { });
+    it('handles single item', () => { });
   });
 
-  it('displays error message on fetch failure', async () => {
-    (fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
+  describe('boundary values', () => {
+    it('handles value at threshold', () => { });
+    it('handles value below threshold', () => { });
+    it('handles value above threshold', () => { });
+  });
 
-    render(<UserProfile userId="1" />);
+  describe('business rules', () => {
+    it('applies VIP discount', () => { });
+    it('applies regular pricing', () => { });
+  });
 
-    await waitFor(() => {
-      expect(screen.getByText(/error loading user/i)).toBeInTheDocument();
-    });
+  describe('error handling', () => {
+    it('throws on invalid input', () => { });
+    it('handles API error', () => { });
   });
 });
 ```
 
-## Testing Server Actions
+## Component Testing
 
 ```typescript
-// app/actions/__tests__/user.test.ts
-import { createUser, deleteUser } from '@/app/actions/user';
-import { prisma } from '@/lib/prisma';
-import { revalidatePath } from 'next/cache';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
-// Mock prisma
+describe('Component', () => {
+  it('renders with valid props', () => {
+    render(<Component items={[item1, item2]} />);
+    expect(screen.getByText(/item1/i)).toBeInTheDocument();
+  });
+
+  it('handles empty props', () => {
+    render(<Component items={[]} />);
+    expect(screen.getByText(/no items/i)).toBeInTheDocument();
+  });
+
+  it('handles undefined props', () => {
+    render(<Component items={undefined as any} />);
+    // Should not crash
+  });
+});
+```
+
+## Mocking
+
+```typescript
 jest.mock('@/lib/prisma', () => ({
   prisma: {
     user: {
+      findUnique: jest.fn(),
       create: jest.fn(),
-      delete: jest.fn(),
     },
   },
 }));
 
-// Mock next/cache
-jest.mock('next/cache', () => ({
-  revalidatePath: jest.fn(),
-}));
+// Success case
+(prisma.user.findUnique as jest.Mock).mockResolvedValue({ id: '1' });
 
-describe('User Actions', () => {
+// Error case
+(prisma.user.findUnique as jest.Mock).mockRejectedValue(new Error('DB error'));
+```
+
+## Testing Expected Errors
+
+When testing error scenarios that use `console.error` (e.g., error boundaries, failed API calls), mock it to:
+1. Prevent noisy test output
+2. Verify error was logged correctly
+
+```typescript
+describe('error handling', () => {
+  let consoleSpy: jest.SpyInstance;
+
   beforeEach(() => {
-    jest.clearAllMocks();
+    // Suppress expected console.error output
+    consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
-  describe('createUser', () => {
-    it('creates user with valid data', async () => {
-      const mockUser = { id: '1', name: 'John', email: 'john@example.com' };
-      (prisma.user.create as jest.Mock).mockResolvedValueOnce(mockUser);
-
-      const formData = new FormData();
-      formData.append('name', 'John');
-      formData.append('email', 'john@example.com');
-
-      const result = await createUser(null, formData);
-
-      expect(result.success).toBe(true);
-      expect(result.data).toEqual({ id: '1' });
-      expect(revalidatePath).toHaveBeenCalledWith('/users');
-    });
-
-    it('returns validation errors for invalid data', async () => {
-      const formData = new FormData();
-      formData.append('name', 'J'); // Too short
-      formData.append('email', 'invalid-email');
-
-      const result = await createUser(null, formData);
-
-      expect(result.success).toBe(false);
-      expect(result.fieldErrors).toBeDefined();
-      expect(result.fieldErrors?.name).toBeDefined();
-      expect(result.fieldErrors?.email).toBeDefined();
-    });
+  afterEach(() => {
+    consoleSpy.mockRestore();
   });
 
-  describe('deleteUser', () => {
-    it('deletes user successfully', async () => {
-      (prisma.user.delete as jest.Mock).mockResolvedValueOnce({});
-
-      const result = await deleteUser('user-id');
-
-      expect(result.success).toBe(true);
-      expect(prisma.user.delete).toHaveBeenCalledWith({ where: { id: 'user-id' } });
-      expect(revalidatePath).toHaveBeenCalledWith('/users');
+  it('handles API error gracefully', async () => {
+    (fetchData as jest.Mock).mockRejectedValue(new Error('Network error'));
+    
+    render(<Component />);
+    
+    await waitFor(() => {
+      expect(screen.getByText(/error occurred/i)).toBeInTheDocument();
     });
-
-    it('returns error on failure', async () => {
-      (prisma.user.delete as jest.Mock).mockRejectedValueOnce(new Error('Not found'));
-
-      const result = await deleteUser('invalid-id');
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Failed to delete user');
-    });
+    
+    // Optionally verify error was logged
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Network error')
+    );
   });
 });
 ```
 
-## Query Priority (Best to Worst)
+**When to mock console.error:**
+- Testing error boundaries
+- Testing failed API/fetch calls
+- Testing invalid prop handling
+- Any test expecting `console.error` output
 
-| Priority | Query | Use Case |
-|----------|-------|----------|
-| 1 | `getByRole` | Buttons, links, headings |
-| 2 | `getByLabelText` | Form inputs |
-| 3 | `getByPlaceholderText` | Inputs without labels |
-| 4 | `getByText` | Non-interactive elements |
-| 5 | `getByDisplayValue` | Current input value |
-| 6 | `getByAltText` | Images |
-| 7 | `getByTitle` | Elements with title |
-| 8 | `getByTestId` | Last resort |
-
-## Common Assertions
-
+**Pattern variations:**
 ```typescript
-// Presence
-expect(element).toBeInTheDocument();
-expect(element).not.toBeInTheDocument();
+// Mock only for specific test
+it('handles error', () => {
+  const spy = jest.spyOn(console, 'error').mockImplementation();
+  // test code
+  spy.mockRestore();
+});
 
-// State
-expect(element).toBeDisabled();
-expect(element).toBeEnabled();
-expect(element).toBeVisible();
-expect(element).toHaveValue('text');
-
-// Classes/Attributes
-expect(element).toHaveClass('active');
-expect(element).toHaveAttribute('href', '/home');
-
-// Text content
-expect(element).toHaveTextContent('Hello');
-
-// Mock calls
-expect(mockFn).toHaveBeenCalled();
-expect(mockFn).toHaveBeenCalledTimes(1);
-expect(mockFn).toHaveBeenCalledWith(arg1, arg2);
+// Mock console.warn similarly
+jest.spyOn(console, 'warn').mockImplementation(() => {});
 ```
 
-## Run Tests
+## Pre-configured Mocks
+
+Already in `jest.setup.ts`:
+- `next/navigation` (useRouter, usePathname)
+- `next/server` (NextResponse, NextRequest)
+- Browser APIs (matchMedia, IntersectionObserver)
+
+## Commands
 
 ```bash
-# Run all tests
-bun test
-
-# Run tests in watch mode
-bun test:watch
-
-# Run tests with coverage
-bun test:coverage
-
-# Run specific file
-bun test Button.test.tsx
+bun test              # Run all
+bun test --watch      # Watch mode
+bun test --coverage   # Coverage report
 ```
+
+NEVER:
+- Import from vitest
+- Skip beforeEach with jest.clearAllMocks()
+- Write only happy path tests
+- Ignore boundary conditions
+
+**IMPORTANT**: Every function with conditions needs boundary tests. If there's a threshold, test N-1, N, N+1.

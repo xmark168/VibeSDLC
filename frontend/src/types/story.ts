@@ -9,9 +9,14 @@ export interface Story {
   parent_id?: string | null;
   type: StoryType;
   title: string;
+  story_code?: string;
   description?: string;
   status: StoryStatus;
   epic_id?: string | null;
+  epic_code?: string;
+  epic_title?: string;
+  epic_description?: string;
+  epic_domain?: string;
   assignee_id?: string | null;
   reviewer_id?: string | null;
   acceptance_criteria?: string[];
@@ -45,7 +50,9 @@ export interface UpdateStoryParams {
   description?: string;
   status?: StoryStatus;
   story_type?: StoryType;
+  story_point?: number;
   priority?: number;
+  rank?: number;
   estimated_hours?: number;
   actual_hours?: number;
   assigned_to?: string;
@@ -73,4 +80,10 @@ export interface StoryFormData {
   priority?: "High" | "Medium" | "Low";
   acceptance_criteria: string[];
   requirements: string[];
+  dependencies: string[];  // List of story IDs that must be completed first
+  epic_id?: string;  // Optional epic to assign story to
+  // New epic fields (when creating new epic)
+  new_epic_title?: string;
+  new_epic_domain?: string;
+  new_epic_description?: string;
 }

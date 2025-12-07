@@ -5,7 +5,6 @@ Tests cover all tools in:
 - git_tools
 - shell_tools
 - execution_tools
-- cocoindex_tools
 """
 
 import os
@@ -77,14 +76,14 @@ class TestFilesystemTools:
         """Test setting filesystem context."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, _get_root_dir
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         assert _get_root_dir() == temp_workspace
     
     def test_read_file_safe_success(self, temp_workspace):
         """Test reading file successfully."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(read_file_safe, file_path="src/app.py")
         assert "def main():" in result
     
@@ -92,7 +91,7 @@ class TestFilesystemTools:
         """Test reading non-existent file."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(read_file_safe, file_path="nonexistent.py")
         assert "Error" in result or "not found" in result.lower()
     
@@ -100,7 +99,7 @@ class TestFilesystemTools:
         """Test writing file successfully."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, write_file_safe, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(write_file_safe, file_path="new_file.txt", content="Hello World")
         assert "Written" in result or "file" in result.lower()
         
@@ -112,7 +111,7 @@ class TestFilesystemTools:
         """Test writing file creates parent directories."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, write_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(write_file_safe, file_path="new/nested/dir/file.txt", content="Content")
         assert "Written" in result or "file" in result.lower()
         assert (Path(temp_workspace) / "new/nested/dir/file.txt").exists()
@@ -121,7 +120,7 @@ class TestFilesystemTools:
         """Test listing directory."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, list_directory_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(list_directory_safe, dir_path="src")
         assert "app.py" in result
         assert "utils.py" in result
@@ -130,7 +129,7 @@ class TestFilesystemTools:
         """Test deleting file."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, write_file_safe, delete_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         invoke_tool(write_file_safe, file_path="to_delete.txt", content="Delete me")
         
         result = invoke_tool(delete_file_safe, file_path="to_delete.txt")
@@ -141,7 +140,7 @@ class TestFilesystemTools:
         """Test copying file."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, copy_file_safe, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(copy_file_safe, source_path="src/app.py", destination_path="src/app_copy.py")
         assert "Copied" in result or "success" in result.lower()
         
@@ -152,7 +151,7 @@ class TestFilesystemTools:
         """Test moving file."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, write_file_safe, move_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         invoke_tool(write_file_safe, file_path="to_move.txt", content="Move me")
         
         result = invoke_tool(move_file_safe, source_path="to_move.txt", destination_path="moved.txt")
@@ -164,7 +163,7 @@ class TestFilesystemTools:
         """Test searching files."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, search_files
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(search_files, pattern="*.py", path="src")
         assert "app.py" in result
         assert "utils.py" in result
@@ -173,7 +172,7 @@ class TestFilesystemTools:
         """Test editing file."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, edit_file, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(edit_file, file_path="src/app.py", old_str="def main():", new_str="def main_edited():")
         assert "success" in result.lower() or "edited" in result.lower() or "replaced" in result.lower()
         
@@ -184,7 +183,7 @@ class TestFilesystemTools:
         """Test path safety check prevents directory escape."""
         from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context, read_file_safe
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(read_file_safe, file_path="../../../etc/passwd")
         assert "Error" in result or "denied" in result.lower()
 
@@ -196,43 +195,47 @@ class TestFilesystemTools:
 class TestGitTools:
     """Tests for git_tools module."""
     
-    def test_set_git_context(self, temp_git_repo):
-        """Test setting git context."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, _get_root_dir
+    def test_set_tool_context(self, temp_git_repo):
+        """Test setting tool context."""
+        from app.agents.developer_v2.src.tools import set_tool_context, get_root_dir
         
-        set_git_context(temp_git_repo)
-        assert _get_root_dir() == temp_git_repo
+        set_tool_context(root_dir=temp_git_repo)
+        assert get_root_dir() == temp_git_repo
     
     def test_git_status(self, temp_git_repo):
         """Test git status."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_status
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_status
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         result = invoke_tool(git_status)
         assert "branch" in result.lower() or "clean" in result.lower() or "nothing to commit" in result.lower()
     
     def test_git_diff_clean(self, temp_git_repo):
         """Test git diff on clean repo."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_diff
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_diff
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         result = invoke_tool(git_diff)
         # Clean repo should have no diff or empty diff
         assert result is not None
     
     def test_git_create_branch(self, temp_git_repo):
         """Test creating git branch."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_create_branch
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_create_branch
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         result = invoke_tool(git_create_branch, branch_name="test-branch")
         assert "test-branch" in result or "created" in result.lower() or "switched" in result.lower()
     
     def test_git_checkout(self, temp_git_repo):
         """Test git checkout."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_create_branch, git_checkout
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_create_branch, git_checkout
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         invoke_tool(git_create_branch, branch_name="feature-branch")
         
         # Go back to main/master
@@ -244,9 +247,10 @@ class TestGitTools:
     
     def test_git_commit(self, temp_git_repo):
         """Test git commit."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_commit
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_commit
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         
         # Create a change
         (Path(temp_git_repo) / "new_file.txt").write_text("New content")
@@ -256,9 +260,10 @@ class TestGitTools:
     
     def test_git_list_worktrees(self, temp_git_repo):
         """Test listing git worktrees."""
-        from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_list_worktrees
+        from app.agents.developer_v2.src.tools import set_tool_context
+        from app.agents.developer_v2.src.tools.git_tools import git_list_worktrees
         
-        set_git_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         result = invoke_tool(git_list_worktrees)
         assert temp_git_repo in result or "worktree" in result.lower()
 
@@ -274,14 +279,14 @@ class TestShellTools:
         """Test setting shell context."""
         from app.agents.developer_v2.src.tools.shell_tools import set_shell_context, _get_root_dir
         
-        set_shell_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         assert _get_root_dir() == temp_workspace
     
     def test_execute_shell_safe_command(self, temp_workspace):
         """Test executing safe shell command."""
         from app.agents.developer_v2.src.tools.shell_tools import set_shell_context, execute_shell
         
-        set_shell_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(execute_shell, command="echo hello")
         assert "hello" in result.lower()
     
@@ -289,7 +294,7 @@ class TestShellTools:
         """Test dangerous commands are blocked."""
         from app.agents.developer_v2.src.tools.shell_tools import set_shell_context, execute_shell
         
-        set_shell_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         result = invoke_tool(execute_shell, command="rm -rf /")
         assert "blocked" in result.lower() or "not allowed" in result.lower() or "dangerous" in result.lower()
     
@@ -371,152 +376,6 @@ class TestExecutionTools:
 
 
 # =============================================================================
-# COCOINDEX TOOLS TESTS
-# =============================================================================
-
-class TestCocoindexTools:
-    """Tests for cocoindex_tools module."""
-    
-    def test_set_tool_context(self):
-        """Test setting tool context."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import set_tool_context, _tool_context
-        
-        set_tool_context(project_id="test-project", task_id="test-task", workspace_path="/tmp/test")
-        assert _tool_context["project_id"] == "test-project"
-        assert _tool_context["task_id"] == "test-task"
-    
-    def test_get_markdown_code_block_type(self):
-        """Test getting markdown code block type."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import get_markdown_code_block_type
-        
-        assert get_markdown_code_block_type("test.py") == "python"
-        assert get_markdown_code_block_type("test.js") == "javascript"
-        assert get_markdown_code_block_type("test.ts") == "typescript"
-        assert get_markdown_code_block_type("test.tsx") == "typescript"  # tsx returns typescript
-        assert get_markdown_code_block_type("test.jsx") == "javascript"  # jsx returns javascript
-        assert get_markdown_code_block_type("test.json") == "json"
-        assert get_markdown_code_block_type("test.md") == "markdown"
-        assert get_markdown_code_block_type("test.yaml") == "yaml"
-        assert get_markdown_code_block_type("test.yml") == "yaml"
-        assert get_markdown_code_block_type("test.css") == "css"
-        assert get_markdown_code_block_type("test.html") == "html"
-        assert get_markdown_code_block_type("test.sql") == "sql"
-        assert get_markdown_code_block_type("test.sh") == "bash"
-        # Dockerfile may return empty string or "dockerfile" depending on implementation
-        dockerfile_type = get_markdown_code_block_type("Dockerfile")
-        assert dockerfile_type in ("", "dockerfile")
-        assert get_markdown_code_block_type("test.unknown") == ""
-    
-    def test_detect_project_structure(self, temp_workspace):
-        """Test detecting project structure."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import detect_project_structure
-        
-        result = detect_project_structure(temp_workspace)
-        assert isinstance(result, dict)
-        assert "project_type" in result or "type" in result or "framework" in result or len(result) > 0
-    
-    def test_detect_project_structure_nextjs(self, temp_workspace):
-        """Test detecting Next.js project structure."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import detect_project_structure
-        
-        # Create Next.js structure
-        (Path(temp_workspace) / "next.config.js").write_text("module.exports = {}")
-        (Path(temp_workspace) / "pages").mkdir()
-        (Path(temp_workspace) / "pages" / "index.tsx").write_text("export default function Home() {}")
-        
-        result = detect_project_structure(temp_workspace)
-        assert result.get("framework") == "nextjs" or result.get("project_type") == "nextjs" or "next" in str(result).lower()
-    
-    def test_detect_project_structure_python(self, temp_workspace):
-        """Test detecting Python project structure."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import detect_project_structure
-        
-        # Create Python structure
-        (Path(temp_workspace) / "requirements.txt").write_text("pytest\nflask")
-        (Path(temp_workspace) / "setup.py").write_text("from setuptools import setup\nsetup()")
-        
-        result = detect_project_structure(temp_workspace)
-        assert "python" in str(result).lower() or len(result) > 0
-    
-    def test_get_agents_md(self, temp_workspace):
-        """Test getting AGENTS.md content."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import get_agents_md
-        
-        # Create AGENTS.md
-        (Path(temp_workspace) / "AGENTS.md").write_text("# Coding Guidelines\n\nUse TypeScript")
-        
-        result = get_agents_md(temp_workspace)
-        assert "Coding Guidelines" in result or "TypeScript" in result
-    
-    def test_get_agents_md_not_found(self, temp_workspace):
-        """Test getting AGENTS.md when not found."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import get_agents_md
-        
-        result = get_agents_md(temp_workspace)
-        assert result == "" or "not found" in result.lower() or result is not None
-    
-    def test_get_project_context(self, temp_workspace):
-        """Test getting project context."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import get_project_context
-        
-        result = get_project_context(temp_workspace)
-        assert isinstance(result, str)
-    
-    def test_validate_plan_file_paths(self):
-        """Test validating plan file paths."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import validate_plan_file_paths
-        
-        steps = [
-            {"file_path": "src/app.py", "action": "modify"},
-            {"file_path": "src/new_file.py", "action": "create"},
-        ]
-        project_structure = {
-            "existing_files": ["src/app.py", "src/utils.py"],
-            "directories": ["src", "tests"]
-        }
-        
-        result = validate_plan_file_paths(steps, project_structure)
-        assert isinstance(result, list)
-    
-    def test_generate_directory_tree(self, temp_workspace):
-        """Test generating directory tree."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import _generate_directory_tree
-        
-        result = _generate_directory_tree(Path(temp_workspace), max_depth=2)
-        assert isinstance(result, str)
-        assert "src" in result or len(result) > 0
-    
-    def test_get_boilerplate_examples(self, temp_workspace):
-        """Test getting boilerplate examples."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import get_boilerplate_examples
-        
-        result = get_boilerplate_examples(temp_workspace, "page")
-        assert isinstance(result, str)
-    
-    def test_search_codebase(self):
-        """Test searching codebase."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import search_codebase
-        
-        with patch('app.agents.developer.project_manager.project_manager') as mock_pm:
-            mock_pm.search.return_value = [
-                {"file": "test.py", "content": "def test():", "score": 0.9}
-            ]
-            
-            result = search_codebase("test-project", "test function")
-            assert isinstance(result, str)
-    
-    def test_index_workspace(self, temp_workspace):
-        """Test indexing workspace."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import index_workspace
-        
-        with patch('app.agents.developer.project_manager.project_manager') as mock_pm:
-            mock_pm.index_project.return_value = True
-            
-            result = index_workspace("test-project", temp_workspace)
-            assert isinstance(result, bool)
-
-
-# =============================================================================
 # NODES HELPER FUNCTIONS TESTS  
 # =============================================================================
 
@@ -587,7 +446,7 @@ class TestToolsIntegration:
             edit_file, delete_file_safe
         )
         
-        set_fs_context(temp_workspace)
+        set_tool_context(root_dir=temp_workspace)
         
         # Create file
         invoke_tool(write_file_safe, file_path="workflow_test.py", content="def original():\n    pass")
@@ -612,16 +471,13 @@ class TestToolsIntegration:
     
     def test_git_workflow(self, temp_git_repo):
         """Test complete git workflow."""
+        from app.agents.developer_v2.src.tools import set_tool_context
         from app.agents.developer_v2.src.tools.git_tools import (
-            set_git_context, git_status, git_create_branch,
-            git_checkout, git_commit
+            git_status, git_create_branch, git_checkout, git_commit
         )
-        from app.agents.developer_v2.src.tools.filesystem_tools import (
-            set_fs_context, write_file_safe
-        )
+        from app.agents.developer_v2.src.tools.filesystem_tools import write_file_safe
         
-        set_git_context(temp_git_repo)
-        set_fs_context(temp_git_repo)
+        set_tool_context(root_dir=temp_git_repo)
         
         # Check status
         status = invoke_tool(git_status)
@@ -637,23 +493,5 @@ class TestToolsIntegration:
         result = invoke_tool(git_commit, message="Test commit", files="git_test.txt")
         assert "commit" in result.lower() or result is not None
     
-    def test_code_analysis_workflow(self, temp_workspace):
-        """Test code analysis workflow."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import (
-            detect_project_structure, get_project_context, get_markdown_code_block_type
-        )
-        
-        # Detect structure
-        structure = detect_project_structure(temp_workspace)
-        assert isinstance(structure, dict)
-        
-        # Get context
-        context = get_project_context(temp_workspace)
-        assert isinstance(context, str)
-        
-        # Get code block type
-        assert get_markdown_code_block_type("test.py") == "python"
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

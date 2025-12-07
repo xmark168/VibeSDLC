@@ -1,20 +1,6 @@
 ---
 name: debugging
-description: Debug code errors systematically using root cause analysis, error patterns, and fix strategies
-triggers:
-  - error
-  - bug
-  - fix
-  - debug
-  - failed
-  - exception
-  - TypeError
-  - undefined
-  - null
-  - crash
-  - broken
-version: "1.0"
-author: VibeSDLC
+description: Debug code errors systematically. Use when analyzing error messages, fixing bugs, resolving build/lint errors, or troubleshooting runtime issues.
 ---
 
 # Debugging Skill
@@ -174,6 +160,46 @@ export function ClientComponent() {
 // Fix: Move to Client Component or extract interactive parts
 ```
 
+### Next.js Build Errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `'use client' must be first` | Directive not at line 1 | Move to very first line |
+| `Module not found: @/...` | Path alias issue | Check tsconfig paths |
+| `Hydration mismatch` | Server/client HTML differs | Ensure same data |
+| `await params` | Dynamic route in Next.js 16 | Add `await context.params` |
+| `Text content mismatch` | Date/random on server | Use `suppressHydrationWarning` or move to client |
+
+### React Runtime Errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `Element type is invalid: got undefined` | Wrong import/export | Check export type matches import |
+| `mixed up default and named imports` | Import mismatch | Pages: `import X from`, Components: `import { X } from` |
+
+**Import/Export Rules:**
+- **Pages (`app/**/page.tsx`)**: Use `export default` → Import with `import X from`
+- **Components (`components/*`)**: Use `export function X` → Import with `import { X } from`
+
+```typescript
+// WRONG - will cause "Element type is invalid"
+import HeroSection from '@/components/HeroSection';  // if HeroSection uses named export
+
+// CORRECT
+import { HeroSection } from '@/components/HeroSection';  // named export
+```
+
+### Prisma Errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `P1001: Can't reach database` | DB not running | Start postgres container |
+| `P2002: Unique constraint` | Duplicate entry | Check unique fields |
+| `P2025: Record not found` | Delete/update missing | Check ID exists first |
+| `PrismaClient not generated` | Missing generate | Run `bunx prisma generate` |
+| `P2003: Foreign key constraint` | Referenced record missing | Create parent first |
+| `Invalid prisma client` | Schema changed | Run `bunx prisma generate` |
+
 ## Debugging Tools
 
 ### Console Methods
@@ -218,3 +244,7 @@ git log --oneline -10
 - [ ] No new TypeScript errors
 - [ ] Tests pass (if any)
 - [ ] Edge cases handled
+
+## References
+
+- `references/error-handling-patterns.md` - Toast notifications, form errors, error boundaries

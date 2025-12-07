@@ -1,21 +1,31 @@
 """Setup workspace node - Setup git workspace/branch for code modification."""
 import logging
+import os
+import subprocess
+from pathlib import Path
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools import (
     setup_git_worktree,
-    index_workspace,
     get_agents_md,
     get_project_context,
 )
 from app.agents.developer_v2.src.skills import SkillRegistry
+from app.agents.developer_v2.src.utils.db_container import (
+    start_postgres_container,
+    update_env_file,
+    get_database_url,
+)
 
 logger = logging.getLogger(__name__)
 
 
+
+
+
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
     """Setup git workspace/branch for code modification."""
-    print("[NODE] setup_workspace")
+    logger.info("[NODE] setup_workspace")
     try:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
         
@@ -26,35 +36,35 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
         branch_name = f"story_{short_id}"
         
-        logger.info(f"[setup_workspace] Setting up workspace for branch '{branch_name}'")
-        
-        if hasattr(agent, 'main_workspace'):
-            main_workspace = agent.main_workspace
-        elif hasattr(agent, 'workspace_path'):
-            main_workspace = agent.workspace_path
+        # Check if workspace_path already exists and is valid (reuse mode)
+        existing_workspace = state.get("workspace_path", "")
+        if existing_workspace and Path(existing_workspace).exists():
+            logger.info(f"[setup_workspace] Reusing existing workspace: {existing_workspace}")
+            workspace_info = {
+                "workspace_path": existing_workspace,
+                "branch_name": branch_name,
+                "main_workspace": state.get("main_workspace", existing_workspace),
+                "workspace_ready": True,
+            }
         else:
-            logger.warning("[setup_workspace] Agent has no workspace path attribute")
-            return {**state, "workspace_ready": False, "index_ready": False}
-        
-        workspace_info = setup_git_worktree(
-            story_id=story_id,
-            main_workspace=main_workspace,
-            agent_name=agent.name
-        )
+            logger.info(f"[setup_workspace] Setting up workspace for branch '{branch_name}'")
+            
+            if hasattr(agent, 'main_workspace'):
+                main_workspace = agent.main_workspace
+            elif hasattr(agent, 'workspace_path'):
+                main_workspace = agent.workspace_path
+            else:
+                logger.warning("[setup_workspace] Agent has no workspace path attribute")
+                return {**state, "workspace_ready": False, "index_ready": False}
+            
+            workspace_info = setup_git_worktree(
+                story_id=story_id,
+                main_workspace=main_workspace,
+                agent_name=agent.name
+            )
         
         index_ready = False
         workspace_path = workspace_info.get("workspace_path", "")
-        project_id = state.get("project_id", "default")
-        task_id = state.get("task_id") or story_id
-        
-        if workspace_path:
-            index_ready = index_workspace(project_id, workspace_path, task_id)
-            if not index_ready:
-                # Soft fail - continue without semantic search instead of crashing
-                logger.warning(f"[setup_workspace] CocoIndex indexing failed, continuing without semantic search")
-                index_ready = False
-            else:
-                logger.info(f"[setup_workspace] Indexed workspace with CocoIndex")
         
         project_context = ""
         agents_md = ""
@@ -71,6 +81,69 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         tech_stack = state.get("tech_stack", "nextjs")  # Default to nextjs
         skill_registry = SkillRegistry.load(tech_stack)
         logger.info(f"[setup_workspace] Loaded SkillRegistry for '{tech_stack}' with {len(skill_registry.skills)} skills")
+        
+        # Start postgres container for database operations
+        # Note: testcontainers auto-assigns random available port for each container
+        database_ready = False
+        database_url = ""
+        if workspace_path:
+            try:
+                db_info = start_postgres_container()
+                if db_info:
+                    update_env_file(workspace_path)
+                    database_url = get_database_url()
+                    database_ready = True
+                    logger.info(f"[setup_workspace] Database ready at port {db_info.get('port')}")
+            except Exception as db_err:
+                logger.warning(f"[setup_workspace] Database setup failed: {db_err}")
+        
+        # Run bun install if package.json exists
+        pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
+        if pkg_json and os.path.exists(pkg_json):
+            try:
+                logger.info("[setup_workspace] Running bun install...")
+                result = subprocess.run(
+                    "bun install --ignore-scripts",
+                    cwd=workspace_path,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    timeout=120,
+                    shell=True,
+                )
+                if result.returncode == 0:
+                    logger.info("[setup_workspace] bun install successful")
+                else:
+                    logger.warning(f"[setup_workspace] bun install failed: {result.stderr[:200]}")
+            except subprocess.TimeoutExpired:
+                logger.warning("[setup_workspace] bun install timed out")
+            except Exception as e:
+                logger.warning(f"[setup_workspace] bun install error: {e}")
+        
+        # Run prisma generate if schema exists
+        schema_path = os.path.join(workspace_path, "prisma", "schema.prisma") if workspace_path else ""
+        if schema_path and os.path.exists(schema_path):
+            try:
+                logger.info("[setup_workspace] Running prisma generate...")
+                result = subprocess.run(
+                    "bunx prisma generate",
+                    cwd=workspace_path,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    timeout=60,
+                    shell=True,
+                )
+                if result.returncode == 0:
+                    logger.info("[setup_workspace] prisma generate successful")
+                else:
+                    logger.warning(f"[setup_workspace] prisma generate failed: {result.stderr[:200]}")
+            except subprocess.TimeoutExpired:
+                logger.warning("[setup_workspace] prisma generate timed out")
+            except Exception as e:
+                logger.warning(f"[setup_workspace] prisma generate error: {e}")
         
         return {
             **state,

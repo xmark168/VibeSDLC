@@ -62,7 +62,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from app.agents.developer_v2.src.graph import DeveloperGraph
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.tools.git_tools import set_git_context, git_create_branch, _git_commit
+from app.agents.developer_v2.src.tools import set_tool_context
+from app.agents.developer_v2.src.tools.git_tools import git_create_branch, _git_commit
 
 try:
     from git import Repo
@@ -194,8 +195,8 @@ class SimpleDeveloperRunner:
                     "workspace_ready": False,
                 }
             
-            # Set git context for git_tools
-            set_git_context(str(self.workspace_path))
+            # Set tool context for git_tools
+            set_tool_context(root_dir=str(self.workspace_path))
             
             # 1. Initialize git if needed
             git_dir = self.workspace_path / ".git"
@@ -248,7 +249,7 @@ class SimpleDeveloperRunner:
                             "db_type": "postgresql",
                             "validation": "zod",
                             "auth": "next-auth",
-                            "install_cmd": "bun install",
+                            "install_cmd": "bun install --ignore-scripts",
                             "test_cmd": "bun run test",
                             "run_cmd": "bun dev",
                             "build_cmd": "bun run build",
@@ -301,7 +302,7 @@ class SimpleDeveloperRunner:
                             "framework": "nextjs",
                             "validation": "zod",
                             "auth": "next-auth",
-                            "install_cmd": "bun install",
+                            "install_cmd": "bun install --ignore-scripts",
                             "test_cmd": "bun run test",
                             "run_cmd": "bun dev",
                             "build_cmd": "bun run build",
@@ -338,45 +339,50 @@ class SimpleDeveloperRunner:
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
         langfuse_handler = None
-        langfuse_span = None
-        langfuse_ctx = None
+        langfuse_client = None
+        langfuse_trace = None
         
         if os.getenv("ENABLE_LANGFUSE", "false").lower() == "true":
             try:
-                from langfuse import get_client
+                from langfuse import Langfuse
                 from langfuse.langchain import CallbackHandler
                 
-                langfuse = get_client()
-                langfuse_ctx = langfuse.start_as_current_observation(as_type="span", name="developer_v2_story_execution")
-                langfuse_span = langfuse_ctx.__enter__()
-                langfuse_span.update_trace(
+                # Batching config for performance
+                langfuse_client = Langfuse(
+                    flush_at=10,       # Batch 10 events before flush
+                    flush_interval=10, # Or flush every 10 seconds
+                )
+                
+                # Create parent trace for entire story
+                langfuse_trace = langfuse_client.trace(
+                    name=f"dev_v2_{story.get('title', 'story')[:30]}",
                     user_id=str(uuid4()),
                     session_id=str(self.project_id),
-                    input={
-                        "story_id": story.get("story_id", "unknown"),
-                        "title": story.get("title", "Untitled"),
-                        "content": story.get("content", "")[:200]
-                    },
-                    tags=["developer_v2", "story_execution", self.template or "no_template"],
-                    metadata={"agent": self.name, "template": self.template}
+                    metadata={"story_title": story.get("title", "")}
                 )
-                langfuse_handler = CallbackHandler()
                 
-                logger.info(f"[{self.name}] Langfuse tracing enabled (session={self.project_id})")
+                # Callback linked to parent trace
+                langfuse_handler = CallbackHandler(
+                    trace_id=langfuse_trace.id,
+                    session_id=str(self.project_id),
+                )
+                
+                logger.info(f"Langfuse tracing enabled (trace: {langfuse_trace.id})")
             except Exception as e:
-                logger.error(f"Langfuse setup error: {e}")
-        else:
-            logger.info(f"[{self.name}] Langfuse disabled (set ENABLE_LANGFUSE=true to enable)")
+                logger.warning(f"Langfuse setup failed: {e}")
         
         initial_state = {
             "story_id": story.get("story_id", str(uuid4())),
+            "epic": story.get("epic", ""),
             "story_title": story.get("title", "Untitled"),
-            "story_content": story.get("content", ""),
+            "story_description": story.get("description", ""),
+            "story_requirements": story.get("requirements", []),
             "acceptance_criteria": story.get("acceptance_criteria", []),
             "project_id": self.project_id,
             "task_id": str(uuid4()),
             "user_id": str(uuid4()),
             "langfuse_handler": langfuse_handler,
+            "langfuse_client": langfuse_client,
             "workspace_path": str(self.workspace_path),
             "branch_name": "",
             "main_workspace": str(self.workspace_path),
@@ -394,6 +400,8 @@ class SimpleDeveloperRunner:
             "implementation_plan": [],
             "current_step": 0,
             "total_steps": 0,
+            "logic_analysis": [],
+            "dependencies_content": {},
             "files_created": [],
             "files_modified": [],
             "message": None,
@@ -417,7 +425,20 @@ class SimpleDeveloperRunner:
             "agents_md": None,
             "project_config": self._get_project_config(),
             "related_code_context": "",
+            # Review
+            "review_result": None,
+            "review_feedback": None,
+            "review_details": None,
+            "review_count": 0,
+            "total_lbtm_count": 0,
+            # Summarize
+            "summary": None,
+            "todos": None,
+            "is_pass": None,
             "summarize_feedback": None,
+            "summarize_count": 0,
+            "files_reviewed": None,
+            "story_summary": None,
         }
         
         logger.info(f"[{self.name}] Starting story: {story.get('title', 'Untitled')}")
@@ -429,225 +450,171 @@ class SimpleDeveloperRunner:
         sys.stdout.flush()
         
         try:
+            invoke_config = {"recursion_limit": 100}
+            if langfuse_handler:
+                invoke_config["callbacks"] = [langfuse_handler]
+            
             final_state = await self.graph.graph.ainvoke(
                 initial_state,
-                config={"recursion_limit": 100}
+                config=invoke_config
             )
             print("\n[*] Graph completed!")
-            if langfuse_span and langfuse_ctx:
+            
+            # Update Langfuse trace with results
+            if langfuse_trace:
                 try:
-                    langfuse_span.update_trace(output={
-                        "action": final_state.get("action"),
-                        "task_type": final_state.get("task_type"),
-                        "complexity": final_state.get("complexity"),
-                        "files_created": len(final_state.get("files_created", [])),
-                        "files_modified": len(final_state.get("files_modified", [])),
-                        "run_status": final_state.get("run_status"),
-                        "debug_count": final_state.get("debug_count", 0),
-                        "react_loop_count": final_state.get("react_loop_count", 0)
-                    })
-                    langfuse_ctx.__exit__(None, None, None)
-                    logger.info(f"[{self.name}] Langfuse span closed successfully")
+                    langfuse_trace.update(
+                        output={
+                            "action": final_state.get("action"),
+                            "files_modified": final_state.get("files_modified", [])[:20],
+                            "current_step": final_state.get("current_step"),
+                            "total_steps": final_state.get("total_steps"),
+                        }
+                    )
+                except Exception:
+                    pass
+            
+            # Flush Langfuse (only once at end)
+            if langfuse_client:
+                try:
+                    langfuse_client.flush()
+                    logger.info("Langfuse flushed")
                 except Exception as e:
-                    logger.error(f"Langfuse span close error: {e}")
+                    logger.warning(f"Langfuse flush error: {e}")
             
             return final_state
             
         except Exception as e:
             logger.error(f"[{self.name}] Graph error: {e}", exc_info=True)
-            if langfuse_ctx:
+            # Update trace with error
+            if langfuse_trace:
                 try:
-                    langfuse_ctx.__exit__(type(e), e, e.__traceback__)
-                    logger.info(f"[{self.name}] Langfuse span closed (on error)")
-                except Exception as cleanup_err:
-                    logger.error(f"Langfuse cleanup error: {cleanup_err}")
-            
+                    langfuse_trace.update(
+                        output={"error": str(e)[:500]},
+                        level="ERROR"
+                    )
+                except Exception:
+                    pass
+            if langfuse_client:
+                try:
+                    langfuse_client.flush()
+                except Exception:
+                    pass
             raise
 
 
 # =============================================================================
-# STORY DEFINITIONS
+# STORY DEFINITIONS (Standard Format)
 # =============================================================================
 
-LEARNING_WEBSITE_STORY = {
-    "story_id": "learning-001",
-    "title": "Create Learning Website ",
-    "content": """
-## User Story
-As a student, I want a beautiful learning website so that I can browse online courses.
+HOMEPAGE_STORY = {
+    "story_id": "EPIC-001-US-001",
+    "epic": "EPIC-001",
+    "title": "Homepage with Featured Books",
+    "description": """As a first-time visitor, I want to see a clear homepage layout with featured books so that I can quickly understand what the bookstore offers and start browsing.
 
-## Requirements
-Create a learning website with these components:
-
-1. **Navbar.tsx** - Navigation bar with:
-   - Logo (LearnHub)
-   - Nav links: Home, Courses, About
-   - Login/Register buttons
-   - Dark mode toggle
-
-2. **HeroSection.tsx** - Hero section with:
-   - Gradient background (blue to purple)
-   - Headline: "Learn Programming Online"
-   - Subtext: "Join 10,000+ students"
-   - CTA button: "Browse Courses"
-   - Stats: 500+ courses, 50+ instructors
-
-3. **CourseCard.tsx** - Course card with:
-   - Thumbnail image placeholder
-   - Course title
-   - Instructor name
-   - Rating (stars)
-   - Price
-   - "Enroll" button
-
-4. **HomePage.tsx** - Main page combining:
-   - Navbar
-   - HeroSection
-   - Grid of 3 CourseCards
-   - Simple footer
-
-## Tech Stack
-- React + TypeScript
-- TailwindCSS
-- Lucide React icons
-
-## Design
-- Primary: #3B82F6 (blue)
-- Dark mode support
-- Responsive
-""",
+Create the foundational homepage that serves as the entry point for all customers. This page must establish trust, showcase the bookstore's offerings, and provide clear navigation paths. The homepage should highlight popular textbooks, display trust indicators (return policy, genuine books guarantee), and make the search functionality immediately accessible. This is the first impression that determines whether visitors will continue shopping or leave.""",
+    "requirements": [
+        "Display hero section with main value proposition and call-to-action button",
+        "Show featured/bestselling textbooks section with book covers, titles, prices, and stock status",
+        "Include prominent search bar at the top of the page with placeholder text guiding users",
+        "Display trust indicators: return policy (7-14 days), genuine books guarantee, contact information (phone, store address)",
+        "Show category navigation menu organized by grade levels (6-12, university) and subjects",
+        "Include footer with quick links to policies, about us, and contact information",
+        "Ensure responsive design that works on mobile, tablet, and desktop devices",
+        "Display loading states for dynamic content and handle empty states gracefully"
+    ],
     "acceptance_criteria": [
-        "Navbar with logo and navigation",
-        "Hero section with gradient and CTA",
-        "Course cards with title, price, rating",
-        "Responsive layout",
-        "Dark mode toggle works"
-    ]
-}
-
-
-SIMPLE_CALCULATOR_STORY = {
-    "story_id": "calc-001",
-    "title": "Create Simple Calculator",
-    "content": """
-## User Story
-As a user, I want a simple calculator
-so that I can perform basic math operations.
-
-## Requirements
-Create a Python calculator module with:
-1. add(a, b) - Addition
-2. subtract(a, b) - Subtraction
-3. multiply(a, b) - Multiplication
-4. divide(a, b) - Division with zero check
-
-## Acceptance Criteria
-- All functions work correctly
-- Division by zero returns error message
-- Include unit tests
-""",
-    "acceptance_criteria": [
-        "add(2, 3) returns 5",
-        "subtract(5, 3) returns 2",
-        "multiply(4, 5) returns 20",
-        "divide(10, 2) returns 5",
-        "divide(10, 0) returns error"
-    ]
-}
-
-
-LOGIN_FORM_STORY = {
-    "story_id": "login-001",
-    "title": "Create Login Form Component",
-    "content": """
-## User Story
-As a user, I want a login form
-so that I can authenticate to the application.
-
-## Requirements
-Create a React login form with:
-1. Email input with validation
-2. Password input with show/hide toggle
-3. Remember me checkbox
-4. Submit button
-5. "Forgot password" link
-
-## Tech Stack
-- React + TypeScript
-- TailwindCSS
-- React Hook Form for validation
-
-## Validation Rules
-- Email: Required, valid email format
-- Password: Required, min 8 characters
-""",
-    "acceptance_criteria": [
-        "Email field validates format",
-        "Password field has show/hide toggle",
-        "Form shows validation errors",
-        "Submit button disabled when invalid",
-        "Loading state on submit"
+        "Given a user visits the homepage, When the page loads, Then they see the hero section, featured books (at least 8 items), search bar, and trust indicators within 3 seconds",
+        "Given a user views featured books, When they hover over a book, Then they see a visual indication (shadow/border) and can click to view details",
+        "Given a user is on mobile device, When they access the homepage, Then all elements are properly sized and the layout adapts to screen width without horizontal scrolling",
+        "Given the featured books section is empty, When the page loads, Then display a friendly message 'New books coming soon! Check back later' instead of blank space",
+        "Given a user clicks on a category in navigation menu, When the page loads, Then they are directed to the filtered book listing page for that category",
+        "Given a user clicks on trust indicators (return policy, guarantee), When clicked, Then they are directed to detailed policy pages with full information"
     ]
 }
 
 
 TEXTBOOK_SEARCH_STORY = {
-    "story_id": "US-001",
+    "story_id": "EPIC-001-US-002",
+    "epic": "EPIC-001",
     "title": "Search Textbooks by Name, Author or Code",
-    "content": """
-## As a customer, I want to search for textbooks by name, author or code so that I can quickly find the book I need
+    "description": """As a customer, I want to search for textbooks by name, author or code so that I can quickly find the book I need.
 
-*ID:* US-001  
-*Epic:* EPIC-001
-
-### Description
-Người dùng có thể sử dụng thanh tìm kiếm để nhập tên sách, tác giả hoặc mã sách và nhận được kết quả phù hợp.
-""",
+Người dùng có thể sử dụng thanh tìm kiếm để nhập tên sách, tác giả hoặc mã sách và nhận được kết quả phù hợp.""",
+    "requirements": [
+        "Implement search bar component with debounce (300ms)",
+        "Search across textbook name, author, and code fields",
+        "Display search results with book cover, title, author, price",
+        "Show loading state while searching",
+        "Handle empty results with friendly message"
+    ],
     "acceptance_criteria": [
-        "Given I am on the homepage when I enter a book name, author or code in the search bar then I see a list of matching books with basic information",
-        "Given no books match my search when I submit the search then I see a message indicating no results found"
+        "Given I am on the homepage, When I enter a book name, author or code in the search bar, Then I see a list of matching books with basic information",
+        "Given no books match my search, When I submit the search, Then I see a message indicating no results found"
+    ]
+}
+
+
+LOGIN_FORM_STORY = {
+    "story_id": "EPIC-002-US-001",
+    "epic": "EPIC-002",
+    "title": "User Login Form",
+    "description": """As a user, I want a login form so that I can authenticate to the application.
+
+The login form should provide a secure and user-friendly way for customers to access their accounts.""",
+    "requirements": [
+        "Email input with validation (required, valid email format)",
+        "Password input with show/hide toggle",
+        "Remember me checkbox",
+        "Submit button with loading state",
+        "Forgot password link",
+        "Form validation with error messages"
+    ],
+    "acceptance_criteria": [
+        "Given I am on the login page, When I enter invalid email format, Then I see a validation error message",
+        "Given I am on the login page, When I click the eye icon on password field, Then the password visibility toggles",
+        "Given I have filled valid credentials, When I click submit, Then I see a loading state and the form submits",
+        "Given I enter invalid credentials, When the form submits, Then I see an error message"
+    ]
+}
+
+
+SIMPLE_CALCULATOR_STORY = {
+    "story_id": "EPIC-003-US-001",
+    "epic": "EPIC-003",
+    "title": "Simple Calculator Module",
+    "description": """As a user, I want a simple calculator so that I can perform basic math operations.
+
+Create a Python calculator module with basic arithmetic operations and proper error handling.""",
+    "requirements": [
+        "Implement add(a, b) function for addition",
+        "Implement subtract(a, b) function for subtraction",
+        "Implement multiply(a, b) function for multiplication",
+        "Implement divide(a, b) function with zero division check",
+        "Include comprehensive unit tests"
+    ],
+    "acceptance_criteria": [
+        "Given two numbers, When I call add(2, 3), Then it returns 5",
+        "Given two numbers, When I call subtract(5, 3), Then it returns 2",
+        "Given two numbers, When I call multiply(4, 5), Then it returns 20",
+        "Given two numbers, When I call divide(10, 2), Then it returns 5",
+        "Given division by zero, When I call divide(10, 0), Then it returns an error message"
     ]
 }
 
 
 # =============================================================================
-# GLOBAL STATE FOR CLEANUP
+# GLOBAL STATE
 # =============================================================================
 
 _active_branch = None
 _active_workspace = None
-_should_cleanup = False
-
-
-def cleanup_containers(remove: bool = False):
-    """Cleanup containers on exit."""
-    global _active_branch
-    
-    if not _active_branch:
-        return
-    
-    try:
-        from app.agents.developer_v2.src.tools.container_tools import dev_container_manager
-        
-        if remove:
-            print(f"\n[*] Removing containers for {_active_branch}...")
-            dev_container_manager.remove(_active_branch)
-            print("[*] Containers removed.")
-        else:
-            print(f"\n[*] Stopping containers for {_active_branch}...")
-            dev_container_manager.stop(_active_branch)
-            print("[*] Containers stopped (can resume later).")
-    except Exception as e:
-        logger.debug(f"Cleanup error: {e}")
 
 
 def signal_handler(signum, frame):
     """Handle Ctrl+C gracefully."""
-    global _should_cleanup
-    
-    print("\n\n[!] Interrupted! Cleaning up...")
-    _should_cleanup = True
-    cleanup_containers(remove=True)
+    print("\n\n[!] Interrupted!")
     sys.exit(0)
 
 
@@ -664,12 +631,7 @@ def print_help():
     print("\n" + "-"*40)
     print("COMMANDS:")
     print("  run     - Run another story")
-    print("  test    - Run tests in container")
-    print("  exec    - Execute command in container")
-    print("  logs    - Show container logs")
-    print("  status  - Show container status")
-    print("  clear   - Remove containers and exit")
-    print("  exit    - Stop containers and exit (can resume later)")
+    print("  exit    - Exit")
     print("  help    - Show this help")
     print("-"*40)
 
@@ -680,8 +642,6 @@ async def handle_command(cmd: str, branch_name: str, workspace_path: Path) -> bo
     Returns:
         True to continue, False to exit
     """
-    from app.agents.developer_v2.src.tools.container_tools import dev_container_manager
-    
     cmd = cmd.strip().lower()
     
     if cmd == "help" or cmd == "?":
@@ -689,71 +649,7 @@ async def handle_command(cmd: str, branch_name: str, workspace_path: Path) -> bo
         return True
     
     elif cmd == "exit" or cmd == "quit" or cmd == "q":
-        cleanup_containers(remove=False)
         return False
-    
-    elif cmd == "clear":
-        cleanup_containers(remove=True)
-        return False
-    
-    elif cmd == "status":
-        try:
-            status = dev_container_manager.status(branch_name)
-            print("\n" + json.dumps(status, indent=2))
-        except Exception as e:
-            print(f"Error: {e}")
-        return True
-    
-    elif cmd == "logs":
-        try:
-            logs = dev_container_manager.get_logs(branch_name, tail=50)
-            print("\n" + "-"*40)
-            print("CONTAINER LOGS (last 50 lines):")
-            print("-"*40)
-            print(logs)
-        except Exception as e:
-            print(f"Error: {e}")
-        return True
-    
-    elif cmd == "test":
-        try:
-            print("\n[*] Running tests in container...")
-            # Detect test command based on files
-            if (workspace_path / "bun.lock").exists():
-                test_cmd = "bun run test"
-            elif (workspace_path / "package.json").exists():
-                test_cmd = "npm test"
-            elif (workspace_path / "pytest.ini").exists() or (workspace_path / "pyproject.toml").exists():
-                test_cmd = "pytest -v"
-            else:
-                test_cmd = "npm test"
-            
-            print(f"[*] Executing: {test_cmd}")
-            result = dev_container_manager.exec(branch_name, test_cmd)
-            print("\n" + "-"*40)
-            print(f"Exit code: {result.get('exit_code')}")
-            print("-"*40)
-            print(result.get("output", ""))
-        except Exception as e:
-            print(f"Error: {e}")
-        return True
-    
-    elif cmd.startswith("exec "):
-        try:
-            shell_cmd = cmd[5:].strip()
-            if not shell_cmd:
-                print("Usage: exec <command>")
-                return True
-            
-            print(f"\n[*] Executing: {shell_cmd}")
-            result = dev_container_manager.exec(branch_name, shell_cmd)
-            print("\n" + "-"*40)
-            print(f"Exit code: {result.get('exit_code')}")
-            print("-"*40)
-            print(result.get("output", ""))
-        except Exception as e:
-            print(f"Error: {e}")
-        return True
     
     elif cmd == "run":
         return "run"  # Special signal to run another story
@@ -801,10 +697,10 @@ def print_result(result: dict, workspace_path: Path):
 def select_story() -> dict:
     """Interactive story selection."""
     print("\nSelect a story to run:")
-    print("1. Textbook Search (React) [DEFAULT]")
-    print("2. Simple Calculator (Python)")
+    print("1. Homepage with Featured Books (React) [DEFAULT]")
+    print("2. Textbook Search (React)")
     print("3. Login Form (React)")
-    print("4. Learning Website (React)")
+    print("4. Simple Calculator (Python)")
     print("5. Custom story (enter your own)")
     print()
     
@@ -814,26 +710,30 @@ def select_story() -> dict:
         choice = "1"
     
     if choice == "1":
-        return TEXTBOOK_SEARCH_STORY
+        return HOMEPAGE_STORY
     elif choice == "2":
-        return SIMPLE_CALCULATOR_STORY
+        return TEXTBOOK_SEARCH_STORY
     elif choice == "3":
         return LOGIN_FORM_STORY
     elif choice == "4":
-        return LEARNING_WEBSITE_STORY
+        return SIMPLE_CALCULATOR_STORY
     elif choice == "5":
-        print("\nEnter your story:")
+        print("\nEnter your story (standard format):")
         title = input("Title: ").strip()
-        content = input("Description: ").strip()
+        description = input("Description: ").strip()
+        requirements_input = input("Requirements (comma-separated): ").strip()
+        requirements = [r.strip() for r in requirements_input.split(",") if r.strip()]
         return {
-            "story_id": str(uuid4())[:8],
+            "story_id": f"CUSTOM-{str(uuid4())[:8]}",
+            "epic": "CUSTOM",
             "title": title,
-            "content": content,
+            "description": description,
+            "requirements": requirements,
             "acceptance_criteria": []
         }
     else:
-        print("Invalid choice, using Textbook Search")
-        return TEXTBOOK_SEARCH_STORY
+        print("Invalid choice, using Homepage story")
+        return HOMEPAGE_STORY
 
 
 # =============================================================================

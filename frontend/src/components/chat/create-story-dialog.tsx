@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -7,30 +7,123 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { Zap, Flag, X } from "lucide-react"
-import type { StoryFormData } from "@/types"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Zap, Flag, X, Link2, ChevronsUpDown, Check, Layers, Plus } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { storiesApi } from "@/apis/stories"
+import { CreateEpicDialog, type NewEpicData } from "./create-epic-dialog"
+import type { StoryFormData, Story } from "@/types"
 
 export type { StoryFormData }
+
+export interface StoryEditData {
+  id: string
+  title: string
+  description?: string
+  type: "UserStory" | "EnablerStory"
+  story_point?: number
+  priority?: number
+  rank?: number
+  acceptance_criteria?: string[]
+  requirements?: string[]
+  dependencies?: string[]
+  epic_id?: string
+}
 
 interface CreateStoryDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreateStory: (story: StoryFormData) => void
+  onUpdateStory?: (storyId: string, story: StoryFormData) => void
+  projectId?: string
+  editingStory?: StoryEditData | null
 }
 
-export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateStoryDialogProps) {
-  const [formData, setFormData] = useState<StoryFormData>({
-    title: "",
-    description: "",
-    type: "UserStory",
-    story_point: 1,
-    priority: "Medium",
-    acceptance_criteria: [],
-    requirements: []
-  })
+const getDefaultFormData = (): StoryFormData => ({
+  title: "",
+  description: "",
+  type: "UserStory",
+  story_point: 1,
+  priority: "Medium",
+  acceptance_criteria: [],
+  requirements: [],
+  dependencies: [],
+  epic_id: undefined
+})
+
+export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateStory, projectId, editingStory }: CreateStoryDialogProps) {
+  const isEditMode = !!editingStory
+
+  const [formData, setFormData] = useState<StoryFormData>(getDefaultFormData())
 
   const [currentCriteria, setCurrentCriteria] = useState("")
   const [currentRequirement, setCurrentRequirement] = useState("")
+  const [dependencyPopoverOpen, setDependencyPopoverOpen] = useState(false)
+  const [epicPopoverOpen, setEpicPopoverOpen] = useState(false)
+  const [existingStories, setExistingStories] = useState<Story[]>([])
+  const [availableEpics, setAvailableEpics] = useState<{ id: string; code?: string; title: string }[]>([])
+  const [loadingStories, setLoadingStories] = useState(false)
+  const [loadingEpics, setLoadingEpics] = useState(false)
+  const [showCreateEpicDialog, setShowCreateEpicDialog] = useState(false)
+  const [newEpicData, setNewEpicData] = useState<NewEpicData | null>(null)
+
+  // Populate form data when editing
+  useEffect(() => {
+    if (open && editingStory) {
+      const priorityMap: Record<number, "High" | "Medium" | "Low"> = {
+        1: "High",
+        2: "Medium",
+        3: "Low"
+      }
+      setFormData({
+        title: editingStory.title,
+        description: editingStory.description || "",
+        type: editingStory.type,
+        story_point: editingStory.story_point || 1,
+        priority: editingStory.priority ? priorityMap[editingStory.priority] || "Medium" : "Medium",
+        acceptance_criteria: editingStory.acceptance_criteria || [],
+        requirements: editingStory.requirements || [],
+        dependencies: editingStory.dependencies || [],
+        epic_id: editingStory.epic_id
+      })
+    } else if (open && !editingStory) {
+      setFormData(getDefaultFormData())
+    }
+  }, [open, editingStory])
+
+  // Fetch existing stories and epics when dialog opens
+  useEffect(() => {
+    if (open && projectId) {
+      // Load stories for dependencies
+      setLoadingStories(true)
+      storiesApi.list(projectId, { limit: 100 })
+        .then(result => {
+          setExistingStories(result.data || [])
+        })
+        .catch(err => {
+          console.error("Failed to load stories:", err)
+          setExistingStories([])
+        })
+        .finally(() => setLoadingStories(false))
+      
+      // Load epics directly from API
+      setLoadingEpics(true)
+      storiesApi.listEpics(projectId)
+        .then(result => {
+          setAvailableEpics((result.data || []).map(epic => ({
+            id: epic.id,
+            code: epic.epic_code,
+            title: epic.title
+          })))
+        })
+        .catch(err => {
+          console.error("Failed to load epics:", err)
+          setAvailableEpics([])
+        })
+        .finally(() => setLoadingEpics(false))
+    }
+  }, [open, projectId])
 
   const handleSubmit = () => {
     if (!formData.title.trim()) {
@@ -38,7 +131,22 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
       return
     }
 
-    onCreateStory(formData)
+    // Include new epic data if creating new epic
+    const submitData = newEpicData
+      ? { 
+          ...formData, 
+          new_epic_title: newEpicData.title,
+          new_epic_domain: newEpicData.domain,
+          new_epic_description: newEpicData.description,
+          epic_id: undefined 
+        }
+      : formData
+    
+    if (isEditMode && editingStory && onUpdateStory) {
+      onUpdateStory(editingStory.id, submitData)
+    } else {
+      onCreateStory(submitData)
+    }
     handleReset()
     onOpenChange(false)
   }
@@ -51,10 +159,20 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
       story_point: 1,
       priority: "Medium",
       acceptance_criteria: [],
-      requirements: []
+      requirements: [],
+      dependencies: [],
+      epic_id: undefined
     })
     setCurrentCriteria("")
     setCurrentRequirement("")
+    setDependencyPopoverOpen(false)
+    setEpicPopoverOpen(false)
+    setNewEpicData(null)
+  }
+
+  const handleCreateEpic = (epicData: NewEpicData) => {
+    setNewEpicData(epicData)
+    setFormData(prev => ({ ...prev, epic_id: undefined }))
   }
 
   const handleAddCriteria = () => {
@@ -91,13 +209,43 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
     }))
   }
 
+  const handleToggleDependency = (storyId: string) => {
+    setFormData(prev => {
+      const isSelected = prev.dependencies.includes(storyId)
+      return {
+        ...prev,
+        dependencies: isSelected 
+          ? prev.dependencies.filter(id => id !== storyId)
+          : [...prev.dependencies, storyId]
+      }
+    })
+  }
+
+  const handleRemoveDependency = (storyId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      dependencies: prev.dependencies.filter(id => id !== storyId)
+    }))
+  }
+
+  // Get story title by ID for display
+  const getStoryTitle = (storyId: string) => {
+    const story = existingStories.find(s => s.id === storyId)
+    return story?.title || storyId
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold">Create New Story</DialogTitle>
+          <DialogTitle className="text-xl font-bold">
+            {isEditMode ? "Edit Story" : "Create New Story"}
+          </DialogTitle>
           <DialogDescription>
-            Fill in the details below to create a new story on the Kanban board
+            {isEditMode 
+              ? "Update the story details below"
+              : "Fill in the details below to create a new story on the Kanban board"
+            }
           </DialogDescription>
         </DialogHeader>
 
@@ -164,6 +312,137 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               className="min-h-[100px] resize-none"
             />
+          </div>
+
+          {/* Epic */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5" />
+              Epic
+            </Label>
+            
+            {/* Show new epic info if created */}
+            {newEpicData ? (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                <Badge variant="outline" className="font-mono text-xs bg-primary/10">
+                  NEW
+                </Badge>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{newEpicData.title}</p>
+                  <p className="text-xs text-muted-foreground">{newEpicData.domain}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setNewEpicData(null)}
+                  className="h-8 w-8 p-0"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            ) : (
+              <Popover open={epicPopoverOpen} onOpenChange={setEpicPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={epicPopoverOpen}
+                    className="w-full justify-between h-10 text-sm font-normal"
+                    disabled={loadingEpics}
+                  >
+                    {loadingEpics ? (
+                      "Loading epics..."
+                    ) : formData.epic_id ? (
+                      <span className="flex items-center gap-2">
+                        {availableEpics.find(e => e.id === formData.epic_id)?.code && (
+                          <Badge variant="outline" className="font-mono text-xs">
+                            {availableEpics.find(e => e.id === formData.epic_id)?.code}
+                          </Badge>
+                        )}
+                        <span className="truncate">
+                          {availableEpics.find(e => e.id === formData.epic_id)?.title || "Select epic..."}
+                        </span>
+                      </span>
+                    ) : (
+                      "Select epic (optional)..."
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[400px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search epics..." />
+                    <CommandList className="max-h-[250px] overflow-y-auto">
+                      <CommandEmpty>No epic found.</CommandEmpty>
+                      <CommandGroup>
+                        {/* Create new epic option */}
+                        <CommandItem
+                          value="__create_new__"
+                          onSelect={() => {
+                            setShowCreateEpicDialog(true)
+                            setEpicPopoverOpen(false)
+                          }}
+                          className="cursor-pointer text-primary"
+                        >
+                          <Plus className="mr-2 h-4 w-4 flex-shrink-0" />
+                          <span className="font-medium">Tạo Epic mới...</span>
+                        </CommandItem>
+                        
+                        <Separator className="my-1" />
+                        
+                        {/* None option */}
+                        <CommandItem
+                          value="none"
+                          onSelect={() => {
+                            setFormData(prev => ({ ...prev, epic_id: undefined }))
+                            setEpicPopoverOpen(false)
+                          }}
+                          className="cursor-pointer"
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4 flex-shrink-0",
+                              !formData.epic_id ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <span className="text-muted-foreground">No Epic</span>
+                        </CommandItem>
+                        
+                        {/* Existing epics */}
+                        {availableEpics.map((epic) => (
+                          <CommandItem
+                            key={epic.id}
+                            value={epic.title}
+                            onSelect={() => {
+                              setFormData(prev => ({ ...prev, epic_id: epic.id }))
+                              setNewEpicData(null)
+                              setEpicPopoverOpen(false)
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4 flex-shrink-0",
+                                formData.epic_id === epic.id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            <div className="flex items-center gap-2">
+                              {epic.code && (
+                                <Badge variant="outline" className="font-mono text-xs">
+                                  {epic.code}
+                                </Badge>
+                              )}
+                              <span className="truncate">{epic.title}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
 
           {/* Story Points and Priority */}
@@ -326,6 +605,91 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
               </Button>
             </div>
           </div>
+
+          {/* Dependencies */}
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold flex items-center gap-1.5">
+              Dependencies
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Select stories that must be completed before this story can start
+            </p>
+
+            {/* Selected dependencies */}
+            {formData.dependencies.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {formData.dependencies.map((depId) => (
+                  <Badge
+                    key={depId}
+                    variant="outline"
+                    className="bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300 border-orange-200/50 dark:border-orange-800/50 text-xs flex items-center gap-1 max-w-[250px]"
+                  >
+                    <span className="truncate">{getStoryTitle(depId)}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDependency(depId)}
+                      className="ml-1 hover:text-destructive transition-colors flex-shrink-0"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+
+            {/* Story selector */}
+            <Popover open={dependencyPopoverOpen} onOpenChange={setDependencyPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={dependencyPopoverOpen}
+                  className="w-full justify-between h-9 text-sm font-normal"
+                  disabled={loadingStories || existingStories.length === 0}
+                >
+                  {loadingStories ? (
+                    "Loading stories..."
+                  ) : existingStories.length === 0 ? (
+                    "No stories available"
+                  ) : (
+                    "Select dependencies..."
+                  )}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[400px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search stories..." />
+                  <CommandList className="max-h-[200px] overflow-y-auto">
+                    <CommandEmpty>No story found.</CommandEmpty>
+                    <CommandGroup>
+                      {existingStories.map((story) => (
+                        <CommandItem
+                          key={story.id}
+                          value={story.title}
+                          onSelect={() => handleToggleDependency(story.id)}
+                          className="cursor-pointer"
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4 flex-shrink-0",
+                              formData.dependencies.includes(story.id) ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate">{story.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {story.story_code && `${story.story_code} • `}{story.type} • {story.status}
+                            </p>
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
 
         <Separator />
@@ -351,11 +715,18 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory }: CreateS
               disabled={!formData.title.trim()}
               className="h-9"
             >
-              Create Story
+              {isEditMode ? "Update Story" : "Create Story"}
             </Button>
           </div>
         </div>
       </DialogContent>
+
+      {/* Create Epic Dialog */}
+      <CreateEpicDialog
+        open={showCreateEpicDialog}
+        onOpenChange={setShowCreateEpicDialog}
+        onCreateEpic={handleCreateEpic}
+      />
     </Dialog>
   )
 }

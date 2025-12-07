@@ -1,313 +1,263 @@
 ---
 name: frontend-component
-description: Create React components for Next.js 16 with proper patterns (client/server components, hooks, shadcn/ui, useActionState)
-triggers:
-  - component
-  - page.tsx
-  - client component
-  - use client
-  - useState
-  - useEffect
-  - useActionState
-  - onClick
-  - form
-  - button
-  - input
-  - modal
-  - dialog
-version: "2.0"
-author: VibeSDLC
+description: Create React/Next.js 16 components. Use when building pages, client/server components, forms with useActionState, or UI with shadcn/ui. Handles 'use client' directive decisions. ALWAYS activate with frontend-design together.
 ---
 
-# Frontend Component Skill (Next.js 16 + React 19)
+This skill guides creation of React components in Next.js 16 with React 19. Components follow the App Router architecture with Server Components as default and Client Components for interactivity.
 
-## Critical Rules
+The user needs to build pages, UI components, forms, or interactive elements.
 
-1. **Named exports ONLY** - NO default exports (except for pages/layouts)
-2. **'use client'** - Required ONLY for hooks, events, browser APIs
-3. **Server Components** - Default in Next.js 16, no directive needed
-4. **Async params** - Always `await params` and `await searchParams` in pages
-5. **Props interface** - Always define TypeScript interface
-6. **shadcn/ui** - Use components from `@/components/ui/`
-7. **useActionState** - Use for forms with Server Actions (React 19)
+## Before You Start
 
-## Page Component (MUST await params)
+Always activate the design skill alongside this one for UI work:
+
+```
+activate_skills(["frontend-component", "frontend-design"])
+```
+
+**CRITICAL**: Before importing any custom component from `@/components/*`, you MUST read that file first to check its Props interface. Never guess prop names.
+
+## ⚠️ NULL SAFETY (CRITICAL - READ FIRST)
+
+**NEVER call methods on potentially undefined/null values.**
+
+### Common Crashes to AVOID
+
+```tsx
+// ❌ CRASHES if parts is undefined
+parts.map((p) => ...)
+data.items.filter(...)
+result.users.length
+
+// ✅ SAFE
+(parts ?? []).map((p) => ...)
+(data?.items ?? []).filter(...)
+result?.users?.length ?? 0
+```
+
+### Rules
+
+1. **Array from props** → Default value
+```tsx
+function List({ items = [] }: Props) {
+  return items.map(...)  // Safe
+}
+```
+
+2. **Array from API** → Nullish coalescing
+```tsx
+const json = await res.json();
+setItems(json.data ?? []);  // Safe
+```
+
+3. **Nested access** → Optional chaining + default
+```tsx
+const count = data?.results?.items?.length ?? 0;
+return (data?.results?.items ?? []).map(...)
+```
+
+4. **Before .map()/.filter()/.reduce()** → Always check
+```tsx
+// Option A: Default in destructuring
+const { parts = [] } = props;
+return parts.map(...)
+
+// Option B: Inline nullish coalescing  
+return (parts ?? []).map(...)
+
+// Option C: Early return
+if (!parts?.length) return null;
+return parts.map(...)
+```
+
+### State Initialization
+
+```tsx
+// ✅ Always initialize with correct type
+const [items, setItems] = useState<Item[]>([]);
+const [user, setUser] = useState<User | null>(null);
+
+// ❌ Never leave undefined
+const [items, setItems] = useState();  // items is undefined!
+```
+
+## Server vs Client Components
+
+- **Server Components** (default): Fetch data, access database, async/await
+- **Client Components** (`'use client'`): Hooks, events, browser APIs
+
+Add `'use client'` when using:
+- `useState`, `useEffect`, `useRef`, `useContext`
+- `useActionState`, `useTransition`
+- `onClick`, `onChange`, `onSubmit` handlers
+- `useRouter`, `usePathname` from next/navigation
+
+## Defensive Prop Handling
+
+**CRITICAL**: Always handle undefined/null props to prevent runtime crashes.
+
+- **Array props**: Always use default `= []`
+- **Object props**: Check before accessing properties
+- **Nested access**: Use optional chaining `?.`
+- **Early return**: Handle loading/empty states first
+
+```tsx
+// Array props - always default to empty array
+function List({ items = [] }: Props) {
+  if (!items.length) return <EmptyState />;
+  return items.map(item => <Item key={item.id} {...item} />);
+}
+
+// Object props - check before render
+function Detail({ data }: Props) {
+  if (!data) return null;
+  return <div>{data.name}</div>;
+}
+
+// Nested access - use optional chaining
+function Info({ user }: Props) {
+  return <span>{user?.profile?.avatar ?? '/default.png'}</span>;
+}
+```
+
+## Reading Components Before Import
+
+When importing from `@/components/*`, always read the file first:
+
+```
+WRONG: write_file with <Card searchQuery={...} /> (guessing props)
+CORRECT: read_file first, see Props interface, then write_file
+```
+
+Check interface format for prop passing:
+- Individual props: `{ id, name }` -> pass each or spread
+- Object prop: `{ item: Item }` -> pass whole object
+
+## Page Components
+
+Pages use `export default` and can be async:
 
 ```tsx
 // app/users/[id]/page.tsx
-import { prisma } from '@/lib/prisma';
-import { notFound } from 'next/navigation';
-
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
 }
 
-export default async function UserPage({ params, searchParams }: PageProps) {
-  // MUST await params - Breaking change in Next.js 15+
-  const { id } = await params;
-  const { tab } = await searchParams;
-
+export default async function UserPage({ params }: PageProps) {
+  const { id } = await params;  // MUST await in Next.js 16
   const user = await prisma.user.findUnique({ where: { id } });
+  
   if (!user) notFound();
-
-  return (
-    <div>
-      <h1>{user.name}</h1>
-      {tab === 'posts' && <UserPosts userId={id} />}
-    </div>
-  );
+  return <UserProfile user={user} />;
 }
 ```
 
-## Server Component (Default - No Directive)
+## Forms with useActionState
+
+Connect forms to Server Actions:
 
 ```tsx
-// components/UserList.tsx - Server Component
-import { prisma } from '@/lib/prisma';
-
-interface UserListProps {
-  limit?: number;
-}
-
-export async function UserList({ limit = 10 }: UserListProps) {
-  const users = await prisma.user.findMany({
-    take: limit,
-    orderBy: { createdAt: 'desc' },
-  });
-
-  return (
-    <div className="space-y-4">
-      {users.map((user) => (
-        <UserCard key={user.id} user={user} />
-      ))}
-    </div>
-  );
-}
-```
-
-## Client Component (Only When Needed)
-
-```tsx
-// components/Counter.tsx
 'use client';
-
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-
-interface CounterProps {
-  initialValue?: number;
-}
-
-export function Counter({ initialValue = 0 }: CounterProps) {
-  const [count, setCount] = useState(initialValue);
-
-  return (
-    <div className="flex items-center gap-4">
-      <Button variant="outline" onClick={() => setCount(c => c - 1)}>-</Button>
-      <span className="text-xl font-semibold">{count}</span>
-      <Button variant="outline" onClick={() => setCount(c => c + 1)}>+</Button>
-    </div>
-  );
-}
-```
-
-## Form with useActionState (React 19 Pattern)
-
-```tsx
-// components/CreateUserForm.tsx
-'use client';
-
 import { useActionState } from 'react';
-import { createUser } from '@/app/actions/user';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { createItem } from '@/app/actions/item';
 
-export function CreateUserForm() {
-  const [state, formAction, isPending] = useActionState(createUser, null);
-
+export function CreateForm() {
+  const [state, action, pending] = useActionState(createItem, null);
+  
   return (
-    <form action={formAction} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="name">Name</Label>
-        <Input id="name" name="name" required disabled={isPending} />
-        {state?.fieldErrors?.name && (
-          <p className="text-sm text-destructive">{state.fieldErrors.name[0]}</p>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" required disabled={isPending} />
-        {state?.fieldErrors?.email && (
-          <p className="text-sm text-destructive">{state.fieldErrors.email[0]}</p>
-        )}
-      </div>
-
-      <Button type="submit" disabled={isPending}>
-        {isPending ? 'Creating...' : 'Create User'}
-      </Button>
-
-      {state?.success && (
-        <p className="text-sm text-green-600">User created successfully!</p>
+    <form action={action}>
+      <input name="name" disabled={pending} />
+      {state?.fieldErrors?.name && (
+        <p className="text-destructive">{state.fieldErrors.name[0]}</p>
       )}
-      {state?.error && !state.fieldErrors && (
-        <p className="text-sm text-destructive">{state.error}</p>
-      )}
+      <button disabled={pending}>
+        {pending ? 'Saving...' : 'Save'}
+      </button>
+      {state?.error && <p className="text-destructive">{state.error}</p>}
     </form>
   );
 }
 ```
 
-## Form with React Hook Form + Zod (Client-side Validation)
+## API Response Handling
 
-```tsx
-// components/UserForm.tsx
-'use client';
+API routes wrap data with `successResponse()`. Always extract `.data`:
 
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-
-const formSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-});
-
-type FormValues = z.infer<typeof formSchema>;
-
-interface UserFormProps {
-  onSubmit: (data: FormValues) => Promise<void>;
-  defaultValues?: Partial<FormValues>;
-}
-
-export function UserForm({ onSubmit, defaultValues }: UserFormProps) {
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: { name: '', email: '', ...defaultValues },
-  });
-
-  return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Name</FormLabel>
-              <FormControl>
-                <Input placeholder="Enter name" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="email"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Email</FormLabel>
-              <FormControl>
-                <Input type="email" placeholder="Enter email" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <Button type="submit" disabled={form.formState.isSubmitting}>
-          {form.formState.isSubmitting ? 'Saving...' : 'Save'}
-        </Button>
-      </form>
-    </Form>
-  );
-}
+```typescript
+const res = await fetch('/api/items');
+const json = await res.json();
+setItems(json.data ?? []);  // Extract .data, default to []
 ```
 
-## Server + Client Composition
+Always initialize useState with proper defaults:
+- Arrays: `useState<Item[]>([])`
+- Objects: `useState<Item | null>(null)`
+- Strings: `useState('')`
+
+## Error Handling for Users
+
+**CRITICAL**: Never silently fail. Always show user-facing error messages.
 
 ```tsx
-// app/users/page.tsx (Server Component)
-import { prisma } from '@/lib/prisma';
-import { UserCard } from '@/components/UserCard';           // Server
-import { DeleteUserButton } from '@/components/DeleteUserButton'; // Client
+'use client';
+import { useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
-export default async function UsersPage() {
-  const users = await prisma.user.findMany();
+export function DataList() {
+  const [items, setItems] = useState<Item[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const res = await fetch('/api/items');
+      if (!res.ok) throw new Error('Failed to fetch items');
+      
+      const json = await res.json();
+      setItems(json.data ?? []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'An error occurred';
+      setError(message);
+      // Optional: toast for non-blocking errors
+      // toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
-    <div className="space-y-4">
-      {users.map((user) => (
-        <div key={user.id} className="flex items-center justify-between p-4 border rounded-lg">
-          <UserCard user={user} />
-          <DeleteUserButton userId={user.id} />
-        </div>
-      ))}
+    <div>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {/* rest of component */}
     </div>
   );
 }
 ```
 
-## Delete Button with useTransition
+**Rules:**
+- Add `error` state alongside data state
+- Show Alert/Banner for blocking errors
+- Use toast (sonner) for non-blocking errors
+- Clear error before new request: `setError(null)`
 
-```tsx
-// components/DeleteUserButton.tsx
-'use client';
+## Component Export Rules
 
-import { useTransition } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
-import { deleteUser } from '@/app/actions/user';
+- **Pages/Layouts**: `export default`
+- **All other components**: Named exports only
 
-interface DeleteUserButtonProps {
-  userId: string;
-}
+NEVER:
+- Use `'use client'` when not needed
+- Guess prop names without reading component file
+- Forget to `await params` in dynamic routes
+- Access array/object props without defensive checks
+- Pass raw API response to useState (extract .data first)
+- Use default exports for non-page components
 
-export function DeleteUserButton({ userId }: DeleteUserButtonProps) {
-  const [isPending, startTransition] = useTransition();
-  const router = useRouter();
-
-  const handleDelete = () => {
-    if (!confirm('Are you sure?')) return;
-    
-    startTransition(async () => {
-      const result = await deleteUser(userId);
-      if (result.success) {
-        router.refresh();
-      }
-    });
-  };
-
-  return (
-    <Button variant="destructive" size="icon" onClick={handleDelete} disabled={isPending}>
-      <Trash2 className="h-4 w-4" />
-    </Button>
-  );
-}
-```
-
-## When to Use 'use client'
-
-| Need | Directive |
-|------|-----------|
-| useState, useEffect, useRef | 'use client' |
-| onClick, onChange, onSubmit | 'use client' |
-| useRouter, usePathname | 'use client' |
-| useActionState, useTransition | 'use client' |
-| localStorage, window | 'use client' |
-| Fetch data from DB | NO directive (Server) |
-| Access env secrets | NO directive (Server) |
-| Static rendering | NO directive (Server) |
+**IMPORTANT**: The directive `'use client'` must be the very first line, before any imports.

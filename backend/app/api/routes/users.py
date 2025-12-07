@@ -1,9 +1,9 @@
 import uuid
 from uuid import UUID
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import func, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlmodel import func, select, or_
 
 from app.api.deps import (
     CurrentUser,
@@ -27,6 +27,12 @@ from app.schemas import (
     CreditWalletPublic,
     UserSubscriptionResponse,
     UpdateAutoRenew,
+    UserAdminPublic,
+    UsersAdminPublic,
+    UserAdminCreate,
+    UserAdminUpdate,
+    BulkUserIds,
+    UserStatsResponse,
 )
 from datetime import datetime, timezone
 
@@ -48,6 +54,33 @@ def user_to_public(user: User) -> UserPublic:
         full_name=user.full_name,
         email=user.email,
         role=user.role,
+    )
+
+
+def user_to_admin_public(user: User) -> UserAdminPublic:
+    """
+    Convert User model to UserAdminPublic schema with extended info.
+
+    Args:
+        user: User model instance
+
+    Returns:
+        UserAdminPublic schema
+    """
+    return UserAdminPublic(
+        id=user.id,
+        username=user.username,
+        full_name=user.full_name,
+        email=user.email,
+        role=user.role,
+        is_active=user.is_active,
+        is_locked=user.is_locked,
+        locked_until=user.locked_until,
+        failed_login_attempts=user.failed_login_attempts,
+        login_provider=user.login_provider,
+        balance=user.balance or 0.0,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
     )
 
 
@@ -468,3 +501,380 @@ def update_auto_renew(
 
     status_text = "enabled" if auto_renew_data.auto_renew else "disabled"
     return Message(message=f"Auto-renew {status_text} successfully")
+
+
+# ==================== ADMIN USER MANAGEMENT ENDPOINTS ====================
+
+
+@router.get(
+    "/admin/list",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=UsersAdminPublic,
+)
+def admin_list_users(
+    session: SessionDep,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    search: Optional[str] = Query(None, description="Search by name, email, or username"),
+    role: Optional[str] = Query(None, description="Filter by role (admin, user)"),
+    status: Optional[str] = Query(None, description="Filter by status (active, inactive, locked)"),
+    order_by: str = Query("created_at", description="Order by field"),
+    order_dir: str = Query("desc", description="Order direction (asc, desc)"),
+) -> Any:
+    """
+    Admin endpoint: List all users with extended information and filters.
+    """
+    # Build base query
+    statement = select(User)
+
+    # Apply search filter
+    if search:
+        search_term = f"%{search}%"
+        statement = statement.where(
+            or_(
+                User.email.ilike(search_term),
+                User.username.ilike(search_term),
+                User.full_name.ilike(search_term),
+            )
+        )
+
+    # Apply role filter
+    if role:
+        if role.lower() == "admin":
+            statement = statement.where(User.role == Role.ADMIN)
+        elif role.lower() == "user":
+            statement = statement.where(User.role == Role.USER)
+
+    # Apply status filter
+    if status:
+        if status.lower() == "active":
+            statement = statement.where(User.is_active == True, User.is_locked == False)
+        elif status.lower() == "inactive":
+            statement = statement.where(User.is_active == False)
+        elif status.lower() == "locked":
+            statement = statement.where(User.is_locked == True)
+
+    # Get total count before pagination
+    count_statement = select(func.count()).select_from(statement.subquery())
+    count = session.exec(count_statement).one()
+
+    # Apply ordering
+    order_column = getattr(User, order_by, User.created_at)
+    if order_dir.lower() == "desc":
+        statement = statement.order_by(order_column.desc())
+    else:
+        statement = statement.order_by(order_column.asc())
+
+    # Apply pagination
+    statement = statement.offset(skip).limit(limit)
+    users = session.exec(statement).all()
+
+    # Convert to admin public schema
+    users_public = [user_to_admin_public(user) for user in users]
+
+    return UsersAdminPublic(data=users_public, count=count)
+
+
+@router.get(
+    "/admin/stats",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=UserStatsResponse,
+)
+def admin_get_user_stats(session: SessionDep) -> Any:
+    """
+    Admin endpoint: Get user statistics for dashboard.
+    """
+    total_users = session.exec(select(func.count()).select_from(User)).one()
+    active_users = session.exec(
+        select(func.count()).select_from(User).where(User.is_active == True, User.is_locked == False)
+    ).one()
+    inactive_users = session.exec(
+        select(func.count()).select_from(User).where(User.is_active == False)
+    ).one()
+    locked_users = session.exec(
+        select(func.count()).select_from(User).where(User.is_locked == True)
+    ).one()
+    admin_users = session.exec(
+        select(func.count()).select_from(User).where(User.role == Role.ADMIN)
+    ).one()
+    regular_users = session.exec(
+        select(func.count()).select_from(User).where(User.role == Role.USER)
+    ).one()
+    users_with_oauth = session.exec(
+        select(func.count()).select_from(User).where(User.login_provider != None)
+    ).one()
+
+    return UserStatsResponse(
+        total_users=total_users,
+        active_users=active_users,
+        inactive_users=inactive_users,
+        locked_users=locked_users,
+        admin_users=admin_users,
+        regular_users=regular_users,
+        users_with_oauth=users_with_oauth,
+    )
+
+
+@router.post(
+    "/admin/create",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=UserAdminPublic,
+)
+def admin_create_user(*, session: SessionDep, user_in: UserAdminCreate) -> Any:
+    """
+    Admin endpoint: Create new user with full control over all fields.
+    """
+    user_service = UserService(session)
+    existing_user = user_service.get_by_email(user_in.email)
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="A user with this email already exists.",
+        )
+
+    # Create user with all admin-controlled fields
+    db_user = User(
+        username=user_in.username,
+        full_name=user_in.full_name,
+        email=user_in.email,
+        hashed_password=get_password_hash(user_in.password),
+        role=user_in.role,
+        is_active=user_in.is_active,
+    )
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
+
+    return user_to_admin_public(db_user)
+
+
+# IMPORTANT: Bulk routes must come BEFORE dynamic {user_id} routes
+@router.post(
+    "/admin/bulk/lock",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=Message,
+)
+def admin_bulk_lock_users(
+    *,
+    session: SessionDep,
+    bulk_data: BulkUserIds,
+    current_user: CurrentUser,
+) -> Message:
+    """
+    Admin endpoint: Lock multiple user accounts at once.
+    """
+    locked_count = 0
+    skipped_count = 0
+
+    for user_id in bulk_data.user_ids:
+        # Skip self
+        if user_id == current_user.id:
+            skipped_count += 1
+            continue
+
+        db_user = session.get(User, user_id)
+        if db_user and not db_user.is_locked:
+            db_user.is_locked = True
+            db_user.locked_until = None
+            session.add(db_user)
+            locked_count += 1
+
+    session.commit()
+
+    return Message(message=f"Locked {locked_count} users. Skipped {skipped_count} users.")
+
+
+@router.post(
+    "/admin/bulk/unlock",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=Message,
+)
+def admin_bulk_unlock_users(
+    *,
+    session: SessionDep,
+    bulk_data: BulkUserIds,
+) -> Message:
+    """
+    Admin endpoint: Unlock multiple user accounts at once.
+    """
+    unlocked_count = 0
+
+    for user_id in bulk_data.user_ids:
+        db_user = session.get(User, user_id)
+        if db_user and db_user.is_locked:
+            db_user.is_locked = False
+            db_user.locked_until = None
+            db_user.failed_login_attempts = 0
+            session.add(db_user)
+            unlocked_count += 1
+
+    session.commit()
+
+    return Message(message=f"Unlocked {unlocked_count} users")
+
+
+@router.delete(
+    "/admin/bulk",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=Message,
+)
+def admin_bulk_delete_users(
+    *,
+    session: SessionDep,
+    bulk_data: BulkUserIds,
+    current_user: CurrentUser,
+) -> Message:
+    """
+    Admin endpoint: Delete multiple users at once.
+    """
+    deleted_count = 0
+    skipped_count = 0
+
+    for user_id in bulk_data.user_ids:
+        # Skip self
+        if user_id == current_user.id:
+            skipped_count += 1
+            continue
+
+        db_user = session.get(User, user_id)
+        if db_user:
+            session.delete(db_user)
+            deleted_count += 1
+
+    session.commit()
+
+    return Message(message=f"Deleted {deleted_count} users. Skipped {skipped_count} users.")
+
+
+# Dynamic {user_id} routes - must come AFTER static/bulk routes
+@router.patch(
+    "/admin/{user_id}",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=UserAdminPublic,
+)
+def admin_update_user(
+    *,
+    session: SessionDep,
+    user_id: uuid.UUID,
+    user_in: UserAdminUpdate,
+    current_user: CurrentUser,
+) -> Any:
+    """
+    Admin endpoint: Update user with full control over all fields including role and status.
+    """
+    db_user = session.get(User, user_id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Prevent admin from demoting themselves
+    if db_user.id == current_user.id and user_in.role == Role.USER:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot change your own role from admin to user",
+        )
+
+    # Check email uniqueness if changing
+    if user_in.email and user_in.email != db_user.email:
+        user_service = UserService(session)
+        existing_user = user_service.get_by_email(user_in.email)
+        if existing_user:
+            raise HTTPException(
+                status_code=409,
+                detail="A user with this email already exists",
+            )
+
+    # Update fields
+    update_data = user_in.model_dump(exclude_unset=True)
+
+    # Handle password separately
+    if "password" in update_data and update_data["password"]:
+        update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
+    elif "password" in update_data:
+        del update_data["password"]
+
+    for field, value in update_data.items():
+        setattr(db_user, field, value)
+
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
+
+    return user_to_admin_public(db_user)
+
+
+@router.post(
+    "/admin/{user_id}/lock",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=Message,
+)
+def admin_lock_user(
+    *,
+    session: SessionDep,
+    user_id: uuid.UUID,
+    current_user: CurrentUser,
+) -> Message:
+    """
+    Admin endpoint: Lock a user account.
+    """
+    db_user = session.get(User, user_id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if db_user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot lock your own account")
+
+    db_user.is_locked = True
+    db_user.locked_until = None  # Indefinite lock by admin
+    session.add(db_user)
+    session.commit()
+
+    return Message(message=f"User {db_user.email} has been locked")
+
+
+@router.post(
+    "/admin/{user_id}/unlock",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=Message,
+)
+def admin_unlock_user(
+    *,
+    session: SessionDep,
+    user_id: uuid.UUID,
+) -> Message:
+    """
+    Admin endpoint: Unlock a user account.
+    """
+    db_user = session.get(User, user_id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db_user.is_locked = False
+    db_user.locked_until = None
+    db_user.failed_login_attempts = 0
+    session.add(db_user)
+    session.commit()
+
+    return Message(message=f"User {db_user.email} has been unlocked")
+
+
+@router.post(
+    "/admin/{user_id}/revoke-sessions",
+    dependencies=[Depends(get_current_active_superuser)],
+    response_model=Message,
+)
+def admin_revoke_user_sessions(
+    *,
+    session: SessionDep,
+    user_id: uuid.UUID,
+) -> Message:
+    """
+    Admin endpoint: Revoke all sessions/tokens for a user.
+    """
+    db_user = session.get(User, user_id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_service = UserService(session)
+    user_service.revoke_all_user_tokens(user_id)
+
+    return Message(message=f"All sessions for {db_user.email} have been revoked")

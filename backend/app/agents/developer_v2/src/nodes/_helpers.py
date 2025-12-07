@@ -1,15 +1,11 @@
 """Shared helper functions for Developer V2 nodes."""
 import logging
-import os
 import re
-import subprocess
 from datetime import datetime
 from pathlib import Path
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools import set_tool_context
-from app.agents.developer_v2.src.tools.filesystem_tools import set_fs_context
-from app.agents.developer_v2.src.tools.shell_tools import set_shell_context
 
 logger = logging.getLogger(__name__)
 
@@ -163,87 +159,9 @@ def analyze_test_output(stdout: str, stderr: str, project_type: str = "") -> dic
     return {"status": "PASS", "summary": "Test execution completed"}
 
 
-def run_with_isolated_db(workspace_path: str, commands: list, timeout_per_cmd: int = 120) -> dict:
-    """Run commands with isolated PostgreSQL container (testcontainers)."""
-    try:
-        from testcontainers.postgres import PostgresContainer
-    except ImportError:
-        logger.warning("[_run_with_isolated_db] testcontainers not installed")
-        return {"status": "SKIP", "stdout": "", "stderr": "testcontainers not installed"}
-    
-    logger.info(f"[_run_with_isolated_db] Starting isolated PostgreSQL container...")
-    
-    try:
-        with PostgresContainer("postgres:16-alpine") as postgres:
-            db_url = postgres.get_connection_url()
-            db_url = db_url.replace("postgresql+psycopg://", "postgresql://")
-            
-            logger.info(f"[_run_with_isolated_db] Container started, DB_URL: {db_url[:50]}...")
-            
-            stdout_all = ""
-            stderr_all = ""
-            status = "PASS"
-            
-            env = os.environ.copy()
-            env["DATABASE_URL"] = db_url
-            
-            for cmd in commands:
-                if not cmd:
-                    continue
-                    
-                logger.info(f"[_run_with_isolated_db] Running: {cmd}")
-                
-                try:
-                    if os.name == "nt":
-                        shell_cmd = ["cmd", "/c", cmd]
-                        use_shell = False
-                    else:
-                        shell_cmd = cmd
-                        use_shell = True
-                    
-                    result = subprocess.run(
-                        shell_cmd,
-                        cwd=workspace_path,
-                        shell=use_shell,
-                        capture_output=True,
-                        text=True,
-                        timeout=timeout_per_cmd,
-                        env=env,
-                    )
-                    
-                    stdout_all += f"\n=== {cmd} ===\n{result.stdout}"
-                    stderr_all += result.stderr
-                    
-                    if result.returncode != 0:
-                        logger.warning(f"[_run_with_isolated_db] Command failed: {cmd}")
-                        if "test" in cmd.lower():
-                            status = "FAIL"
-                            break
-                            
-                except subprocess.TimeoutExpired:
-                    stderr_all += f"\nCommand timed out: {cmd}\n"
-                    logger.error(f"[_run_with_isolated_db] Timeout: {cmd}")
-                    status = "FAIL"
-                    break
-                except Exception as e:
-                    stderr_all += f"\nCommand error: {cmd} - {str(e)}\n"
-                    logger.error(f"[_run_with_isolated_db] Error: {cmd} - {e}")
-            
-            logger.info(f"[_run_with_isolated_db] Completed with status: {status}")
-            return {"status": status, "stdout": stdout_all, "stderr": stderr_all}
-            
-    except Exception as e:
-        logger.error(f"[_run_with_isolated_db] Container error: {e}", exc_info=True)
-        return {"status": "ERROR", "stdout": "", "stderr": f"Container error: {str(e)}"}
-
-
 def setup_tool_context(workspace_path: str = None, project_id: str = None, task_id: str = None):
     """Set global context for all tools before agent invocation."""
-    if workspace_path:
-        set_fs_context(root_dir=workspace_path)
-        set_shell_context(root_dir=workspace_path)
-    if project_id:
-        set_tool_context(project_id=project_id, task_id=task_id, workspace_path=workspace_path)
+    set_tool_context(root_dir=workspace_path, project_id=project_id, task_id=task_id)
 
 
 def get_langfuse_span(state: DeveloperState, name: str, input_data: dict = None):

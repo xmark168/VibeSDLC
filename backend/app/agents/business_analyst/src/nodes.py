@@ -29,14 +29,34 @@ from app.agents.core.prompt_utils import (
 from app.core.db import engine
 from app.models import AgentQuestion, Epic, Story, StoryStatus, StoryType, EpicStatus, ArtifactType
 from app.services.artifact_service import ArtifactService
+from app.kafka import KafkaTopics, get_kafka_producer
+from app.kafka.event_schemas import AgentEvent
 
 logger = logging.getLogger(__name__)
 
 # LLM instances (shared, like Team Leader)
 # Using same model naming as team_leader (claude-haiku/sonnet without prefix)
-_fast_llm = ChatOpenAI(model="gpt-4.1", temperature=0.1, timeout=30)
-_default_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=90)
-_story_llm = ChatOpenAI(model="gpt-4.1", temperature=0.7, timeout=180)
+_fast_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.1, timeout=30)
+_default_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.3, timeout=90)
+_story_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.3, timeout=180)
+
+# Categories for clarity check (used in check_clarity and analyze_domain)
+REQUIRED_CATEGORIES = {
+    "target_users": [
+        "khách hàng", "người dùng", "đối tượng", "ai sẽ dùng", "ai dùng",
+        "cá nhân", "mình tôi", "chỉ mình", "một mình", "cho ai", "dùng cho",
+        "sử dụng cho", "ai sử dụng", "người sử dụng", "dùng cho ai",
+        "chia sẻ", "đồng nghiệp", "gia đình", "bạn bè", "nhóm", "team"
+    ],
+    "main_features": ["tính năng", "chức năng", "website cần có", "cần có gì"],
+    "risks": ["lo ngại", "thách thức", "rủi ro", "khó khăn", "lo lắng", "bảo mật"],
+}
+
+OPTIONAL_CATEGORIES = {
+    "business_model": ["kiếm tiền", "thu nhập", "doanh thu", "mô hình"],
+    "priorities": ["ưu tiên", "quan trọng nhất", "quan trọng"],
+    "details": ["thanh toán", "giao hàng", "chi tiết"],
+}
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -55,6 +75,50 @@ def _user_prompt(task: str, **kwargs) -> str:
     # Extract user_message from kwargs if present, otherwise use empty string
     user_message = kwargs.pop("user_message", "")
     return _build_user_prompt(PROMPTS, task, user_message, **kwargs)
+
+
+def _save_interview_state_to_question(
+    session: Session,
+    question_id,
+    interview_state: dict,
+    verify: bool = False
+) -> bool:
+    """Save interview state to question's task_context for resume.
+    
+    Args:
+        session: SQLModel session
+        question_id: UUID of the question to update
+        interview_state: Interview state dict to save
+        verify: If True, refresh and verify the save
+        
+    Returns:
+        True if saved successfully
+    """
+    question = session.get(AgentQuestion, question_id)
+    if not question:
+        logger.error(f"[BA] Question {question_id} not found in database")
+        return False
+    
+    existing_context = question.task_context or {}
+    question.task_context = {
+        **existing_context,
+        "interview_state": interview_state
+    }
+    flag_modified(question, "task_context")
+    session.add(question)
+    session.commit()
+    
+    if verify:
+        session.refresh(question)
+        saved_state = question.task_context.get("interview_state") if question.task_context else None
+        if saved_state:
+            logger.info(f"[BA] Verified interview state saved to question {question_id}")
+            return True
+        else:
+            logger.error(f"[BA] Interview state NOT saved to question {question_id}!")
+            return False
+    
+    return True
 
 
 async def _generate_completion_message(
@@ -258,38 +322,14 @@ async def ask_one_question(state: BAState, agent=None) -> dict:
         
         # Save interview state to question's task_context for resume
         with Session(engine) as session:
-            question = session.get(AgentQuestion, question_id)
-            if question:
-                # Update task_context with interview state
-                # IMPORTANT: Create new dict to ensure SQLAlchemy detects the change
-                existing_context = question.task_context or {}
-                new_task_context = {
-                    **existing_context,
-                    "interview_state": {
-                        "questions": questions,
-                        "current_question_index": current_index,
-                        "collected_answers": state.get("collected_answers", []),
-                        "collected_info": state.get("collected_info", {}),
-                        "user_message": state.get("user_message", ""),  # Save original request for PRD generation
-                    }
-                }
-                question.task_context = new_task_context
-                # Explicitly mark the JSON field as modified so SQLAlchemy persists it
-                flag_modified(question, "task_context")
-                session.add(question)
-                session.commit()
-                
-                # Verify the save was successful by re-reading from DB
-                session.refresh(question)
-                saved_state = question.task_context.get("interview_state") if question.task_context else None
-                if saved_state:
-                    logger.info(f"[BA] Verified interview state saved to question {question_id} "
-                               f"(current_index={saved_state.get('current_question_index')}, "
-                               f"questions_count={len(saved_state.get('questions', []))})")
-                else:
-                    logger.error(f"[BA] Interview state NOT saved to question {question_id}! task_context={question.task_context}")
-            else:
-                logger.error(f"[BA] Failed to find question {question_id} in database to save interview state!")
+            interview_state = {
+                "questions": questions,
+                "current_question_index": current_index,
+                "collected_answers": state.get("collected_answers", []),
+                "collected_info": state.get("collected_info", {}),
+                "user_message": state.get("user_message", ""),
+            }
+            _save_interview_state_to_question(session, question_id, interview_state, verify=True)
         
         logger.info(f"[BA] Question {current_index + 1} sent, waiting for answer...")
         
@@ -352,25 +392,16 @@ async def ask_batch_questions(state: BAState, agent=None) -> dict:
             first_question = session.get(AgentQuestion, question_ids[0])
             if first_question and first_question.task_context:
                 batch_id = first_question.task_context.get("batch_id")
-                
-                # Update task_context with interview state
-                existing_context = first_question.task_context or {}
-                new_task_context = {
-                    **existing_context,
-                    "interview_state": {
-                        "questions": questions,
-                        "question_ids": [str(qid) for qid in question_ids],
-                        "collected_info": state.get("collected_info", {}),
-                        "user_message": state.get("user_message", ""),  # Save original request for PRD generation
-                        "research_loop_count": state.get("research_loop_count", 0),  # Track research loops
-                    }
-                }
-                first_question.task_context = new_task_context
-                flag_modified(first_question, "task_context")
-                session.add(first_question)
-                session.commit()
-                
-                logger.info(f"[BA] Saved interview state to batch (batch_id={batch_id}, questions={len(questions)})")
+            
+            interview_state = {
+                "questions": questions,
+                "question_ids": [str(qid) for qid in question_ids],
+                "collected_info": state.get("collected_info", {}),
+                "user_message": state.get("user_message", ""),
+                "research_loop_count": state.get("research_loop_count", 0),
+            }
+            _save_interview_state_to_question(session, question_ids[0], interview_state)
+            logger.info(f"[BA] Saved interview state to batch (batch_id={batch_id}, questions={len(questions)})")
         
         logger.info(f"[BA] All {len(questions)} questions sent in batch, waiting for answers...")
         
@@ -589,9 +620,96 @@ async def update_prd(state: BAState, agent=None) -> dict:
         }
 
 
+async def _generate_stories_for_epic(
+    epic: dict, 
+    prd: dict, 
+    all_epic_ids: list, 
+    state: BAState, 
+    agent=None
+) -> dict:
+    """Generate stories for a single Epic (used in parallel batch processing)."""
+    epic_id = epic.get("id", "EPIC-???")
+    epic_title = epic.get("title", "Unknown")
+    
+    logger.info(f"[BA] Generating stories for Epic: {epic_title}")
+    
+    # Find related features from PRD
+    feature_refs = epic.get("feature_refs", [])
+    prd_features = []
+    for feature in prd.get("features", []):
+        if feature.get("name") in feature_refs:
+            prd_features.append(feature)
+    
+    # If no feature_refs matched, include all features for this epic
+    if not prd_features:
+        prd_features = prd.get("features", [])
+    
+    system_prompt = _sys_prompt(agent, "generate_stories_for_epic")
+    user_prompt = _user_prompt(
+        "generate_stories_for_epic",
+        epic_id=epic_id,
+        epic_title=epic_title,
+        epic_domain=epic.get("domain", "General"),
+        epic_description=epic.get("description", ""),
+        prd_features=json.dumps(prd_features, ensure_ascii=False, indent=2),
+        all_epic_ids=", ".join(all_epic_ids)
+    )
+    
+    try:
+        logger.info(f"[BA] Calling LLM for Epic '{epic_title}' with {len(prd_features)} features")
+        
+        response = await _story_llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config=_cfg(state, f"generate_stories_{epic_id}")
+        )
+        
+        logger.info(f"[BA] LLM response for Epic '{epic_title}': {len(response.content)} chars")
+        logger.debug(f"[BA] Response preview: {response.content[:500]}...")
+        
+        result = parse_stories_response(response.content)
+        logger.info(f"[BA] Parsed result keys for Epic '{epic_title}': {list(result.keys())}")
+        
+        # parse_stories_response returns {"epics": [...]} format
+        # For single epic generation, stories are inside the first epic
+        stories = []
+        if "epics" in result and result["epics"]:
+            # Get stories from the first (and only) epic in the response
+            first_epic = result["epics"][0]
+            stories = first_epic.get("stories", [])
+            logger.info(f"[BA] Found {len(stories)} stories in epics[0] for Epic '{epic_title}'")
+        elif "stories" in result:
+            # Direct stories format (fallback)
+            stories = result.get("stories", [])
+            logger.info(f"[BA] Found {len(stories)} stories directly for Epic '{epic_title}'")
+        else:
+            logger.warning(f"[BA] No stories found in result for Epic '{epic_title}': {result}")
+        
+        # Add epic info to each story
+        for story in stories:
+            story["epic_id"] = epic_id
+            story["epic_title"] = epic_title
+        
+        logger.info(f"[BA] Generated {len(stories)} stories for Epic '{epic_title}'")
+        return {"epic_id": epic_id, "stories": stories}
+        
+    except Exception as e:
+        logger.error(f"[BA] Failed to generate stories for Epic '{epic_title}': {e}")
+        return {"epic_id": epic_id, "stories": [], "error": str(e)}
+
+
 async def extract_stories(state: BAState, agent=None) -> dict:
-    """Node: Extract epics with INVEST-compliant user stories from PRD."""
-    logger.info(f"[BA] Extracting epics and user stories...")
+    """Node: Extract epics with INVEST-compliant user stories from PRD.
+    
+    Uses BATCH PROCESSING for better performance:
+    - Phase 1: Extract Epics only (fast, ~5s)
+    - Phase 2: Generate stories for each Epic in PARALLEL (~15s total instead of ~60s)
+    """
+    import asyncio
+    
+    logger.info(f"[BA] Extracting epics and user stories (batch mode)...")
     
     prd = state.get("prd_draft") or state.get("existing_prd", {})
     
@@ -603,6 +721,107 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             "error": "No PRD available. Please create a PRD first."
         }
     
+    # Check if PRD is simple (few features) - use single call instead of batch
+    features_count = len(prd.get("features", []))
+    use_batch = features_count >= 3  # Use batch for 3+ features
+    
+    if not use_batch:
+        # Simple PRD - use single call (original method)
+        logger.info(f"[BA] Using single-call mode for simple PRD ({features_count} features)")
+        return await _extract_stories_single_call(state, agent, prd)
+    
+    logger.info(f"[BA] Using batch mode for complex PRD ({features_count} features)")
+    
+    try:
+        # =============================================
+        # PHASE 1: Extract Epics only (fast call ~5s)
+        # =============================================
+        logger.info("[BA] Phase 1: Extracting Epics structure...")
+        
+        system_prompt = _sys_prompt(agent, "extract_epics_only")
+        user_prompt = _user_prompt(
+            "extract_epics_only",
+            prd=json.dumps(prd, ensure_ascii=False, indent=2)
+        )
+        
+        response = await _fast_llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config=_cfg(state, "extract_epics_only")
+        )
+        
+        epics_result = parse_stories_response(response.content)
+        epics = epics_result.get("epics", [])
+        
+        if not epics:
+            logger.warning("[BA] No epics extracted, falling back to single call")
+            return await _extract_stories_single_call(state, agent, prd)
+        
+        logger.info(f"[BA] Phase 1 complete: {len(epics)} Epics extracted")
+        
+        # =============================================
+        # PHASE 2: Generate stories for each Epic IN PARALLEL
+        # =============================================
+        logger.info(f"[BA] Phase 2: Generating stories for {len(epics)} Epics in parallel...")
+        
+        all_epic_ids = [epic.get("id", "") for epic in epics]
+        
+        # Use semaphore to limit concurrent LLM calls (avoid rate limiting)
+        MAX_CONCURRENT_LLM_CALLS = 2
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_LLM_CALLS)
+        
+        async def _generate_with_semaphore(epic):
+            async with semaphore:
+                return await _generate_stories_for_epic(epic, prd, all_epic_ids, state, agent)
+        
+        # Create tasks with rate limiting
+        tasks = [_generate_with_semaphore(epic) for epic in epics]
+        
+        # Run tasks (max 2 concurrent at a time)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Collect all stories and update epics
+        all_stories = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"[BA] Error generating stories for Epic {i}: {result}")
+                continue
+            
+            epic_id = result.get("epic_id")
+            stories = result.get("stories", [])
+            
+            # Find and update the epic with its stories
+            for epic in epics:
+                if epic.get("id") == epic_id:
+                    epic["stories"] = stories
+                    break
+            
+            # Add to flat list
+            all_stories.extend(stories)
+        
+        total_epics = len(epics)
+        total_stories = len(all_stories)
+        logger.info(f"[BA] Batch extraction complete: {total_epics} epics with {total_stories} stories")
+        
+        # If batch mode generated no stories, fall back to single call
+        if total_stories == 0 and total_epics > 0:
+            logger.warning(f"[BA] Batch mode generated 0 stories for {total_epics} epics, falling back to single call")
+            return await _extract_stories_single_call(state, agent, prd)
+        
+        return {
+            "epics": epics,
+            "stories": all_stories
+        }
+        
+    except Exception as e:
+        logger.error(f"[BA] Batch extraction failed: {e}, falling back to single call")
+        return await _extract_stories_single_call(state, agent, prd)
+
+
+async def _extract_stories_single_call(state: BAState, agent, prd: dict) -> dict:
+    """Original single-call story extraction (fallback for simple PRDs)."""
     system_prompt = _sys_prompt(agent, "extract_stories")
     user_prompt = _user_prompt(
         "extract_stories",
@@ -610,7 +829,6 @@ async def extract_stories(state: BAState, agent=None) -> dict:
     )
     
     try:
-        # Use _story_llm with longer timeout for complex story extraction
         response = await _story_llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
@@ -619,35 +837,20 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             config=_cfg(state, "extract_stories")
         )
         
-        # Debug: log raw response length
-        logger.info(f"[BA] LLM response length: {len(response.content)} chars")
-        logger.debug(f"[BA] LLM response preview: {response.content[:500]}...")
-        
         result = parse_stories_response(response.content)
         epics = result.get("epics", [])
-        
-        # Debug: log parsed result
-        logger.info(f"[BA] Parsed epics count: {len(epics)}")
-        if not epics:
-            logger.warning(f"[BA] No epics parsed! Response preview: {response.content[:1000]}")
         
         # Flatten stories for backward compatibility
         all_stories = []
         for epic in epics:
             stories_in_epic = epic.get("stories", [])
             epic_title = epic.get("title", epic.get("name", "Unknown"))
-            logger.info(f"[BA] Epic '{epic_title}' has {len(stories_in_epic)} stories")
             for story in stories_in_epic:
                 story["epic_id"] = epic.get("id")
                 story["epic_title"] = epic_title
-                # Log story details including priority and story_point
-                logger.info(f"[BA] Extracted story: '{story.get('title', '')[:50]}' - priority={story.get('priority')}, story_point={story.get('story_point')}")
-                logger.info(f"[BA] Story keys from LLM: {list(story.keys())}")
                 all_stories.append(story)
         
-        total_epics = len(epics)
-        total_stories = len(all_stories)
-        logger.info(f"[BA] Extracted {total_epics} epics with {total_stories} user stories")
+        logger.info(f"[BA] Single-call extraction: {len(epics)} epics, {len(all_stories)} stories")
         
         return {
             "epics": epics,
@@ -721,7 +924,7 @@ async def update_stories(state: BAState, agent=None) -> dict:
 
 
 async def approve_stories(state: BAState, agent=None) -> dict:
-    """Node: Approve stories and save them to database."""
+    """Node: Approve stories and save them to database (batch operation)."""
     logger.info(f"[BA] Approving stories and saving to database...")
     
     epics_data = state.get("epics", [])
@@ -737,32 +940,39 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         created_epics = []
         created_stories = []
         epic_id_map = {}  # Map string ID (EPIC-001) to UUID
+        story_id_map = {}  # Map string ID (EPIC-001-US-001) to actual UUID
         
         with Session(engine) as session:
-            # 1. Create Epics first
+            # 1. Create all Epics at once
+            epic_objects = []
             for epic_data in epics_data:
+                epic_string_id = epic_data.get("id", "")  # e.g., "EPIC-001"
                 epic = Epic(
+                    epic_code=epic_string_id if epic_string_id else None,  # Save epic code
                     title=epic_data.get("title", epic_data.get("name", "Unknown Epic")),
                     description=epic_data.get("description"),
                     domain=epic_data.get("domain"),
                     project_id=agent.project_id,
                     epic_status=EpicStatus.PLANNED
                 )
+                epic_objects.append((epic, epic_string_id))
                 session.add(epic)
-                session.flush()  # Get the UUID
-                
-                # Map string ID to UUID
-                string_id = epic_data.get("id", "")
+            
+            # Single flush for all epics
+            session.flush()
+            
+            # Build epic ID map after flush
+            for epic, string_id in epic_objects:
                 epic_id_map[string_id] = epic.id
                 created_epics.append({
                     "id": str(epic.id),
                     "title": epic.title,
                     "domain": epic.domain
                 })
-                logger.info(f"[BA] Created Epic: {epic.title} (id={epic.id})")
             
-            # 2. Create Stories linked to their Epics
-            # Get current max rank for TODO stories
+            logger.info(f"[BA] Created {len(created_epics)} epics in batch")
+            
+            # 2. Create all Stories at once
             max_rank_result = session.exec(
                 select(func.max(Story.rank)).where(
                     Story.project_id == agent.project_id,
@@ -771,49 +981,64 @@ async def approve_stories(state: BAState, agent=None) -> dict:
             ).one()
             current_rank = (max_rank_result or 0)
             
+            story_objects = []  # (story, string_id, original_deps)
             for story_data in stories_data:
-                # Get the epic UUID from the string ID
                 epic_string_id = story_data.get("epic_id", "")
                 epic_uuid = epic_id_map.get(epic_string_id)
-                
-                # Get acceptance criteria list (keep as list for JSON storage)
-                acceptance_criteria = story_data.get("acceptance_criteria", [])
-                
-                # Get requirements list (keep as list for JSON storage)
-                requirements = story_data.get("requirements", [])
-                
-                # Auto-increment rank for ordering
                 current_rank += 1
-                
-                # Get priority and story_point from LLM
-                priority = story_data.get("priority")
-                story_point = story_data.get("story_point")
-                logger.info(f"[BA] Creating story: '{story_data.get('title', '')[:50]}' - priority={priority}, story_point={story_point}, epic_id={epic_string_id}")
-                logger.info(f"[BA] Story data keys: {list(story_data.keys())}")
+                story_string_id = story_data.get("id", "")  # e.g., "EPIC-001-US-001"
+                original_dependencies = story_data.get("dependencies", [])
                 
                 story = Story(
+                    story_code=story_string_id if story_string_id else None,  # Save story code
                     title=story_data.get("title", "Unknown Story"),
                     description=story_data.get("description"),
-                    acceptance_criteria=acceptance_criteria,
-                    requirements=requirements,
+                    acceptance_criteria=story_data.get("acceptance_criteria", []),
+                    requirements=story_data.get("requirements", []),
                     project_id=agent.project_id,
                     epic_id=epic_uuid,
                     status=StoryStatus.TODO,
                     type=StoryType.USER_STORY,
-                    priority=priority,
-                    story_point=story_point,
+                    priority=story_data.get("priority"),
+                    story_point=story_data.get("story_point"),
                     rank=current_rank,
+                    dependencies=[],
                 )
+                story_objects.append((story, story_string_id, original_dependencies))
                 session.add(story)
-                session.flush()
-                
+            
+            # Single flush for all stories
+            session.flush()
+            
+            # Build story ID map and created_stories list after flush
+            for story, string_id, _ in story_objects:
+                story_id_map[string_id] = str(story.id)
                 created_stories.append({
                     "id": str(story.id),
+                    "string_id": string_id,
                     "title": story.title,
-                    "epic_id": str(epic_uuid) if epic_uuid else None
+                    "epic_id": str(story.epic_id) if story.epic_id else None
                 })
-                logger.info(f"[BA] Created Story: {story.title} (id={story.id})")
             
+            logger.info(f"[BA] Created {len(created_stories)} stories in batch")
+            
+            # 3. Resolve dependencies (no additional flush needed, just update objects)
+            deps_resolved = 0
+            for story, _, original_deps in story_objects:
+                if original_deps:
+                    resolved_deps = [
+                        story_id_map[dep_id] 
+                        for dep_id in original_deps 
+                        if dep_id in story_id_map
+                    ]
+                    if resolved_deps:
+                        story.dependencies = resolved_deps
+                        deps_resolved += 1
+            
+            if deps_resolved:
+                logger.info(f"[BA] Resolved dependencies for {deps_resolved} stories")
+            
+            # Single commit for everything
             session.commit()
         
         logger.info(f"[BA] Saved {len(created_epics)} epics and {len(created_stories)} stories to database")
@@ -828,25 +1053,6 @@ async def approve_stories(state: BAState, agent=None) -> dict:
     except Exception as e:
         logger.error(f"[BA] Failed to save stories to database: {e}", exc_info=True)
         return {"error": f"Failed to save stories: {str(e)}"}
-
-
-# Categories for clarity check
-REQUIRED_CATEGORIES = {
-    "target_users": [
-        "khách hàng", "người dùng", "đối tượng", "ai sẽ dùng", "ai dùng",
-        "cá nhân", "mình tôi", "chỉ mình", "một mình", "cho ai", "dùng cho",
-        "sử dụng cho", "ai sử dụng", "người sử dụng", "dùng cho ai",
-        "chia sẻ", "đồng nghiệp", "gia đình", "bạn bè", "nhóm", "team"
-    ],
-    "main_features": ["tính năng", "chức năng", "website cần có", "cần có gì"],
-    "risks": ["lo ngại", "thách thức", "rủi ro", "khó khăn", "lo lắng", "bảo mật"],
-}
-
-OPTIONAL_CATEGORIES = {
-    "business_model": ["kiếm tiền", "thu nhập", "doanh thu", "mô hình"],
-    "priorities": ["ưu tiên", "quan trọng nhất", "quan trọng"],
-    "details": ["thanh toán", "giao hàng", "chi tiết"],
-}
 
 
 def check_clarity(state: BAState) -> dict:
@@ -974,16 +1180,20 @@ QUAN TRỌNG:
 - KHÔNG hỏi lại những gì user đã trả lời
 - Nếu tất cả categories đã có thông tin, trả về questions: []
 
+**LUÔN DÙNG MULTICHOICE** để user dễ trả lời nhanh:
+- Tất cả câu hỏi PHẢI là "type": "multichoice" với options
+- Luôn thêm option cuối: "Khác (vui lòng mô tả)"
+
 Return JSON format:
 ```json
 {{
   "questions": [
     {{
-      "text": "Câu hỏi cụ thể khác với những gì đã hỏi?",
+      "text": "Câu hỏi về rủi ro/lo ngại?",
       "type": "multichoice",
-      "options": ["Option 1", "Option 2", "Khác"],
+      "options": ["Lo ngại 1", "Lo ngại 2", "Khác (vui lòng mô tả)"],
       "allow_multiple": true,
-      "category": "category_name"
+      "category": "risks"
     }}
   ]
 }}
@@ -1018,6 +1228,134 @@ Return JSON format:
         }
 
 
+async def _save_prd_artifact(state: BAState, agent, project_files) -> dict:
+    """Save PRD to database and file system.
+    
+    Returns:
+        dict with prd_artifact_id, prd_saved, summary, next_steps, error
+    """
+    result = {"prd_artifact_id": None, "prd_saved": False, "summary": "", "next_steps": [], "error": None}
+    prd_data = state.get("prd_draft")
+    
+    if not prd_data or not agent:
+        return result
+    
+    try:
+        project_name = prd_data.get("project_name", "Project")
+        
+        # Save to Artifact table
+        with Session(engine) as session:
+            service = ArtifactService(session)
+            artifact = service.create_artifact(
+                project_id=agent.project_id,
+                agent_id=agent.agent_id,
+                agent_name=agent.name,
+                artifact_type=ArtifactType.PRD,
+                title=project_name,
+                content=prd_data,
+                description=f"PRD for {project_name}",
+                save_to_file=False
+            )
+            result["prd_artifact_id"] = str(artifact.id)
+        
+        # Save markdown for human reading
+        if project_files:
+            await project_files.save_prd(prd_data)
+        
+        result["prd_saved"] = True
+        result["summary"] = f"PRD '{project_name}' saved successfully"
+        result["next_steps"] = ["Review PRD document", "Approve to create user stories", "Or request edits"]
+        
+        # Send message to user
+        is_update = bool(state.get("change_summary"))
+        task_type = "prd_updated" if is_update else "prd_created"
+        context = f"Đã cập nhật PRD cho dự án '{project_name}'" if is_update else f"Đã tạo xong PRD cho dự án '{project_name}'"
+        next_step = "User cần review lại và cho biết còn gì cần chỉnh không" if is_update else "User cần xem qua và phê duyệt để tạo user stories"
+        fallback = f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝" if is_update else f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi!"
+        
+        message_content = await _generate_completion_message(state, agent, task_type, context, next_step, fallback)
+        await agent.message_user(
+            event_type="response",
+            content=message_content,
+            details={"message_type": "prd_created", "file_path": "docs/prd.md", "title": project_name, "artifact_id": result["prd_artifact_id"]}
+        )
+        
+        logger.info(f"[BA] PRD saved: {project_name} (artifact_id={result['prd_artifact_id']})")
+        
+    except Exception as e:
+        logger.error(f"[BA] Failed to save PRD: {e}", exc_info=True)
+        result["error"] = f"Failed to save PRD: {str(e)}"
+    
+    return result
+
+
+async def _save_stories_artifact(state: BAState, agent, project_files) -> dict:
+    """Save stories to database and file system.
+    
+    Returns:
+        dict with stories_artifact_id, stories_saved, summary, next_steps, error
+    """
+    result = {"stories_artifact_id": None, "stories_saved": False, "summary": "", "next_steps": [], "error": None}
+    
+    epics_data = state.get("epics", [])
+    stories_data = state.get("stories", [])
+    is_stories_approved = state.get("stories_approved", False) or bool(state.get("created_epics"))
+    intent = state.get("intent", "")
+    is_story_intent = intent in ["extract_stories", "stories_update", "update_stories"]
+    
+    if not (epics_data or stories_data) or not project_files or is_stories_approved or not is_story_intent:
+        return result
+    
+    try:
+        await project_files.save_user_stories(epics_data, stories_data)
+        result["stories_saved"] = True
+        
+        epics_count = len(epics_data)
+        stories_count = len(stories_data)
+        
+        # Save to Artifact table
+        if agent:
+            with Session(engine) as session:
+                service = ArtifactService(session)
+                artifact_content = {"epics": epics_data, "stories": stories_data, "epics_count": epics_count, "stories_count": stories_count}
+                artifact = service.create_artifact(
+                    project_id=agent.project_id,
+                    agent_id=agent.agent_id,
+                    agent_name=agent.name,
+                    artifact_type=ArtifactType.USER_STORIES,
+                    title="User Stories",
+                    content=artifact_content,
+                    description=f"{epics_count} epics with {stories_count} stories",
+                    save_to_file=False
+                )
+                result["stories_artifact_id"] = str(artifact.id)
+        
+        result["summary"] = f"Extracted {epics_count} epics with {stories_count} INVEST-compliant stories"
+        result["next_steps"] = ["Review epics and prioritize stories", "Approve to add to backlog"]
+        
+        # Send message to user
+        if agent:
+            stories_message = await _generate_completion_message(
+                state, agent, "stories_created",
+                f"Đã tạo {stories_count} User Stories từ {epics_count} Epics",
+                "User cần review và phê duyệt để đưa vào backlog",
+                f"Xong rồi! 🚀 Mình đã tạo '{stories_count} User Stories' từ PRD."
+            )
+            await agent.message_user(
+                event_type="response",
+                content=stories_message,
+                details={"message_type": "stories_created", "file_path": "docs/user-stories.md", "epics_count": epics_count, "stories_count": stories_count, "status": "pending"}
+            )
+        
+        logger.info(f"[BA] Saved {epics_count} epics with {stories_count} user stories (pending approval)")
+        
+    except Exception as e:
+        logger.error(f"[BA] Failed to save stories: {e}", exc_info=True)
+        result["error"] = f"Failed to save stories: {str(e)}"
+    
+    return result
+
+
 async def save_artifacts(state: BAState, agent=None) -> dict:
     """Node: Save PRD/stories to database and file system."""
     logger.info(f"[BA] Saving artifacts...")
@@ -1031,165 +1369,37 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
     
     project_files = agent.project_files if agent else None
     
-    # Save PRD if exists
-    if state.get("prd_draft") and agent:
-        try:
-            prd_data = state["prd_draft"]
-            project_name = prd_data.get("project_name", "Project")
-            
-            # Save to Artifact table
-            with Session(engine) as session:
-                service = ArtifactService(session)
-                artifact = service.create_artifact(
-                    project_id=agent.project_id,
-                    agent_id=agent.agent_id,
-                    agent_name=agent.name,
-                    artifact_type=ArtifactType.PRD,
-                    title=project_name,
-                    content=prd_data,
-                    description=f"PRD for {project_name}",
-                    save_to_file=False  # We save our own markdown
-                )
-                result["prd_artifact_id"] = str(artifact.id)
-            
-            # Also save markdown for human reading
-            if project_files:
-                await project_files.save_prd(prd_data)
-            
-            result["prd_saved"] = True
-            result["summary"] = f"PRD '{project_name}' saved successfully"
-            result["next_steps"].extend([
-                "Review PRD document",
-                "Approve to create user stories",
-                "Or request edits"
-            ])
-            
-            # Send message with View button (different text for create vs update)
-            is_update = bool(state.get("change_summary"))
-            if is_update:
-                message_content = await _generate_completion_message(
-                    state, agent,
-                    task_type="prd_updated",
-                    context=f"Đã cập nhật PRD cho dự án '{project_name}' theo feedback của user",
-                    next_step="User cần review lại và cho biết còn gì cần chỉnh không",
-                    fallback=f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝 Bạn xem lại và cho mình biết còn gì cần chỉnh sửa không"
-                )
-            else:
-                message_content = await _generate_completion_message(
-                    state, agent,
-                    task_type="prd_created",
-                    context=f"Đã tạo xong PRD cho dự án '{project_name}'",
-                    next_step="User cần xem qua và phê duyệt để tạo user stories",
-                    fallback=f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi! Bạn xem qua và phê duyệt để mình tạo user stories nhé~"
-                )
-            
-            if agent:
-                await agent.message_user(
-                    event_type="response",
-                    content=message_content,
-                    details={
-                        "message_type": "prd_created",
-                        "file_path": "docs/prd.md",
-                        "title": project_name,
-                        "artifact_id": result["prd_artifact_id"]
-                    }
-                )
-            
-            logger.info(f"[BA] PRD saved: {project_name} (artifact_id={result['prd_artifact_id']}")
-            
-        except Exception as e:
-            logger.error(f"[BA] Failed to save PRD: {e}", exc_info=True)
-            result["error"] = f"Failed to save PRD: {str(e)}"
+    # Save PRD using helper
+    prd_result = await _save_prd_artifact(state, agent, project_files)
+    if prd_result.get("prd_saved"):
+        result.update({
+            "prd_artifact_id": prd_result["prd_artifact_id"],
+            "prd_saved": True,
+            "summary": prd_result["summary"],
+        })
+        result["next_steps"].extend(prd_result["next_steps"])
+    if prd_result.get("error"):
+        result["error"] = prd_result["error"]
     
-    # Save epics and stories if exist (only for extract_stories/update_stories, not approve or prd_update)
-    epics_data = state.get("epics", [])
-    stories_data = state.get("stories", [])
-    # Check if stories were approved (either by stories_approved flag or by presence of created_epics)
-    is_stories_approved = state.get("stories_approved", False) or bool(state.get("created_epics"))
-    # Only process stories for story-related intents (not prd_create, prd_update, etc.)
-    intent = state.get("intent", "")
-    is_story_intent = intent in ["extract_stories", "stories_update", "update_stories"]
-    
-    logger.info(f"[BA] save_artifacts: epics_count={len(epics_data)}, stories_count={len(stories_data)}, is_approved={is_stories_approved}, intent={intent}")
-    
-    # Only save markdown and send stories_created message for extract_stories/update_stories (not approve or prd_update)
-    if (epics_data or stories_data) and project_files and not is_stories_approved and is_story_intent:
-        try:
-            # Save with epic structure to markdown
-            await project_files.save_user_stories(epics_data, stories_data)
-            result["stories_saved"] = True
-            
-            epics_count = len(epics_data)
-            stories_count = len(stories_data)
-            
-            # Also save to Artifact table for later retrieval (for approval flow)
-            if agent:
-                try:
-                    logger.info(f"[BA] Saving stories artifact for project_id={agent.project_id}")
-                    with Session(engine) as session:
-                        service = ArtifactService(session)
-                        # Store epics with their stories inside
-                        artifact_content = {
-                            "epics": epics_data,
-                            "stories": stories_data,
-                            "epics_count": epics_count,
-                            "stories_count": stories_count
-                        }
-                        # Log first story to verify priority/story_point
-                        if stories_data:
-                            first_story = stories_data[0]
-                            logger.info(f"[BA] Saving artifact - first story keys: {list(first_story.keys())}")
-                            logger.info(f"[BA] Saving artifact - first story priority={first_story.get('priority')}, story_point={first_story.get('story_point')}")
-                        artifact = service.create_artifact(
-                            project_id=agent.project_id,
-                            agent_id=agent.agent_id,
-                            agent_name=agent.name,
-                            artifact_type=ArtifactType.USER_STORIES,
-                            title="User Stories",
-                            content=artifact_content,
-                            description=f"{epics_count} epics with {stories_count} stories",
-                            save_to_file=False
-                        )
-                        result["stories_artifact_id"] = str(artifact.id)
-                        logger.info(f"[BA] Saved stories artifact: {artifact.id} for project {agent.project_id}")
-                except Exception as artifact_err:
-                    logger.error(f"[BA] Failed to save stories artifact: {artifact_err}", exc_info=True)
-            
-            result["summary"] = f"Extracted {epics_count} epics with {stories_count} INVEST-compliant stories"
-            result["next_steps"].extend([
-                "Review epics and prioritize stories",
-                "Approve to add to backlog"
-            ])
-            
-            # Send success message with View button (pending approval)
-            if agent:
-                stories_message = await _generate_completion_message(
-                    state, agent,
-                    task_type="stories_created",
-                    context=f"Đã tạo {stories_count} User Stories từ {epics_count} Epics",
-                    next_step="User cần review và phê duyệt để đưa vào backlog",
-                    fallback=f"Xong rồi! 🚀 Mình đã tạo '{stories_count} User Stories' từ PRD. Bạn review và phê duyệt để đưa vào backlog nhé~"
-                )
-                await agent.message_user(
-                    event_type="response",
-                    content=stories_message,
-                    details={
-                        "message_type": "stories_created",
-                        "file_path": "docs/user-stories.md",
-                        "epics_count": epics_count,
-                        "stories_count": stories_count,
-                        "status": "pending"  # Important: pending status
-                    }
-                )
-            
-            logger.info(f"[BA] Saved {epics_count} epics with {stories_count} user stories (pending approval)")
-            
-        except Exception as e:
-            logger.error(f"[BA] Failed to save stories: {e}", exc_info=True)
-            result["error"] = f"Failed to save stories: {str(e)}"
+    # Save stories using helper
+    stories_result = await _save_stories_artifact(state, agent, project_files)
+    if stories_result.get("stories_saved"):
+        result.update({
+            "stories_artifact_id": stories_result["stories_artifact_id"],
+            "stories_saved": True,
+            "summary": stories_result["summary"],
+        })
+        result["next_steps"].extend(stories_result["next_steps"])
+    if stories_result.get("error"):
+        result["error"] = stories_result["error"]
     
     # Handle case where story extraction failed (no stories returned)
-    elif is_story_intent and not epics_data and not stories_data and agent:
+    intent = state.get("intent", "")
+    is_story_intent = intent in ["extract_stories", "stories_update", "update_stories"]
+    epics_data = state.get("epics", [])
+    stories_data = state.get("stories", [])
+    
+    if is_story_intent and not epics_data and not stories_data and agent and not stories_result.get("stories_saved"):
         error_msg = state.get("error", "Không thể tạo stories từ PRD.")
         logger.warning(f"[BA] Story extraction failed: {error_msg}")
         result["error"] = error_msg

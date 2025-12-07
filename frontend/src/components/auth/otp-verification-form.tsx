@@ -109,7 +109,7 @@ export function OTPVerificationForm() {
     const otpCode = code || otp.join("")
 
     if (otpCode.length !== 6) {
-      setError("Please enter all 6 digits")
+      setError("Vui lòng nhập đủ 6 chữ số")
       return
     }
 
@@ -136,9 +136,9 @@ export function OTPVerificationForm() {
           )
         }),
         {
-          loading: "Verifying code...",
-          success: <b>Code verified successfully!</b>,
-          error: <b>Code verification failed. Please try again.</b>,
+          loading: "Đang xác thực mã...",
+          success: <b>Xác thực mã thành công!</b>,
+          error: <b>Xác thực mã thất bại. Vui lòng thử lại.</b>,
         },
       )
     } catch (err) {
@@ -173,9 +173,9 @@ export function OTPVerificationForm() {
           )
         }),
         {
-          loading: "Resending code...",
-          success: <b>Code resent successfully!</b>,
-          error: <b>Code resend failed. Please try again.</b>,
+          loading: "Đang gửi lại mã...",
+          success: <b>Gửi lại mã thành công!</b>,
+          error: <b>Gửi lại mã thất bại. Vui lòng thử lại.</b>,
         },
       )
     } catch (error) {
@@ -206,7 +206,7 @@ export function OTPVerificationForm() {
         className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />
-        Back
+        Quay lại
       </Link>
 
       <div className="space-y-2">
@@ -216,7 +216,7 @@ export function OTPVerificationForm() {
           transition={{ delay: 0.4 }}
           className="text-3xl font-bold text-foreground"
         >
-          Enter Verification Code
+          Nhập mã xác thực
         </motion.h2>
         <motion.p
           initial={{ opacity: 0 }}
@@ -224,7 +224,7 @@ export function OTPVerificationForm() {
           transition={{ delay: 0.5 }}
           className="text-muted-foreground"
         >
-          {"We've sent a 6-digit code to your email"}
+          {"Chúng tôi đã gửi mã 6 chữ số đến email của bạn"}
         </motion.p>
       </div>
 
@@ -292,7 +292,7 @@ export function OTPVerificationForm() {
                 className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
               />
             ) : (
-              "Verify Code"
+              "Xác thực"
             )}
           </Button>
         </motion.div>
@@ -305,11 +305,11 @@ export function OTPVerificationForm() {
           className="text-center text-sm"
         >
           <p className="text-muted-foreground mb-2">
-            {"Didn't receive the code?"}
+            {"Chưa nhận được mã?"}
           </p>
           {resendTimer > 0 ? (
             <p className="text-muted-foreground">
-              Resend code in{" "}
+              Gửi lại mã sau{" "}
               <span className="font-semibold text-foreground">
                 {resendTimer}s
               </span>
@@ -319,7 +319,7 @@ export function OTPVerificationForm() {
               onClick={handleResend}
               className="text-foreground underline font-medium cursor-pointer"
             >
-              Resend Code
+              Gửi lại mã
             </button>
           )}
         </motion.div>

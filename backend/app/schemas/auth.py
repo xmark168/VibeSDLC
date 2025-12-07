@@ -1,7 +1,5 @@
 """Authentication and token schemas."""
 
-from typing import Optional
-
 from sqlmodel import SQLModel
 
 
@@ -11,12 +9,12 @@ class Token(SQLModel):
 
 
 class TokenData(SQLModel):
-    user_id: Optional[str] = None
+    user_id: str | None = None
 
 
 class TokenPayload(SQLModel):
-    sub: Optional[str] = None
-    type: Optional[str] = None
+    sub: str | None = None  # subject - user ID in JWT standard
+    type: str | None = None  # token type (access/refresh)
 
 
 class RefreshTokenRequest(SQLModel):
@@ -25,9 +23,9 @@ class RefreshTokenRequest(SQLModel):
 
 class LoginRequest(SQLModel):
     email: str
-    password: str
-    fullname: Optional[str] = None
-    login_provider: bool = False
+    password: str | None = None
+    fullname: str | None = None
+    login_provider: str | None = None
 
 
 class LoginResponse(SQLModel):
@@ -40,7 +38,7 @@ class RegisterRequest(SQLModel):
     email: str
     password: str
     confirm_password: str
-    full_name: Optional[str] = None
+    full_name: str | None = None
 
 
 class RegisterResponse(SQLModel):
@@ -82,6 +80,7 @@ class ForgotPasswordRequest(SQLModel):
 class ForgotPasswordResponse(SQLModel):
     message: str
     email: str
+    expires_in: int
 
 
 class ResetPasswordRequest(SQLModel):

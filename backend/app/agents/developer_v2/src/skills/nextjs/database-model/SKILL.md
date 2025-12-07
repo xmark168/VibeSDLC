@@ -1,310 +1,187 @@
 ---
 name: database-model
-description: Create Prisma schema models with proper relations, indexes, and type safety for Next.js 16
-triggers:
-  - prisma
-  - schema
-  - model
-  - database
-  - db
-  - relation
-  - migration
-  - entity
-version: "2.0"
-author: VibeSDLC
+description: Create Prisma schema models with relations and indexes. Use when designing database schemas, adding models, creating migrations, or defining entity relationships.
 ---
 
-# Database Model Skill (Prisma + Next.js 16)
+This skill guides creation of Prisma database models for Next.js applications.
 
-## Critical Rules
+The user needs to design database schemas, add new models, define relationships, or modify existing tables.
 
-1. **File location** - Models in `prisma/schema.prisma`
-2. **Naming** - PascalCase for models, camelCase for fields
-3. **ID field** - Use `cuid()` or `uuid()` for primary keys
-4. **Timestamps** - Always add `createdAt` and `updatedAt`
-5. **Indexes** - Add `@@index` for frequently queried fields
-6. **Relations** - Define both sides of relations
-7. **After changes** - Run `bunx prisma generate && bunx prisma db push`
+## Before You Start
 
-## Basic Model Pattern
+**CRITICAL**: The boilerplate already has correct Prisma setup. DO NOT modify the datasource block.
+
+- **Schema file**: `prisma/schema.prisma` - MUST have `url = env("DATABASE_URL")`
+- **Client file**: `lib/prisma.ts` - Already configured correctly
+
+After any schema changes, run `bunx prisma db push` (generate runs automatically).
+
+## Schema Structure
 
 ```prisma
-// prisma/schema.prisma
+// prisma/schema.prisma - DO NOT MODIFY THIS BLOCK
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL")  // REQUIRED - never remove this
 }
 
-model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
+// Add your models BELOW the datasource block
+```
+
+## Model Conventions
+
+Follow these conventions for all models:
+- **Model names**: PascalCase (User, Product, OrderItem)
+- **Field names**: camelCase (firstName, createdAt)
+- **IDs**: Always use `@id @default(uuid())`
+- **Timestamps**: Always include `createdAt` and `updatedAt`
+- **Indexes**: Add `@@index` for frequently queried fields
+
+```prisma
+model Product {
+  id        String   @id @default(uuid())
   name      String
-  role      Role     @default(USER)
-  avatar    String?
+  price     Float    // Use Float for simpler type handling in UI
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
-  posts     Post[]
-  comments  Comment[]
-  profile   Profile?
+  category   Category @relation(fields: [categoryId], references: [id])
+  categoryId String
 
-  // Indexes for query performance
-  @@index([email])
-  @@index([role])
-  @@index([createdAt])
+  @@index([categoryId])
+  @@index([name])
 }
 
-enum Role {
-  USER
-  ADMIN
-  MODERATOR
+enum Status {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
 }
 ```
 
-## One-to-Many Relation
+## Type Choices for Numbers
+
+| Type | Prisma Returns | Use Case |
+|------|---------------|----------|
+| `Int` | `number` | Counts, IDs, whole numbers |
+| `Float` | `number` | Prices, measurements (recommended for UI) |
+| `Decimal` | `Prisma.Decimal` | Financial calculations needing exact precision |
+
+**Recommendation**: Use `Float` for prices in most apps. It returns `number` directly, no conversion needed.
+
+If using `Decimal` (for financial apps):
+- API must convert: `Number(item.price)` or `item.price.toNumber()`
+- TypeScript type: `Prisma.Decimal` not `number`
+
+## Relationships
+
+### One-to-Many
 
 ```prisma
-model User {
-  id    String @id @default(cuid())
-  email String @unique
-  name  String
-  
-  posts Post[] // One user has many posts
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Category {
+  id       String    @id @default(uuid())
+  name     String    @unique
+  products Product[]  // One category has many products
 }
 
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
+model Product {
+  id         String   @id @default(uuid())
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId String
   
-  // Foreign key relation
-  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  authorId  String
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([authorId])
-  @@index([published])
+  @@index([categoryId])
 }
 ```
 
-## One-to-One Relation
+### One-to-One
 
 ```prisma
 model User {
-  id      String   @id @default(cuid())
-  email   String   @unique
-  
-  profile Profile? // Optional one-to-one
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id      String   @id @default(uuid())
+  profile Profile?  // Optional one-to-one
 }
 
 model Profile {
-  id       String  @id @default(cuid())
-  bio      String?
-  website  String?
-  location String?
-  
-  // One-to-one relation
-  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId   String  @unique // Unique for one-to-one
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id     String @id @default(uuid())
+  bio    String?
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique  // @unique makes it one-to-one
 }
 ```
 
-## Many-to-Many Relation (Implicit)
+### Many-to-Many
 
 ```prisma
 model Post {
-  id         String     @id @default(cuid())
-  title      String
-  
-  categories Category[] // Many-to-many (implicit)
-  
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id   String @id @default(uuid())
+  tags Tag[]   // Prisma handles junction table automatically
 }
 
-model Category {
-  id    String @id @default(cuid())
+model Tag {
+  id    String @id @default(uuid())
   name  String @unique
-  slug  String @unique
-  
-  posts Post[] // Many-to-many (implicit)
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  posts Post[]
 }
 ```
 
-## Many-to-Many Relation (Explicit - with extra fields)
+## NextAuth Models
+
+The boilerplate includes required NextAuth models. Do NOT recreate these:
 
 ```prisma
+// Already in boilerplate - User, Account, Session models
+// Just add your relations to User if needed:
 model User {
-  id          String       @id @default(cuid())
-  email       String       @unique
-  
-  memberships Membership[] // Through table
-  
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-}
-
-model Team {
-  id          String       @id @default(cuid())
-  name        String
-  
-  memberships Membership[] // Through table
-  
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-}
-
-// Explicit join table with extra fields
-model Membership {
-  id        String   @id @default(cuid())
-  role      String   @default("member") // Extra field
-  joinedAt  DateTime @default(now())    // Extra field
-  
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  
-  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  teamId    String
-  
-  @@unique([userId, teamId]) // Prevent duplicate memberships
-  @@index([userId])
-  @@index([teamId])
+  id       String    @id @default(uuid())
+  // ... existing fields
+  posts    Post[]    // Add your relations here
+  comments Comment[]
 }
 ```
 
-## Self-Relation (Comments/Replies)
+## Prisma Client Setup
 
-```prisma
-model Comment {
-  id        String    @id @default(cuid())
-  content   String
-  
-  // Self-relation for replies
-  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  parentId  String?
-  replies   Comment[] @relation("CommentReplies")
-  
-  // Author relation
-  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  authorId  String
-  
-  // Post relation
-  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  postId    String
-  
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@index([parentId])
-  @@index([authorId])
-  @@index([postId])
-}
-```
-
-## Prisma Client Usage
+The boilerplate already has `lib/prisma.ts` configured. DO NOT recreate it.
 
 ```typescript
-// lib/prisma.ts
+// lib/prisma.ts - ALREADY EXISTS in boilerplate
 import { PrismaClient } from '@prisma/client';
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient();
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
-}
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 ```
 
-## Common Query Patterns
+## After Writing Schema
 
-```typescript
-// Create with relation
-const user = await prisma.user.create({
-  data: {
-    email: 'user@example.com',
-    name: 'John',
-    profile: {
-      create: { bio: 'Hello world' },
-    },
-  },
-  include: { profile: true },
-});
+DO NOT run db push manually during implementation.
+Database operations (`prisma generate`, `prisma db push`) run automatically in validation phase.
+Just write the schema file and proceed to next task.
 
-// Find with relations (avoid N+1)
-const posts = await prisma.post.findMany({
-  include: {
-    author: { select: { id: true, name: true } },
-    categories: true,
-  },
-});
-
-// Update nested
-const updated = await prisma.user.update({
-  where: { id: 'user-id' },
-  data: {
-    profile: {
-      upsert: {
-        create: { bio: 'New bio' },
-        update: { bio: 'Updated bio' },
-      },
-    },
-  },
-});
-
-// Delete cascade (if onDelete: Cascade)
-await prisma.user.delete({ where: { id: 'user-id' } });
-```
-
-## Commands After Schema Changes
+## Commands Reference
 
 ```bash
-# Generate Prisma Client (after schema changes)
-bunx prisma generate
-
-# Push schema to database (development)
-bunx prisma db push
-
-# Create migration (production)
-bunx prisma migrate dev --name add_user_model
-
-# View database
-bunx prisma studio
+bunx prisma generate     # Generate TypeScript types
+bunx prisma db push      # Push schema to database (dev)
+bunx prisma migrate dev  # Create migration file (when ready)
+bunx prisma studio       # Visual database browser
 ```
 
-## Field Type Reference
+NEVER:
+- Modify or remove the `datasource db` block (url is REQUIRED)
+- Modify or remove the `generator client` block
+- Recreate `lib/prisma.ts` (already exists in boilerplate)
+- Recreate User/Account/Session models (already in boilerplate)
+- Forget `@@index` on foreign key fields
+- Skip `onDelete: Cascade` on child relations
+- Create migration files (use `bunx prisma db push` for dev instead)
+- Run `execute_shell` for db push/generate during implementation (runs automatically in validation)
 
-| Type | Prisma | PostgreSQL |
-|------|--------|------------|
-| String | `String` | `text` |
-| Integer | `Int` | `integer` |
-| Float | `Float` | `double precision` |
-| Boolean | `Boolean` | `boolean` |
-| DateTime | `DateTime` | `timestamp` |
-| JSON | `Json` | `jsonb` |
-| Enum | `enum Name {}` | `enum` |
-| Optional | `String?` | nullable |
-| Array | `String[]` | `text[]` |
+**IMPORTANT**: Always add indexes on fields used in WHERE clauses or JOINs to improve query performance.

@@ -40,7 +40,7 @@ from app.models.base import (
 )
 
 # User models
-from app.models.user import User, RefreshToken
+from app.models.user import User, RefreshToken, OAuthProvider, LinkedAccount
 
 # AgentPool models (must be before Agent due to FK)
 from app.models.agent_pool import (
@@ -122,6 +122,8 @@ __all__ = [
     # User
     "User",
     "RefreshToken",
+    "OAuthProvider",
+    "LinkedAccount",
     # Agent
     "AgentPersonaTemplate",
     "AgentPool",

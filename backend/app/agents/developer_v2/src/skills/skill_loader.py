@@ -1,14 +1,9 @@
-"""
-Skill Loader - Load skills using Anthropic's Agent Skills pattern.
+"""Skill Loader - Load skills using Anthropic's Agent Skills pattern.
 
-Skills use SKILL.md format with YAML frontmatter for metadata,
-following progressive disclosure:
-1. Level 1: name + description (loaded at startup)
-2. Level 2: Full SKILL.md content (loaded when skill is activated)
-3. Level 3+: Bundled files referenced in SKILL.md (loaded as needed)
+Progressive disclosure: L1=metadata, L2=content, L3=bundled files.
+Skills use SKILL.md with YAML frontmatter (name, description, internal).
 """
 import logging
-import re
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
@@ -22,26 +17,22 @@ SKILLS_DIR = Path(__file__).parent
 
 @dataclass
 class SkillMetadata:
-    """Level 1: Skill metadata from YAML frontmatter."""
+    """Level 1 metadata from SKILL.md frontmatter (name, description, internal)."""
     name: str
     description: str
-    triggers: List[str] = field(default_factory=list)
-    version: str = "1.0"
-    author: str = ""
+    internal: bool = False
     
     def matches(self, context: str) -> int:
-        """Return match score based on triggers."""
+        """Return match score based on description keywords."""
         context_lower = context.lower()
-        score = 0
-        for trigger in self.triggers:
-            if trigger and trigger.lower() in context_lower:
-                score += 1
-        return score
+        desc_lower = self.description.lower()
+        keywords = [w for w in desc_lower.split() if len(w) > 3]
+        return sum(1 for kw in keywords if kw in context_lower)
 
 
 @dataclass
 class Skill:
-    """Full skill definition with progressive disclosure."""
+    """Full skill with progressive disclosure (L1=metadata, L2=content, L3=bundled files)."""
     id: str
     metadata: SkillMetadata
     skill_dir: Path
@@ -58,17 +49,16 @@ class Skill:
         return self.metadata.description
     
     @property
-    def triggers(self) -> List[str]:
-        return self.metadata.triggers
+    def internal(self) -> bool:
+        return self.metadata.internal
     
     def load_content(self) -> str:
-        """Level 2: Load full SKILL.md content (lazy loading)."""
+        """Level 2: Load full SKILL.md body (lazy loading)."""
         if self._content is not None:
             return self._content
         
         skill_file = self.skill_dir / "SKILL.md"
         if not skill_file.exists():
-            logger.warning(f"[Skill] SKILL.md not found: {skill_file}")
             return ""
         
         try:
@@ -81,54 +71,60 @@ class Skill:
                     self._content = content
             else:
                 self._content = content
-            
-            logger.debug(f"[Skill] Loaded content for {self.id}: {len(self._content)} chars")
             return self._content
         except Exception as e:
             logger.error(f"[Skill] Failed to load content for {self.id}: {e}")
             return ""
     
-    def load_bundled_file(self, filename: str) -> str:
-        """Level 3+: Load additional bundled file."""
-        if filename in self._bundled_files:
-            return self._bundled_files[filename]
+    def load_reference(self, filename: str) -> str:
+        """Level 3: Load file from references/ directory."""
+        return self.load_bundled_file(f"references/{filename}")
+    
+    def load_bundled_file(self, filepath: str) -> str:
+        """Load any bundled file by path (e.g., 'references/forms.md')."""
+        if filepath in self._bundled_files:
+            return self._bundled_files[filepath]
         
-        file_path = self.skill_dir / filename
+        file_path = self.skill_dir / filepath
         if not file_path.exists():
-            logger.warning(f"[Skill] Bundled file not found: {file_path}")
             return ""
         
         try:
             content = file_path.read_text(encoding='utf-8')
-            self._bundled_files[filename] = content
-            logger.debug(f"[Skill] Loaded bundled file {filename}: {len(content)} chars")
+            self._bundled_files[filepath] = content
             return content
         except Exception as e:
-            logger.error(f"[Skill] Failed to load {filename}: {e}")
+            logger.error(f"[Skill] Failed to load {filepath}: {e}")
             return ""
     
-    def get_referenced_files(self) -> List[str]:
-        """Extract referenced files from SKILL.md content."""
-        content = self.load_content()
-        pattern = r'`([a-zA-Z0-9_\-]+\.(?:md|py|ts|js|yaml|json))`'
-        matches = re.findall(pattern, content)
-        return list(set(matches))
+    def list_references(self) -> List[str]:
+        """List files in references/ directory."""
+        refs_dir = self.skill_dir / "references"
+        if not refs_dir.exists():
+            return []
+        return [f.name for f in refs_dir.iterdir() if f.is_file()]
+    
+    def list_scripts(self) -> List[str]:
+        """List files in scripts/ directory."""
+        scripts_dir = self.skill_dir / "scripts"
+        if not scripts_dir.exists():
+            return []
+        return [f.name for f in scripts_dir.iterdir() if f.is_file()]
+    
+    def list_assets(self) -> List[str]:
+        """List files in assets/ directory."""
+        assets_dir = self.skill_dir / "assets"
+        if not assets_dir.exists():
+            return []
+        return [f.name for f in assets_dir.iterdir() if f.is_file()]
     
     def list_bundled_files(self) -> List[str]:
-        """List all files in skill directory (excluding SKILL.md)."""
+        """List all bundled files (references + scripts + assets)."""
         files = []
-        for f in self.skill_dir.iterdir():
-            if f.is_file() and f.name != "SKILL.md" and not f.name.startswith("__"):
-                files.append(f.name)
+        files.extend([f"references/{f}" for f in self.list_references()])
+        files.extend([f"scripts/{f}" for f in self.list_scripts()])
+        files.extend([f"assets/{f}" for f in self.list_assets()])
         return files
-    
-    def get_scripts(self) -> List[Path]:
-        """Get executable scripts bundled with skill."""
-        scripts = []
-        for f in self.skill_dir.iterdir():
-            if f.suffix in ['.py', '.sh', '.js', '.ts']:
-                scripts.append(f)
-        return scripts
     
     def to_prompt_section(self, include_content: bool = True) -> str:
         """Format skill for prompt injection."""
@@ -136,8 +132,11 @@ class Skill:
             return f"**{self.name}**: {self.description}"
         
         content = self.load_content()
+        refs = self.list_references()
+        refs_note = f"\n\nAvailable references: {', '.join(refs)}" if refs else ""
+        
         return f"""<skill name="{self.id}" description="{self.description}">
-{content}
+{content}{refs_note}
 </skill>"""
 
 
@@ -177,9 +176,7 @@ def load_skill_metadata(skill_dir: Path) -> Optional[SkillMetadata]:
         return SkillMetadata(
             name=frontmatter.get('name', skill_dir.name),
             description=frontmatter.get('description', ''),
-            triggers=frontmatter.get('triggers', []),
-            version=frontmatter.get('version', '1.0'),
-            author=frontmatter.get('author', ''),
+            internal=frontmatter.get('internal', False),
         )
     except Exception as e:
         logger.error(f"[SkillLoader] Failed to load metadata from {skill_file}: {e}")
@@ -202,7 +199,7 @@ def load_skill(skill_dir: Path, tech_stack: str = "") -> Optional[Skill]:
 
 
 def discover_skills(base_dir: Path) -> Dict[str, Skill]:
-    """Discover all skills in a directory (recursively)."""
+    """Discover all skills in a directory."""
     skills = {}
     
     if not base_dir.exists():
@@ -216,8 +213,9 @@ def discover_skills(base_dir: Path) -> Dict[str, Skill]:
                 skill = load_skill(item, tech_stack=base_dir.name)
                 if skill:
                     skills[skill.id] = skill
-                    logger.debug(f"[SkillLoader] Discovered skill: {skill.id}")
+                    logger.debug(f"[SkillLoader] Discovered: {skill.id}")
             else:
+                # Check subdirectories
                 sub_skills = discover_skills(item)
                 skills.update(sub_skills)
     
@@ -225,24 +223,38 @@ def discover_skills(base_dir: Path) -> Dict[str, Skill]:
 
 
 def get_project_structure(tech_stack: str = "nextjs") -> str:
-    """Load project-structure.md for a tech stack.
-    
-    Args:
-        tech_stack: Tech stack identifier (e.g., "nextjs")
-        
-    Returns:
-        Content of project-structure.md or empty string if not found
-    """
+    """Load project-structure.md for a tech stack."""
     structure_file = SKILLS_DIR / tech_stack / "project-structure.md"
     
     if not structure_file.exists():
-        logger.debug(f"[SkillLoader] No project-structure.md for {tech_stack}")
         return ""
     
     try:
-        content = structure_file.read_text(encoding='utf-8')
-        logger.debug(f"[SkillLoader] Loaded project structure: {len(content)} chars")
-        return content
+        return structure_file.read_text(encoding='utf-8')
     except Exception as e:
         logger.error(f"[SkillLoader] Failed to load project structure: {e}")
         return ""
+
+
+def get_plan_prompts(tech_stack: str = "nextjs") -> dict:
+    """Load plan_prompts.yaml for a tech stack.
+    
+    Returns:
+        dict with 'system_prompt' and 'input_template' keys
+    """
+    prompts_file = SKILLS_DIR / tech_stack / "plan_prompts.yaml"
+    
+    if not prompts_file.exists():
+        return {"system_prompt": "", "input_template": ""}
+    
+    try:
+        import yaml
+        content = prompts_file.read_text(encoding='utf-8')
+        data = yaml.safe_load(content)
+        return {
+            "system_prompt": data.get("system_prompt", ""),
+            "input_template": data.get("input_template", ""),
+        }
+    except Exception as e:
+        logger.error(f"[SkillLoader] Failed to load plan prompts: {e}")
+        return {"system_prompt": "", "input_template": ""}

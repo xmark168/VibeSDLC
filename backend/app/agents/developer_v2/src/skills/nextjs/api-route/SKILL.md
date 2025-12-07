@@ -1,263 +1,216 @@
 ---
 name: api-route
-description: Create Next.js 16 API Route Handlers with async params, Zod validation, and proper error handling
-triggers:
-  - api
-  - route.ts
-  - route handler
-  - GET
-  - POST
-  - PUT
-  - DELETE
-  - PATCH
-  - endpoint
-  - REST
-version: "2.0"
-author: VibeSDLC
+description: Create Next.js 16 API Route Handlers. Use when building REST endpoints (GET, POST, PUT, DELETE), implementing CRUD operations, or creating authenticated APIs with Zod validation.
 ---
 
-# API Route Handler Skill (Next.js 16)
+This skill guides creation of API Route Handlers in Next.js 16 App Router.
 
-## Critical Rules
+The user needs to build REST endpoints for data operations, typically CRUD functionality with authentication and validation.
 
-1. **File naming**: `route.ts` in `app/api/` directory
-2. **Export HTTP methods**: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`
-3. **Async params**: MUST `await params` in dynamic routes (Next.js 15+ breaking change)
-4. **Zod validation**: Always validate request body
-5. **Use helpers**: Use `successResponse`, `errorResponse` from `@/lib/api-response`
-6. **Error handling**: Wrap in try-catch, return proper status codes
+## Before You Start
 
-## Basic Route Handler (Collection)
+API routes live in the `app/api/` directory:
+- **Collection routes**: `app/api/users/route.ts` - handles GET (list) and POST (create)
+- **Resource routes**: `app/api/users/[id]/route.ts` - handles GET (one), PUT, DELETE
+- **Export functions**: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`
+
+**CRITICAL**: In Next.js 16, dynamic route params are async. You MUST `await params` before using them.
+
+## Route Structure
+
+### Collection Route (List + Create)
 
 ```typescript
 // app/api/users/route.ts
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
-import { successResponse, errorResponse, handleZodError } from '@/lib/api-response';
+import { successResponse, handleError, ApiErrors, HttpStatus } from '@/lib/api-response';
+import { auth } from '@/auth';
 
-const createUserSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  role: z.enum(['USER', 'ADMIN']).default('USER'),
+const createSchema = z.object({
+  name: z.string().min(2),
+  email: z.string().email(),
 });
 
-// GET /api/users
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
-    const search = searchParams.get('search') || '';
-
-    const where = search ? {
-      OR: [
-        { name: { contains: search, mode: 'insensitive' as const } },
-        { email: { contains: search, mode: 'insensitive' as const } },
-      ],
-    } : undefined;
-
-    const [users, total] = await Promise.all([
-      prisma.user.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-      }),
-      prisma.user.count({ where }),
-    ]);
-
-    return successResponse({ users, total, page, limit });
+    const users = await prisma.user.findMany();
+    return successResponse(users);
   } catch (error) {
-    console.error('[GET /api/users]', error);
-    return errorResponse('Failed to fetch users', 500);
+    return handleError(error);
   }
 }
 
-// POST /api/users
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session) throw ApiErrors.unauthorized();
+
     const body = await request.json();
-    const validated = createUserSchema.safeParse(body);
+    const validated = createSchema.safeParse(body);
+    if (!validated.success) return handleError(validated.error);
 
-    if (!validated.success) {
-      return handleZodError(validated.error);
-    }
-
-    const user = await prisma.user.create({
-      data: validated.data,
-    });
-
-    return successResponse(user, 201);
+    const user = await prisma.user.create({ data: validated.data });
+    return successResponse(user, 'Created', HttpStatus.CREATED);
   } catch (error) {
-    console.error('[POST /api/users]', error);
-    return errorResponse('Failed to create user', 500);
+    return handleError(error);
   }
 }
 ```
 
-## Dynamic Route Handler (MUST await params)
+### Dynamic Route (Single Resource)
 
 ```typescript
 // app/api/users/[id]/route.ts
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { z } from 'zod';
-import { successResponse, errorResponse, handleZodError } from '@/lib/api-response';
+import { successResponse, handleError, ApiErrors } from '@/lib/api-response';
 
-// CRITICAL: params is now a Promise in Next.js 15+
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-const updateUserSchema = z.object({
-  name: z.string().min(2).optional(),
-  email: z.string().email().optional(),
-  role: z.enum(['USER', 'ADMIN']).optional(),
+export async function GET(request: NextRequest, context: RouteContext) {
+  try {
+    const { id } = await context.params;  // MUST await in Next.js 16
+    
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) throw ApiErrors.notFound('User');
+    
+    return successResponse(user);
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  try {
+    const { id } = await context.params;
+    await prisma.user.delete({ where: { id } });
+    return successResponse({ message: 'Deleted' });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+```
+
+## Error Handling
+
+The `handleError()` function catches all error types automatically:
+- **ZodError**: Returns 422 with formatted field errors
+- **ApiException**: Returns custom status with error code
+- **Generic Error**: Returns 500 with message
+
+Use predefined errors for common cases:
+
+```typescript
+throw ApiErrors.unauthorized();      // 401 - Not logged in
+throw ApiErrors.forbidden();         // 403 - No permission
+throw ApiErrors.notFound('User');    // 404 - Resource not found
+throw ApiErrors.badRequest('msg');   // 400 - Invalid request
+throw ApiErrors.conflict('msg');     // 409 - Already exists
+throw ApiErrors.validation('msg');   // 422 - Validation failed
+```
+
+## Response Format
+
+**IMPORTANT**: `successResponse()` always wraps data in an object. Consumers must extract `.data`:
+
+```typescript
+// API returns this format:
+{ success: true, data: T, message?: string }
+
+// Consumer code:
+const res = await fetch('/api/items');
+const json = await res.json();
+const items = json.data;  // Extract from wrapper!
+
+// NOT this (common mistake):
+const items = json;  // Wrong! json is {success, data}, not the array
+```
+
+## Handling Decimal Fields
+
+Prisma `Decimal` type doesn't serialize to JSON as number. Convert before response:
+
+```typescript
+// Single item
+const item = await prisma.item.findUnique({ where: { id } });
+return successResponse({
+  ...item,
+  price: Number(item.price),  // Convert Decimal to number
 });
 
-// GET /api/users/[id]
-export async function GET(request: NextRequest, context: RouteContext) {
-  // MUST await params - Breaking change in Next.js 15+
-  const { id } = await context.params;
-
-  try {
-    const user = await prisma.user.findUnique({ where: { id } });
-
-    if (!user) {
-      return errorResponse('User not found', 404);
-    }
-
-    return successResponse(user);
-  } catch (error) {
-    console.error(`[GET /api/users/${id}]`, error);
-    return errorResponse('Failed to fetch user', 500);
-  }
-}
-
-// PUT /api/users/[id]
-export async function PUT(request: NextRequest, context: RouteContext) {
-  const { id } = await context.params;
-
-  try {
-    const body = await request.json();
-    const validated = updateUserSchema.safeParse(body);
-
-    if (!validated.success) {
-      return handleZodError(validated.error);
-    }
-
-    const user = await prisma.user.update({
-      where: { id },
-      data: validated.data,
-    });
-
-    return successResponse(user);
-  } catch (error) {
-    console.error(`[PUT /api/users/${id}]`, error);
-    return errorResponse('Failed to update user', 500);
-  }
-}
-
-// DELETE /api/users/[id]
-export async function DELETE(request: NextRequest, context: RouteContext) {
-  const { id } = await context.params;
-
-  try {
-    await prisma.user.delete({ where: { id } });
-    return successResponse({ message: 'User deleted successfully' });
-  } catch (error) {
-    console.error(`[DELETE /api/users/${id}]`, error);
-    return errorResponse('Failed to delete user', 500);
-  }
-}
+// List of items
+const items = await prisma.item.findMany();
+return successResponse(
+  items.map(item => ({
+    ...item,
+    price: Number(item.price),
+  }))
+);
 ```
 
-## API Response Helpers
-
-```typescript
-// lib/api-response.ts
-import { NextResponse } from 'next/server';
-import { ZodError } from 'zod';
-
-export function successResponse<T>(data: T, status = 200) {
-  return NextResponse.json({ success: true, data }, { status });
-}
-
-export function errorResponse(message: string, status = 400) {
-  return NextResponse.json({ success: false, error: message }, { status });
-}
-
-export function handleZodError(error: ZodError) {
-  return NextResponse.json(
-    {
-      success: false,
-      error: 'Validation failed',
-      details: error.flatten().fieldErrors,
-    },
-    { status: 400 }
-  );
-}
-
-export class ApiException extends Error {
-  constructor(public message: string, public status: number = 400) {
-    super(message);
-  }
-}
-```
-
-## Nested Dynamic Routes
-
-```typescript
-// app/api/users/[userId]/posts/[postId]/route.ts
-interface RouteContext {
-  params: Promise<{ userId: string; postId: string }>;
-}
-
-export async function GET(request: NextRequest, context: RouteContext) {
-  const { userId, postId } = await context.params;
-
-  const post = await prisma.post.findFirst({
-    where: { id: postId, authorId: userId },
-  });
-
-  if (!post) {
-    return errorResponse('Post not found', 404);
-  }
-
-  return successResponse(post);
-}
-```
-
-## Protected Routes (Auth Check)
-
-```typescript
-// app/api/admin/users/route.ts
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-
-export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-
-  if (!session) {
-    return errorResponse('Unauthorized', 401);
-  }
-
-  if (session.user.role !== 'ADMIN') {
-    return errorResponse('Forbidden', 403);
-  }
-
-  const users = await prisma.user.findMany();
-  return successResponse(users);
-}
-```
+**Tip**: Use `Float` instead of `Decimal` in schema to avoid this conversion entirely.
 
 ## Common Patterns
 
-| Pattern | Implementation |
-|---------|---------------|
-| Pagination | `skip: (page-1)*limit, take: limit` |
-| Search | `where: { field: { contains: search, mode: 'insensitive' } }` |
-| Sort | `orderBy: { field: 'asc' \| 'desc' }` |
-| Include relations | `include: { posts: true }` |
-| Select fields | `select: { id: true, name: true }` |
+- **Search**: Use `where: { field: { contains: query, mode: 'insensitive' } }`
+- **Auth check**: Always `const session = await auth()` before mutations
+- **Validation**: Always use Zod schema with `safeParse()` for request body
+
+## Pagination Pattern
+
+For list endpoints, always support pagination:
+
+```typescript
+// app/api/items/route.ts
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const page = parseInt(searchParams.get('page') ?? '1');
+    const limit = parseInt(searchParams.get('limit') ?? '20');
+    const skip = (page - 1) * limit;
+
+    const [items, total] = await Promise.all([
+      prisma.item.findMany({
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.item.count(),
+    ]);
+
+    return successResponse({
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+```
+
+**Rules:**
+- Default limit: 20 items
+- Always return `total` count for frontend pagination UI
+- Use `Promise.all` for parallel queries
+
+## After Writing Route
+
+Validation (typecheck, lint, tests) runs automatically at the end of implementation.
+No need to run manually - proceed to next file.
+
+NEVER:
+- Skip `await` on `context.params` in dynamic routes
+- Return raw data without `successResponse()` wrapper
+- Skip validation on POST/PUT request bodies
+- Forget auth checks on mutation endpoints
+
+**IMPORTANT**: Always wrap route logic in try-catch and use `handleError()` for consistent error responses.

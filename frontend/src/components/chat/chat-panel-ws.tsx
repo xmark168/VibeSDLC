@@ -25,6 +25,7 @@ import {
   ChevronsLeft,
   Loader2,
   Crown,
+  PaperclipIcon,
 } from "lucide-react";
 import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
@@ -44,6 +45,8 @@ import { StorySuggestionsCard } from "./StorySuggestionsCard";
 import { PrdCreatedCard } from "./PrdCreatedCard";
 import { StoriesFileCard } from "./StoriesFileCard";
 import { useProjectAgents } from "@/queries/agents";
+import { PromptInput, PromptInputButton, PromptInputSubmit, PromptInputTextarea, PromptInputToolbar, PromptInputTools } from "../ui/shadcn-io/ai/prompt-input";
+import { MentionDropdown, type Agent } from "../ui/mention-dropdown";
 
 interface ChatPanelProps {
   sidebarCollapsed: boolean;
@@ -79,7 +82,6 @@ export function ChatPanelWS({
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
   const [mentionSearch, setMentionSearch] = useState("");
-  const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [mentionedAgent, setMentionedAgent] = useState<{ id: string; name: string } | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
@@ -88,7 +90,6 @@ export function ChatPanelWS({
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const mentionDropdownRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessagesLengthRef = useRef(0);
 
@@ -100,25 +101,31 @@ export function ChatPanelWS({
     enabled: !!projectId,
   });
 
-  // Map role_type to user-friendly designation and avatar
-  const getRoleInfo = (roleType: string): { role: string; avatar: string } => {
-    const roleMap: Record<string, { role: string; avatar: string }> = {
-      team_leader: { role: "Team Leader", avatar: "👨‍💼" },
-      business_analyst: { role: "Business Analyst", avatar: "👩‍💼" },
-      developer: { role: "Developer", avatar: "👨‍💻" },
-      tester: { role: "Tester", avatar: "🧪" },
+  // Map role_type to user-friendly designation, icon and color
+  const getRoleInfo = (roleType: string): { role: string; icon: string; color: string } => {
+    const roleMap: Record<string, { role: string; icon: string; color: string }> = {
+      team_leader: { role: "Team Leader", icon: "👨‍💼", color: "#6366f1" },
+      business_analyst: { role: "Business Analyst", icon: "👩‍💼", color: "#8b5cf6" },
+      developer: { role: "Developer", icon: "👨‍💻", color: "#10b981" },
+      tester: { role: "Tester", icon: "🧪", color: "#f59e0b" },
     };
-    return roleMap[roleType] || { role: roleType, avatar: "🤖" };
+    return roleMap[roleType] || { role: roleType, icon: "🤖", color: "#6b7280" };
   };
 
   // Transform database agents to dropdown format
-  const AGENTS = (projectAgents?.data || []).map((agent) => {
+  // Handle both { data: [...] } and direct array response
+  const agentsList = Array.isArray(projectAgents) 
+    ? projectAgents 
+    : (projectAgents?.data || []);
+  
+  const AGENTS = agentsList.map((agent) => {
     const roleInfo = getRoleInfo(agent.role_type);
     return {
       id: agent.id,
       name: agent.human_name,
       role: roleInfo.role,
-      avatar: roleInfo.avatar,
+      icon: roleInfo.icon,
+      color: roleInfo.color,
     };
   });
 
@@ -282,14 +289,14 @@ export function ChatPanelWS({
     const unansweredQuestions = uniqueMessages.filter(
       msg => msg.message_type === 'agent_question' && !msg.structured_data?.answered
     )
-    
+
     // Get LATEST by timestamp (most recent)
-    const latestUnanswered = unansweredQuestions.sort((a, b) => 
+    const latestUnanswered = unansweredQuestions.sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )[0]
-    
+
     setPendingQuestion(latestUnanswered || null)
-    
+
     // Auto-scroll to question if it appears (only if it's a NEW question)
     if (latestUnanswered && latestUnanswered.id !== pendingQuestion?.id) {
       setTimeout(() => {
@@ -302,67 +309,110 @@ export function ChatPanelWS({
   // Detect stories_approved message and refresh Kanban board
   const lastApprovedMsgIdRef = useRef<string | null>(null)
   useEffect(() => {
-    const latestApproved = uniqueMessages.find(
+    // Find the MOST RECENT stories_approved message (not the first one)
+    const approvedMessages = uniqueMessages.filter(
       msg => msg.structured_data?.message_type === 'stories_approved'
     )
+    const latestApproved = approvedMessages.length > 0
+      ? approvedMessages.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )[0]
+      : null
     
     // Only refresh if it's a NEW approval message we haven't processed yet
     if (latestApproved && latestApproved.id !== lastApprovedMsgIdRef.current && projectId) {
-      console.log('[ChatPanel] Stories approved, refreshing Kanban board...')
+      console.log('[ChatPanel] Stories approved, refreshing Kanban board...', latestApproved.id)
       lastApprovedMsgIdRef.current = latestApproved.id
-      queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+      // Use refetchQueries for immediate refetch instead of invalidateQueries
+      queryClient.refetchQueries({ queryKey: ['kanban-board', projectId], type: 'active' })
     }
   }, [uniqueMessages, projectId, queryClient])
 
-  // Initial scroll to bottom on mount
+  // Track if user manually scrolled up
+  const userScrolledUpRef = useRef(false)
+  // Force scroll to bottom (bypasses userScrolledUp check)
+  const forceScrollRef = useRef(false)
+  
+  // Detect manual scroll
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
 
-    // Scroll to bottom immediately on first load (no animation)
-    if (prevMessagesLengthRef.current === 0 && uniqueMessages.length > 0) {
-      setTimeout(() => {
-        container.scrollTop = container.scrollHeight
-      }, 100)
+    const handleScroll = () => {
+      // Don't update userScrolledUp if we're force scrolling
+      if (forceScrollRef.current) return
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150
+      userScrolledUpRef.current = !isNearBottom
     }
-  }, [uniqueMessages.length])
 
-  // Auto-scroll to bottom on new messages (smooth)
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // Helper to scroll to bottom
+  const scrollToBottom = (behavior: 'auto' | 'smooth' = 'smooth') => {
+    const container = messagesContainerRef.current
+    if (!container) return
+    
+    requestAnimationFrame(() => {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior
+      })
+      // Reset force scroll after scrolling
+      setTimeout(() => {
+        forceScrollRef.current = false
+        userScrolledUpRef.current = false
+      }, 100)
+    })
+  }
+
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
 
-    // Check if user is near bottom (within 100px)
-    const isNearBottom = 
-      container.scrollHeight - container.scrollTop - container.clientHeight < 200
+    const isFirstLoad = prevMessagesLengthRef.current === 0 && uniqueMessages.length > 0
+    const hasNewMessages = uniqueMessages.length > prevMessagesLengthRef.current
+    const shouldScroll = forceScrollRef.current || !userScrolledUpRef.current
 
-    // Auto-scroll only if:
-    // 1. New message arrived (length changed)
-    // 2. User is near bottom (not actively scrolling up to read old messages)
-    if (uniqueMessages.length > prevMessagesLengthRef.current && isNearBottom) {
-      setTimeout(() => {
-        container.scrollTo({
-          top: container.scrollHeight,
-          behavior: 'smooth'
-        })
-      }, 100)
+    if (isFirstLoad || (hasNewMessages && shouldScroll)) {
+      scrollToBottom(isFirstLoad ? 'auto' : 'smooth')
     }
 
-    // Update previous length
     prevMessagesLengthRef.current = uniqueMessages.length
   }, [uniqueMessages])
+
+  // Auto-scroll when typing indicator appears
+  const typingAgentsCount = typingAgents.size
+  const prevTypingCountRef = useRef(0)
   
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Only scroll when typing starts (count goes from 0 to >0), not on every update
+    const typingJustStarted = prevTypingCountRef.current === 0 && typingAgentsCount > 0
+    prevTypingCountRef.current = typingAgentsCount
+    const shouldScroll = forceScrollRef.current || !userScrolledUpRef.current
+
+    if (typingJustStarted && shouldScroll) {
+      scrollToBottom()
+    }
+  }, [typingAgentsCount])
+
   // Determine if chat should be blocked
   const isMultichoiceQuestion = pendingQuestion?.structured_data?.question_type === 'multichoice'
-  const shouldBlockChat = pendingQuestion && isMultichoiceQuestion
-  
+  const isAgentTyping = typingAgents.size > 0
+  const shouldBlockChat = (pendingQuestion && isMultichoiceQuestion) || isAgentTyping
+
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
   const filteredAgents = AGENTS.filter((agent) =>
     agent.name.toLowerCase().includes(mentionSearch.toLowerCase())
   );
 
-  const insertMention = (agent: { id: string; name: string; role: string; avatar: string }) => {
+  const insertMention = (agent: Agent) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
@@ -402,13 +452,13 @@ export function ChatPanelWS({
       const searchTerm = textBeforeCursor.slice(atIndex + 1);
       setMentionSearch(searchTerm);
       setShowMentions(true);
-      setSelectedMentionIndex(0);
     } else {
       setShowMentions(false);
     }
   };
 
-  const handleSend = () => {
+  const handleSend = (e?: React.FormEvent) => {
+    e?.preventDefault(); // Prevent form submission from navigating
     if (!message.trim()) return;
     if (!isConnected) {
       console.error("WebSocket not connected");
@@ -426,6 +476,9 @@ export function ChatPanelWS({
         undefined
       )
       setMessage("");
+      setPendingQuestion(null); // Hide notification immediately
+      // Force scroll to bottom after sending
+      forceScrollRef.current = true;
       return;
     }
 
@@ -434,9 +487,14 @@ export function ChatPanelWS({
 
     setMessage("");
     setMentionedAgent(null);  // Clear mentioned agent after sending
+    
+    // Force scroll to bottom after sending
+    forceScrollRef.current = true;
+    
+    // Focus textarea
     setTimeout(() => {
       textareaRef.current?.focus();
-    }, 0);
+    }, 100);
   };
 
   // Reset waiting state when we receive agent messages or agent starts typing/processing
@@ -457,27 +515,13 @@ export function ChatPanelWS({
   }, [agentStatus]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (showMentions && filteredAgents.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedMentionIndex((prev) => (prev + 1) % filteredAgents.length);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedMentionIndex(
-          (prev) => (prev - 1 + filteredAgents.length) % filteredAgents.length
-        );
-      } else if (e.key === "Tab" || e.key === "Enter") {
-        if (showMentions) {
-          e.preventDefault();
-          insertMention(filteredAgents[selectedMentionIndex]);
-        }
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        setShowMentions(false);
+    // MentionDropdown handles its own keyboard navigation (Arrow, Tab, Enter, Escape)
+    // Only handle Enter to send when dropdown is NOT shown
+    if (!showMentions && e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault(); // Always prevent default (new line)
+      if (!shouldBlockChat) {
+        handleSend(); // Only send if chat is not blocked
       }
-    } else if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
     }
   };
 
@@ -541,7 +585,6 @@ export function ChatPanelWS({
     setMessage(newMessage);
     setShowMentions(true);
     setMentionSearch("");
-    setSelectedMentionIndex(0);
 
     setTimeout(() => {
       textarea.focus();
@@ -558,32 +601,7 @@ export function ChatPanelWS({
     }
   }, [isConnected, onConnectionChange]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        mentionDropdownRef.current &&
-        !mentionDropdownRef.current.contains(event.target as Node) &&
-        textareaRef.current &&
-        !textareaRef.current.contains(event.target as Node)
-      ) {
-        setShowMentions(false);
-      }
-    };
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (
-      messagesContainerRef.current &&
-      uniqueMessages.length > prevMessagesLengthRef.current
-    ) {
-      messagesContainerRef.current.scrollTop =
-        messagesContainerRef.current.scrollHeight;
-    }
-    prevMessagesLengthRef.current = uniqueMessages.length;
-  }, [uniqueMessages.length]);
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -598,7 +616,7 @@ export function ChatPanelWS({
           >
             <PanelRightClose className="w-5 h-5" />
           </Button>
-          
+
           {/* Conversation Owner Display (collapsed sidebar) */}
           {conversationOwner && (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
@@ -608,7 +626,7 @@ export function ChatPanelWS({
               </span>
             </div>
           )}
-          
+
           <div className="flex-1" />
           {!isConnected && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -656,7 +674,7 @@ export function ChatPanelWS({
                 Connected
               </div>
             )}
-            
+
             {/* Conversation Owner Display */}
             {conversationOwner && (
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
@@ -740,7 +758,7 @@ export function ChatPanelWS({
           if (msg.message_type === 'activity') {
             return null;
           }
-          
+
           // Agent Handoff Notification
           if (msg.message_type === 'agent_handoff') {
             return (
@@ -781,13 +799,14 @@ export function ChatPanelWS({
                         answer,
                         selectedOptions
                       )
+                      setPendingQuestion(null) // Hide notification immediately
                     }}
                   />
                 </div>
               </div>
             );
           }
-          
+
           // Batch Question Handling
           if (msg.message_type === 'agent_question_batch') {
             return (
@@ -829,7 +848,7 @@ export function ChatPanelWS({
                   <span className="text-xs font-medium text-muted-foreground">
                     {getAgentName(msg)}
                   </span>
-                  
+
                   {/* Conversation Owner Badge */}
                   {msg.author_type === AuthorType.AGENT && conversationOwner && conversationOwner.agentName === msg.agent_name && conversationOwner.status && (
                     <ConversationOwnerBadge
@@ -963,9 +982,31 @@ export function ChatPanelWS({
                       suggestedRequirements={msg.structured_data.suggested_requirements}
                       hasSuggestions={msg.structured_data.has_suggestions}
                       initialActionTaken={msg.structured_data.action_taken}
-                      onApplied={() => {
+                      onApplied={async (updatedStory) => {
                         if (projectId) {
-                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          console.log('[ChatPanel] onApplied called with updated story:', updatedStory)
+                          // Update cache directly with new story data for immediate UI update
+                          if (updatedStory) {
+                            queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
+                              if (!oldData?.board) return oldData
+                              // Update story in the appropriate column
+                              const newBoard = { ...oldData.board }
+                              for (const column of Object.keys(newBoard)) {
+                                newBoard[column] = newBoard[column].map((story: any) => 
+                                  story.id === updatedStory.id 
+                                    ? { ...story, title: updatedStory.title, acceptance_criteria: updatedStory.acceptance_criteria, requirements: updatedStory.requirements }
+                                    : story
+                                )
+                              }
+                              console.log('[ChatPanel] Updated kanban cache with new story data')
+                              return { ...oldData, board: newBoard }
+                            })
+                          }
+                          // Also refetch to ensure consistency
+                          await queryClient.refetchQueries({ 
+                            queryKey: ['kanban-board', projectId],
+                            type: 'all'
+                          })
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
@@ -974,9 +1015,26 @@ export function ChatPanelWS({
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
-                      onRemove={() => {
+                      onRemove={async (removedStoryId) => {
                         if (projectId) {
-                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          console.log('[ChatPanel] onRemove called for story:', removedStoryId)
+                          // Remove story from cache directly for immediate UI update
+                          if (removedStoryId) {
+                            queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
+                              if (!oldData?.board) return oldData
+                              const newBoard = { ...oldData.board }
+                              for (const column of Object.keys(newBoard)) {
+                                newBoard[column] = newBoard[column].filter((story: any) => story.id !== removedStoryId)
+                              }
+                              console.log('[ChatPanel] Removed story from kanban cache')
+                              return { ...oldData, board: newBoard }
+                            })
+                          }
+                          // Also refetch to ensure consistency
+                          await queryClient.refetchQueries({ 
+                            queryKey: ['kanban-board', projectId],
+                            type: 'all'
+                          })
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
@@ -990,7 +1048,7 @@ export function ChatPanelWS({
 
         {/* Typing Indicators - ChatGPT style inline indicators */}
         {Array.from(typingAgents.values()).map((typing) => (
-          <TypingIndicator 
+          <TypingIndicator
             key={typing.id}
             agentName={typing.agent_name}
             message={typing.message}
@@ -998,165 +1056,110 @@ export function ChatPanelWS({
         ))}
       </div>
 
-      {/* Sticky Question Bar */}
-      {pendingQuestion && (
-        <div className="mx-4 mb-2 sticky bottom-20 z-10">
-          <div className="p-4 rounded-lg bg-blue-600 text-white shadow-lg border border-blue-700">
-            <div className="flex items-start justify-between gap-3">
+      {/* Chat Input Area - wrapped with question notification when pending */}
+      <div className={`mx-4 mb-4 rounded-2xl relative ${pendingQuestion ? 'border border-blue-200 bg-blue-100 dark:bg-blue-900/50 dark:border-blue-800' : ''}`}>
+        {/* Question Notification Banner */}
+        {pendingQuestion && (
+          <div className="px-4 py-3 bg-blue-100 dark:bg-blue-900/50 rounded-t-2xl">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">❓</span>
-                  <p className="text-sm font-semibold">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">❓</span>
+                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
                     {pendingQuestion.agent_name || 'Agent'} is waiting for your answer
                   </p>
                 </div>
-                <p className="text-xs opacity-90 line-clamp-2">
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
                   {pendingQuestion.content}
                 </p>
-                {isMultichoiceQuestion && (
-                  <p className="text-xs opacity-75 mt-1">
-                    📍 Please select options in the question card above
-                  </p>
-                )}
-                {!isMultichoiceQuestion && (
-                  <p className="text-xs opacity-75 mt-1">
-                    💬 Type your answer in the chat below
-                  </p>
-                )}
               </div>
-              <div className="flex flex-col gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    const element = document.getElementById(`question-${pendingQuestion.id}`)
-                    element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                  }}
-                  className="text-xs whitespace-nowrap"
-                >
-                  View Question
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    // Skip question by marking it as answered
-                    sendQuestionAnswer(
-                      pendingQuestion.structured_data!.question_id!,
-                      "[SKIPPED]",
-                      []
-                    )
-                  }}
-                  className="text-xs text-white hover:bg-blue-700 hover:text-white whitespace-nowrap"
-                >
-                  Skip
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="p-2 m-4 rounded-4xl relative bg-muted">
-        {showMentions && filteredAgents.length > 0 && (
-          <div
-            ref={mentionDropdownRef}
-            className="absolute bottom-full left-0 right-0 mb-2 mx-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden"
-          >
-            <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-              <span className="text-sm font-medium text-foreground">
-                Group Members
-              </span>
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <kbd className="px-1.5 py-0.5 text-xs bg-accent rounded">
-                  Tab
-                </kbd>
-                to select
-              </span>
-            </div>
-            <div className="max-h-[240px] overflow-y-auto">
-              {filteredAgents.map((agent, index) => (
-                <button
-                  key={agent.name}
-                  onClick={() => insertMention(agent)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors ${index === selectedMentionIndex ? "bg-accent/50" : ""
-                    }`}
-                >
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 bg-muted">
-                    {agent.avatar}
-                  </div>
-                  <div className="flex-1 text-left">
-                    <div className="text-sm font-medium text-foreground">
-                      {agent.name}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {agent.role}
-                    </div>
-                  </div>
-                </button>
-              ))}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const element = document.getElementById(`question-${pendingQuestion.id}`)
+                  element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }}
+                className="text-xs text-blue-600 border-blue-300 hover:bg-blue-100 h-7 px-3"
+              >
+                View Question
+              </Button>
             </div>
           </div>
         )}
 
-        <div className="bg-transparent rounded-4xl p-1 border-0">
-          <Textarea
+        <div className={`p-2 ${pendingQuestion ? 'pt-3' : ''}`}>
+        {showMentions && (
+          <MentionDropdown
+            agents={filteredAgents}
+            onSelect={insertMention}
+            onClose={() => setShowMentions(false)}
+          />
+        )}
+
+        {/* <div className="bg-transparent rounded-4xl p-1 border-0"> */}
+        <PromptInput onSubmit={handleSend}
+        >
+          <PromptInputTextarea
             ref={textareaRef}
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            className="min-h-[40px] resize-none bg-transparent border-0 text-sm text-foreground placeholder:text-muted-foreground p-1 focus-visible:ring-0 focus-visible:ring-transparent focus-visible:ring-offset-0"
-            disabled={!isConnected || !!shouldBlockChat}
-            placeholder={
-              shouldBlockChat
-                ? "⏸️ Please select options in the question above..."
-                : pendingQuestion && !isMultichoiceQuestion
-                ? "💬 Type your answer here..."
-                : "Type a message..."
-            }
+            placeholder="Type your message..."
           />
-          <div className="flex items-center justify-between pt-3">
-            <div className="flex gap-2">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 hover:bg-accent"
-                      onClick={triggerMention}
-                      disabled={!isConnected || !!shouldBlockChat}
-                    >
-                      <AtSign className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Mention an agent</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div>
-                      <TechStackDialog />
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>View tech stack</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-            <Button
-              size="icon"
-              className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
-              onClick={handleSend}
-              disabled={!isConnected || !message.trim() || !!shouldBlockChat}
-            >
-              <ArrowUp className="w-4 h-4" />
-            </Button>
+          <PromptInputToolbar>
+            <PromptInputTools>
+              <PromptInputButton>
+                <PaperclipIcon size={16} />
+              </PromptInputButton>
+
+            </PromptInputTools>
+            <PromptInputSubmit disabled={!isConnected || shouldBlockChat || !message.trim()} />
+          </PromptInputToolbar>
+        </PromptInput>
+        {/* <div className="flex items-center justify-between pt-3">
+          <div className="flex gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 hover:bg-accent"
+                    onClick={triggerMention}
+                    disabled={!isConnected || shouldBlockChat}
+                  >
+                    <AtSign className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Mention an agent</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <TechStackDialog />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>View tech stack</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
+          <Button
+            size="icon"
+            className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90"
+            onClick={handleSend}
+            disabled={!isConnected || !message.trim() || shouldBlockChat}
+          >
+            <ArrowUp className="w-4 h-4" />
+          </Button>
+        </div> */}
+
         </div>
       </div>
 

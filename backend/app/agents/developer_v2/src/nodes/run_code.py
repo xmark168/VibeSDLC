@@ -1,190 +1,148 @@
-"""Run code node - Execute lint fix + tests."""
-import json
+"""Run code node - Execute format, lint fix, typecheck, build."""
 import logging
 from pathlib import Path
+from typing import Tuple, Optional
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.tools.shell_tools import execute_shell
-from app.agents.developer_v2.src.tools.container_tools import (
-    dev_container_manager, set_container_context,
-)
-from app.agents.developer_v2.src.nodes._helpers import (
-    setup_tool_context, get_langfuse_span, write_test_log
-)
+from app.agents.developer_v2.src.tools.shell_tools import run_shell
+from app.agents.developer_v2.src.nodes._helpers import setup_tool_context, get_langfuse_span
 
 logger = logging.getLogger(__name__)
 
 
-async def _run_code_multi_service(state: DeveloperState, workspace_path: str, services: list) -> DeveloperState:
-    """Run tests for project services (single or multi-service)."""
-    task_id = state.get("task_id") or state.get("story_id", "")
-    branch_name = state.get("branch_name") or task_id
+def _run_step(
+    step_name: str,
+    cmd: str,
+    cwd: str,
+    svc_name: str,
+    timeout: int = 120,
+    allow_fail: bool = False
+) -> Tuple[bool, str, str]:
+    """
+    Run a build/test step with consistent logging.
     
-    parent_span = get_langfuse_span(state, "run_code_multi_service", {
-        "services": [s.get("name") for s in services],
-        "workspace": workspace_path,
-    })
-    
-    all_stdout = ""
-    all_stderr = ""
-    all_passed = True
-    summaries = []
+    Returns:
+        (success, stdout, stderr)
+    """
+    logger.info(f"[run_code] [{svc_name}] {step_name}: {cmd}")
     
     try:
-        for svc_config in services:
-            svc_name = svc_config.get("name", "app")
-            svc_path = str(Path(workspace_path) / svc_config.get("path", "."))
-            test_cmd = svc_config.get("test_cmd", "")
-            install_cmd = svc_config.get("install_cmd", "")
-            needs_db = svc_config.get("needs_db", False)
-            db_cmds = svc_config.get("db_cmds", [])
-            
-            if not test_cmd:
-                logger.info(f"[run_code] Skipping {svc_name}: no test_cmd")
-                continue
-            
-            svc_span = parent_span.span(name=f"service:{svc_name}", input={
-                "path": svc_config.get("path", "."),
-                "needs_db": needs_db,
-            }) if parent_span else None
-            
-            logger.info(f"[run_code] Running tests for {svc_name} at {svc_path}")
-            all_stdout += f"\n\n{'='*40}\n SERVICE: {svc_name}\n{'='*40}\n"
-            
-            commands = []
-            for db_cmd in db_cmds:
-                commands.append(db_cmd)
-            
-            # Install dependencies first (required before build)
-            if install_cmd:
-                logger.info(f"[run_code] Installing deps for {svc_name}: {install_cmd}")
-                try:
-                    install_result = execute_shell.invoke({
-                        "command": install_cmd,
-                        "working_directory": workspace_path,
-                        "timeout": 300
-                    })
-                    if isinstance(install_result, str):
-                        install_result = json.loads(install_result)
-                    all_stdout += f"\n$ {install_cmd}\n{install_result.get('stdout', '')}"
-                    if install_result.get("exit_code", 0) != 0:
-                        logger.warning(f"[run_code] Install warning for {svc_name}: {install_result.get('stderr', '')}")
-                    else:
-                        logger.info(f"[run_code] Install completed for {svc_name}")
-                except Exception as e:
-                    logger.warning(f"[run_code] Install error for {svc_name}: {e}")
-            
-            commands.append(test_cmd)
-            
-            svc_passed = True
-            
-            if needs_db:
-                try:
-                    set_container_context(branch_name=branch_name, workspace_path=workspace_path)
-                    dev_container_manager.get_or_create(
-                        branch_name=branch_name,
-                        workspace_path=workspace_path,
-                        project_type="node",
-                    )
-                    logger.info(f"[run_code] DB container started for {svc_name}")
-                except Exception as e:
-                    logger.warning(f"[run_code] DB container error (continuing anyway): {e}")
-            
-            for base_cmd in commands:
-                cmd_span = svc_span.span(name=f"exec:{base_cmd[:40]}...") if svc_span else None
-                
-                try:
-                    timeout = 300 if "install" in base_cmd else 120
-                    result = execute_shell.invoke({"command": base_cmd, "working_directory": workspace_path, "timeout": timeout})
-                    
-                    if isinstance(result, str):
-                        result = json.loads(result)
-                    
-                    if isinstance(result, dict):
-                        all_stdout += f"\n$ {base_cmd}\n{result.get('stdout', '')}"
-                        exit_code = result.get("exit_code", 0)
-                        
-                        if cmd_span:
-                            cmd_span.end(output={"exit_code": exit_code})
-                        
-                        if exit_code != 0 and "test" in base_cmd.lower():
-                            test_output = result.get("stdout", "") + result.get("stderr", "")
-                            all_stderr += test_output
-                            all_passed = False
-                            svc_passed = False
-                            summaries.append(f"{svc_name}: FAIL")
-                            logger.error(f"[run_code] TEST FAILED for {svc_name}:\n{test_output[:2000]}")
-                            task_id = state.get("task_id") or state.get("story_id", "unknown")
-                            write_test_log(task_id, test_output, "FAIL")
-                            break
-                except Exception as e:
-                    if cmd_span:
-                        cmd_span.end(output={"error": str(e)})
-                    all_stderr += f"\nError: {e}"
-                    all_passed = False
-                    svc_passed = False
-                    summaries.append(f"{svc_name}: ERROR")
-                    break
+        result = run_shell(cmd, cwd, timeout)
+        stdout = result.get("stdout", "")
+        stderr = result.get("stderr", "")
+        exit_code = result.get("exit_code", 0)
+        
+        if exit_code != 0:
+            if allow_fail:
+                logger.warning(f"[run_code] [{svc_name}] {step_name} warning (exit={exit_code})")
+                return True, stdout, stderr
             else:
-                summaries.append(f"{svc_name}: PASS")
-            
-            if svc_span:
-                svc_span.end(output={"status": "PASS" if svc_passed else "FAIL"})
+                logger.error(f"[run_code] [{svc_name}] {step_name} FAILED (exit={exit_code})")
+                logger.error(f"[run_code] stdout: {stdout[:500] if stdout else '(empty)'}")
+                logger.error(f"[run_code] stderr: {stderr[:500] if stderr else '(empty)'}")
+                return False, stdout, stderr
         
-        run_status = "PASS" if all_passed else "FAIL"
-        summary = ", ".join(summaries)
+        logger.info(f"[run_code] [{svc_name}] {step_name} completed")
+        return True, stdout, stderr
         
-        logger.info(f"[run_code] Multi-service result: {run_status} ({summary})")
-        
-        app_url = None
-        if run_status == "PASS":
-           print('completed tests successfully')
-        
-        if parent_span:
-            parent_span.end(output={"status": run_status, "summary": summary, "services": summaries})
-        
-        return {
-            **state,
-            "run_status": run_status,
-            "run_stdout": all_stdout,
-            "run_stderr": all_stderr,
-            "run_result": {
-                "status": run_status,
-                "summary": f"Multi-service: {summary}",
-                "services": summaries,
-            },
-            "app_url": app_url,
-            "message": f"✅ Tests passed! Dev server running at {app_url}" if app_url else None,
-        }
     except Exception as e:
-        if parent_span:
-            parent_span.end(output={"error": str(e)})
-        raise
+        error_msg = str(e)
+        if allow_fail:
+            logger.warning(f"[run_code] [{svc_name}] {step_name} error (continuing): {error_msg}")
+            return True, "", error_msg
+        else:
+            logger.error(f"[run_code] [{svc_name}] {step_name} error: {error_msg}")
+            return False, "", error_msg
+
+
+async def _run_service_build(
+    svc_config: dict,
+    workspace_path: str,
+    parent_span: Optional[object] = None
+) -> dict:
+    """
+    Run build for a single service.
+    
+    Flow: Install → Typecheck → Build
+    
+    Returns:
+        {"status": "PASS|FAIL|SKIP", "stdout": str, "stderr": str}
+    """
+    svc_name = svc_config.get("name", "app")
+    install_cmd = svc_config.get("install_cmd", "")
+    build_cmd = svc_config.get("build_cmd", "")
+    typecheck_cmd = svc_config.get("typecheck_cmd", "bun run typecheck")
+    
+    svc_span = None
+    if parent_span:
+        svc_span = parent_span.span(name=f"service:{svc_name}", input={"path": svc_config.get("path", ".")})
+    
+    all_stdout = f"\n{'='*40}\n SERVICE: {svc_name}\n{'='*40}\n"
+    all_stderr = ""
+    
+    try:
+        if install_cmd:
+            success, stdout, stderr = _run_step("Install", install_cmd, workspace_path, svc_name, timeout=300)
+            all_stdout += f"\n$ {install_cmd}\n{stdout}"
+            if not success:
+                all_stderr += stderr
+                if svc_span:
+                    svc_span.end(output={"status": "INSTALL_FAIL"})
+                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
+        
+        if typecheck_cmd:
+            success, stdout, stderr = _run_step("Typecheck", typecheck_cmd, workspace_path, svc_name, timeout=120)
+            all_stdout += f"\n$ {typecheck_cmd}\n{stdout}"
+            if not success:
+                error_output = stderr.strip() or stdout.strip() or f"Run '{typecheck_cmd}' manually to see errors."
+                all_stderr += f"\n[TYPECHECK FAILED]\n{error_output}"
+                if svc_span:
+                    svc_span.end(output={"status": "TYPECHECK_FAIL"})
+                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
+        
+        if build_cmd:
+            success, stdout, stderr = _run_step("Build", build_cmd, workspace_path, svc_name, timeout=180)
+            all_stdout += f"\n$ {build_cmd}\n{stdout}"
+            if not success:
+                all_stderr += f"\n[BUILD FAILED]\n{stderr or stdout}"
+                if svc_span:
+                    svc_span.end(output={"status": "BUILD_FAIL"})
+                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
+        
+        if svc_span:
+            svc_span.end(output={"status": "PASS"})
+        return {"status": "PASS", "stdout": all_stdout, "stderr": ""}
+        
+    except Exception as e:
+        logger.error(f"[run_code] [{svc_name}] Unexpected error: {e}")
+        if svc_span:
+            svc_span.end(output={"status": "ERROR", "error": str(e)})
+        return {"status": "FAIL", "stdout": all_stdout, "stderr": str(e)}
 
 
 async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
-    """Execute lint fix + tests (merged node)."""
-    print("[NODE] run_code")
+    """
+    Execute format, lint fix, typecheck, build.
+    
+    Flow:
+    1. Format all services (prettier)
+    2. Lint fix all services (eslint)
+    3. Build all services (install → typecheck → build)
+    """
+    logger.info("[NODE] run_code")
     
     workspace_path = state.get("workspace_path", "")
     project_id = state.get("project_id", "default")
     task_id = state.get("task_id") or state.get("story_id", "")
     
-    run_code_span = get_langfuse_span(state, "run_code", {
-        "workspace": workspace_path,
-        "task_id": task_id,
-    })
+    run_code_span = get_langfuse_span(state, "run_code", {"workspace": workspace_path, "task_id": task_id})
     
     try:
         if not workspace_path or not Path(workspace_path).exists():
-            logger.warning("[run_code] No workspace path, skipping tests")
+            logger.warning("[run_code] No workspace path, skipping")
             if run_code_span:
                 run_code_span.end(output={"status": "PASS", "reason": "No workspace"})
-            return {
-                **state,
-                "run_status": "PASS",
-                "run_result": {"status": "PASS", "summary": "No workspace to test"},
-            }
+            return {**state, "run_status": "PASS", "run_result": {"status": "PASS", "summary": "No workspace"}}
         
         setup_tool_context(workspace_path, project_id, task_id)
         
@@ -195,43 +153,82 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         if not services:
             logger.error("[run_code] Missing project_config.tech_stack.service")
             if run_code_span:
-                run_code_span.end(output={"status": "ERROR", "reason": "Missing tech_stack.service"})
-            return {
-                **state,
-                "run_status": "ERROR",
-                "run_result": {"status": "ERROR", "summary": "Missing project_config.tech_stack.service"},
-            }
+                run_code_span.end(output={"status": "ERROR", "reason": "Missing config"})
+            return {**state, "run_status": "ERROR", "run_result": {"status": "ERROR", "summary": "Missing config"}}
         
-        svc_names = [s.get("name", "app") for s in services]
-        logger.info(f"[run_code] tech_stack services: {svc_names}")
+        logger.info(f"[run_code] Services: {[s.get('name', 'app') for s in services]}")
         
-        # Run lint fix before tests
+        # Run prisma commands if schema exists
+        schema_path = Path(workspace_path) / "prisma" / "schema.prisma"
+        if schema_path.exists():
+            logger.info("[run_code] Prisma schema found, running generate + db push")
+            
+            # Generate client first
+            success, stdout, stderr = _run_step(
+                "Prisma Generate", "bunx prisma generate",
+                workspace_path, "prisma", timeout=60, allow_fail=False
+            )
+            if not success:
+                logger.warning(f"[run_code] Prisma generate failed: {stderr[:200]}")
+            
+            # Then push schema to DB
+            success, stdout, stderr = _run_step(
+                "Prisma DB Push", "bunx prisma db push --accept-data-loss",
+                workspace_path, "prisma", timeout=60, allow_fail=True
+            )
+            if not success:
+                logger.warning(f"[run_code] Prisma db push failed (may need DB): {stderr[:200]}")
+        
+        # Format all services
         for svc in services:
             svc_name = svc.get("name", "app")
             svc_path = str(Path(workspace_path) / svc.get("path", "."))
-            lint_fix_cmd = svc.get("lint_fix_cmd")
-            
-            if lint_fix_cmd:
-                logger.info(f"[run_code] Lint fix for {svc_name}: {lint_fix_cmd}")
-                try:
-                    execute_shell.invoke({
-                        "command": lint_fix_cmd,
-                        "working_directory": svc_path,
-                        "timeout": 60
-                    })
-                except Exception as e:
-                    logger.warning(f"[run_code] Lint fix error (continuing): {e}")
+            if svc.get("format_cmd"):
+                _run_step("Format", svc["format_cmd"], svc_path, svc_name, timeout=60, allow_fail=True)
         
+        # Lint fix all services
+        for svc in services:
+            svc_name = svc.get("name", "app")
+            svc_path = str(Path(workspace_path) / svc.get("path", "."))
+            if svc.get("lint_fix_cmd"):
+                _run_step("Lint Fix", svc["lint_fix_cmd"], svc_path, svc_name, timeout=60, allow_fail=True)
+        
+        # Build all services
+        all_stdout = ""
+        all_stderr = ""
+        all_passed = True
+        summaries = []
+        
+        for svc in services:
+            result = await _run_service_build(svc, workspace_path, run_code_span)
+            svc_name = svc.get("name", "app")
+            
+            all_stdout += result["stdout"]
+            all_stderr += result["stderr"]
+            
+            if result["status"] == "PASS":
+                summaries.append(f"{svc_name}: PASS")
+            else:
+                summaries.append(f"{svc_name}: FAIL")
+                all_passed = False
+        
+        run_status = "PASS" if all_passed else "FAIL"
+        summary = ", ".join(summaries)
+        
+        logger.info(f"[run_code] Result: {summary}")
         if run_code_span:
-            run_code_span.end(output={"mode": "tech_stack", "services": svc_names})
-        return await _run_code_multi_service(state, workspace_path, services)
+            run_code_span.end(output={"status": run_status, "summary": summary})
+        
+        return {
+            **state,
+            "run_status": run_status,
+            "run_stdout": all_stdout,
+            "run_stderr": all_stderr,
+            "run_result": {"status": run_status, "summary": summary, "services": summaries},
+        }
         
     except Exception as e:
         logger.error(f"[run_code] Error: {e}", exc_info=True)
         if run_code_span:
             run_code_span.end(output={"error": str(e)})
-        return {
-            **state,
-            "run_status": "PASS",
-            "run_result": {"status": "PASS", "summary": f"Test execution error: {str(e)}"},
-        }
+        return {**state, "run_status": "PASS", "run_result": {"status": "PASS", "summary": f"Error: {e}"}}

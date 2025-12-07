@@ -47,6 +47,7 @@ def load_env_file():
 
     return None
 
+
 ENV_FILE = load_env_file()
 
 
@@ -67,12 +68,31 @@ class Settings(BaseSettings):
     )
     DEBUG: bool = False
 
-    SECRET_KEY: str = Field(default="your-fixed-secret-key-min-32-chars-change-this-in-production")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    # SECURITY SETTINGS
+    SECRET_KEY: str = Field(
+        default="your-fixed-secret-key-min-32-chars-change-this-in-production"
+    )
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # 7 days
 
+    # OAUTH SETTINGS
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    FACEBOOK_APP_ID: str = ""
+    FACEBOOK_APP_SECRET: str = ""
+
+    # CORS SETTINGS
     FRONTEND_HOST: str = "http://localhost:5173"
+    BACKEND_HOST: str = "http://localhost:8000"
     BACKEND_CORS_ORGINS: Annotated[list[AnyUrl] | str, BeforeValidator(parse_cors)] = []
+
+    @computed_field
+    @property
+    def oauth_callback_url(self) -> str:
+        """Build OAuth callback URL"""
+        return f"{self.BACKEND_HOST.rstrip('/')}{self.API_V1_STR}/oauth-callback"
 
     @computed_field
     @property
@@ -81,6 +101,7 @@ class Settings(BaseSettings):
             self.FRONTEND_HOST
         ]
 
+    # DATABASE SETTINGS
     POSTGRES_SERVER: str
     POSTGRES_PORT: int = 5433
     POSTGRES_USER: str
@@ -125,8 +146,9 @@ class Settings(BaseSettings):
     MAX_TOKENS: int = 2000
     MAX_LLM_CALL_RETRIES: int = 3
 
-    STRONG_MODEL: str = "openai/gpt-4.1"
-    LIGHT_MODEL: str = "openai/gpt-4.1"
+    # LLM Model Settings
+    STRONG_MODEL: str = "openai/gpt-4.1"  # For creative agents (BA, Designer)
+    LIGHT_MODEL: str = "openai/gpt-4.1"  # For validators/coordinators
 
     OPENAI_API_KEY: str = ""
 
@@ -150,11 +172,13 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     KAFKA_ENABLE_AUTO_COMMIT: bool = True
     KAFKA_AUTO_OFFSET_RESET: Literal["earliest", "latest"] = "latest"
-    KAFKA_GROUP_ID: str = "crewai_agents"
+    KAFKA_GROUP_ID: str = "vibes_agents"
     KAFKA_SASL_MECHANISM: str | None = None
     KAFKA_SASL_USERNAME: str | None = None
     KAFKA_SASL_PASSWORD: str | None = None
-    KAFKA_SECURITY_PROTOCOL: Literal["PLAINTEXT", "SSL", "SASL_PLAINTEXT", "SASL_SSL"] = "PLAINTEXT"
+    KAFKA_SECURITY_PROTOCOL: Literal[
+        "PLAINTEXT", "SSL", "SASL_PLAINTEXT", "SASL_SSL"
+    ] = "PLAINTEXT"
 
     LANGFUSE_SECRET_KEY: str | None = None
     LANGFUSE_PUBLIC_KEY: str | None = None
@@ -165,13 +189,17 @@ class Settings(BaseSettings):
     PAYOS_CLIENT_ID: str = ""
     PAYOS_API_KEY: str = ""
     PAYOS_CHECKSUM_KEY: str = ""
-    PAYOS_WEBHOOK_SECRET: str = ""  # Optional: only needed for webhook signature verification
+    PAYOS_WEBHOOK_SECRET: str = (
+        ""  # Optional: only needed for webhook signature verification
+    )
 
     # PAYOS PAYMENT GATEWAY SETTINGS
     PAYOS_CLIENT_ID: str = ""
     PAYOS_API_KEY: str = ""
     PAYOS_CHECKSUM_KEY: str = ""
-    PAYOS_WEBHOOK_SECRET: str = ""  # Optional: only needed for webhook signature verification
+    PAYOS_WEBHOOK_SECRET: str = (
+        ""  # Optional: only needed for webhook signature verification
+    )
 
     @model_validator(mode="after")
     def _set_default_emails_from(self) -> Self:

@@ -9,26 +9,27 @@ Usage:
     from app.agents.developer_v2.src.skills import SkillRegistry
     
     registry = SkillRegistry.load("nextjs")
-    catalog = registry.get_skill_catalog()  # For LLM to choose
+    catalog = registry.get_skill_catalog_for_prompt()
     skill = registry.get_skill("frontend-component")
     content = skill.load_content()  # Level 2
 """
 
-from app.agents.developer_v2.src.skills.registry import Skill, SkillRegistry
 from app.agents.developer_v2.src.skills.skill_loader import (
-    Skill as MDSkill,
+    Skill,
     SkillMetadata,
     load_skill,
     discover_skills,
     get_project_structure,
+    get_plan_prompts,
 )
+from app.agents.developer_v2.src.skills.registry import SkillRegistry
 
 __all__ = [
     "Skill",
-    "SkillRegistry",
-    "MDSkill",
     "SkillMetadata",
+    "SkillRegistry",
     "load_skill",
     "discover_skills",
     "get_project_structure",
+    "get_plan_prompts",
 ]

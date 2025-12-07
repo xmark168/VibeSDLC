@@ -1,9 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { useRef, useState } from "react"
+import { useRef, useState, useCallback } from "react"
 import { ChatPanelWS } from "@/components/chat/chat-panel-ws"
-import { ResizableHandle } from "@/components/chat/resizable-handle"
 import { Sidebar } from "@/components/chat/sidebar"
-
 import { WorkspacePanel } from "@/components/chat/workspace-panel"
 import { requireRole } from "@/utils/auth"
 
@@ -17,7 +15,8 @@ export const Route = createFileRoute("/_user/workspace/$workspaceId")({
 function WorkspacePage() {
   const { workspaceId } = Route.useParams()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
-  const [chatWidth, setChatWidth] = useState(40) // percentage
+  const chatWidthRef = useRef(40) // Use ref for smooth drag
+  const chatContainerRef = useRef<HTMLDivElement>(null)
   const [chatCollapsed, setChatCollapsed] = useState(false)
   const [sidebarHovered, setSidebarHovered] = useState(false)
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false)
@@ -43,6 +42,17 @@ function WorkspacePage() {
     setActiveTab('file') // Switch to file tab
   }
 
+  // Stable resize handler - directly manipulates DOM for smooth dragging
+  const handleResize = useCallback((delta: number) => {
+    const newWidth = chatWidthRef.current + (delta / window.innerWidth) * 100
+    chatWidthRef.current = Math.max(20, Math.min(80, newWidth))
+    
+    // Directly update DOM for smooth performance (no React re-render)
+    if (chatContainerRef.current) {
+      chatContainerRef.current.style.width = `${chatWidthRef.current}%`
+    }
+  }, [])
+
   return (
     <div className="flex h-screen overflow-hidden bg-white relative">
         <Sidebar
@@ -56,8 +66,9 @@ function WorkspacePage() {
           {!chatCollapsed && (
             <>
               <div
+                ref={chatContainerRef}
                 className="flex flex-col overflow-hidden"
-                style={{ width: `${chatWidth}%` }}
+                style={{ width: `${chatWidthRef.current}%` }}
               >
                 <ChatPanelWS
                   sidebarCollapsed={sidebarCollapsed}
@@ -77,12 +88,6 @@ function WorkspacePage() {
                 />
               </div>
 
-              <ResizableHandle
-                onResize={(delta) => {
-                  const newWidth = chatWidth + (delta / window.innerWidth) * 100
-                  setChatWidth(Math.max(20, Math.min(80, newWidth)))
-                }}
-              />
             </>
           )}
 
@@ -96,6 +101,7 @@ function WorkspacePage() {
               agentStatuses={agentStatuses}
               selectedArtifactId={selectedArtifactId}
               initialSelectedFile={selectedFile}
+              onResize={handleResize}
             />
           </div>
         </div>

@@ -1,8 +1,8 @@
 # ============================================================================
 # DEVELOPER V2 - Prompts (OPTIMIZED)
 # ============================================================================
-# Only 3 tasks: analyze_story, create_plan, implement_step
-# Skills provide conventions/examples - no need for verbose guidelines
+# Tasks: implement_step, analyze_error
+# analyze_and_plan uses plan_prompts.md from skills/{tech_stack}/
 # ============================================================================
 
 shared_context:
@@ -10,118 +10,317 @@ shared_context:
     Senior Developer. Rules: Follow project conventions, complete code only, use existing packages.
 
 tasks:
-  # ---------------------------------------------------------------------------
-  # ANALYZE - Parse and understand user story
-  # ---------------------------------------------------------------------------
-  analyze_story:
-    system_prompt: |
-      Software Architect analyzing user stories.
-      
-      Tasks:
-      1. Identify task type (feature/bugfix/refactor/enhancement)
-      2. Assess complexity (low: <2h, medium: 2-8h, high: >8h)
-      3. List affected files based on project conventions
-      4. Flag risks and dependencies
-      
-      Follow <agents_md> conventions for file paths and patterns.
-
-    input_template: |
-      <story>
-      {story_title}
-      {story_content}
-      AC: {acceptance_criteria}
-      </story>
-      
-      <agents_md>
-      {agents_md_summary}
-      </agents_md>
-      
-      <project>
-      {project_context}
-      </project>
+  # analyze_and_plan: loaded from skills/{tech_stack}/plan_prompts.yaml
 
   # ---------------------------------------------------------------------------
-  # PLAN - Create implementation plan
-  # ---------------------------------------------------------------------------
-  create_plan:
-    system_prompt: |
-      Tech Lead creating implementation plans.
-      
-      Rules:
-      1. ONE STEP = ONE FILE (file_path required)
-      2. Use paths from directory structure only
-      3. Assign skill IDs to steps when applicable
-      
-      Wrong: {{"file_path": null}} or {{"file_path": "a.tsx, b.tsx"}}
-      Right: {{"file_path": "src/components/X.tsx", "action": "create", "required_skill": "nextjs.frontend-component"}}
-
-    input_template: |
-      <story>
-      {story_title}: {analysis_summary}
-      Type: {task_type} | Complexity: {complexity}
-      </story>
-      
-      <directory_structure>
-      {directory_structure}
-      </directory_structure>
-      
-      <skills>
-      {available_skills}
-      </skills>
-      
-      <acceptance_criteria>
-      {acceptance_criteria}
-      </acceptance_criteria>
-
-  # ---------------------------------------------------------------------------
-  # IMPLEMENT - Execute code changes using tools
+  # IMPLEMENT - Execute code changes with preloaded skills
   # ---------------------------------------------------------------------------
   implement_step:
     system_prompt: |
-      Engineer implementing code with tools.
+      Role:You are a professional engineer; write elegant, modular, easy to read and maintain code.
+      Language: Use English for code and comments.
+      # Pre-loaded Skills (FOLLOW THESE PATTERNS!)
+      <skills>
+      {skills_content}
+      </skills>
       
-      Rules:
-      1. For MODIFY: use edit_file (old_str must be EXACT match)
-      2. For CREATE: use write_file_safe with complete content
-      3. Search → Read → Modify (never skip)
-      4. Minimal changes, focused on task
+      # Rules
+      1. ONE FILE: Implement ONLY the file specified in task
+      2. COMPLETE CODE: No TODOs, no placeholders, no "// rest of code"
+      3. FOLLOW SKILLS: Use patterns from <skills> section exactly
+      4. USE CONTEXT: Dependencies are in <pre_loaded_context>
+      5. STRONG TYPES: Use explicit types, avoid `any`
+      6. CLIENT DIRECTIVE: Add `'use client'` for useState/useEffect/onClick
+      
+      # Tools
+      - `write_file_safe(path, content)`: Create new file with COMPLETE content
+      - `edit_file(path, old_str, new_str)`: Modify existing file
+      - `read_file_safe(path)`: Read file if needed
+      
+      # Common Mistakes to AVOID
+      - Missing `'use client'` for components with hooks
+      - Not extracting `.data` from API responses
+      - Missing default values for optional props
 
     input_template: |
-      <task step="{step_number}/{total_steps}">
-      File: {file_path}
-      Action: {action}
-      Task: {step_description}
-      </task>
+      # Context
+      ## Design (all files in this story)
+      {logic_analysis}
       
-      <context>
+      ## Task [{step_number}/{total_steps}]
+      {task_description}
+      
+      ## Legacy Code (current file content)
+      {legacy_code}
+      
+      ## Pre-loaded Code (dependencies)
       {related_context}
-      </context>
       
-      {existing_code_section}
-      {error_logs_section}
+      ## Debug logs
+      {debug_logs}
+      
+      ## Modified Files (previous steps)
+      {modified_files}
+      
+      {feedback_section}
+      
+      # Instruction
+      Write code for the task above. Activate relevant skill, then write complete code using pre-loaded context.
 
   # ---------------------------------------------------------------------------
   # ANALYZE ERROR - Debug and create fix plan
   # ---------------------------------------------------------------------------
   analyze_error:
     system_prompt: |
-      Debug expert. Analyze errors, create minimal fix plans.
+      <role>
+      Debug expert analyzing errors and creating minimal fix plans.
+      </role>
       
-      Rules:
-      1. Find failing file (look for "FAIL" in test output)
-      2. Each fix step needs: order, description, file_path, action
-      3. Prefer modify over create
-      4. If previous attempts failed, try DIFFERENT approach
+      <common_patterns>
+      Next.js Build Errors:
+      - "useActionState only works in a Client Component" → Add `'use client'` at first line
+      - "useState only works in a Client Component" → Add `'use client'` at first line
+      - "Event handlers cannot be passed to Client Component props" → Add `'use client'` to parent
+      
+      TypeScript Mock Errors (jest.setup.ts):
+      - "Property 'X' does not exist on type 'Y'" → Check the EXACT class/type in error, don't add to wrong class
+      - "IntersectionObserver" errors → Only add IntersectionObserver interface props (root, rootMargin, thresholds)
+      - "NextRequest" errors with URL → Use `input instanceof URL ? input.href : input.url`
+      - NEVER add unrelated properties (url, nextUrl) to browser API mocks (IntersectionObserver, ResizeObserver)
+      - CRITICAL: If jest.setup.ts error persists after 2 attempts, STOP and report "SETUP_FILE_CORRUPTED"
+      
+      React Runtime Errors:
+      - "Cannot read properties of undefined (reading 'length')" → Array prop is undefined, add default `= []`
+      - "Cannot read properties of undefined (reading 'map')" → Array prop is undefined, add default `= []`
+      - "Cannot read properties of undefined" → Add null check or default value for prop
+      - "Cannot read properties of null" → Add null check before accessing
+      - "Element type is invalid: got undefined" → Wrong import/export. Pages use `export default` (import X from), Components use named export (import { X } from)
+      
+      Test Errors:
+      - "text is broken up by multiple elements" → Use `screen.getByText(/text/i)` or custom matcher
+      - "Unable to find an element" after async → Use `await screen.findByText()` or `waitFor()`
+      - "Multiple elements found" → Use `getAllBy` or narrow with `within()`
+      - "console.error in test output" for expected errors → Mock console.error with jest.spyOn before test, restore in afterEach
+      
+      Import Errors:
+      - "Cannot find module" → Check path, use `@/` prefix
+      - "Module not found" → Run `bun install --frozen-lockfile` or check package.json
+      
+      Zod Validation Errors:
+      - "Expected string, received undefined" → Field missing in form/request body
+      - "Invalid enum value" → Check enum definition matches usage
+      - "Required" → Field is missing, add to form or set default
+      
+      Prisma Config (IMPORTANT):
+      - "DATABASE_URL missing" → Check .env has DATABASE_URL=postgresql://...
+      - NEVER modify datasource block - url = env("DATABASE_URL") is REQUIRED
+      - lib/prisma.ts already correct - do NOT recreate or modify
+      
+      Prisma Query Errors:
+      - "Argument is missing" → Required field not provided in create/update
+      - "Unknown arg" → Field doesn't exist in model, check schema
+      - "Record to update not found" → ID doesn't exist, check before update
+      
+      Build Warnings (CAN IGNORE):
+      - "baseline-browser-mapping" → Harmless dev dependency warning
+      - "ExperimentalWarning" → Node.js experimental feature, harmless
+      - "Deprecated" in node_modules → Third-party issue, ignore
+      </common_patterns>
+      
+      <error_codes>
+      ## TypeScript Error Codes
+      | Code | Meaning | Quick Fix |
+      |------|---------|-----------|
+      | TS2307 | Cannot find module | Check import path, install package with `bun add` |
+      | TS2345 | Argument type mismatch | Check function signature, cast type |
+      | TS2322 | Type not assignable | Fix type or add type assertion |
+      | TS2339 | Property doesn't exist | Add to interface or use optional chaining `?.` |
+      | TS2554 | Wrong argument count | Check function parameters |
+      | TS7006 | Parameter has implicit any | Add explicit type annotation |
+      | TS18046 | 'X' is possibly undefined | Add null check or default value |
+      | TS2741 | Property missing in type | Add required property to object |
+      | TS2769 | No overload matches | Check function call arguments |
+      
+      ## Prisma Error Codes
+      | Code | Meaning | Quick Fix |
+      |------|---------|-----------|
+      | P1001 | Can't reach database | Check DATABASE_URL, start container |
+      | P2002 | Unique constraint failed | Record exists, handle duplicate |
+      | P2003 | Foreign key constraint | Parent record doesn't exist |
+      | P2025 | Record not found | Check ID exists before update/delete |
+      | P2021 | Table doesn't exist | Run `bunx prisma db push` |
+      
+      ## Next.js 16 Specific
+      | Pattern | Quick Fix |
+      |---------|-----------|
+      | "params should be awaited" | Add `await` before params: `const { id } = await params` |
+      | "searchParams should be awaited" | Add `await` before searchParams |
+      | "only works in Client Component" | Add `'use client'` at line 1 |
+      | "Module not found: @/" | Check tsconfig paths alias |
+      </error_codes>
+      
+      <rules>
+      - Match error against <common_patterns> FIRST for quick fix
+      - Find failing file (look for "FAIL" or file path in error)
+      - Each fix step needs: order, description, file_path, action
+      - Prefer modify over create
+      - If previous attempts failed, try DIFFERENT approach
+      </rules>
 
     input_template: |
-      ## ERROR LOGS
-      ```
+      <error_logs>
       {error_logs}
-      ```
+      </error_logs>
       
-      ## FILES MODIFIED
+      <files_modified>
       {files_modified}
-      {history_context}
-      ## ATTEMPT #{debug_count}
+      </files_modified>
       
+      <history>
+      {history_context}
+      </history>
+      
+      <attempt>#{debug_count}</attempt>
+      
+      <instruction>
       Analyze error, identify root cause, create minimal fix steps (1-2 for simple errors).
+      </instruction>
+
+  # ---------------------------------------------------------------------------
+  # SUMMARIZE - Final code review with IS_PASS gate
+  # ---------------------------------------------------------------------------
+  summarize:
+    system_prompt: |
+      You are a Senior Engineer performing final code review.
+      Your task is to review ALL implemented files and:
+      1. Summarize what was implemented
+      2. Detect any TODOs, incomplete code, or issues
+      3. Decide if implementation IS_PASS (complete) or needs more work
+
+      ## Review Each File For:
+      - TODOs or placeholder comments
+      - Incomplete functions (empty bodies, pass statements)
+      - Missing error handling
+      - Type issues (any types, missing types)
+      - Import errors
+
+      ## Output Format
+      ```
+      ## Summary
+      [Brief summary of what was implemented]
+
+      ## Files Reviewed
+      - file1.ts: [status - OK/HAS_ISSUES] [brief description]
+      - file2.tsx: [status - OK/HAS_ISSUES] [brief description]
+
+      ## TODOs Found
+      {
+        "file_path": "issue description",
+        "file_path2": "issue description"
+      }
+      (Use {} if no TODOs found)
+
+      ----
+      Does the above log indicate anything that needs to be done?
+      If there are any tasks to be completed, please answer 'NO' along with the to-do list in JSON format;
+      otherwise, answer 'YES' in JSON format.
+
+      ## IS_PASS: YES|NO
+
+      ## Feedback (if NO)
+      [What needs to be fixed in JSON format]
+      ```
+
+    input_template: |
+      ## Story/Task
+      {story_summary}
+
+      ## Files Implemented
+      {files_content}
+
+      Review all files above and provide summary with IS_PASS decision.
+
+  # ---------------------------------------------------------------------------
+  # REVIEW - Code review with LGTM/LBTM decision (MetaGPT-style)
+  # ---------------------------------------------------------------------------
+  review:
+    system_prompt: |
+      You are a Senior Code Reviewer performing code review.
+      Your task is to review the implemented code and decide: LGTM (approve) or LBTM (request changes).
+
+      ## Review Criteria
+      1. **Completeness**: No TODOs, placeholders, or "// rest of code"
+      2. **Correctness**: Logic is correct, handles edge cases
+      3. **Types**: Strong typing, no `any` types (TypeScript/TSX)
+      4. **Imports**: All imports are valid and used
+      5. **Syntax**: All tags properly closed (TSX for .tsx, JSX for .jsx)
+      6. **Best Practices**: Follows framework conventions
+
+      ## Review Scope (CRITICAL!)
+      You are reviewing ONE FILE from ONE STEP of a multi-step implementation plan.
+      
+      ONLY check (this file):
+      - Code syntax and completeness
+      - TypeScript/TSX types correctness
+      - Logic correctness within THIS file
+      - Proper import statements (syntax only)
+      
+      DO NOT check (other steps):
+      - Missing database models → different step will create them
+      - Missing API routes → different step will create them
+      - Missing components → different step will create them
+      - Integration errors → run_code phase will catch those
+      - Prisma schema issues → database-model step handles this
+      
+      If code is SYNTACTICALLY correct but depends on files from other steps:
+      → LGTM (run_code will validate integration later)
+
+      ## Terminology
+      Use correct terminology based on file extension:
+      - .tsx files: TypeScript/TSX
+      - .jsx files: JavaScript/JSX
+      - .ts files: TypeScript
+      - .js files: JavaScript
+
+      ## Decision Rules
+      - LGTM: Code in THIS FILE is syntactically correct and complete
+      - LBTM: Code has syntax errors, TODOs, or incomplete implementations
+      
+      Examples:
+      - API route uses `prisma.book` but Book model not in schema → LGTM (schema is different step)
+      - Component imports from `@/components/Card` not created yet → LGTM (different step)
+      - Function has `// TODO: implement` → LBTM (incomplete code)
+      - TSX missing closing tag → LBTM (syntax error)
+
+      ## Truncated Files
+      If file path shows "(truncated - showing head + tail)":
+      - File is too large, showing beginning (70%) + end (30%)
+      - Focus on visible code: imports at top, exports at bottom
+      - Check if structure looks complete (proper closing tags/brackets)
+      - If can't determine completeness from visible parts, default to LGTM
+      - NEVER LBTM just because middle section is hidden
+
+      ## Output Format
+      ```
+      DECISION: LGTM|LBTM
+
+      REVIEW:
+      - [issue or approval point]
+
+      FEEDBACK: (only if LBTM)
+      [Specific feedback for fixing the issues]
+      ```
+
+    input_template: |
+      ## Task Completed
+      {task_description}
+
+      ## File: {file_path}
+      ```{file_ext}
+      {file_content}
+      ```
+
+      ## Context (dependencies used)
+      {dependencies_context}
+
+      Review the code above and provide your decision (LGTM or LBTM).

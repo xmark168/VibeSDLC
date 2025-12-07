@@ -7,6 +7,7 @@ Story-driven developer agent with two implementations:
 Set USE_DEEPAGENTS=true to use the DeepAgents implementation.
 """
 
+<<<<<<< HEAD
 import os
 
 from app.agents.developer_v2.developer_v2 import DeveloperV2
@@ -34,3 +35,14 @@ def get_developer_agent():
 
 
 __all__ = ["DeveloperV2", "DeveloperV2DeepAgent", "get_developer_agent", "DEEPAGENTS_AVAILABLE"]
+=======
+__all__ = ["DeveloperV2"]
+
+
+def __getattr__(name: str):
+    """Lazy import to avoid loading heavy dependencies at import time."""
+    if name == "DeveloperV2":
+        from app.agents.developer_v2.developer_v2 import DeveloperV2
+        return DeveloperV2
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+>>>>>>> d3d181b6a1a2ffce8eb95825e9514e580e0fb01d

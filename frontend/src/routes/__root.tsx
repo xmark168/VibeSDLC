@@ -22,7 +22,7 @@ const TanStackDevtools =
 export const Route = createRootRoute({
   component: () => (
     <>
-      <div style={{ fontFamily: "IBM Plex Sans" }}>
+      <div style={{ fontFamily: "IBM Plex Sans", minHeight: "100vh" }}>
         <Outlet />
       </div>
       <Suspense>

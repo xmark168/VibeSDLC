@@ -1,111 +1,95 @@
-import { useNavigate } from "@tanstack/react-router"
-import { Menu } from "lucide-react"
-import type React from "react"
-import { Button } from "@/components/ui/button"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet"
-import { isLoggedIn } from "@/hooks/useAuth"
+import { Button } from "@/components/ui/button";
+import { Menu, X } from "lucide-react";
+import { useState } from "react";
 
-export function Header() {
-  const navigate = useNavigate()
-  const navItems = [
-    { name: "Features", href: "#features-section" },
-    { name: "Pricing", href: "#pricing-section" },
-    { name: "Testimonials", href: "#testimonials-section" }, // Changed from Docs to Testimonials
-  ]
+const navItems = [
+  { title: "Trang chủ", path: "#" },
+  { title: "AI Agents", path: "#agents" },
+  { title: "Tính năng", path: "#features" },
+  { title: "Đánh giá", path: "#testimonials" },
+];
 
-  const handleScroll = (
-    e: React.MouseEvent<HTMLAnchorElement>,
-    href: string,
-  ) => {
-    e.preventDefault()
-    const targetId = href.substring(1) // Remove '#' from href
-    const targetElement = document.getElementById(targetId)
-    if (targetElement) {
-      targetElement.scrollIntoView({ behavior: "smooth" })
+const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
+  e.preventDefault();
+  if (path === "#") {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } else {
+    const element = document.querySelector(path);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
+};
 
-  const handleTryClick = () => {
-    if (isLoggedIn()) {
-      navigate({ to: "/projects" })
-    } else {
-      navigate({ to: "/login" })
-    }
-  }
+export const Header = () => {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <header className="w-full py-4 px-6">
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-3">
-            <span className="text-foreground text-xl font-semibold">
-              VibeSDLC
-            </span>
+    <header className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container flex h-16 items-center justify-between px-4 md:px-8">
+        {/* Logo */}
+        <a
+          href="#"
+          onClick={(e) => scrollToSection(e, "#")}
+          className="flex items-center cursor-pointer"
+        >
+          <img src="/assets/images/logo.png" alt="VibeSDLC" className="h-36 w-36 object-contain" />
+          {/* <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
+            <span className="text-primary-foreground font-bold text-sm">VS</span>
           </div>
-          <nav className="hidden md:flex items-center gap-2">
+          <span className="ml-2 text-lg font-semibold text-foreground">VibeSDLC</span> */}
+        </a>
+
+        {/* Desktop Navigation */}
+        <nav className="hidden md:flex items-center space-x-8">
+          {navItems.map((item) => (
+            <a
+              key={item.path}
+              href={item.path}
+              onClick={(e) => scrollToSection(e, item.path)}
+              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
+            >
+              {item.title}
+            </a>
+          ))}
+        </nav>
+
+        {/* Login Button - Desktop */}
+        <div className="hidden md:block">
+          <Button variant="default" size="sm" className="rounded-full px-6" asChild>
+            <a href="/login">Đăng nhập</a>
+          </Button>
+        </div>
+
+        <button
+          className="md:hidden inline-flex items-center justify-center p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        >
+          {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </button>
+      </div>
+      {mobileMenuOpen && (
+        <div className="md:hidden border-t bg-background">
+          <nav className="container flex flex-col space-y-4 px-4 py-6">
             {navItems.map((item) => (
               <a
-                key={item.name}
-                href={item.href}
-                onClick={(e) => handleScroll(e, item.href)} // Add onClick handler
-                className="text-[#888888] hover:text-foreground px-4 py-2 rounded-full font-medium transition-colors"
+                key={item.path}
+                href={item.path}
+                onClick={(e) => {
+                  scrollToSection(e, item.path);
+                  setMobileMenuOpen(false);
+                }}
+                className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
               >
-                {item.name}
+                {item.title}
               </a>
             ))}
+            <Button variant="default" size="sm" className="w-full" asChild>
+              <a href="/login">Đăng nhập</a>
+            </Button>
           </nav>
         </div>
-        <div className="flex items-center gap-4">
-          <Button
-            onClick={handleTryClick}
-            className="hidden md:block bg-secondary text-secondary-foreground hover:bg-secondary/90 px-6 py-2 rounded-full font-medium shadow-sm"
-          >
-            Try for Free
-          </Button>
-          <Sheet>
-            <SheetTrigger asChild className="md:hidden">
-              <Button variant="ghost" size="icon" className="text-foreground">
-                <Menu className="h-7 w-7" />
-                <span className="sr-only">Toggle navigation menu</span>
-              </Button>
-            </SheetTrigger>
-            <SheetContent
-              side="bottom"
-              className="bg-background border-t border-border text-foreground"
-            >
-              <SheetHeader>
-                <SheetTitle className="text-left text-xl font-semibold text-foreground">
-                  Navigation
-                </SheetTitle>
-              </SheetHeader>
-              <nav className="flex flex-col gap-4 mt-6 ml-6">
-                {navItems.map((item) => (
-                  <a
-                    key={item.name}
-                    href={item.href}
-                    onClick={(e) => handleScroll(e, item.href)} // Add onClick handler
-                    className="text-[#888888] hover:text-foreground justify-start text-lg py-2"
-                  >
-                    {item.name}
-                  </a>
-                ))}
-                <Button
-                  onClick={handleTryClick}
-                  className="w-full mt-4 bg-secondary text-secondary-foreground hover:bg-secondary/90 px-6 py-2 rounded-full font-medium shadow-sm"
-                >
-                  Try for Free
-                </Button>
-              </nav>
-            </SheetContent>
-          </Sheet>
-        </div>
-      </div>
+      )}
     </header>
-  )
-}
+  );
+};

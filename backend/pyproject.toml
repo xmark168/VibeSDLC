@@ -22,8 +22,6 @@ dependencies = [
     "redis>=7.0.1",
     "email-validator>=2.3.0",
     "sentry-sdk>=2.0.0",
-    "crewai>=0.86.0",
-    "crewai-tools>=0.12.0",
     "aiokafka>=0.11.0",
     "confluent-kafka>=2.3.0",
     "pyyaml>=6.0.0",
@@ -31,8 +29,6 @@ dependencies = [
     "litellm>=1.80.0",
     "gitpython>=3.1.45",
     "langfuse>=3.10.1",
-    "cocoindex[embeddings]>=0.3.9",
-    "pgvector>=0.4.1",
     "psycopg[binary,pool]>=3.2.12",
     "psycopg-pool>=3.2.7",
     "langchain-community>=0.4.1",
@@ -49,6 +45,11 @@ dependencies = [
     "deepagents>=0.2.8",
     "testcontainers[postgres]>=4.8.0",
     "docker>=7.0.0",
+    "langchain-litellm>=0.3.2",
+    "pyotp>=2.9.0",
+    "qrcode[pil]>=7.4.0",
+    "Pillow>=10.0.0",
+    "langchain-anthropic>=1.2.0",
 ]
 
 

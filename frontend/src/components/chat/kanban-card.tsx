@@ -1,4 +1,4 @@
-import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight } from "lucide-react"
+import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight, Link2 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -20,6 +20,7 @@ export type KanbanCardData = {
   agentName?: string
   agentAvatar?: string
   taskId?: string
+  story_code?: string  // e.g., "EPIC-001-US-001"
   result?: string
   subtasks?: string[]
   branch?: string
@@ -33,8 +34,13 @@ export type KanbanCardData = {
   assignee_id?: string
   reviewer_id?: string
   epic_id?: string
+  epic_code?: string
+  epic_title?: string
+  epic_description?: string
+  epic_domain?: string
   acceptance_criteria?: string[]
   requirements?: string[]
+  dependencies?: string[]  // List of story IDs that must be completed before this story
   // Flow metrics
   created_at?: string
   updated_at?: string
@@ -74,23 +80,29 @@ function KanbanCardComponent({
   // Get type badge color - Modern & Minimal: More subtle colors
   // Lean Kanban: Only UserStory and EnablerStory on board
   const getTypeBadgeColor = (type?: string) => {
-    switch (type) {
-      case "UserStory":
+    const normalizedType = type?.toUpperCase()
+    switch (normalizedType) {
+      case "USERSTORY":
+      case "USER_STORY":
         return "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-200/50 dark:border-blue-800/50"
-      case "EnablerStory":
+      case "ENABLERSTORY":
+      case "ENABLER_STORY":
         return "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200/50 dark:border-emerald-800/50"
       default:
         return "bg-slate-50 dark:bg-slate-900/30 text-slate-700 dark:text-slate-300 border-slate-200/50 dark:border-slate-800/50"
     }
   }
 
-  // Format type name for display (UserStory -> User Story)
+  // Format type name for display (UserStory/USER_STORY -> User Story)
   const formatTypeName = (type?: string) => {
     if (!type) return ""
-    switch (type) {
-      case "UserStory":
+    const normalizedType = type.toUpperCase()
+    switch (normalizedType) {
+      case "USERSTORY":
+      case "USER_STORY":
         return "User Story"
-      case "EnablerStory":
+      case "ENABLERSTORY":
+      case "ENABLER_STORY":
         return "Enabler Story"
       default:
         return type
@@ -238,12 +250,20 @@ function KanbanCardComponent({
               </Badge>
             )}
           </div>
-          {card.story_point !== undefined && card.story_point !== null && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-              <Zap className="w-3.5 h-3.5" />
-              <span>{card.story_point}</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {card.dependencies && card.dependencies.length > 0 && (
+              <div className="flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400 font-medium" title={`Depends on: ${card.dependencies.join(', ')}`}>
+                <Link2 className="w-3.5 h-3.5" />
+                <span>{card.dependencies.length}</span>
+              </div>
+            )}
+            {card.story_point !== undefined && card.story_point !== null && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+                <Zap className="w-3.5 h-3.5" />
+                <span>{card.story_point}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Task Title - Better typography */}
@@ -261,10 +281,10 @@ function KanbanCardComponent({
         {/* Footer: Task ID, Priority, Assignee - Better separation */}
         <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-border/30">
           <div className="flex items-center gap-2 pt-2">
-            {card.taskId && (
-              <span className="text-xs text-muted-foreground font-mono">
-                #{card.taskId.slice(0, 8)}
-              </span>
+            {(card.story_code || card.taskId) && (
+              <Badge variant="outline" className="text-xs">
+                {card.story_code || `#${card.taskId?.slice(0, 8)}`}
+              </Badge>
             )}
             {card.rank !== undefined && card.rank !== null && (
               <Badge
@@ -306,8 +326,15 @@ export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
   if (prevProps.card.type !== nextProps.card.type) return false
   if (prevProps.card.rank !== nextProps.card.rank) return false
   if (prevProps.card.story_point !== nextProps.card.story_point) return false
+  if (prevProps.card.priority !== nextProps.card.priority) return false
   if (prevProps.card.assignee_id !== nextProps.card.assignee_id) return false
   if (prevProps.card.age_hours !== nextProps.card.age_hours) return false
+  if (prevProps.card.epic_id !== nextProps.card.epic_id) return false
+  if (prevProps.card.updated_at !== nextProps.card.updated_at) return false
+  // Check arrays - important for edit form data sync
+  if (JSON.stringify(prevProps.card.dependencies) !== JSON.stringify(nextProps.card.dependencies)) return false
+  if (JSON.stringify(prevProps.card.acceptance_criteria) !== JSON.stringify(nextProps.card.acceptance_criteria)) return false
+  if (JSON.stringify(prevProps.card.requirements) !== JSON.stringify(nextProps.card.requirements)) return false
 
   // Re-render if dragging state changed
   if (prevProps.isDragging !== nextProps.isDragging) return false

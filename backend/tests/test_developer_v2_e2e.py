@@ -511,14 +511,6 @@ class TestToolsIntegration:
         assert git_commit is not None
         assert git_create_branch is not None
     
-    def test_cocoindex_tools_available(self):
-        """Test cocoindex tools can be imported."""
-        from app.agents.developer_v2.src.tools.cocoindex_tools import (
-            search_codebase, detect_project_structure
-        )
-        assert search_codebase is not None
-        assert detect_project_structure is not None
-    
     def test_execution_tools_available(self):
         """Test execution tools can be imported."""
         from app.agents.developer_v2.src.tools.execution_tools import (
