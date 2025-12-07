@@ -150,7 +150,7 @@ class SimpleDeveloperRunner:
                     "runtime": "bun",
                     "framework": "nextjs",
                     "orm": "prisma",
-                    "install_cmd": "bun install --ignore-scripts",
+                    "install_cmd": "bun install",
                     "build_cmd": "bun run build",
                     "typecheck_cmd": "bun run typecheck",
                     "test_cmd": "bun run test",
