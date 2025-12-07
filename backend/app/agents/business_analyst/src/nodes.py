@@ -769,7 +769,7 @@ async def extract_stories(state: BAState, agent=None) -> dict:
         all_epic_ids = [epic.get("id", "") for epic in epics]
         
         # Use semaphore to limit concurrent LLM calls (avoid rate limiting)
-        MAX_CONCURRENT_LLM_CALLS = 2
+        MAX_CONCURRENT_LLM_CALLS = 5
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_LLM_CALLS)
         
         async def _generate_with_semaphore(epic):
