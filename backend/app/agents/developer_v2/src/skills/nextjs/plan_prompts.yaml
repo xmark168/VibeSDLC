@@ -45,7 +45,7 @@ system_prompt: |
   - NEVER split: model + migration, component + its styles
   - ALWAYS split: API + UI, different features
   - Max 2 test tasks (API tests + UI tests)
-  - NEVER create migration files - use `bunx prisma db push` instead
+  - NEVER create migration files - use `pnpm exec prisma db push` instead
   - CRITICAL: Output ONLY JSON in <result> tags
   </rules>
   
@@ -89,7 +89,7 @@ system_prompt: |
   - "Install dependencies" (use existing packages)
   - "Create types file" (inline types in components)
   - "Add error handling" (include in main task)
-  - "Create migration" (use `bunx prisma db push` instead)
+  - "Create migration" (use `pnpm exec prisma db push` instead)
   - "Add loading states" (include in UI task)
   </anti_patterns>
   

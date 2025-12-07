@@ -66,11 +66,11 @@ async def install_dependencies(workspace_path: str) -> bool:
     if package_json.exists():
         try:
             logger.info(f"Installing Node.js dependencies from {package_json}")
-            # Windows: use shell=True for bun command
-            subprocess.run("bun install --ignore-scripts", cwd=workspace_path, check=False, timeout=180, shell=True)
+            # Windows: use shell=True for pnpm command
+            subprocess.run("pnpm install", cwd=workspace_path, check=False, timeout=180, shell=True)
             installed = True
         except Exception as e:
-            logger.warning(f"Failed to install bun dependencies: {e}")
+            logger.warning(f"Failed to install pnpm dependencies: {e}")
     
     return installed
 
@@ -99,8 +99,8 @@ def detect_test_command(workspace_path: str) -> List[str]:
                 pkg = json.load(f)
             scripts = pkg.get("scripts", {})
             if "test" in scripts:
-                if (workspace / "bun.lockb").exists():
-                    return ["bun", "test"]
+                if (workspace / "pnpm-lock.yaml").exists():
+                    return ["pnpm", "test"]
                 return ["npm", "test"]
         except Exception:
             pass

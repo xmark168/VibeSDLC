@@ -14,7 +14,7 @@ The user needs to design database schemas, add new models, define relationships,
 - **Schema file**: `prisma/schema.prisma` - MUST have `url = env("DATABASE_URL")`
 - **Client file**: `lib/prisma.ts` - Already configured correctly
 
-After any schema changes, run `bunx prisma db push` (generate runs automatically).
+After any schema changes, run `pnpm exec prisma db push` (generate runs automatically).
 
 ## Schema Structure
 
@@ -268,16 +268,16 @@ Common sizes: `200/300` (book), `400/300` (card), `100/100` (avatar)
 
 After implementation, seed runs automatically or manually:
 ```bash
-bunx tsx prisma/seed.ts
+pnpm exec tsx prisma/seed.ts
 ```
 
 ## Commands Reference
 
 ```bash
-bunx prisma generate     # Generate TypeScript types
-bunx prisma db push      # Push schema to database (dev)
-bunx prisma migrate dev  # Create migration file (when ready)
-bunx prisma studio       # Visual database browser
+pnpm exec prisma generate     # Generate TypeScript types
+pnpm exec prisma db push      # Push schema to database (dev)
+pnpm exec prisma migrate dev  # Create migration file (when ready)
+pnpm exec prisma studio       # Visual database browser
 ```
 
 NEVER:
@@ -287,7 +287,7 @@ NEVER:
 - Recreate User/Account/Session models (already in boilerplate)
 - Forget `@@index` on foreign key fields
 - Skip `onDelete: Cascade` on child relations
-- Create migration files (use `bunx prisma db push` for dev instead)
+- Create migration files (use `pnpm exec prisma db push` for dev instead)
 - Run `execute_shell` for db push/generate during implementation (runs automatically in validation)
 
 **IMPORTANT**: Always add indexes on fields used in WHERE clauses or JOINs to improve query performance.

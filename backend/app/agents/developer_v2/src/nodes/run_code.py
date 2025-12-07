@@ -109,7 +109,7 @@ async def _run_service_build(
     """
     svc_name = svc_config.get("name", "app")
     build_cmd = svc_config.get("build_cmd", "")
-    typecheck_cmd = svc_config.get("typecheck_cmd", "bun run typecheck")
+    typecheck_cmd = svc_config.get("typecheck_cmd", "pnpm run typecheck")
     
     svc_span = None
     if parent_span:
@@ -196,7 +196,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         if seed_file.exists():
             logger.info("[run_code] Running database seed...")
             success, stdout, stderr = _run_step(
-                "DB Seed", "bunx tsx prisma/seed.ts",
+                "DB Seed", "pnpm exec tsx prisma/seed.ts",
                 workspace_path, "prisma", timeout=60, allow_fail=True
             )
             if success:

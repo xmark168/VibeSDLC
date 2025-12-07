@@ -1,6 +1,6 @@
 ---
 name: run-command
-description: Execute shell commands in Next.js project with Bun. Use when running install, build, test, lint, prisma commands, or adding dependencies.
+description: Execute shell commands in Next.js project with pnpm. Use when running install, build, test, lint, prisma commands, or adding dependencies.
 ---
 
 This skill guides execution of shell commands in the Next.js project environment.
@@ -9,9 +9,9 @@ The user needs to run development commands, install packages, execute tests, or 
 
 ## Before You Start
 
-**CRITICAL**: This project uses Bun exclusively. Never use npm, npx, yarn, or pnpm.
+**CRITICAL**: This project uses pnpm exclusively. Never use npm, npx, yarn, or bun.
 
-- **Package manager**: `bun` and `bunx` only
+- **Package manager**: `pnpm` and `pnpm exec` only
 - **Command order**: install - generate - build - test
 - **Verify success**: Always check exit code before proceeding
 
@@ -19,14 +19,14 @@ The user needs to run development commands, install packages, execute tests, or 
 
 During `implement` phase, do NOT run these commands - they run automatically in validation phase:
 
-- `bunx prisma db push` - runs automatically after all code is written
-- `bunx prisma generate` - runs automatically after all code is written
-- `bun run typecheck` - runs automatically in validation
-- `bun run lint` - runs automatically in validation
-- `bun run build` - runs automatically in validation
+- `pnpm exec prisma db push` - runs automatically after all code is written
+- `pnpm exec prisma generate` - runs automatically after all code is written
+- `pnpm run typecheck` - runs automatically in validation
+- `pnpm run lint` - runs automatically in validation
+- `pnpm run build` - runs automatically in validation
 
 Only use this skill during implementation for:
-- Installing NEW dependencies (`bun add <package>`)
+- Installing NEW dependencies (`pnpm add <package>`)
 - Running specific unit tests for debugging
 - Checking package.json contents
 
@@ -51,7 +51,7 @@ Only add packages when:
 
 ## When TO Install Packages
 
-MUST install with `bun add <package>` BEFORE writing code that imports it:
+MUST install with `pnpm add <package>` BEFORE writing code that imports it:
 
 - Importing a package not in pre-installed list above
 - Story requires specific library not in boilerplate
@@ -59,7 +59,7 @@ MUST install with `bun add <package>` BEFORE writing code that imports it:
 **Example workflow:**
 ```
 1. Check if package is in pre-installed list
-2. If NOT: execute_shell("bun add date-fns")
+2. If NOT: execute_shell("pnpm add date-fns")
 3. THEN: Write file with the import
 ```
 
@@ -72,40 +72,40 @@ MUST install with `bun add <package>` BEFORE writing code that imports it:
 ## Package Commands
 
 ```bash
-bun install --frozen-lockfile  # Install dependencies (use lockfile)
-bun add <package>              # Add production dependency
-bun add -d <package>           # Add dev dependency
-bun remove <package>           # Remove package
+pnpm install --frozen-lockfile  # Install dependencies (use lockfile)
+pnpm add <package>              # Add production dependency
+pnpm add -D <package>           # Add dev dependency
+pnpm remove <package>           # Remove package
 ```
 
 ## Development Commands
 
 ```bash
-bun run dev              # Start development server
-bun run build            # Build for production
-bun run start            # Start production server
+pnpm run dev              # Start development server
+pnpm run build            # Build for production
+pnpm run start            # Start production server
 ```
 
 ## Quality Commands
 
 ```bash
-bun run test             # Run all tests
-bun run test --watch     # Watch mode
-bun run test <path>      # Run specific test file
-bun run lint             # Check for lint errors
-bun run lint:fix         # Fix lint errors
-bun run format           # Format code
-bun run typecheck        # Check TypeScript types
+pnpm run test             # Run all tests
+pnpm run test --watch     # Watch mode
+pnpm run test <path>      # Run specific test file
+pnpm run lint             # Check for lint errors
+pnpm run lint:fix         # Fix lint errors
+pnpm run format           # Format code
+pnpm run typecheck        # Check TypeScript types
 ```
 
 ## Prisma Commands
 
 ```bash
-bunx prisma generate     # Generate TypeScript client (after schema changes)
-bunx prisma db push      # Push schema to database (development)
-bunx prisma migrate dev  # Create migration with history
-bunx prisma migrate deploy  # Apply migrations (production)
-bunx prisma studio       # Open visual database browser
+pnpm exec prisma generate     # Generate TypeScript client (after schema changes)
+pnpm exec prisma db push      # Push schema to database (development)
+pnpm exec prisma migrate dev  # Create migration with history
+pnpm exec prisma migrate deploy  # Apply migrations (production)
+pnpm exec prisma studio       # Open visual database browser
 ```
 
 ## Command Order
@@ -113,10 +113,10 @@ bunx prisma studio       # Open visual database browser
 Always follow this sequence:
 
 ```
-1. bun install --frozen-lockfile
-2. bunx prisma generate (if schema exists)
-3. bun run build
-4. bun run test
+1. pnpm install --frozen-lockfile
+2. pnpm exec prisma generate (if schema exists)
+3. pnpm run build
+4. pnpm run test
 ```
 
 ## Error Handling
@@ -127,12 +127,12 @@ Always follow this sequence:
 - `ENOENT: no such file` - File doesn't exist
 
 **Retry after fix:**
-- `Module not found` - Run `bun install --frozen-lockfile`
-- `Cannot find module` - Run `bun install --frozen-lockfile`
-- `command not found: prisma` - Run `bun install --frozen-lockfile`
+- `Module not found` - Run `pnpm install --frozen-lockfile`
+- `Cannot find module` - Run `pnpm install --frozen-lockfile`
+- `command not found: prisma` - Run `pnpm install --frozen-lockfile`
 
 NEVER:
-- Use npm, npx, yarn, or pnpm
+- Use npm, npx, yarn, or bun
 - Install packages already in boilerplate
 - Run prisma db push/generate during implementation (handled by validation phase)
 - Retry database commands when database is not running

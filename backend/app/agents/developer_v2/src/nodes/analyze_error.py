@@ -36,7 +36,7 @@ def _clean_error_logs(logs: str, max_lines: int = 50) -> str:
     noise_patterns = [
         "baseline-browser-mapping",
         "npm WARN",
-        "bun install",
+        "pnpm install",
         "modules old",
         "update:",
         "Compiling",
@@ -223,9 +223,9 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             if any(err in error_logs for err in prisma_errors):
                 logger.info("[analyze_error] Prisma error detected, running generate + db:push...")
                 try:
-                    subprocess.run("bunx prisma generate", cwd=workspace_path, shell=True, 
+                    subprocess.run("pnpm exec prisma generate", cwd=workspace_path, shell=True, 
                                    capture_output=True, timeout=60)
-                    subprocess.run("bunx prisma db push --accept-data-loss", cwd=workspace_path, 
+                    subprocess.run("pnpm exec prisma db push --accept-data-loss", cwd=workspace_path, 
                                    shell=True, capture_output=True, timeout=60)
                     auto_fixed = True
                 except Exception as e:
@@ -234,13 +234,13 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             # Module errors
             module_errors = ["Cannot find module", "Module not found", "Can't resolve"]
             if any(err in error_logs for err in module_errors):
-                logger.info("[analyze_error] Module error detected, running bun install...")
+                logger.info("[analyze_error] Module error detected, running pnpm install...")
                 try:
-                    subprocess.run("bun install --frozen-lockfile", cwd=workspace_path, 
+                    subprocess.run("pnpm install --frozen-lockfile", cwd=workspace_path, 
                                    shell=True, capture_output=True, timeout=120)
                     auto_fixed = True
                 except Exception as e:
-                    logger.warning(f"[analyze_error] bun install auto-fix failed: {e}")
+                    logger.warning(f"[analyze_error] pnpm install auto-fix failed: {e}")
             
             if auto_fixed:
                 logger.info("[analyze_error] Auto-fix applied, retrying run_code...")

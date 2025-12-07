@@ -128,7 +128,7 @@ tasks:
       
       Import Errors:
       - "Cannot find module" → Check path, use `@/` prefix
-      - "Module not found" → Run `bun install --frozen-lockfile` or check package.json
+      - "Module not found" → Run `pnpm install --frozen-lockfile` or check package.json
       
       Zod Validation Errors:
       - "Expected string, received undefined" → Field missing in form/request body
@@ -155,7 +155,7 @@ tasks:
       ## TypeScript Error Codes
       | Code | Meaning | Quick Fix |
       |------|---------|-----------|
-      | TS2307 | Cannot find module | Check import path, install package with `bun add` |
+      | TS2307 | Cannot find module | Check import path, install package with `pnpm add` |
       | TS2345 | Argument type mismatch | Check function signature, cast type |
       | TS2322 | Type not assignable | Fix type or add type assertion |
       | TS2339 | Property doesn't exist | Add to interface or use optional chaining `?.` |
@@ -172,7 +172,7 @@ tasks:
       | P2002 | Unique constraint failed | Record exists, handle duplicate |
       | P2003 | Foreign key constraint | Parent record doesn't exist |
       | P2025 | Record not found | Check ID exists before update/delete |
-      | P2021 | Table doesn't exist | Run `bunx prisma db push` |
+      | P2021 | Table doesn't exist | Run `pnpm exec prisma db push` |
       
       ## Next.js 16 Specific
       | Pattern | Quick Fix |

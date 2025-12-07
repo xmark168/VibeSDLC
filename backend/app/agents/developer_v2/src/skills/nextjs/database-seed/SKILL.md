@@ -8,7 +8,7 @@ This skill guides creation of Prisma seed scripts for Next.js applications.
 ## File Location
 
 - **Seed file**: `prisma/seed.ts`
-- **Run command**: `bunx tsx prisma/seed.ts` or `bunx prisma db seed`
+- **Run command**: `pnpm exec tsx prisma/seed.ts` or `pnpm exec prisma db seed`
 
 ## Basic Structure
 

@@ -2,10 +2,10 @@
 
 ## Runtime
 
-**CRITICAL**: This project uses Bun exclusively.
-- Package manager: `bun install`
-- Run scripts: `bun run <script>` or `bunx <command>`
-- NEVER use npm, npx, yarn, or pnpm
+**CRITICAL**: This project uses pnpm exclusively.
+- Package manager: `pnpm install`
+- Run scripts: `pnpm run <script>` or `pnpm exec <command>`
+- NEVER use npm, npx, yarn, or bun
 
 ## Directory Structure
 

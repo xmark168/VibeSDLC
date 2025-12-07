@@ -21,15 +21,15 @@ from app.agents.developer_v2.src.utils.db_container import (
 logger = logging.getLogger(__name__)
 
 
-def _should_skip_bun_install(workspace_path: str) -> bool:
-    """Check if bun install can be skipped (lockfile unchanged).
+def _should_skip_pnpm_install(workspace_path: str) -> bool:
+    """Check if pnpm install can be skipped (lockfile unchanged).
     
-    Optimization: Skip bun install if lockfile hash matches cache.
-    Saves ~60-120s on subsequent runs.
+    Optimization: Skip pnpm install if lockfile hash matches cache.
+    pnpm uses content-addressable store, so subsequent installs are fast anyway.
     """
-    lockfile = Path(workspace_path) / "bun.lockb"
+    lockfile = Path(workspace_path) / "pnpm-lock.yaml"
     node_modules = Path(workspace_path) / "node_modules"
-    cache_file = Path(workspace_path) / ".bun_install_cache"
+    cache_file = Path(workspace_path) / ".pnpm_install_cache"
     
     # Must have node_modules
     if not node_modules.exists():
@@ -52,10 +52,10 @@ def _should_skip_bun_install(workspace_path: str) -> bool:
     return False
 
 
-def _update_bun_install_cache(workspace_path: str) -> None:
-    """Update bun install cache after successful install."""
-    lockfile = Path(workspace_path) / "bun.lockb"
-    cache_file = Path(workspace_path) / ".bun_install_cache"
+def _update_pnpm_install_cache(workspace_path: str) -> None:
+    """Update pnpm install cache after successful install."""
+    lockfile = Path(workspace_path) / "pnpm-lock.yaml"
+    cache_file = Path(workspace_path) / ".pnpm_install_cache"
     
     try:
         if lockfile.exists():
@@ -142,17 +142,18 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             except Exception as db_err:
                 logger.warning(f"[setup_workspace] Database setup failed: {db_err}")
         
-        # Run bun install if package.json exists (with caching optimization)
+        # Run pnpm install if package.json exists (with caching optimization)
+        # pnpm uses content-addressable store for fast installs (~5-15s vs 60s+ for npm/bun)
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if pkg_json and os.path.exists(pkg_json):
             # Check if we can skip install (lockfile unchanged)
-            if _should_skip_bun_install(workspace_path):
-                logger.info("[setup_workspace] Skipping bun install (cached, lockfile unchanged)")
+            if _should_skip_pnpm_install(workspace_path):
+                logger.info("[setup_workspace] Skipping pnpm install (cached, lockfile unchanged)")
             else:
                 try:
-                    logger.info("[setup_workspace] Running bun install...")
+                    logger.info("[setup_workspace] Running pnpm install...")
                     result = subprocess.run(
-                        "bun install --frozen-lockfile --ignore-scripts",
+                        "pnpm install --frozen-lockfile",
                         cwd=workspace_path,
                         capture_output=True,
                         text=True,
@@ -162,14 +163,14 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                         shell=True,
                     )
                     if result.returncode == 0:
-                        logger.info("[setup_workspace] bun install successful")
-                        _update_bun_install_cache(workspace_path)
+                        logger.info("[setup_workspace] pnpm install successful")
+                        _update_pnpm_install_cache(workspace_path)
                     else:
-                        logger.warning(f"[setup_workspace] bun install failed: {result.stderr[:200]}")
+                        logger.warning(f"[setup_workspace] pnpm install failed: {result.stderr[:200]}")
                 except subprocess.TimeoutExpired:
-                    logger.warning("[setup_workspace] bun install timed out")
+                    logger.warning("[setup_workspace] pnpm install timed out")
                 except Exception as e:
-                    logger.warning(f"[setup_workspace] bun install error: {e}")
+                    logger.warning(f"[setup_workspace] pnpm install error: {e}")
         
         # Run prisma generate if schema exists
         schema_path = os.path.join(workspace_path, "prisma", "schema.prisma") if workspace_path else ""
@@ -177,7 +178,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             try:
                 logger.info("[setup_workspace] Running prisma generate...")
                 result = subprocess.run(
-                    "bunx prisma generate",
+                    "pnpm exec prisma generate",
                     cwd=workspace_path,
                     capture_output=True,
                     text=True,
