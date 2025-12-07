@@ -144,6 +144,19 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         # Skip prisma - already run in setup_workspace and implement
         
+        # Run seed if seed file exists
+        seed_file = Path(workspace_path) / "prisma" / "seed.ts"
+        if seed_file.exists():
+            logger.info("[run_code] Running database seed...")
+            success, stdout, stderr = _run_step(
+                "DB Seed", "bunx tsx prisma/seed.ts",
+                workspace_path, "prisma", timeout=60, allow_fail=True
+            )
+            if success:
+                logger.info("[run_code] Database seeded successfully")
+            else:
+                logger.warning(f"[run_code] Seed failed (continuing): {stderr[:200] if stderr else 'unknown'}")
+        
         # Format all services
         for svc in services:
             svc_name = svc.get("name", "app")

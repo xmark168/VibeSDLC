@@ -105,6 +105,12 @@ async def summarize(state: DeveloperState, agent=None) -> DeveloperState:
         result = _parse_summarize_response(response_text)
         
         logger.info(f"[summarize] IS_PASS: {result['is_pass']}, TODOs: {len(result['todos'])}")
+        if result['is_pass'] == 'NO':
+            logger.info(f"[summarize] Feedback: {result['feedback'][:300] if result['feedback'] else 'No feedback'}")
+            logger.info(f"[summarize] Files reviewed: {result['files_reviewed'][:200] if result['files_reviewed'] else 'None'}")
+            if result['todos']:
+                for file_path, issue in list(result['todos'].items())[:3]:
+                    logger.info(f"[summarize] TODO: {file_path}: {issue[:100]}")
         
         current_count = state.get("summarize_count", 0)
         new_count = current_count + 1 if result["is_pass"] == "NO" else 0

@@ -1,6 +1,7 @@
 """Analyze error node - Error analysis + fix planning in ONE LLM call."""
 import logging
 import re
+import subprocess
 from dataclasses import dataclass
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
@@ -203,6 +204,49 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
     logger.info("[NODE] analyze_error")
     
     try:
+        error_logs = state.get("run_stderr", "") or state.get("run_stdout", "")
+        workspace_path = state.get("workspace_path", "")
+        
+        # ========== AUTO-FIX: Module/Prisma errors ==========
+        if workspace_path and error_logs:
+            auto_fixed = False
+            
+            # Prisma errors - specific patterns only
+            prisma_errors = [
+                "Cannot find module '@prisma/client'",
+                "Cannot find module '.prisma/client'",
+                "PrismaClient is unable to run",
+                "Error: P1001",  # Connection error
+                "Error: P2021",  # Table doesn't exist
+                "Error: P2002",  # Unique constraint
+            ]
+            if any(err in error_logs for err in prisma_errors):
+                logger.info("[analyze_error] Prisma error detected, running generate + db:push...")
+                try:
+                    subprocess.run("bunx prisma generate", cwd=workspace_path, shell=True, 
+                                   capture_output=True, timeout=60)
+                    subprocess.run("bunx prisma db push --accept-data-loss", cwd=workspace_path, 
+                                   shell=True, capture_output=True, timeout=60)
+                    auto_fixed = True
+                except Exception as e:
+                    logger.warning(f"[analyze_error] Prisma auto-fix failed: {e}")
+            
+            # Module errors
+            module_errors = ["Cannot find module", "Module not found", "Can't resolve"]
+            if any(err in error_logs for err in module_errors):
+                logger.info("[analyze_error] Module error detected, running bun install...")
+                try:
+                    subprocess.run("bun install --frozen-lockfile", cwd=workspace_path, 
+                                   shell=True, capture_output=True, timeout=120)
+                    auto_fixed = True
+                except Exception as e:
+                    logger.warning(f"[analyze_error] bun install auto-fix failed: {e}")
+            
+            if auto_fixed:
+                logger.info("[analyze_error] Auto-fix applied, retrying run_code...")
+                return {**state, "action": "VALIDATE", "run_status": None, "error_analysis": {"auto_fixed": True}}
+        # ====================================================
+        
         error_logs = state.get("run_stderr", "")
         files_modified = state.get("files_modified", [])
         debug_count = state.get("debug_count", 0)

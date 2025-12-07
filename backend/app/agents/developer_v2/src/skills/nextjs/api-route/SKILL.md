@@ -30,6 +30,18 @@ API routes live in the `app/api/` directory:
 - Many-to-many/One-to-many → **PLURAL** (categories, tags, posts)
 - One-to-one/Many-to-one → **SINGULAR** (category, user, author)
 
+## Schema Field Validation
+
+**CRITICAL**: ONLY use fields that EXIST in the Prisma schema.
+
+❌ DON'T invent fields:
+- `popularity`, `featuredOrder`, `originalPrice` (common mistakes)
+
+✅ DO:
+- Read `prisma/schema.prisma` in context first
+- Only use fields defined there
+- Use explicit types instead of `any`
+
 ## Route Structure
 
 ### Collection Route (List + Create)

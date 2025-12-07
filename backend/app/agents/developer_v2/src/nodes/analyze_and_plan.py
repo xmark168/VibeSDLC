@@ -412,6 +412,32 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
         steps = [s for s in steps if "migration" not in s.get("description", "").lower() 
                  and "migration" not in s.get("file_path", "").lower()]
         
+        # Auto-add seed step when database models are created
+        has_schema_step = any(
+            s.get("file_path", "").endswith("schema.prisma") or 
+            "database-model" in s.get("skills", [])
+            for s in steps
+        )
+        if has_schema_step:
+            # Find the schema step to add seed after it
+            schema_order = next(
+                (s.get("order", 1) for s in steps 
+                 if s.get("file_path", "").endswith("schema.prisma")),
+                1
+            )
+            seed_step = {
+                "order": schema_order + 1,
+                "task": "Create seed data for new database models",
+                "description": "Seed database with sample data for testing and development",
+                "file_path": "prisma/seed.ts",
+                "action": "create",
+                "skills": ["database-model"],
+                "dependencies": ["prisma/schema.prisma"]
+            }
+            # Insert after schema step
+            steps.insert(schema_order, seed_step)
+            logger.info("[analyze_and_plan] Auto-added seed step after schema changes")
+        
         # Re-number steps after filtering
         for i, s in enumerate(steps):
             s["order"] = i + 1

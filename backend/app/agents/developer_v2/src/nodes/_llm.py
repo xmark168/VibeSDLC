@@ -34,29 +34,25 @@ LLM_CONFIG = {
     
     # Implementation - default medium, can be overridden by skill type
     "implement": {"model": MODELS["medium"], "temperature": 0, "timeout": 60},
-    "debug": {"model": MODELS["complex"], "temperature": 0.2, "timeout": 40},
+    "debug": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 40},
     
     # Structured output tasks
     "structured": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 35},
-    "review": {"model": MODELS["medium"], "temperature": 0.1, "timeout": 30},
+    "review": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     "summarize": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
 }
 
 # Model selection by skill type (for implement step)
+# All use Sonnet for speed (Opus too slow, ~26s vs ~10s per step)
 SKILL_MODEL_MAP = {
-    # Complex UI tasks -> opus (best quality)
     "frontend-design": MODELS["complex"],
     "frontend-component": MODELS["complex"],
-    
-    # Standard tasks -> sonnet (good balance)
     "api-route": MODELS["medium"],
     "database-model": MODELS["medium"],
     "server-action": MODELS["medium"],
     "authentication": MODELS["medium"],
     "state-management": MODELS["medium"],
-    
-    # Debug needs complex reasoning
-    "debugging": MODELS["complex"],
+    "debugging": MODELS["medium"],
 }
 
 
@@ -103,7 +99,7 @@ def get_llm(step: str) -> BaseChatModel:
         kwargs = {
             "model": model,
             "temperature": config.get("temperature", 0.2),
-            "max_tokens": 16384,  # Claude requires max_tokens, set high
+            "max_tokens": 100000,  # Claude requires max_tokens, set high
             "timeout": timeout,
             "max_retries": MAX_RETRIES,
         }

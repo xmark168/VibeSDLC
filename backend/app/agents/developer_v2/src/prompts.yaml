@@ -33,6 +33,8 @@ tasks:
       5. CHECK COMPLETENESS: Carefully check you don't miss any necessary class/function in this file
       6. IMPORT FIRST: Before using external variable/module, make sure you import it first
       7. NO TODOs: Write out EVERY CODE DETAIL, DON'T LEAVE TODO or placeholders
+      8. PRISMA RELATIONS: Check schema BEFORE using include - `field Type` (singular) → `include: { field: true }`, `field Type[]` (array) → `include: { fields: true }`
+      9. SCHEMA FIELDS: ONLY use fields defined in schema. Don't invent fields like 'popularity', 'featuredOrder', 'originalPrice'.
       
       # Additional Rules
       - Add `'use client'` directive for components with useState/useEffect/onClick
@@ -80,6 +82,7 @@ tasks:
       ## Modified Files (previous steps)
       {modified_files}
       
+      ## ⚠️ REVIEW FEEDBACK (FIX THESE ISSUES!)
       {feedback_section}
       
       # Instruction

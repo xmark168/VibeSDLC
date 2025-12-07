@@ -18,7 +18,7 @@ class ImplementOutput(BaseModel):
     content: str = Field(description="COMPLETE file content")
     explanation: str = Field(default="", description="Brief explanation of changes")
 
-from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_files, reset_modified_files
+from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_files, reset_modified_files, _modified_files
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
 from app.agents.developer_v2.src.utils.prompt_utils import (
     format_input_template as _format_input_template,
@@ -81,11 +81,23 @@ def _build_dependencies_context(
                 parts.append(f"### {dep_path}\n```\n{content[:5000]}\n```")
                 loaded_files.add(dep_path)
     
-    # Add common files if not already loaded
+    # Add common files - ALWAYS read fresh from disk (fix stale cache issue)
     common_files = ["prisma/schema.prisma"]
     for dep_path in common_files:
         if dep_path in loaded_files or dep_path == exclude_file:
             continue
+        # Always read fresh from disk for schema (may have been modified in previous step)
+        if workspace_path:
+            full_path = os.path.join(workspace_path, dep_path)
+            if os.path.exists(full_path):
+                try:
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    parts.append(f"### {dep_path}\n```\n{content}\n```")
+                    continue
+                except Exception:
+                    pass
+        # Fallback to cache
         if dep_path in dependencies_content:
             parts.append(f"### {dep_path}\n```\n{dependencies_content[dep_path]}\n```")
     
@@ -372,6 +384,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(output.content)
+            _modified_files.add(file_path)  # Track for prisma auto-push
             logger.info(f"[implement] {action.upper()} {file_path}: {output.explanation[:100] if output.explanation else 'done'}")
         elif not output:
             logger.warning(f"[implement] Failed to parse JSON output, trying code block fallback")
@@ -383,6 +396,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                     os.makedirs(os.path.dirname(full_path), exist_ok=True)
                     with open(full_path, 'w', encoding='utf-8') as f:
                         f.write(code_match.group(1))
+                    _modified_files.add(file_path)  # Track for prisma auto-push
                     logger.info(f"[implement] FALLBACK {file_path}")
         
         new_modified = get_modified_files()
@@ -400,14 +414,16 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                     # Generate client first (direct subprocess, no tools)
                     result = subprocess.run(
                         "bunx prisma generate", cwd=workspace, shell=True,
-                        capture_output=True, text=True, timeout=60
+                        capture_output=True, text=True, timeout=60,
+                        encoding='utf-8', errors='replace'
                     )
                     logger.info(f"[implement] prisma generate: {result.stdout[:200] if result.stdout else 'OK'}")
                     
                     # Then push schema to DB
                     result = subprocess.run(
                         "bunx prisma db push --accept-data-loss", cwd=workspace, shell=True,
-                        capture_output=True, text=True, timeout=60
+                        capture_output=True, text=True, timeout=60,
+                        encoding='utf-8', errors='replace'
                     )
                     logger.info(f"[implement] db:push: {result.stdout[:200] if result.stdout else 'OK'}")
                 except Exception as e:

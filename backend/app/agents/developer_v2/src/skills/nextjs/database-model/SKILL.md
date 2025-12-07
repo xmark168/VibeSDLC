@@ -165,6 +165,112 @@ DO NOT run db push manually during implementation.
 Database operations (`prisma generate`, `prisma db push`) run automatically in validation phase.
 Just write the schema file and proceed to next task.
 
+## Seeding Data
+
+**IMPORTANT**: After creating new models, create seed data for testing and development.
+
+### Seed File Structure
+
+```typescript
+// prisma/seed.ts
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function main() {
+  console.log('🌱 Seeding database...');
+
+  // Clear existing data (optional)
+  await prisma.book.deleteMany();
+  await prisma.category.deleteMany();
+
+  // Create categories first (parent records)
+  const category1 = await prisma.category.create({
+    data: {
+      name: 'Mathematics',
+      slug: 'mathematics',
+      gradeLevel: 'Grade 6-8',
+    },
+  });
+
+  const category2 = await prisma.category.create({
+    data: {
+      name: 'Science',
+      slug: 'science',
+      gradeLevel: 'Grade 6-8',
+    },
+  });
+
+  // Create books with relations
+  await prisma.book.createMany({
+    data: [
+      {
+        title: 'Algebra Fundamentals',
+        author: 'John Smith',
+        price: 29.99,
+        coverImage: 'https://picsum.photos/seed/book1/200/300',
+        isFeatured: true,
+        stockQuantity: 50,
+        categoryId: category1.id,
+      },
+      {
+        title: 'Physics for Beginners',
+        author: 'Jane Doe',
+        price: 34.99,
+        coverImage: 'https://picsum.photos/seed/book2/200/300',
+        isFeatured: true,
+        stockQuantity: 30,
+        categoryId: category2.id,
+      },
+      // Add 5-10 sample records for good UI testing
+    ],
+  });
+
+  console.log('✅ Seeding complete!');
+}
+
+main()
+  .catch((e) => {
+    console.error('❌ Seeding failed:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+```
+
+### Seed Data Guidelines
+
+1. **Create 5-10 records** per model for realistic UI testing
+2. **Use realistic data** - proper names, prices, descriptions
+3. **Include edge cases** - empty strings, nulls, long text
+4. **Set `isFeatured: true`** on some records for homepage display
+5. **Vary `stockQuantity`** - some in stock, some low, some out
+6. **Use Picsum for images** - `https://picsum.photos/seed/{unique}/width/height`
+
+### Image Placeholders (Picsum)
+
+```typescript
+// Consistent image per seed (same image every time)
+coverImage: 'https://picsum.photos/seed/book1/200/300'
+coverImage: 'https://picsum.photos/seed/book2/200/300'
+
+// Random image each load
+coverImage: 'https://picsum.photos/200/300'
+
+// Fixed image by ID
+coverImage: 'https://picsum.photos/id/24/200/300'
+```
+
+Common sizes: `200/300` (book), `400/300` (card), `100/100` (avatar)
+
+### Running Seed
+
+After implementation, seed runs automatically or manually:
+```bash
+bunx tsx prisma/seed.ts
+```
+
 ## Commands Reference
 
 ```bash
