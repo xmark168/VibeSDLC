@@ -156,7 +156,6 @@ def _build_debug_summary(state: dict) -> str:
     return "\n".join(parts)
 
 
-
 def _parse_implement_output(response_content: str) -> Optional[ImplementOutput]:
     """Parse structured output from LLM response.
     
@@ -448,9 +447,14 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                         except Exception as e:
                             logger.warning(f"[implement] Failed to refresh {normalized}: {e}")
         
+        # For low complexity, increment current_step here (review is skipped)
+        # For medium/high complexity, review node will increment current_step
+        complexity = state.get("complexity", "medium")
+        next_step = current_step + 1 if complexity == "low" else current_step
+        
         return {
             **state,
-            "current_step": current_step,
+            "current_step": next_step,
             "_last_implement_step": current_step,
             "react_loop_count": react_loop_count,
             "debug_count": debug_count,
@@ -461,7 +465,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             "dependencies_content": dependencies_content,  # Refreshed with modified files
             "last_implemented_file": file_path,
             "message": f"✅ Task {current_step + 1}: {task_description}",
-            "action": "IMPLEMENT" if current_step + 1 < len(plan_steps) else "VALIDATE",
+            "action": "IMPLEMENT" if next_step < len(plan_steps) else "VALIDATE",
         }
         
     except Exception as e:

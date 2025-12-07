@@ -221,9 +221,14 @@ tasks:
       2. Detect any TODOs, incomplete code, or issues
       3. Decide if implementation IS_PASS (complete) or needs more work
 
+      ## IMPORTANT: File Truncation
+      Large files may be truncated with marker: `// ... [N lines truncated for review] ...`
+      This is NORMAL - the file is complete, just shortened for review.
+      DO NOT mark truncated files as "incomplete" - only flag actual TODOs/issues.
+
       ## Review Each File For:
-      - TODOs or placeholder comments
-      - Incomplete functions (empty bodies, pass statements)
+      - TODOs or placeholder comments (actual "TODO" text, not truncation markers)
+      - Incomplete functions (empty bodies, pass statements, "not implemented" comments)
       - Missing error handling
       - Type issues (any types, missing types)
       - Import errors

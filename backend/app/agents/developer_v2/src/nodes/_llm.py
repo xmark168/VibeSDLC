@@ -16,7 +16,7 @@ RETRY_WAIT_MAX = 10
 
 # Model tiers
 MODELS = {
-    "fast": "claude-sonnet-4-5-20250929",      # Simple/fast tasks
+    "fast": "claude-haiku-4-5-20251001",      # Simple/fast tasks
     "medium": "claude-sonnet-4-5-20250929",   # Standard tasks (API, DB)
     "complex": "claude-opus-4-5-20251101",    # Complex tasks (UI design, debug)
 }

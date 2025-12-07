@@ -102,13 +102,12 @@ async def _run_service_build(
     """
     Run build for a single service.
     
-    Flow: Install → Typecheck → Build
+    Flow: Typecheck → Build
     
     Returns:
         {"status": "PASS|FAIL|SKIP", "stdout": str, "stderr": str}
     """
     svc_name = svc_config.get("name", "app")
-    install_cmd = svc_config.get("install_cmd", "")
     build_cmd = svc_config.get("build_cmd", "")
     typecheck_cmd = svc_config.get("typecheck_cmd", "bun run typecheck")
     
@@ -120,8 +119,17 @@ async def _run_service_build(
     all_stderr = ""
     
     try:
-        # Skip install - already run in setup_workspace
-        # Skip typecheck - Next.js build includes type checking
+        # Run typecheck first (catches type errors with clearer messages, ~5s)
+        if typecheck_cmd:
+            success, stdout, stderr = _run_step(
+                "Typecheck", typecheck_cmd, workspace_path, svc_name, timeout=60
+            )
+            all_stdout += f"\n$ {typecheck_cmd}\n{stdout}"
+            if not success:
+                all_stderr += f"\n[TYPECHECK FAILED]\n{stderr or stdout}"
+                if svc_span:
+                    svc_span.end(output={"status": "TYPECHECK_FAIL"})
+                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
         
         if build_cmd:
             success, stdout, stderr = _run_step("Build", build_cmd, workspace_path, svc_name, timeout=180)
