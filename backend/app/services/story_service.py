@@ -898,6 +898,36 @@ class StoryService:
                     "wip_limit": wip_limit
                 })
 
+        # Validate dependencies - must be completed before moving to InProgress/Review/Done
+        # Skip validation for Todo and Archived (archived is for cleanup, not work)
+        if new_status in [StoryStatus.IN_PROGRESS, StoryStatus.REVIEW, StoryStatus.DONE]:
+            if story.dependencies:
+                # Convert string IDs to UUIDs and query incomplete dependencies
+                try:
+                    dep_uuids = [UUID(d) for d in story.dependencies if d]
+                    if dep_uuids:
+                        incomplete_deps = self.session.exec(
+                            select(Story).where(
+                                and_(
+                                    Story.id.in_(dep_uuids),
+                                    Story.status.not_in([StoryStatus.DONE, StoryStatus.ARCHIVED])
+                                )
+                            )
+                        ).all()
+                        
+                        if incomplete_deps:
+                            raise PermissionError({
+                                "error": "DEPENDENCIES_NOT_COMPLETED",
+                                "message": f"Cannot move to {new_status.value}: {len(incomplete_deps)} dependencies not completed",
+                                "incomplete_dependencies": [
+                                    {"id": str(dep.id), "title": dep.title, "status": dep.status.value}
+                                    for dep in incomplete_deps
+                                ]
+                            })
+                except (ValueError, AttributeError):
+                    # Invalid UUID format in dependencies, skip validation
+                    pass
+
         # Validate workflow policies
         policy = self.session.exec(
             select(WorkflowPolicy).where(

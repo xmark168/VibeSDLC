@@ -167,6 +167,8 @@ async def update_story_status(
         error_data = e.args[0] if e.args else {"message": str(e)}
         if error_data.get("error") == "WIP_LIMIT_EXCEEDED":
             raise HTTPException(status_code=409, detail=error_data)
+        if error_data.get("error") == "DEPENDENCIES_NOT_COMPLETED":
+            raise HTTPException(status_code=409, detail=error_data)
         raise HTTPException(status_code=422, detail=error_data)
 
 
