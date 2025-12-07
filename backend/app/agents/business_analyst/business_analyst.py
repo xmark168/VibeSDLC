@@ -20,7 +20,8 @@ from app.agents.business_analyst.src.nodes import (
     process_answer, ask_one_question, 
     process_batch_answers,
     generate_prd, extract_stories, save_artifacts,
-    check_clarity, analyze_domain, ask_batch_questions
+    check_clarity, analyze_domain, ask_batch_questions,
+    analyze_document_content,
 )
 
 logger = logging.getLogger(__name__)
@@ -353,8 +354,66 @@ class BusinessAnalyst(BaseAgent):
         # Load shared context (cached, parallel loading) - same as Team Leader
         await self.context.ensure_loaded()
         
+        # Check for file attachments and combine with user message
+        user_message = task.content
+        attachments = task.context.get("attachments", []) if task.context else []
+        pre_collected_info = {}  # Pre-populated from document analysis
+        document_is_comprehensive = False
+        
+        if attachments:
+            logger.info(f"[{self.name}] Found {len(attachments)} attachment(s) in task")
+            doc_texts = []
+            all_extracted_text = ""
+            
+            for att in attachments:
+                if att.get("type") == "document" and att.get("extracted_text"):
+                    filename = att.get("filename", "document")
+                    extracted = att.get("extracted_text", "")
+                    doc_texts.append(f"[Tài liệu đính kèm: {filename}]\n{extracted}")
+                    all_extracted_text += extracted + "\n\n"
+                    logger.info(f"[{self.name}] Included document '{filename}' ({len(extracted)} chars)")
+            
+            if doc_texts:
+                # Combine user message with document content
+                user_message = f"{task.content}\n\n---\n\n" + "\n\n---\n\n".join(doc_texts)
+                logger.info(f"[{self.name}] Combined message length: {len(user_message)} chars")
+                
+                # Send acknowledgment message to user
+                first_filename = attachments[0].get("filename", "document")
+                await self.message_user(
+                    "response",
+                    f"📄 Đã nhận file **{first_filename}**. Đang phân tích nội dung tài liệu..."
+                )
+                
+                # Analyze document to extract requirements info
+                if len(all_extracted_text) > 500:  # Only analyze if document has substantial content
+                    doc_analysis = await analyze_document_content(all_extracted_text, agent=self)
+                    pre_collected_info = doc_analysis.get("collected_info", {})
+                    document_is_comprehensive = doc_analysis.get("is_comprehensive", False)
+                    
+                    logger.info(
+                        f"[{self.name}] Document analysis result: "
+                        f"comprehensive={document_is_comprehensive}, "
+                        f"score={doc_analysis.get('completeness_score', 0):.0%}, "
+                        f"collected_info={list(pre_collected_info.keys())}"
+                    )
+                    
+                    # Notify user about analysis result
+                    if document_is_comprehensive:
+                        await self.message_user(
+                            "response",
+                            f"✅ Tài liệu đầy đủ thông tin! Mình sẽ tạo PRD trực tiếp từ nội dung này."
+                        )
+                    else:
+                        missing = doc_analysis.get("missing_info", [])
+                        if missing:
+                            await self.message_user(
+                                "response",
+                                f"📝 Đã trích xuất một số thông tin từ tài liệu. Mình cần hỏi thêm vài câu để làm rõ."
+                            )
+        
         # Add user message to shared memory
-        self.context.add_message("user", task.content)
+        self.context.add_message("user", task.content)  # Save original message to memory
         
         # Load existing PRD from database
         existing_prd = self._load_existing_prd()
@@ -392,8 +451,9 @@ class BusinessAnalyst(BaseAgent):
         # Prepare initial state
         initial_state = {
             **self._build_base_state(task),
-            "user_message": task.content,
-            "collected_info": {},
+            "user_message": user_message,  # Use combined message with attachments
+            "has_attachments": bool(attachments),  # Flag for document upload
+            "collected_info": pre_collected_info,  # Pre-populated from document analysis
             "existing_prd": existing_prd,
             "conversation_context": self.context.format_memory(),
             "intent": "",

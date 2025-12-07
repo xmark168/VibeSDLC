@@ -53,6 +53,7 @@ class UserMessageEvent(BaseKafkaEvent):
     message_type: str = "text"
     agent_id: Optional[UUID] = None
     agent_name: Optional[str] = None
+    attachments: Optional[List[Dict[str, Any]]] = None  # File attachments with extracted text
 
 
 class AgentResponseEvent(BaseKafkaEvent):

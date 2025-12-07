@@ -6,7 +6,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_files
-from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
+from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
 from app.agents.developer_v2.src.utils.prompt_utils import (
     format_input_template as _format_input_template,
     build_system_prompt as _build_system_prompt,
@@ -112,10 +112,13 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         ]
         
         response = await code_llm.ainvoke(messages, config=_cfg(state, "review"))
+        flush_langfuse(state)  # Real-time update
         response_text = response.content if hasattr(response, 'content') else str(response)
         review_result = _parse_review_response(response_text)
         
         logger.info(f"[review] {file_path}: {review_result['decision']}")
+        if review_result['decision'] == "LBTM":
+            logger.info(f"[review] LBTM reason: {review_result['feedback'][:500] if review_result['feedback'] else 'No feedback'}")
         
         # Track LBTM count PER STEP (not global)
         step_lbtm_counts = state.get("step_lbtm_counts", {})
@@ -127,14 +130,16 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         if review_result["decision"] == "LBTM":
             step_lbtm_counts[step_key] = step_lbtm_counts.get(step_key, 0) + 1
             total_lbtm += 1
+            logger.info(f"[review] Step {step_index} LBTM count: {step_lbtm_counts[step_key]}/2")
             
             # If this step has been LBTM'd 2+ times, force move to next step
-            if step_lbtm_counts[step_key] >= 4:
-                logger.warning(f"[review] Step {step_index} has {step_lbtm_counts[step_key]} LBTM attempts, forcing LGTM")
+            if step_lbtm_counts[step_key] >= 2:
+                logger.warning(f"[review] Step {step_index} reached max LBTM ({step_lbtm_counts[step_key]}), forcing LGTM")
                 review_result["decision"] = "LGTM"
                 review_result["feedback"] = f"(Force-approved after {step_lbtm_counts[step_key]} attempts)"
                 current_step += 1
         else:
+            logger.info(f"[review] Step {step_index} LGTM, moving to step {current_step + 1}")
             current_step += 1
         
         return {

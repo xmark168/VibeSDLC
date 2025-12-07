@@ -10,6 +10,7 @@ class ImplementationStep(BaseModel):
     file_path: str = Field(description="Target file path")
     action: str = Field(description="'create' or 'modify'")
     dependencies: List[str] = Field(default=[], description="Context files to pre-load")
+    skills: List[str] = Field(default=[], description="Skills to preload: api-route, frontend-component, database-model, server-action, authentication, state-management, unit-test")
 
 
 class AnalyzePlanOutput(BaseModel):

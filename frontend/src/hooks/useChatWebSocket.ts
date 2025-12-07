@@ -67,6 +67,8 @@ export function useChatWebSocket(
     agentName: string
     status: 'active' | 'thinking' | 'waiting'
   } | null>(null)
+  // Track individual agent statuses for avatar display
+  const [agentStatuses, setAgentStatuses] = useState<Map<string, { status: string; lastUpdate: string }>>(new Map())
   
   // Refs
   const projectIdRef = useRef(projectId)
@@ -294,6 +296,15 @@ export function useChatWebSocket(
     
     console.log('[WS] 🚀 Start:', msg.agent_name, msg.content, 'display:', displayMode)
     
+    // Update agent status to busy/working
+    if (msg.agent_name) {
+      setAgentStatuses(prev => {
+        const updated = new Map(prev)
+        updated.set(msg.agent_name, { status: 'busy', lastUpdate: msg.timestamp || new Date().toISOString() })
+        return updated
+      })
+    }
+    
     // Handle based on display mode
     if (displayMode === 'none') {
       // Silent mode - skip
@@ -439,6 +450,15 @@ export function useChatWebSocket(
     
     console.log('[WS] ✅ Finish:', msg.summary, 'display:', displayMode)
     setAgentStatus('idle')
+    
+    // Update agent status back to idle
+    if (msg.agent_name) {
+      setAgentStatuses(prev => {
+        const updated = new Map(prev)
+        updated.set(msg.agent_name, { status: 'idle', lastUpdate: msg.timestamp || new Date().toISOString() })
+        return updated
+      })
+    }
     
     // Remove typing indicators for this agent
     setTypingAgents(prev => {
@@ -784,6 +804,7 @@ export function useChatWebSocket(
     readyState,
     messages,
     agentStatus,
+    agentStatuses,  // Individual agent statuses for avatar display
     typingAgents,
     backgroundTasks,  // NEW
     answeredBatchIds,  // Track batches that have been answered

@@ -215,6 +215,36 @@ def parse_prd_update_response(response: str) -> dict:
         }
 
 
+def parse_document_analysis_response(response: str) -> dict:
+    """
+    Parse document analysis response.
+    
+    Args:
+        response: LLM response string
+    
+    Returns:
+        dict with 'collected_info', 'completeness_score', 'is_comprehensive', 'summary', 'missing_info'
+    """
+    try:
+        result = parse_json_response(response)
+        return {
+            "collected_info": result.get("collected_info", {}),
+            "completeness_score": float(result.get("completeness_score", 0.0)),
+            "is_comprehensive": result.get("is_comprehensive", False),
+            "summary": result.get("summary", ""),
+            "missing_info": result.get("missing_info", [])
+        }
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"[parse_document_analysis] Parse error: {e}")
+        return {
+            "collected_info": {},
+            "completeness_score": 0.0,
+            "is_comprehensive": False,
+            "summary": "Error parsing document analysis",
+            "missing_info": ["target_users", "main_features", "business_model"]
+        }
+
+
 def parse_stories_response(response: str) -> dict:
     """
     Parse epics with user stories from LLM response.

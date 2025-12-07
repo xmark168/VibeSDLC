@@ -1,4 +1,4 @@
-"""LLM instances"""
+"""LLM instances with model selection by task/skill type."""
 import os
 import logging
 from functools import wraps
@@ -14,24 +14,70 @@ MAX_RETRIES = 3
 RETRY_WAIT_MIN = 1  
 RETRY_WAIT_MAX = 10  
 
+# Model tiers
+MODELS = {
+    "fast": "claude-sonnet-4-5-20250929",      # Simple/fast tasks
+    "medium": "claude-sonnet-4-5-20250929",   # Standard tasks (API, DB)
+    "complex": "claude-opus-4-5-20251101",    # Complex tasks (UI design, debug)
+}
+
 # Default model configs per step
 LLM_CONFIG = {
-    # Fast tasks 
-    "router": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
-    "clarify": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
-    "respond": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
+    # Fast tasks - use haiku
+    "router": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
+    "clarify": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
+    "respond": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     
-    # Complex tasks (code generation) - 40s timeout
-    "analyze": {"model": "claude-opus-4-5-20251101", "temperature": 0.2, "timeout": 40},
-    "plan": {"model": "claude-opus-4-5-20251101", "temperature": 0.2, "timeout": 60},
-    "implement": {"model": "claude-opus-4-5-20251101", "temperature": 0, "timeout": 60},
-    "debug": {"model": "claude-opus-4-5-20251101", "temperature": 0.2, "timeout": 40},
+    # Planning - use medium (sonnet)
+    "analyze": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 40},
+    "plan": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 60},
+    
+    # Implementation - default medium, can be overridden by skill type
+    "implement": {"model": MODELS["medium"], "temperature": 0, "timeout": 60},
+    "debug": {"model": MODELS["complex"], "temperature": 0.2, "timeout": 40},
     
     # Structured output tasks
-    "structured": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 35},
-    "review": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
-    "summarize": {"model": "claude-opus-4-5-20251101", "temperature": 0.1, "timeout": 30},
+    "structured": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 35},
+    "review": {"model": MODELS["medium"], "temperature": 0.1, "timeout": 30},
+    "summarize": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
 }
+
+# Model selection by skill type (for implement step)
+SKILL_MODEL_MAP = {
+    # Complex UI tasks -> opus (best quality)
+    "frontend-design": MODELS["complex"],
+    "frontend-component": MODELS["complex"],
+    
+    # Standard tasks -> sonnet (good balance)
+    "api-route": MODELS["medium"],
+    "database-model": MODELS["medium"],
+    "server-action": MODELS["medium"],
+    "authentication": MODELS["medium"],
+    "state-management": MODELS["medium"],
+    
+    # Debug needs complex reasoning
+    "debugging": MODELS["complex"],
+}
+
+
+def get_model_for_skills(skills: list[str]) -> str:
+    """Select best model based on skills required for a task.
+    
+    Priority: complex > medium > fast
+    If any skill requires complex model, use complex.
+    """
+    if not skills:
+        return MODELS["medium"]
+    
+    has_complex = any(SKILL_MODEL_MAP.get(s) == MODELS["complex"] for s in skills)
+    has_medium = any(SKILL_MODEL_MAP.get(s) == MODELS["medium"] for s in skills)
+    
+    if has_complex:
+        return MODELS["complex"]
+    elif has_medium:
+        return MODELS["medium"]
+    else:
+        return MODELS["medium"]  # Default to medium
 
 
 def get_llm(step: str) -> BaseChatModel:
@@ -80,6 +126,42 @@ def get_llm(step: str) -> BaseChatModel:
     if openai_api_key:
         kwargs["api_key"] = openai_api_key
     return ChatOpenAI(**kwargs)
+
+
+def get_llm_for_skills(skills: list[str], temperature: float = 0) -> BaseChatModel:
+    """Get LLM based on skills required for a task.
+    
+    Selects model tier based on skill complexity:
+    - frontend-design, frontend-component, debugging -> opus (complex)
+    - api-route, database-model, etc. -> sonnet (medium)
+    
+    Args:
+        skills: List of skill IDs for the task
+        temperature: Temperature for generation (default 0 for code)
+    
+    Returns:
+        LLM instance configured for the task
+    """
+    model = get_model_for_skills(skills)
+    
+    # API keys and base URLs
+    anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://ai.megallm.io")
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
+    
+    kwargs = {
+        "model": model,
+        "temperature": temperature,
+        "max_tokens": 16384,
+        "timeout": 60,
+        "max_retries": MAX_RETRIES,
+    }
+    if anthropic_base_url:
+        kwargs["base_url"] = anthropic_base_url
+    if anthropic_api_key:
+        kwargs["api_key"] = anthropic_api_key
+    
+    logger.info(f"[LLM] Selected {model} for skills: {skills}")
+    return ChatAnthropic(**kwargs)
 
 
 # Retry decorator for LLM calls

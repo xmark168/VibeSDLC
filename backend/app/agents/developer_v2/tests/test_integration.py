@@ -196,7 +196,8 @@ class TestImplementNode:
                 "description": "Create src/components/Button.tsx with basic button",
                 "file_path": "src/components/Button.tsx",
                 "action": "create",
-                "dependencies": []
+                "dependencies": [],
+                "skills": ["frontend-component"]  # Skills preloaded from plan
             }],
             "logic_analysis": "Create a basic Button component",
             "dependencies_content": {},
@@ -290,3 +291,6 @@ class TestAnalyzeAndPlanNode:
         assert "task" in first_step or "description" in first_step
         
         print(f"[PASS] Created plan with {total_steps} steps")
+
+
+

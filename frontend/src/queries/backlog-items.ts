@@ -11,7 +11,7 @@ export function useKanbanBoard(projectId: string | undefined) {
       return result
     },
     enabled: !!projectId,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     refetchOnMount: true, // Always refetch when component mounts
     staleTime: 0, // Consider data stale immediately to ensure fresh data
     structuralSharing: false, // Disable structural sharing to always get new reference on refetch
@@ -40,12 +40,13 @@ export function useUpdateWIPLimit(projectId: string) {
   })
 }
 
-export function useFlowMetrics(projectId: string | undefined, days: number = 30) {
+export function useFlowMetrics(projectId: string | undefined, days: number = 30, enabled: boolean = true) {
   return useQuery({
     queryKey: ['flow-metrics', projectId, days],
     queryFn: () => backlogItemsApi.getFlowMetrics(projectId!, days),
-    enabled: !!projectId,
-    refetchInterval: 60000, // Refresh every minute
+    enabled: !!projectId && enabled,
+    refetchInterval: false, // Disabled auto-refresh
+    refetchOnWindowFocus: false,
   })
 }
 

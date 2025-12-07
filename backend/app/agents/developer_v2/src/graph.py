@@ -99,17 +99,26 @@ def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__
 class DeveloperGraph:
     """LangGraph state machine for story-driven code generation.
 
-    7 nodes: setup_workspace -> analyze_and_plan -> implement -> review ->
-    summarize -> run_code -> (analyze_error if FAIL)
+    Sequential flow with per-step review:
+    setup_workspace -> analyze_and_plan -> implement <-> review (LBTM loop)
+                                                           |
+                                                         LGTM
+                                                           v
+                                       END <- run_code <- summarize
+                                               |
+                                             FAIL
+                                               v
+                                         analyze_error -> implement
 
     Attrs: agent (DeveloperV2), graph (compiled StateGraph)
-    Limits: max 2 LBTM/step, max 5 debug iterations, max 40 react loops
+    Limits: max 5 debug iterations, max 2 LBTM per step
     """
     
     def __init__(self, agent=None):
         self.agent = agent
         g = StateGraph(DeveloperState)
         
+        # All nodes
         g.add_node("setup_workspace", partial(setup_workspace, agent=agent))
         g.add_node("analyze_and_plan", partial(analyze_and_plan, agent=agent))
         g.add_node("implement", partial(implement, agent=agent))
@@ -118,6 +127,7 @@ class DeveloperGraph:
         g.add_node("run_code", partial(run_code, agent=agent))
         g.add_node("analyze_error", partial(analyze_error, agent=agent))
         
+        # Sequential edges
         g.set_entry_point("setup_workspace")
         g.add_edge("setup_workspace", "analyze_and_plan")
         g.add_edge("analyze_and_plan", "implement")

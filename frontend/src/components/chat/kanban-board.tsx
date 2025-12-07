@@ -140,9 +140,11 @@ function DroppableColumn({
   onCardMove?: (cardId: string, targetColumn: string) => void
   onCardEdit?: (card: KanbanCardData) => void
 }) {
-  // Make the column itself droppable for empty columns
+  // Make the column itself droppable ONLY for empty columns
+  // When column has cards, only cards are droppables to ensure accurate positioning
   const { setNodeRef, isOver } = useDroppable({
     id: column.id,
+    disabled: cards.length > 0, // Disable column droppable when it has cards
   })
 
   const wipLimit = wipData?.wip_limit ?? column.wipLimit
@@ -179,9 +181,9 @@ function DroppableColumn({
 
       <SortableContext items={cards.map(c => c.id)} strategy={verticalListSortingStrategy}>
         <div 
-          ref={setNodeRef}
+          ref={cards.length === 0 ? setNodeRef : undefined}
           className={`space-y-3 min-h-[100px] rounded-xl p-3 border-2 transition-colors ${
-            isOver ? "border-dashed border-primary bg-primary/5" : "border-transparent"
+            isOver && cards.length === 0 ? "border-dashed border-primary bg-primary/5" : "border-transparent"
           }`}
         >
           {cards.map((card) => (
@@ -204,8 +206,12 @@ function DroppableColumn({
 
 export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
   const [cards, setCards] = useState<KanbanCardData[]>([])
-  const [activeCard, setActiveCard] = useState<KanbanCardData | null>(null)
-  const [originalColumnId, setOriginalColumnId] = useState<string | null>(null)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [clonedCards, setClonedCards] = useState<KanbanCardData[] | null>(null)
+  const clonedCardsRef = useRef<KanbanCardData[] | null>(null) // Ref version for callbacks
+  const cardsRef = useRef<KanbanCardData[]>(cards) // Current cards ref for callbacks
+  // Store target position for cross-container moves
+  const crossContainerTarget = useRef<{ targetColumn: string; targetIndex: number; overId: string } | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
   const [showFlowMetrics, setShowFlowMetrics] = useState(false)
   const [showPolicySettings, setShowPolicySettings] = useState(false)
@@ -234,14 +240,14 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
-  // Load flow metrics
-  useEffect(() => {
-    if (projectId) {
-      loadFlowMetrics()
-      const interval = setInterval(loadFlowMetrics, 5 * 60 * 1000)
-      return () => clearInterval(interval)
-    }
-  }, [projectId])
+  // Load flow metrics - disabled auto-load, only load when user opens metrics dashboard
+  // useEffect(() => {
+  //   if (projectId) {
+  //     loadFlowMetrics()
+  //     const interval = setInterval(loadFlowMetrics, 5 * 60 * 1000)
+  //     return () => clearInterval(interval)
+  //   }
+  // }, [projectId])
 
   const loadFlowMetrics = async () => {
     if (!projectId) return
@@ -283,7 +289,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         epic_domain: item.epic_domain,
         acceptance_criteria: item.acceptance_criteria,
         requirements: item.requirements,
-        dependencies: item.dependencies,
+        dependencies: item.dependencies || [],
         created_at: item.created_at,
         updated_at: item.updated_at,
       })
@@ -301,41 +307,24 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }, [dbKanbanData, dataUpdatedAt])
 
-  // Sync selectedCard with updated data
-  useEffect(() => {
-    if (selectedCard) {
-      const updatedCard = cards.find(c => c.id === selectedCard.id)
-      if (updatedCard && JSON.stringify(updatedCard) !== JSON.stringify(selectedCard)) {
-        setSelectedCard(updatedCard)
-      }
-    }
-  }, [cards, selectedCard])
+  // Derive the current selected card data from cards (instead of syncing via useEffect)
+  const currentSelectedCard = useMemo(() => {
+    if (!selectedCard) return null
+    return cards.find(c => c.id === selectedCard.id) || selectedCard
+  }, [cards, selectedCard?.id])
 
-  // Sync editingStory with updated data
+  // Get the active card for DragOverlay
+  const activeCard = useMemo(() => {
+    if (!activeId) return null
+    return cards.find(c => c.id === activeId) || null
+  }, [activeId, cards])
+
+  // Keep cardsRef in sync with cards state
   useEffect(() => {
-    if (editingStory && showCreateStoryDialog) {
-      const updatedCard = cards.find(c => c.id === editingStory.id)
-      if (updatedCard) {
-        const storyType = updatedCard.type?.toLowerCase() === "enablerstory" ? "EnablerStory" : "UserStory"
-        const newEditingStory: StoryEditData = {
-          id: updatedCard.id,
-          title: updatedCard.content,
-          description: updatedCard.description,
-          type: storyType,
-          story_point: updatedCard.story_point,
-          priority: updatedCard.priority,
-          rank: updatedCard.rank,
-          acceptance_criteria: updatedCard.acceptance_criteria,
-          requirements: updatedCard.requirements,
-          dependencies: updatedCard.dependencies,
-          epic_id: updatedCard.epic_id,
-        }
-        if (JSON.stringify(newEditingStory) !== JSON.stringify(editingStory)) {
-          setEditingStory(newEditingStory)
-        }
-      }
-    }
-  }, [cards, editingStory, showCreateStoryDialog])
+    cardsRef.current = cards
+  }, [cards])
+
+
 
   // Get cards by column
   const getCardsByColumn = useCallback((columnId: string) => {
@@ -344,149 +333,335 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       .sort((a, b) => (a.rank || 999) - (b.rank || 999))
   }, [cards])
 
-  // Filter cards
-  const filterCards = useCallback((cardsToFilter: KanbanCardData[]) => {
-    return cardsToFilter.filter(card => {
-      const matchesSearch = !searchQuery ||
-        card.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        card.description?.toLowerCase().includes(searchQuery.toLowerCase())
-
-      const matchesType = selectedFilters.types.length === 0 ||
-        (card.type && selectedFilters.types.includes(card.type))
-
-      let matchesPriority = true
-      if (selectedFilters.priorities.length > 0 && card.rank !== undefined) {
-        matchesPriority = selectedFilters.priorities.some(priority => {
-          if (priority === "high" && card.rank! <= 3) return true
-          if (priority === "medium" && card.rank! > 3 && card.rank! <= 7) return true
-          if (priority === "low" && card.rank! > 7) return true
-          return false
-        })
-      }
-
-      return matchesSearch && matchesType && matchesPriority
-    })
-  }, [searchQuery, selectedFilters])
-
-  // DnD Handlers
-  const handleDragStart = (event: DragStartEvent) => {
-    const card = cards.find(c => c.id === event.active.id)
-    if (card) {
-      setActiveCard(card)
-      setOriginalColumnId(card.columnId) // Save original column for status update
-    }
-  }
-
-  const handleDragOver = (event: DragOverEvent) => {
-    const { active, over } = event
-    if (!over) return
-
-    const activeCard = cards.find(c => c.id === active.id)
-    if (!activeCard) return
-
-    const overId = over.id as string
-    const overCard = cards.find(c => c.id === overId)
-    const overColumn = overCard?.columnId || COLUMNS.find(col => col.id === overId)?.id
-
-    if (overColumn && activeCard.columnId !== overColumn) {
-      setCards(prev => prev.map(card =>
-        card.id === active.id ? { ...card, columnId: overColumn } : card
-      ))
-    }
-  }
-
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const savedOriginalColumnId = originalColumnId // Save before clearing
-    setActiveCard(null)
-    setOriginalColumnId(null)
+  // Check if card has incomplete dependencies (blocked state)
+  // Cards in Done or Archived columns are never shown as blocked
+  // Optional cardsSource parameter to use original cards during drag operations
+  const checkDependenciesCompleted = useCallback((card: KanbanCardData, cardsSource?: KanbanCardData[]): { 
+    isBlocked: boolean
+    incompleteDeps: KanbanCardData[]
+    blockedByCount: number
+  } => {
+    const sourceCards = cardsSource || cards
     
+    // Don't show blocked state for cards already in Done or Archived
+    if (!card.dependencies?.length || card.columnId === 'done' || card.columnId === 'archived') {
+      return { isBlocked: false, incompleteDeps: [], blockedByCount: 0 }
+    }
+    
+    const incompleteDeps = card.dependencies
+      .map(depId => sourceCards.find(c => c.id === depId))
+      .filter((dep): dep is KanbanCardData => 
+        dep !== undefined && dep.columnId !== 'done' && dep.columnId !== 'archived'
+      )
+    
+    return { 
+      isBlocked: incompleteDeps.length > 0, 
+      incompleteDeps,
+      blockedByCount: incompleteDeps.length
+    }
+  }, [cards])
+
+  // Filter cards and enrich with blocked state
+  const filterCards = useCallback((cardsToFilter: KanbanCardData[]) => {
+    return cardsToFilter
+      .filter(card => {
+        const matchesSearch = !searchQuery ||
+          card.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          card.description?.toLowerCase().includes(searchQuery.toLowerCase())
+
+        const matchesType = selectedFilters.types.length === 0 ||
+          (card.type && selectedFilters.types.includes(card.type))
+
+        let matchesPriority = true
+        if (selectedFilters.priorities.length > 0 && card.rank !== undefined) {
+          matchesPriority = selectedFilters.priorities.some(priority => {
+            if (priority === "high" && card.rank! <= 3) return true
+            if (priority === "medium" && card.rank! > 3 && card.rank! <= 7) return true
+            if (priority === "low" && card.rank! > 7) return true
+            return false
+          })
+        }
+
+        return matchesSearch && matchesType && matchesPriority
+      })
+      .map(card => {
+        // Enrich card with blocked state
+        const { isBlocked, blockedByCount } = checkDependenciesCompleted(card)
+        return { ...card, isBlocked, blockedByCount }
+      })
+  }, [searchQuery, selectedFilters, checkDependenciesCompleted])
+
+  // Find container for an item (official dnd-kit pattern)
+  const findContainer = useCallback((id: string): string | undefined => {
+    // Check if id is a column
+    if (COLUMNS.some(col => col.id === id)) {
+      return id
+    }
+    // Find the column containing this card
+    const card = cards.find(c => c.id === id)
+    return card?.columnId
+  }, [cards])
+
+  // DnD Handlers (following official dnd-kit pattern)
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as string)
+    setClonedCards(cards) // Save for cancel recovery
+    clonedCardsRef.current = cards // Also save to ref for callbacks
+    crossContainerTarget.current = null // Clear any stale target
+  }, [cards])
+
+  const handleDragOver = useCallback((event: DragOverEvent) => {
     const { active, over } = event
-    if (!over) return
+    const overId = over?.id as string | undefined
 
-    const activeCard = cards.find(c => c.id === active.id)
-    if (!activeCard) return
+    if (overId == null) return
 
-    const overId = over.id as string
-    const overCard = cards.find(c => c.id === overId)
-    // Check if dropping on a column or a card
-    const isColumnTarget = COLUMNS.some(col => col.id === overId)
-    const targetColumnId = isColumnTarget 
-      ? overId 
-      : (overCard?.columnId || activeCard.columnId)
+    const overContainer = findContainer(overId)
+    const originalColumn = clonedCardsRef.current?.find(c => c.id === active.id)?.columnId
 
-    // Update columnId in state if needed (for dropping on empty column)
-    if (isColumnTarget && activeCard.columnId !== targetColumnId) {
-      setCards(prev => prev.map(card =>
-        card.id === active.id ? { ...card, columnId: targetColumnId } : card
-      ))
+    if (!overContainer || !originalColumn) return
+
+    // Check if this is a cross-container move
+    const isCrossContainerMove = originalColumn !== overContainer
+
+    if (!isCrossContainerMove) {
+      crossContainerTarget.current = null
+      return
     }
 
-    // Reorder within same column (only if dropping on a card, not on column)
-    if (active.id !== over.id && !isColumnTarget && savedOriginalColumnId === targetColumnId) {
-      // IMPORTANT: Sort by rank first before reordering
-      const columnCards = cards
-        .filter(c => c.columnId === targetColumnId)
-        .sort((a, b) => (a.rank || 999) - (b.rank || 999))
-      
-      const oldIndex = columnCards.findIndex(c => c.id === active.id)
-      const newIndex = columnCards.findIndex(c => c.id === over.id)
+    // Skip update if hovering over self (active card)
+    if (overId === active.id) {
+      return
+    }
 
-      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-        const reorderedCards = arrayMove(columnCards, oldIndex, newIndex)
+    // Store target info for handleDragEnd
+    crossContainerTarget.current = {
+      targetColumn: overContainer,
+      targetIndex: 0, // Will be calculated in handleDragEnd based on over.id
+      overId: overId
+    }
+
+    // Update columnId to show placeholder in target column
+    // SortableContext will handle visual positioning automatically
+    setCards(prevCards => {
+      const card = prevCards.find(c => c.id === active.id)
+      if (!card || card.columnId === overContainer) return prevCards
+
+      const newCards = prevCards.map(c => 
+        c.id === active.id 
+          ? { ...c, columnId: overContainer }
+          : c
+      )
+      cardsRef.current = newCards
+      return newCards
+    })
+  }, [findContainer])
+
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event
+    // IMPORTANT: Use clonedCards to get original column, not current cards state
+    const originalColumnId = clonedCards?.find(c => c.id === active.id)?.columnId
+    
+    // Debug log
+    const draggedCard = clonedCards?.find(c => c.id === active.id)
+    console.log('[Kanban] DragEnd:', {
+      activeId: active.id,
+      overId: over?.id,
+      originalColumnId,
+      draggedCardTitle: draggedCard?.content,
+      draggedCardDeps: draggedCard?.dependencies,
+      clonedCardsExists: !!clonedCards,
+    })
+    // Save clonedCards for potential revert before resetting
+    const savedClonedCards = clonedCards
+
+    // Always reset active state
+    setActiveId(null)
+    setClonedCards(null)
+    clonedCardsRef.current = null
+
+    if (!over) return
+
+    const overId = over.id as string
+    
+    // Use originalColumnId as activeContainer
+    const activeContainer = originalColumnId
+    
+    // For overContainer: prioritize crossContainerTarget if available (most accurate)
+    // Otherwise calculate from overId
+    let overContainer: string | undefined
+    if (crossContainerTarget.current) {
+      overContainer = crossContainerTarget.current.targetColumn
+    } else if (COLUMNS.some(col => col.id === overId)) {
+      overContainer = overId
+    } else {
+      // Find from clonedCards (original state) to avoid issues with handleDragOver updates
+      const clonedCardsSnapshot = clonedCardsRef.current as KanbanCardData[] | null
+      if (clonedCardsSnapshot) {
+        overContainer = clonedCardsSnapshot.find((c: KanbanCardData) => c.id === overId)?.columnId
+      }
+      if (!overContainer) {
+        overContainer = cards.find(c => c.id === overId)?.columnId
+      }
+    }
+
+    if (!activeContainer || !overContainer) return
+
+    console.log('[Kanban] Container check:', {
+      activeContainer,
+      overContainer,
+      isCrossContainer: activeContainer !== overContainer
+    })
+
+    const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
+      'todo': 'Todo',
+      'inprogress': 'InProgress',
+      'review': 'Review', 
+      'done': 'Done',
+      'archived': 'Archived',
+    }
+
+    // Same container - handle reordering with arrayMove (official pattern)
+    if (activeContainer === overContainer) {
+      const containerCards = cards
+        .filter(c => c.columnId === activeContainer)
+        .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+
+      const activeIndex = containerCards.findIndex(c => c.id === active.id)
+      const overIndex = containerCards.findIndex(c => c.id === overId)
+
+      if (activeIndex !== overIndex && activeIndex !== -1 && overIndex !== -1) {
+        const reorderedCards = arrayMove(containerCards, activeIndex, overIndex)
         
-        // Update ranks for all cards in this column
+        // Update ranks
         const newRanks = new Map<string, number>()
         reorderedCards.forEach((card, index) => {
           newRanks.set(card.id, index + 1)
         })
-        
-        const updatedCards = cards.map(card => {
-          const newRank = newRanks.get(card.id)
-          if (newRank !== undefined) {
-            return { ...card, rank: newRank }
-          }
-          return card
-        })
-        setCards(updatedCards)
 
-        // Update rank in backend
+        setCards(prev => prev.map(card => {
+          const newRank = newRanks.get(card.id)
+          return newRank !== undefined ? { ...card, rank: newRank } : card
+        }))
+
+        // Save to backend
         if (projectId) {
           try {
-            const newRank = newRanks.get(active.id as string)
-            if (newRank) {
-              await storiesApi.update(active.id as string, { rank: newRank })
-              toast.success("Đã cập nhật thứ tự")
-            }
+            const rankUpdates: { story_id: string; rank: number }[] = []
+            newRanks.forEach((rank, cardId) => rankUpdates.push({ story_id: cardId, rank }))
+            await storiesApi.bulkUpdateRanks(rankUpdates)
+            toast.success("Đã cập nhật thứ tự")
           } catch (error) {
             console.error("Failed to update rank:", error)
             toast.error("Không thể cập nhật thứ tự")
           }
         }
       }
-    }
+    } else {
+      // Cross-container move
+      if (!originalColumnId) return
 
-    // Update status if column changed (use saved originalColumnId)
-    if (savedOriginalColumnId && savedOriginalColumnId !== targetColumnId) {
-      try {
-        const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
-          'todo': 'Todo',
-          'inprogress': 'InProgress',
-          'review': 'Review',
-          'done': 'Done',
-          'archived': 'Archived',
+      // Get other cards in target container (excluding the moved card)
+      const otherCardsInTarget = cards
+        .filter(c => c.columnId === overContainer && c.id !== active.id)
+        .sort((a, b) => (a.rank || 999) - (b.rank || 999))
+
+      // Calculate newIndex based on over.id at drop time
+      let newIndex: number
+      if (COLUMNS.some(col => col.id === overId)) {
+        // Dropped on column itself → append to end
+        newIndex = otherCardsInTarget.length
+      } else {
+        // Dropped on a card → insert at that card's position
+        const overIndex = otherCardsInTarget.findIndex(c => c.id === overId)
+        newIndex = overIndex >= 0 ? overIndex : otherCardsInTarget.length
+      }
+
+      // Clear the ref
+      crossContainerTarget.current = null
+
+      // Build final ordered list: insert active card at newIndex
+      const finalOrder = [...otherCardsInTarget]
+      // Use original card from clonedCards to get correct dependencies data
+      const activeCard = savedClonedCards?.find(c => c.id === active.id) || cards.find(c => c.id === active.id)
+      if (activeCard) {
+        finalOrder.splice(newIndex, 0, activeCard)
+      }
+
+      // Validate dependencies - block move if dependencies not completed (except moving to Todo/Archived)
+      if (activeCard && overContainer !== 'todo' && overContainer !== 'archived') {
+        // Use savedClonedCards to check dependencies (original state before drag)
+        const { isBlocked, incompleteDeps } = checkDependenciesCompleted(activeCard, savedClonedCards || undefined)
+        console.log('[Kanban] Dependency check:', { 
+          cardTitle: activeCard.content,
+          targetColumn: overContainer,
+          dependencies: activeCard.dependencies,
+          isBlocked, 
+          incompleteDeps: incompleteDeps.map(d => d.content)
+        })
+        if (isBlocked) {
+          toast.error(`Không thể di chuyển story`, {
+            description: `${incompleteDeps.length} dependencies chưa hoàn thành: ${incompleteDeps.map(d => d.content).slice(0, 2).join(', ')}${incompleteDeps.length > 2 ? '...' : ''}`,
+            duration: 4000,
+          })
+          // Revert to original state
+          if (savedClonedCards) {
+            setCards(savedClonedCards)
+          }
+          return
         }
-        await storiesApi.updateStatus(active.id as string, statusMap[targetColumnId] || 'Todo')
+      }
+
+      // Calculate new ranks
+      const newRanks = new Map<string, number>()
+      finalOrder.forEach((card, index) => {
+        newRanks.set(card.id, index + 1)
+      })
+
+      // Update local state with columnId and ranks
+      setCards(prev => prev.map(card => {
+        if (card.id === active.id) {
+          // Move card to new column with new rank
+          const newRank = newRanks.get(card.id)
+          return { ...card, columnId: overContainer, rank: newRank ?? card.rank }
+        }
+        const newRank = newRanks.get(card.id)
+        if (newRank !== undefined) {
+          return { ...card, rank: newRank }
+        }
+        return card
+      }))
+
+      // Save to backend
+      try {
+        await storiesApi.updateStatus(active.id as string, statusMap[overContainer] || 'Todo')
+        
+        const rankUpdates: { story_id: string; rank: number }[] = []
+        newRanks.forEach((rank, cardId) => rankUpdates.push({ story_id: cardId, rank }))
+        if (rankUpdates.length > 0) {
+          await storiesApi.bulkUpdateRanks(rankUpdates)
+        }
         toast.success("Đã cập nhật trạng thái story")
       } catch (error) {
-        console.error("Failed to update status:", error)
         toast.error("Không thể cập nhật trạng thái")
-        // Revert to original column
-        setCards(prev => prev.map(card =>
-          card.id === active.id ? { ...card, columnId: savedOriginalColumnId } : card
-        ))
+        // Revert to original state on error
+        if (savedClonedCards) {
+          setCards(savedClonedCards)
+        }
       }
     }
-  }
+  }, [cards, clonedCards, findContainer, projectId, checkDependenciesCompleted])
+
+  // Handle drag cancel - restore original state
+  const handleDragCancel = useCallback(() => {
+    if (clonedCards) {
+      setCards(clonedCards)
+    }
+    setActiveId(null)
+    setClonedCards(null)
+    clonedCardsRef.current = null
+    crossContainerTarget.current = null
+  }, [clonedCards])
 
   // Card handlers
   const handleDownloadResult = useCallback((card: KanbanCardData) => {
@@ -633,6 +808,18 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     const card = cards.find(c => c.id === cardId)
     if (!card || card.columnId === targetColumnId) return
 
+    // Validate dependencies - block move if dependencies not completed (except moving to Todo/Archived)
+    if (targetColumnId !== 'todo' && targetColumnId !== 'archived') {
+      const { isBlocked, incompleteDeps } = checkDependenciesCompleted(card)
+      if (isBlocked) {
+        toast.error(`Không thể di chuyển story`, {
+          description: `${incompleteDeps.length} dependencies chưa hoàn thành: ${incompleteDeps.map(d => d.content).slice(0, 2).join(', ')}${incompleteDeps.length > 2 ? '...' : ''}`,
+          duration: 4000,
+        })
+        return
+      }
+    }
+
     setCards(prev => prev.map(c =>
       c.id === cardId ? { ...c, columnId: targetColumnId } : c
     ))
@@ -652,7 +839,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         c.id === cardId ? { ...c, columnId: card.columnId } : c
       ))
     }
-  }, [cards])
+  }, [cards, checkDependenciesCompleted])
 
   const handleEditCard = useCallback((card: KanbanCardData) => {
     const storyType = card.type?.toLowerCase() === "enablerstory" ? "EnablerStory" : "UserStory"
@@ -800,6 +987,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
           >
             <div className="flex gap-6 min-w-max px-8 py-6">
               {COLUMNS.map((column) => (
@@ -838,8 +1026,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       </div>
 
       <TaskDetailModal
-        card={selectedCard}
-        open={!!selectedCard}
+        card={currentSelectedCard}
+        open={!!currentSelectedCard}
         onOpenChange={() => setSelectedCard(null)}
         onDownloadResult={handleDownloadResult}
         //allStories={columns.flatMap(col => col.cards)}

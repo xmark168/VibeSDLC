@@ -21,6 +21,7 @@ from .prompts import (
     parse_prd_response,
     parse_prd_update_response,
     parse_stories_response,
+    parse_document_analysis_response,
 )
 from app.agents.core.prompt_utils import (
     build_system_prompt as _build_system_prompt,
@@ -206,6 +207,75 @@ async def analyze_intent(state: BAState, agent=None) -> dict:
         }
 
 
+async def analyze_document_content(document_text: str, agent=None) -> dict:
+    """Analyze uploaded document to extract requirements information.
+    
+    This function is called BEFORE the graph runs to pre-populate collected_info
+    if the document contains comprehensive requirements.
+    
+    Args:
+        document_text: Extracted text from uploaded document
+        agent: Agent instance for LLM config
+        
+    Returns:
+        dict with 'collected_info', 'is_comprehensive', 'summary'
+    """
+    logger.info(f"[BA] Analyzing uploaded document ({len(document_text)} chars)...")
+    
+    # Truncate very long documents to avoid token limits
+    max_chars = 15000
+    if len(document_text) > max_chars:
+        document_text = document_text[:max_chars] + "\n\n[... document truncated ...]"
+        logger.info(f"[BA] Document truncated to {max_chars} chars for analysis")
+    
+    system_prompt = _sys_prompt(agent, "analyze_document")
+    user_prompt = _user_prompt(
+        "analyze_document",
+        document_text=document_text
+    )
+    
+    try:
+        response = await _default_llm.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ],
+            config={"run_name": "analyze_document"}
+        )
+        
+        result = parse_document_analysis_response(response.content)
+        
+        # Filter out None values from collected_info
+        collected_info = {
+            k: v for k, v in result.get("collected_info", {}).items() 
+            if v is not None and v != "null" and v != ""
+        }
+        
+        logger.info(
+            f"[BA] Document analysis: score={result['completeness_score']:.0%}, "
+            f"comprehensive={result['is_comprehensive']}, "
+            f"collected_categories={list(collected_info.keys())}"
+        )
+        
+        return {
+            "collected_info": collected_info,
+            "is_comprehensive": result["is_comprehensive"],
+            "completeness_score": result["completeness_score"],
+            "summary": result["summary"],
+            "missing_info": result["missing_info"]
+        }
+        
+    except Exception as e:
+        logger.warning(f"[BA] Document analysis failed: {e}")
+        return {
+            "collected_info": {},
+            "is_comprehensive": False,
+            "completeness_score": 0.0,
+            "summary": "",
+            "missing_info": []
+        }
+
+
 async def respond_conversational(state: BAState, agent=None) -> dict:
     """Node: Respond to casual conversation (greetings, thanks, etc.)."""
     logger.info(f"[BA] Handling conversational message: {state['user_message'][:50]}...")
@@ -230,6 +300,15 @@ async def respond_conversational(state: BAState, agent=None) -> dict:
         # Send response to user
         if agent:
             await agent.message_user("response", message)
+            
+            # Warning if user attached file but message was conversational
+            if state.get("has_attachments"):
+                logger.info("[BA] File attachment detected in conversational message, sending warning")
+                await agent.message_user(
+                    "response",
+                    "📎 Mình thấy bạn có đính kèm file. Nếu bạn muốn mình phân tích tài liệu này, "
+                    "hãy cho mình biết bạn cần gì nhé! Ví dụ: \"Tạo PRD từ file này\" hoặc \"Cập nhật PRD theo file\"."
+                )
         
         logger.info(f"[BA] Conversational response sent: {message[:50]}...")
         
@@ -769,7 +848,7 @@ async def extract_stories(state: BAState, agent=None) -> dict:
         all_epic_ids = [epic.get("id", "") for epic in epics]
         
         # Use semaphore to limit concurrent LLM calls (avoid rate limiting)
-        MAX_CONCURRENT_LLM_CALLS = 2
+        MAX_CONCURRENT_LLM_CALLS = 5
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_LLM_CALLS)
         
         async def _generate_with_semaphore(epic):

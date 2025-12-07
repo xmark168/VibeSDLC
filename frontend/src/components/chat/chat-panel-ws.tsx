@@ -26,13 +26,15 @@ import {
   Loader2,
   Crown,
   PaperclipIcon,
+  FileText,
 } from "lucide-react";
 import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { TypingIndicator } from "./TypingIndicator";
 import { useAuth } from "@/hooks/useAuth";
-import { useMessages } from "@/queries/messages";
+import { useMessages, useCreateMessageWithFile } from "@/queries/messages";
+import { messagesApi } from "@/apis/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { MessageStatusIndicator } from "./message-status-indicator";
 import { AgentQuestionCard } from "./AgentQuestionCard";
@@ -63,6 +65,7 @@ interface ChatPanelProps {
   onAgentStatusesChange?: (statuses: Map<string, { status: string; lastUpdate: string }>) => void; // NEW
   onOpenArtifact?: (artifactId: string) => void;
   onOpenFile?: (filePath: string) => void;
+  onInsertMentionReady?: (fn: (agentName: string) => void) => void; // Callback to insert @mention
 }
 
 export function ChatPanelWS({
@@ -78,6 +81,7 @@ export function ChatPanelWS({
   onAgentStatusesChange, // NEW
   onOpenArtifact,
   onOpenFile,
+  onInsertMentionReady,
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -86,15 +90,20 @@ export function ChatPanelWS({
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessagesLengthRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Get access token
   const token = localStorage.getItem("access_token");
+
+  // File upload mutation
+  const { mutateAsync: createMessageWithFile, isPending: isUploading } = useCreateMessageWithFile();
 
   // Fetch real agents from database
   const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
@@ -154,6 +163,7 @@ export function ChatPanelWS({
     isConnected,
     messages: wsMessages,
     agentStatus,
+    agentStatuses: wsAgentStatuses,  // Individual agent statuses from WebSocket
     typingAgents,
     answeredBatchIds,  // Track which batches have been answered
     conversationOwner,
@@ -161,6 +171,14 @@ export function ChatPanelWS({
     sendQuestionAnswer,
     sendBatchAnswers,
   } = useChatWebSocket(projectId ?? null, token || '');
+
+  // Notify parent when agent statuses change
+  useEffect(() => {
+    if (onAgentStatusesChange && wsAgentStatuses.size > 0) {
+      console.log('[ChatPanel] Agent statuses changed:', Object.fromEntries(wsAgentStatuses));
+      onAgentStatusesChange(wsAgentStatuses);
+    }
+  }, [wsAgentStatuses, onAgentStatusesChange]);
 
   // Combine existing messages with WebSocket messages
   const apiMessages = messagesData?.data || [];
@@ -457,10 +475,10 @@ export function ChatPanelWS({
     }
   };
 
-  const handleSend = (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault(); // Prevent form submission from navigating
-    if (!message.trim()) return;
-    if (!isConnected) {
+    if (!message.trim() && !selectedFile) return;
+    if (!isConnected && !selectedFile) {
       console.error("WebSocket not connected");
       return;
     }
@@ -479,6 +497,25 @@ export function ChatPanelWS({
       setPendingQuestion(null); // Hide notification immediately
       // Force scroll to bottom after sending
       forceScrollRef.current = true;
+      return;
+    }
+
+    // Handle file upload via REST API
+    if (selectedFile && projectId) {
+      try {
+        await createMessageWithFile({
+          project_id: projectId,
+          content: finalMessage || "Phân tích tài liệu này",
+          file: selectedFile,
+        });
+        setSelectedFile(null);
+        setMessage("");
+        // Force scroll to bottom after sending
+        forceScrollRef.current = true;
+      } catch (error) {
+        console.error("Failed to upload file:", error);
+        alert("Không thể upload file. Vui lòng thử lại.");
+      }
       return;
     }
 
@@ -601,6 +638,25 @@ export function ChatPanelWS({
     }
   }, [isConnected, onConnectionChange]);
 
+  // Expose insertMention function to parent for @mention from agent popup
+  useEffect(() => {
+    if (onInsertMentionReady) {
+      const insertMentionByName = (agentName: string) => {
+        const agent = AGENTS.find(a => a.name === agentName);
+        if (agent) {
+          // Insert @agentName at the start of the message
+          setMessage(`@${agentName} `);
+          setMentionedAgent({ id: agent.id, name: agent.name });
+          // Focus the textarea
+          setTimeout(() => {
+            textareaRef.current?.focus();
+          }, 100);
+        }
+      };
+      onInsertMentionReady(insertMentionByName);
+    }
+  }, [onInsertMentionReady, AGENTS]);
+
 
 
   return (
@@ -689,19 +745,6 @@ export function ChatPanelWS({
             <Button
               variant="ghost"
               size="icon"
-              onClick={toggleTheme}
-              className="w-8 h-8 text-foreground hover:bg-accent"
-              title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-            >
-              {theme === "light" ? (
-                <Moon className="w-4 h-4" />
-              ) : (
-                <Sun className="w-4 h-4" />
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
               onClick={onCollapse}
               className="w-8 h-8 text-foreground hover:bg-accent"
               title="Hide chat panel"
@@ -724,6 +767,32 @@ export function ChatPanelWS({
               <div key={msg.id} className="flex justify-end">
                 <div className="max-w-[70%]">
                   <div className="space-y-1.5">
+                    {/* File attachment display */}
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className="flex flex-col gap-1.5 items-end">
+                        {msg.attachments.map((att, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => messagesApi.downloadAttachment(msg.id, att.filename, idx)}
+                            className="flex items-center gap-3 px-3 py-2.5 bg-muted border border-border rounded-lg w-fit hover:bg-accent transition-colors cursor-pointer"
+                            title={`Download ${att.filename}`}
+                          >
+                            <div className="flex items-center justify-center w-10 h-10 bg-primary/15 rounded-lg">
+                              <FileText className="w-5 h-5 text-primary" />
+                            </div>
+                            <div className="flex flex-col items-start">
+                              <span className="text-sm font-medium text-foreground">
+                                {att.filename}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {(att.file_size / 1024).toFixed(1)} KB
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {/* Message content */}
                     <div className="rounded-lg px-3 py-2 bg-muted w-fit ml-auto">
                       <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
                         {msg.content || ''}
@@ -1097,6 +1166,62 @@ export function ChatPanelWS({
           />
         )}
 
+        {/* Hidden file input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="hidden"
+          accept=".docx"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              // Validate size (10MB)
+              if (file.size > 10 * 1024 * 1024) {
+                alert("File quá lớn. Giới hạn: 10MB");
+                e.target.value = "";
+                return;
+              }
+              // Validate extension
+              if (!file.name.toLowerCase().endsWith('.docx')) {
+                alert("Chỉ hỗ trợ file .docx");
+                e.target.value = "";
+                return;
+              }
+              setSelectedFile(file);
+            }
+            e.target.value = ""; // Reset to allow selecting same file again
+          }}
+        />
+
+        {/* File preview */}
+        {selectedFile && (
+          <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-muted rounded-lg">
+            {isUploading ? (
+              <Loader2 className="w-4 h-4 text-blue-500 flex-shrink-0 animate-spin" />
+            ) : (
+              <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
+            )}
+            <span className="text-sm truncate flex-1">
+              {isUploading ? "Đang upload..." : selectedFile.name}
+            </span>
+            {!isUploading && (
+              <>
+                <span className="text-xs text-muted-foreground">
+                  {(selectedFile.size / 1024).toFixed(1)} KB
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setSelectedFile(null)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+
         {/* <div className="bg-transparent rounded-4xl p-1 border-0"> */}
         <PromptInput onSubmit={handleSend}
         >
@@ -1105,16 +1230,20 @@ export function ChatPanelWS({
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder="Type your message..."
+            placeholder={selectedFile ? "Thêm mô tả cho file..." : "Type your message..."}
           />
           <PromptInputToolbar>
             <PromptInputTools>
-              <PromptInputButton>
+              <PromptInputButton
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className={selectedFile ? "text-blue-500" : ""}
+              >
                 <PaperclipIcon size={16} />
               </PromptInputButton>
 
             </PromptInputTools>
-            <PromptInputSubmit disabled={!isConnected || shouldBlockChat || !message.trim()} />
+            <PromptInputSubmit disabled={(!isConnected && !selectedFile) || shouldBlockChat || isUploading || (!message.trim() && !selectedFile)} />
           </PromptInputToolbar>
         </PromptInput>
         {/* <div className="flex items-center justify-between pt-3">

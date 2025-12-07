@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type {
   CreateMessageBody,
+  CreateMessageWithFileParams,
   FetchMessagesParams,
   UpdateMessageBody,
 } from "@/apis/messages"
@@ -20,6 +21,19 @@ export function useCreateMessage() {
 
   return useMutation({
     mutationFn: (body: CreateMessageBody) => messagesApi.create(body),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["messages", { project_id: variables.project_id }],
+      })
+    },
+  })
+}
+
+export function useCreateMessageWithFile() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (params: CreateMessageWithFileParams) => messagesApi.createWithFile(params),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["messages", { project_id: variables.project_id }],

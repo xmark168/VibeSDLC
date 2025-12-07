@@ -15,7 +15,7 @@ interface FlowMetricsDashboardProps {
 
 export function FlowMetricsDashboard({ projectId, open, onOpenChange }: FlowMetricsDashboardProps) {
   const [timeRange, setTimeRange] = useState<number>(30)
-  const { data: metrics, isLoading } = useFlowMetrics(projectId, timeRange)
+  const { data: metrics, isLoading } = useFlowMetrics(projectId, timeRange, open)
 
   const formatHours = (hours: number | null) => {
     if (hours === null) return "N/A"

@@ -17,6 +17,70 @@ activate_skills(["frontend-component", "frontend-design"])
 
 **CRITICAL**: Before importing any custom component from `@/components/*`, you MUST read that file first to check its Props interface. Never guess prop names.
 
+## ⚠️ NULL SAFETY (CRITICAL - READ FIRST)
+
+**NEVER call methods on potentially undefined/null values.**
+
+### Common Crashes to AVOID
+
+```tsx
+// ❌ CRASHES if parts is undefined
+parts.map((p) => ...)
+data.items.filter(...)
+result.users.length
+
+// ✅ SAFE
+(parts ?? []).map((p) => ...)
+(data?.items ?? []).filter(...)
+result?.users?.length ?? 0
+```
+
+### Rules
+
+1. **Array from props** → Default value
+```tsx
+function List({ items = [] }: Props) {
+  return items.map(...)  // Safe
+}
+```
+
+2. **Array from API** → Nullish coalescing
+```tsx
+const json = await res.json();
+setItems(json.data ?? []);  // Safe
+```
+
+3. **Nested access** → Optional chaining + default
+```tsx
+const count = data?.results?.items?.length ?? 0;
+return (data?.results?.items ?? []).map(...)
+```
+
+4. **Before .map()/.filter()/.reduce()** → Always check
+```tsx
+// Option A: Default in destructuring
+const { parts = [] } = props;
+return parts.map(...)
+
+// Option B: Inline nullish coalescing  
+return (parts ?? []).map(...)
+
+// Option C: Early return
+if (!parts?.length) return null;
+return parts.map(...)
+```
+
+### State Initialization
+
+```tsx
+// ✅ Always initialize with correct type
+const [items, setItems] = useState<Item[]>([]);
+const [user, setUser] = useState<User | null>(null);
+
+// ❌ Never leave undefined
+const [items, setItems] = useState();  // items is undefined!
+```
+
 ## Server vs Client Components
 
 - **Server Components** (default): Fetch data, access database, async/await

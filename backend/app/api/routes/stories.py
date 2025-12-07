@@ -13,6 +13,7 @@ from sqlmodel import select, func
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Story, StoryStatus, StoryType
 from app.schemas import StoryCreate, StoryUpdate, StoryPublic, StoriesPublic
+from app.schemas.story import BulkRankUpdateRequest
 from app.services.story_service import StoryService
 
 router = APIRouter(prefix="/stories", tags=["stories"])
@@ -78,6 +79,25 @@ async def create_story(
         return story
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# ===== Bulk Rank Update =====
+@router.patch("/bulk-rank")
+def bulk_update_ranks(
+    session: SessionDep,
+    current_user: CurrentUser,
+    request: BulkRankUpdateRequest
+) -> dict:
+    """Bulk update ranks for multiple stories in one transaction."""
+    updated_count = 0
+    for item in request.updates:
+        story = session.get(Story, item.story_id)
+        if story:
+            story.rank = item.rank
+            session.add(story)
+            updated_count += 1
+    session.commit()
+    return {"updated": updated_count}
 
 
 # ===== Kanban Board =====
@@ -146,6 +166,8 @@ async def update_story_status(
     except PermissionError as e:
         error_data = e.args[0] if e.args else {"message": str(e)}
         if error_data.get("error") == "WIP_LIMIT_EXCEEDED":
+            raise HTTPException(status_code=409, detail=error_data)
+        if error_data.get("error") == "DEPENDENCIES_NOT_COMPLETED":
             raise HTTPException(status_code=409, detail=error_data)
         raise HTTPException(status_code=422, detail=error_data)
 

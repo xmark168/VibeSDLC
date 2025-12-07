@@ -19,6 +19,7 @@ class ChatMessageCreate(ChatMessageBase):
     agent_id: Optional[UUID] = None
     message_type: Optional[str] = "text"
     structured_data: Optional[dict] = None
+    attachments: Optional[list[dict]] = None
 
 
 class ChatMessageUpdate(SQLModel):
@@ -36,6 +37,7 @@ class ChatMessagePublic(SQLModel):
     message_type: Optional[str] = "text"
     structured_data: Optional[Any] = None
     message_metadata: Optional[dict] = None
+    attachments: Optional[list[dict]] = None
     created_at: datetime
     updated_at: datetime
 

@@ -4,6 +4,9 @@ import re
 import logging
 from typing import Optional, Dict
 
+# Disable Ryuk to keep containers after process exits
+os.environ["TESTCONTAINERS_RYUK_DISABLED"] = "true"
+
 logger = logging.getLogger(__name__)
 
 # Global container reference

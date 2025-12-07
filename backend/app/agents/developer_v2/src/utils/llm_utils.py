@@ -69,6 +69,15 @@ def get_langfuse_config(state: dict, run_name: str) -> dict:
     return {"run_name": run_name}
 
 
+def flush_langfuse(state: dict) -> None:
+    """No-op: Langfuse batching handles flush automatically.
+    
+    With flush_at=10 and flush_interval=10, Langfuse batches events
+    and flushes automatically. Manual flush only at end of story.
+    """
+    pass  # Batching handles this - no manual flush needed
+
+
 async def execute_llm_with_tools(
     llm: ChatOpenAI,
     tools: list,
@@ -104,6 +113,9 @@ async def execute_llm_with_tools(
             config=get_langfuse_config(state, name)
         )
         conversation.append(response)
+        
+        # Flush Langfuse for real-time updates
+        flush_langfuse(state)
         
         if not response.tool_calls:
             logger.info(f"[{name}] Completed at iteration {i+1}")

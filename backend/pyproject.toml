@@ -51,6 +51,7 @@ dependencies = [
     "qrcode[pil]>=7.4.0",
     "Pillow>=10.0.0",
     "langchain-anthropic>=1.2.0",
+    "python-docx>=1.1.0",
 ]
 
 
