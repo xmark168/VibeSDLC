@@ -1,4 +1,5 @@
 """Setup workspace node - Setup git workspace/branch for code modification."""
+import hashlib
 import logging
 import os
 import subprocess
@@ -18,6 +19,50 @@ from app.agents.developer_v2.src.utils.db_container import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _should_skip_bun_install(workspace_path: str) -> bool:
+    """Check if bun install can be skipped (lockfile unchanged).
+    
+    Optimization: Skip bun install if lockfile hash matches cache.
+    Saves ~60-120s on subsequent runs.
+    """
+    lockfile = Path(workspace_path) / "bun.lockb"
+    node_modules = Path(workspace_path) / "node_modules"
+    cache_file = Path(workspace_path) / ".bun_install_cache"
+    
+    # Must have node_modules
+    if not node_modules.exists():
+        return False
+    
+    # Must have lockfile
+    if not lockfile.exists():
+        return False
+    
+    # Check cache
+    try:
+        current_hash = hashlib.md5(lockfile.read_bytes()).hexdigest()
+        if cache_file.exists():
+            cached_hash = cache_file.read_text().strip()
+            if cached_hash == current_hash:
+                return True
+    except Exception:
+        pass
+    
+    return False
+
+
+def _update_bun_install_cache(workspace_path: str) -> None:
+    """Update bun install cache after successful install."""
+    lockfile = Path(workspace_path) / "bun.lockb"
+    cache_file = Path(workspace_path) / ".bun_install_cache"
+    
+    try:
+        if lockfile.exists():
+            current_hash = hashlib.md5(lockfile.read_bytes()).hexdigest()
+            cache_file.write_text(current_hash)
+    except Exception:
+        pass
 
 
 
@@ -97,29 +142,34 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             except Exception as db_err:
                 logger.warning(f"[setup_workspace] Database setup failed: {db_err}")
         
-        # Run bun install if package.json exists
+        # Run bun install if package.json exists (with caching optimization)
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if pkg_json and os.path.exists(pkg_json):
-            try:
-                logger.info("[setup_workspace] Running bun install...")
-                result = subprocess.run(
-                    "bun install --frozen-lockfile --ignore-scripts",
-                    cwd=workspace_path,
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8',
-                    errors='replace',
-                    timeout=120,
-                    shell=True,
-                )
-                if result.returncode == 0:
-                    logger.info("[setup_workspace] bun install successful")
-                else:
-                    logger.warning(f"[setup_workspace] bun install failed: {result.stderr[:200]}")
-            except subprocess.TimeoutExpired:
-                logger.warning("[setup_workspace] bun install timed out")
-            except Exception as e:
-                logger.warning(f"[setup_workspace] bun install error: {e}")
+            # Check if we can skip install (lockfile unchanged)
+            if _should_skip_bun_install(workspace_path):
+                logger.info("[setup_workspace] Skipping bun install (cached, lockfile unchanged)")
+            else:
+                try:
+                    logger.info("[setup_workspace] Running bun install...")
+                    result = subprocess.run(
+                        "bun install --frozen-lockfile --ignore-scripts",
+                        cwd=workspace_path,
+                        capture_output=True,
+                        text=True,
+                        encoding='utf-8',
+                        errors='replace',
+                        timeout=120,
+                        shell=True,
+                    )
+                    if result.returncode == 0:
+                        logger.info("[setup_workspace] bun install successful")
+                        _update_bun_install_cache(workspace_path)
+                    else:
+                        logger.warning(f"[setup_workspace] bun install failed: {result.stderr[:200]}")
+                except subprocess.TimeoutExpired:
+                    logger.warning("[setup_workspace] bun install timed out")
+                except Exception as e:
+                    logger.warning(f"[setup_workspace] bun install error: {e}")
         
         # Run prisma generate if schema exists
         schema_path = os.path.join(workspace_path, "prisma", "schema.prisma") if workspace_path else ""

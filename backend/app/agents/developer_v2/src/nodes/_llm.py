@@ -99,7 +99,7 @@ def get_llm(step: str) -> BaseChatModel:
         kwargs = {
             "model": model,
             "temperature": config.get("temperature", 0.2),
-            "max_tokens": 100000,  # Claude requires max_tokens, set high
+            "max_tokens": 8192,  # Reduced to avoid proxy rejection
             "timeout": timeout,
             "max_retries": MAX_RETRIES,
         }
@@ -141,7 +141,7 @@ def get_llm_for_skills(skills: list[str], temperature: float = 0) -> BaseChatMod
     model = get_model_for_skills(skills)
     
     # API keys and base URLs
-    anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://ai.megallm.io")
+    anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://v98store.com")
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
     
     kwargs = {

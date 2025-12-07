@@ -20,7 +20,7 @@ Key Features:
     - Conditional routing for code review loops (LGTM/LBTM)
     - Error recovery with analyze_error node
     - Configurable review skipping via use_code_review flag
-    - Per-step LBTM limits (max 2) to prevent infinite loops
+    - Adaptive per-step LBTM limits based on complexity (low=1, medium=2, high=3)
 """
 
 from functools import partial
@@ -38,7 +38,19 @@ from app.agents.developer_v2.src.nodes import (
 
 
 def route_after_implement(state: DeveloperState) -> Literal["review", "implement", "summarize"]:
-    """Route after implement based on use_code_review flag."""
+    """Route after implement based on complexity and use_code_review flag.
+    
+    Optimization: Skip review for low complexity stories to save ~25-50s.
+    """
+    # Skip review for low complexity (optimization)
+    complexity = state.get("complexity", "medium")
+    if complexity == "low":
+        current_step = state.get("current_step", 0)
+        total_steps = state.get("total_steps", 0)
+        if current_step < total_steps:
+            return "implement"
+        return "summarize"
+    
     if state.get("use_code_review", True):
         return "review"
     current_step = state.get("current_step", 0)
@@ -51,8 +63,8 @@ def route_after_implement(state: DeveloperState) -> Literal["review", "implement
 def route_review_result(state: DeveloperState) -> Literal["implement", "summarize", "run_code"]:
     """Route based on review result (LGTM/LBTM).
     
-    Note: Per-step LBTM limit (max 2) is enforced in review node.
-    If step gets LBTM 2+ times, review node forces LGTM and increments current_step.
+    Note: Adaptive per-step LBTM limit based on complexity (low=1, medium=2, high=3)
+    is enforced in review node. If step reaches limit, review forces LGTM.
     """
     review_result = state.get("review_result", "LGTM")
     
@@ -111,7 +123,7 @@ class DeveloperGraph:
                                          analyze_error -> implement
 
     Attrs: agent (DeveloperV2), graph (compiled StateGraph)
-    Limits: max 5 debug iterations, max 2 LBTM per step
+    Limits: max 5 debug iterations, adaptive LBTM per step (low=1, medium=2, high=3)
     """
     
     def __init__(self, agent=None):

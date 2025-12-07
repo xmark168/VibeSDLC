@@ -144,11 +144,15 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         if review_result["decision"] == "LBTM":
             step_lbtm_counts[step_key] = step_lbtm_counts.get(step_key, 0) + 1
             total_lbtm += 1
-            logger.info(f"[review] Step {step_index} LBTM count: {step_lbtm_counts[step_key]}/2")
             
-            # If this step has been LBTM'd 2+ times, force move to next step
-            if step_lbtm_counts[step_key] >= 2:
-                logger.warning(f"[review] Step {step_index} reached max LBTM ({step_lbtm_counts[step_key]}), forcing LGTM")
+            # Adaptive LBTM limit based on complexity
+            complexity = state.get("complexity", "medium")
+            max_lbtm = {"low": 1, "medium": 2, "high": 3}.get(complexity, 2)
+            logger.info(f"[review] Step {step_index} LBTM count: {step_lbtm_counts[step_key]}/{max_lbtm} (complexity={complexity})")
+            
+            # If this step has reached max LBTM for its complexity, force move to next step
+            if step_lbtm_counts[step_key] >= max_lbtm:
+                logger.warning(f"[review] Step {step_index} reached max LBTM ({step_lbtm_counts[step_key]}/{max_lbtm}), forcing LGTM")
                 review_result["decision"] = "LGTM"
                 review_result["feedback"] = f"(Force-approved after {step_lbtm_counts[step_key]} attempts)"
                 current_step += 1

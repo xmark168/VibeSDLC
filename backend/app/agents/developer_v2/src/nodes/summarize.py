@@ -150,4 +150,4 @@ def route_after_summarize(state: DeveloperState) -> str:
     is_pass = state.get("is_pass", "YES")
     if is_pass == "NO" and state.get("summarize_count", 0) < 2:
         return "implement"
-    return "validate"
+    return "run_code"
