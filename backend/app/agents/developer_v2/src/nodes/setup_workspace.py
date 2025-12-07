@@ -103,7 +103,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             try:
                 logger.info("[setup_workspace] Running bun install...")
                 result = subprocess.run(
-                    "bun install --ignore-scripts",
+                    "bun install --frozen-lockfile --ignore-scripts",
                     cwd=workspace_path,
                     capture_output=True,
                     text=True,

@@ -16,6 +16,20 @@ API routes live in the `app/api/` directory:
 
 **CRITICAL**: In Next.js 16, dynamic route params are async. You MUST `await params` before using them.
 
+## Prisma Relationship Matching
+
+**CRITICAL**: Field names trong `include` PHẢI khớp CHÍNH XÁC với schema:
+
+| Schema định nghĩa | Query sử dụng | ✅/❌ |
+|-------------------|---------------|------|
+| `categories Category[]` | `include: { categories: true }` | ✅ |
+| `categories Category[]` | `include: { category: true }` | ❌ WRONG |
+| `category Category` | `include: { category: true }` | ✅ |
+
+**Rule**: 
+- Many-to-many/One-to-many → **PLURAL** (categories, tags, posts)
+- One-to-one/Many-to-one → **SINGULAR** (category, user, author)
+
 ## Route Structure
 
 ### Collection Route (List + Create)

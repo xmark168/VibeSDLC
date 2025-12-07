@@ -249,7 +249,7 @@ class SimpleDeveloperRunner:
                             "db_type": "postgresql",
                             "validation": "zod",
                             "auth": "next-auth",
-                            "install_cmd": "bun install --ignore-scripts",
+                            "install_cmd": "bun install --ignore-scripts --linker=isolated",
                             "test_cmd": "bun run test",
                             "run_cmd": "bun dev",
                             "build_cmd": "bun run build",
@@ -302,7 +302,7 @@ class SimpleDeveloperRunner:
                             "framework": "nextjs",
                             "validation": "zod",
                             "auth": "next-auth",
-                            "install_cmd": "bun install --ignore-scripts",
+                            "install_cmd": "bun install --ignore-scripts --linker=isolated",
                             "test_cmd": "bun run test",
                             "run_cmd": "bun dev",
                             "build_cmd": "bun run build",
@@ -338,38 +338,34 @@ class SimpleDeveloperRunner:
     
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
+        # Use @observe decorator for single trace - call internal method
+        if os.getenv("ENABLE_LANGFUSE", "false").lower() == "true":
+            try:
+                from langfuse import observe
+                
+                # Wrap with observe to create single parent trace
+                @observe(name=f"dev_v2_{story.get('title', 'story')[:30]}")
+                async def _run_with_trace():
+                    return await self._run_story_internal(story)
+                
+                return await _run_with_trace()
+            except Exception as e:
+                logger.warning(f"Langfuse observe failed: {e}, running without trace")
+        
+        return await self._run_story_internal(story)
+    
+    async def _run_story_internal(self, story: dict) -> dict:
+        """Internal method that runs the story - called within @observe context."""
         langfuse_handler = None
-        langfuse_client = None
-        langfuse_trace = None
         
         if os.getenv("ENABLE_LANGFUSE", "false").lower() == "true":
             try:
-                from langfuse import Langfuse
                 from langfuse.langchain import CallbackHandler
-                
-                # Batching config for performance
-                langfuse_client = Langfuse(
-                    flush_at=10,       # Batch 10 events before flush
-                    flush_interval=10, # Or flush every 10 seconds
-                )
-                
-                # Create parent trace for entire story
-                langfuse_trace = langfuse_client.trace(
-                    name=f"dev_v2_{story.get('title', 'story')[:30]}",
-                    user_id=str(uuid4()),
-                    session_id=str(self.project_id),
-                    metadata={"story_title": story.get("title", "")}
-                )
-                
-                # Callback linked to parent trace
-                langfuse_handler = CallbackHandler(
-                    trace_id=langfuse_trace.id,
-                    session_id=str(self.project_id),
-                )
-                
-                logger.info(f"Langfuse tracing enabled (trace: {langfuse_trace.id})")
+                # CallbackHandler auto-links to parent trace from @observe
+                langfuse_handler = CallbackHandler()
+                logger.info("Langfuse handler created (linked to parent trace)")
             except Exception as e:
-                logger.warning(f"Langfuse setup failed: {e}")
+                logger.warning(f"Langfuse handler failed: {e}")
         
         initial_state = {
             "story_id": story.get("story_id", str(uuid4())),
@@ -382,7 +378,6 @@ class SimpleDeveloperRunner:
             "task_id": str(uuid4()),
             "user_id": str(uuid4()),
             "langfuse_handler": langfuse_handler,
-            "langfuse_client": langfuse_client,
             "workspace_path": str(self.workspace_path),
             "branch_name": "",
             "main_workspace": str(self.workspace_path),
@@ -460,24 +455,11 @@ class SimpleDeveloperRunner:
             )
             print("\n[*] Graph completed!")
             
-            # Update Langfuse trace with results
-            if langfuse_trace:
+            # Flush Langfuse (trace auto-ends when @observe exits)
+            if os.getenv("ENABLE_LANGFUSE", "false").lower() == "true":
                 try:
-                    langfuse_trace.update(
-                        output={
-                            "action": final_state.get("action"),
-                            "files_modified": final_state.get("files_modified", [])[:20],
-                            "current_step": final_state.get("current_step"),
-                            "total_steps": final_state.get("total_steps"),
-                        }
-                    )
-                except Exception:
-                    pass
-            
-            # Flush Langfuse (only once at end)
-            if langfuse_client:
-                try:
-                    langfuse_client.flush()
+                    from langfuse import Langfuse
+                    Langfuse().flush()
                     logger.info("Langfuse flushed")
                 except Exception as e:
                     logger.warning(f"Langfuse flush error: {e}")
@@ -486,18 +468,11 @@ class SimpleDeveloperRunner:
             
         except Exception as e:
             logger.error(f"[{self.name}] Graph error: {e}", exc_info=True)
-            # Update trace with error
-            if langfuse_trace:
+            # Flush on error
+            if os.getenv("ENABLE_LANGFUSE", "false").lower() == "true":
                 try:
-                    langfuse_trace.update(
-                        output={"error": str(e)[:500]},
-                        level="ERROR"
-                    )
-                except Exception:
-                    pass
-            if langfuse_client:
-                try:
-                    langfuse_client.flush()
+                    from langfuse import Langfuse
+                    Langfuse().flush()
                 except Exception:
                     pass
             raise

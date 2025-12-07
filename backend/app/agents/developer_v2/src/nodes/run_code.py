@@ -81,24 +81,8 @@ async def _run_service_build(
     all_stderr = ""
     
     try:
-        if install_cmd:
-            success, stdout, stderr = _run_step("Install", install_cmd, workspace_path, svc_name, timeout=300)
-            all_stdout += f"\n$ {install_cmd}\n{stdout}"
-            if not success:
-                all_stderr += stderr
-                if svc_span:
-                    svc_span.end(output={"status": "INSTALL_FAIL"})
-                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
-        
-        if typecheck_cmd:
-            success, stdout, stderr = _run_step("Typecheck", typecheck_cmd, workspace_path, svc_name, timeout=120)
-            all_stdout += f"\n$ {typecheck_cmd}\n{stdout}"
-            if not success:
-                error_output = stderr.strip() or stdout.strip() or f"Run '{typecheck_cmd}' manually to see errors."
-                all_stderr += f"\n[TYPECHECK FAILED]\n{error_output}"
-                if svc_span:
-                    svc_span.end(output={"status": "TYPECHECK_FAIL"})
-                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
+        # Skip install - already run in setup_workspace
+        # Skip typecheck - Next.js build includes type checking
         
         if build_cmd:
             success, stdout, stderr = _run_step("Build", build_cmd, workspace_path, svc_name, timeout=180)
@@ -158,26 +142,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         logger.info(f"[run_code] Services: {[s.get('name', 'app') for s in services]}")
         
-        # Run prisma commands if schema exists
-        schema_path = Path(workspace_path) / "prisma" / "schema.prisma"
-        if schema_path.exists():
-            logger.info("[run_code] Prisma schema found, running generate + db push")
-            
-            # Generate client first
-            success, stdout, stderr = _run_step(
-                "Prisma Generate", "bunx prisma generate",
-                workspace_path, "prisma", timeout=60, allow_fail=False
-            )
-            if not success:
-                logger.warning(f"[run_code] Prisma generate failed: {stderr[:200]}")
-            
-            # Then push schema to DB
-            success, stdout, stderr = _run_step(
-                "Prisma DB Push", "bunx prisma db push --accept-data-loss",
-                workspace_path, "prisma", timeout=60, allow_fail=True
-            )
-            if not success:
-                logger.warning(f"[run_code] Prisma db push failed (may need DB): {stderr[:200]}")
+        # Skip prisma - already run in setup_workspace and implement
         
         # Format all services
         for svc in services:

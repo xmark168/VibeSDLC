@@ -90,10 +90,24 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         file_content_review, is_truncated = _smart_truncate(file_content)
         truncation_note = " (truncated)" if is_truncated else ""
         
+        # Read fresh dependencies from disk (fix stale cache issue)
         deps_context = ""
         for dep in step.get("dependencies", [])[:5]:
-            if dep in dependencies_content:
-                deps_context += f"### {dep}\n```\n{dependencies_content[dep][:3000]}\n```\n\n"
+            dep_content = None
+            # Try fresh read from disk first
+            if workspace_path:
+                dep_path = os.path.join(workspace_path, dep)
+                if os.path.exists(dep_path):
+                    try:
+                        with open(dep_path, 'r', encoding='utf-8') as f:
+                            dep_content = f.read()
+                    except Exception:
+                        pass
+            # Fallback to cache
+            if not dep_content and dep in dependencies_content:
+                dep_content = dependencies_content[dep]
+            if dep_content:
+                deps_context += f"### {dep}\n```\n{dep_content[:3000]}\n```\n\n"
         deps_context = deps_context or "No dependencies"
         
         system_prompt = _build_system_prompt("review")

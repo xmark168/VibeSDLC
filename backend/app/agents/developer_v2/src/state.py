@@ -103,6 +103,7 @@ class DeveloperState(TypedDict, total=False):
     review_details: Optional[str]
     review_count: int
     total_lbtm_count: int
+    step_lbtm_counts: Dict[str, int]  # Per-step LBTM tracking
 
     # Summarize
     summary: Optional[str]
