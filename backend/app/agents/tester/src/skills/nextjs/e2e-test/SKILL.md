@@ -56,8 +56,12 @@ await expect(locator).toHaveCSS('color', 'red');
 - Testing responsive behavior
 - Testing authentication flows
 
-## File Location
-Place tests in e2e/ folder: `e2e/story-{slug}.spec.ts`
+## File Location (FIXED - DO NOT CHANGE)
+```
+e2e/                           # E2E tests (Playwright)
+src/__tests__/integration/     # Integration tests (Jest)
+```
+**IMPORTANT:** Always use `e2e/` folder for E2E tests. File naming: `e2e/story-{slug}.spec.ts`
 
 ## Test Structure
 

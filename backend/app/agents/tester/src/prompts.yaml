@@ -54,9 +54,13 @@ tasks:
       <rules>
       - Each story should have at least 1 integration test
       - E2E tests for stories with UI flows
-      - IMPORTANT: Use file paths from test_structure (existing folders)
-      - Use descriptive file names: story-{slug}.test.ts or {feature}.spec.ts
+      - CRITICAL: Use EXACT folder paths:
+        * Integration: src/__tests__/integration/story-{slug}.test.ts
+        * E2E: e2e/story-{slug}.spec.ts
+      - DO NOT use other folders like __tests__/integration/ or tests/
+      - Use descriptive file names based on story title
       - List specific scenarios to test (happy path, errors, edge cases)
+      - SKIP stories about config/setup/refactoring - only test USER FEATURES
       </rules>
 
     user_prompt: |
@@ -76,7 +80,14 @@ tasks:
       {test_structure}
       </test_structure>
       
-      Create test plan. IMPORTANT: Use folder paths from test_structure above.
+      Create test plan. 
+      
+      CRITICAL RULES:
+      1. Use EXACT folder paths (DO NOT change):
+         - Integration: src/__tests__/integration/
+         - E2E: e2e/
+      2. SKIP stories about config/setup/cleanup - only test USER FEATURES
+      3. File naming: story-{slug-from-title}.test.ts or .spec.ts
       
       Output JSON:
       {{
@@ -86,7 +97,7 @@ tasks:
             "type": "integration",
             "story_id": "uuid",
             "story_title": "User Login",
-            "file_path": "<integration_folder>/story-user-login.test.ts",
+            "file_path": "src/__tests__/integration/story-user-login.test.ts",
             "description": "Test login API endpoints",
             "scenarios": [
               "valid credentials returns token",
@@ -99,7 +110,7 @@ tasks:
             "type": "e2e",
             "story_id": "uuid",
             "story_title": "User Login",
-            "file_path": "<e2e_folder>/auth.spec.ts",
+            "file_path": "e2e/story-user-login.spec.ts",
             "description": "Test login user flow",
             "scenarios": [
               "user can login with valid credentials",

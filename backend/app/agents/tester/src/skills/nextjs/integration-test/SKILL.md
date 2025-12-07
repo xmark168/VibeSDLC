@@ -41,8 +41,12 @@ import prisma from '@/lib/prisma';                      // Wrong: check actual e
 - Testing service layer logic
 - Testing with mocked external services
 
-## File Location
-Place tests in the integration folder detected by the system (e.g., `__tests__/integration/` or `src/__tests__/integration/`)
+## File Location (FIXED - DO NOT CHANGE)
+```
+src/__tests__/integration/     # Integration tests (Jest)
+e2e/                           # E2E tests (Playwright)
+```
+**IMPORTANT:** Always use `src/__tests__/integration/` for integration tests. Do NOT use other folders like `__tests__/integration/` or `tests/`.
 
 ## Test Structure
 

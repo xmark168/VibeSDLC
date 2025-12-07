@@ -56,6 +56,67 @@ def _slugify(text: str) -> str:
     return text[:50] if text else "unnamed"
 
 
+# =============================================================================
+# VALIDATION
+# =============================================================================
+
+# Invalid patterns that should not be used as story titles/test names
+INVALID_STORY_PATTERNS = [
+    "jest-config",
+    "config-removal", 
+    "config-cleanup",
+    "unnamed",
+    "unknown",
+    "untitled",
+    "test-file",
+    "example-test",
+    "sample-test",
+]
+
+
+def _is_valid_story_for_testing(story: dict) -> bool:
+    """Check if a story is valid for test generation.
+    
+    Rejects stories that:
+    - Have invalid/placeholder titles
+    - Are about config/setup tasks (not user features)
+    - Have empty or missing required fields
+    """
+    title = story.get("title", "") or ""
+    slug = _slugify(title)
+    
+    # Check for invalid patterns
+    for pattern in INVALID_STORY_PATTERNS:
+        if pattern in slug:
+            logger.warning(f"[_is_valid_story_for_testing] Rejected story with invalid pattern '{pattern}': {title}")
+            return False
+    
+    # Must have meaningful title (at least 5 chars after slugify)
+    if len(slug) < 5:
+        logger.warning(f"[_is_valid_story_for_testing] Rejected story with short title: {title}")
+        return False
+    
+    # Check for config/setup related titles (not user features)
+    config_keywords = ["config", "setup", "install", "migrate", "upgrade", "refactor", "cleanup", "remove"]
+    title_lower = title.lower()
+    if any(kw in title_lower for kw in config_keywords) and "user" not in title_lower:
+        logger.warning(f"[_is_valid_story_for_testing] Rejected config/setup story: {title}")
+        return False
+    
+    return True
+
+
+def _filter_valid_stories(stories: list) -> list:
+    """Filter out invalid stories before test planning."""
+    valid_stories = [s for s in stories if _is_valid_story_for_testing(s)]
+    
+    if len(valid_stories) < len(stories):
+        rejected_count = len(stories) - len(valid_stories)
+        logger.info(f"[_filter_valid_stories] Filtered out {rejected_count} invalid stories")
+    
+    return valid_stories
+
+
 def _extract_keywords_from_stories(stories: list) -> list[str]:
     """Extract keywords from story titles and descriptions for searching source code."""
     keywords = set()
@@ -224,27 +285,28 @@ def _preload_test_dependencies(workspace_path: str, test_plan: list, stories: li
 
 
 def _detect_test_structure(project_path: str) -> dict:
-    """Detect existing test folder structure in the project.
+    """Get standardized test folder structure for Next.js projects.
     
-    Strategy for integration tests:
-    1. First priority: Find existing "integration" folder
-    2. Second: Check for common test FOLDERS  
-    3. Fallback: Create in __tests__/integration/
+    FIXED STRUCTURE (Best Practice for Next.js):
+    - Integration tests: src/__tests__/integration/
+    - E2E tests: e2e/
     
-    Note: Don't use folders like "lib/", "utils/" for story tests - those are for unit tests.
+    This ensures consistent folder structure across all projects.
     
     Returns:
         dict with:
-        - integration_folder: Path for integration tests
-        - e2e_folder: Path for e2e tests
-        - existing_tests: List of existing test files
-        - existing_specs: List of existing spec files
+        - integration_folder: Fixed path for integration tests
+        - e2e_folder: Fixed path for e2e tests
+        - existing_tests: List of existing test files (for reference)
+        - existing_specs: List of existing spec files (for reference)
     """
     from pathlib import Path
     
+    # FIXED STRUCTURE - DO NOT CHANGE based on existing files
+    # This ensures consistent test organization
     structure = {
-        "integration_folder": "__tests__/integration",  # default
-        "e2e_folder": "e2e",  # default
+        "integration_folder": "src/__tests__/integration",  # FIXED: Next.js standard
+        "e2e_folder": "e2e",                                 # FIXED: Playwright standard
         "existing_tests": [],
         "existing_specs": [],
     }
@@ -261,61 +323,39 @@ def _detect_test_structure(project_path: str) -> dict:
         "templates",
     ]
     
-    # For integration tests: Prioritize folders with "integration" in name
-    # Don't use lib/, utils/, etc. - those are for unit tests
-    integration_candidates = [
-        "src/__tests__/integration",  # Next.js common pattern
-        "__tests__/integration",
-        "tests/integration",
-        "test/integration",
-        "__tests__",
-        "tests",
-    ]
+    # Create folders if they don't exist
+    integration_path = path / structure["integration_folder"]
+    e2e_path = path / structure["e2e_folder"]
     
-    for folder in integration_candidates:
-        if (path / folder).is_dir():
-            structure["integration_folder"] = folder
-            logger.info(f"[_detect_test_structure] Found integration folder: {folder}")
-            break
+    if not integration_path.exists():
+        try:
+            integration_path.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[_detect_test_structure] Created integration folder: {structure['integration_folder']}")
+        except Exception as e:
+            logger.warning(f"[_detect_test_structure] Failed to create integration folder: {e}")
     
-    # If no folder exists, create __tests__/integration as default
-    if not (path / structure["integration_folder"]).exists():
-        structure["integration_folder"] = "__tests__/integration"
-        logger.info(f"[_detect_test_structure] Will use default integration folder: {structure['integration_folder']}")
+    if not e2e_path.exists():
+        try:
+            e2e_path.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[_detect_test_structure] Created e2e folder: {structure['e2e_folder']}")
+        except Exception as e:
+            logger.warning(f"[_detect_test_structure] Failed to create e2e folder: {e}")
     
-    # Collect existing test files for reference (but don't use their folder)
+    # Collect existing test files for reference only (not to determine folder)
     test_files = list(path.glob("**/*.test.ts")) + list(path.glob("**/*.test.js"))
     test_files = [f for f in test_files if not any(p in str(f) for p in exclude_patterns)]
-    test_files = [f for f in test_files if len(f.relative_to(path).parts) <= 4]
+    test_files = [f for f in test_files if len(f.relative_to(path).parts) <= 5]
     if test_files:
         structure["existing_tests"] = [str(f.relative_to(path)) for f in test_files[:5]]
     
-    # E2E detection - similar logic (reuse exclude_patterns)
+    # Collect existing spec files for reference only
     spec_files = list(path.glob("**/*.spec.ts")) + list(path.glob("**/*.spec.js"))
     spec_files = [f for f in spec_files if not any(p in str(f) for p in exclude_patterns)]
-    # Also exclude deeply nested paths
     spec_files = [f for f in spec_files if len(f.relative_to(path).parts) <= 4]
-    
     if spec_files:
-        spec_files.sort(key=lambda f: len(f.parts))
-        first_spec = spec_files[0].relative_to(path)
-        structure["e2e_folder"] = str(first_spec.parent)
         structure["existing_specs"] = [str(f.relative_to(path)) for f in spec_files[:5]]
-        logger.info(f"[_detect_test_structure] Found e2e folder from files: {structure['e2e_folder']}")
-    else:
-        # Fallback: Check for e2e folders
-        e2e_candidates = [
-            "src/__tests__/e2e",
-            "__tests__/e2e",
-            "e2e",
-            "tests/e2e",
-            "playwright",
-        ]
-        for folder in e2e_candidates:
-            if (path / folder).is_dir():
-                structure["e2e_folder"] = folder
-                logger.info(f"[_detect_test_structure] Found e2e folder from dir: {folder}")
-                break
+    
+    logger.info(f"[_detect_test_structure] Using fixed structure: integration={structure['integration_folder']}, e2e={structure['e2e_folder']}")
     
     return structure
 
@@ -370,6 +410,22 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             "message": "Không có stories để tạo test plan.",
         }
     
+    # Filter out invalid stories (config tasks, placeholder titles, etc.)
+    valid_stories = _filter_valid_stories(stories)
+    
+    if not valid_stories:
+        logger.info("[plan_tests] No valid stories after filtering")
+        return {
+            "test_plan": [],
+            "testing_context": testing_context,
+            "total_steps": 0,
+            "current_step": 0,
+            "message": "Không có stories hợp lệ để tạo test (các stories về config/setup không được test).",
+        }
+    
+    # Use filtered stories for planning
+    stories = valid_stories
+    
     # Format stories for prompt
     stories_text = json.dumps(stories, indent=2, ensure_ascii=False)
     
@@ -402,22 +458,39 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         result = _parse_json(response.content)
         test_plan = result.get("test_plan", [])
         
-        # Ensure each step has required fields
-        integration_folder = test_structure.get("integration_folder", "__tests__/integration")
-        e2e_folder = test_structure.get("e2e_folder", "e2e")
+        # FIXED folder paths - always use standard structure
+        integration_folder = "src/__tests__/integration"
+        e2e_folder = "e2e"
         
+        # Validate and fix each step
+        validated_plan = []
         for i, step in enumerate(test_plan):
             step["order"] = step.get("order", i + 1)
             step["type"] = step.get("type", "integration")
             
-            # Generate file path if not provided - use detected folders
-            if not step.get("file_path"):
-                story_title = step.get("story_title", "unknown")
-                slug = _slugify(story_title)
-                if step["type"] == "e2e":
-                    step["file_path"] = f"{e2e_folder}/story-{slug}.spec.ts"
-                else:
-                    step["file_path"] = f"{integration_folder}/story-{slug}.test.ts"
+            story_title = step.get("story_title", "unknown")
+            slug = _slugify(story_title)
+            
+            # Skip invalid steps (config/setup related)
+            if not _is_valid_story_for_testing({"title": story_title}):
+                logger.warning(f"[plan_tests] Skipping invalid step: {story_title}")
+                continue
+            
+            # ALWAYS regenerate file path to ensure correct folder structure
+            # Don't trust LLM to use correct folders
+            if step["type"] == "e2e":
+                step["file_path"] = f"{e2e_folder}/story-{slug}.spec.ts"
+            else:
+                step["file_path"] = f"{integration_folder}/story-{slug}.test.ts"
+            
+            validated_plan.append(step)
+        
+        # Use validated plan
+        test_plan = validated_plan
+        
+        # Re-number steps after filtering
+        for i, step in enumerate(test_plan):
+            step["order"] = i + 1
         
         total_steps = len(test_plan)
         
