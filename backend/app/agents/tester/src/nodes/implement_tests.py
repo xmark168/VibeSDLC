@@ -1,142 +1,97 @@
-"""Implement Tests node - Generate tests using LLM with tools."""
+"""Implement Tests node - Generate tests using structured output (Developer V2 pattern).
+
+Optimized version:
+- NO tool calling iterations
+- Skills preloaded into system prompt
+- Dependencies preloaded from plan phase
+- Single LLM call with structured output + retry
+- Direct file write (no tools)
+"""
 
 import asyncio
-import json
 import logging
-import os
-from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from pydantic import BaseModel, Field
 
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.skills import SkillRegistry
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.core_nodes import send_message
-from app.agents.tester.src.tools.filesystem_tools import get_filesystem_tools, set_tool_context
-from app.agents.tester.src.tools.skill_tools import (
-    get_skill_tools,
-    reset_skill_cache,
-    set_skill_context,
-)
-from app.agents.tester.src.utils.token_utils import truncate_to_tokens, count_tokens
+from app.agents.tester.src.utils.token_utils import truncate_to_tokens
 from app.agents.tester.src._llm import implement_llm
 
 logger = logging.getLogger(__name__)
 
-# Thread pool for parallel tool execution (I/O bound operations)
-_tool_executor = ThreadPoolExecutor(max_workers=6)
-
-
-async def _execute_tool_async(tool, tool_args: dict) -> str:
-    """Execute sync tool in thread pool for parallel execution."""
-    loop = asyncio.get_event_loop()
-    if hasattr(tool, "invoke"):
-        return await loop.run_in_executor(_tool_executor, lambda: tool.invoke(tool_args))
-    elif hasattr(tool, "func"):
-        return await loop.run_in_executor(_tool_executor, lambda: tool.func(**tool_args))
-    else:
-        return await loop.run_in_executor(_tool_executor, lambda: tool(**tool_args))
-
-
 _llm = implement_llm
 
+# Config
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # seconds
 
-async def _execute_llm_with_tools(
-    llm: BaseChatModel,
-    tools: list,
-    messages: list,
-    state: dict,
-    name: str,
-    max_iterations: int = 10,
-) -> str:
-    """Execute LLM with ReAct tool calling pattern."""
-    llm_with_tools = llm.bind_tools(tools)
-    tool_map = {tool.name: tool for tool in tools}
-    conversation = list(messages)
 
-    handler = state.get("langfuse_handler")
-    config = (
-        {"callbacks": [handler], "run_name": name} if handler else {"run_name": name}
-    )
+# =============================================================================
+# Structured Output Schema (Developer V2 pattern)
+# =============================================================================
 
-    # Track exploration tool calls to prevent infinite loops
-    explore_tools = {"list_directory", "glob_files", "grep_files"}
-    explore_count = 0
-    max_explore = 4
+class TestFileOutput(BaseModel):
+    """Structured output for test file generation. NO tool calling needed."""
+    file_path: str = Field(description="Relative path to the test file")
+    content: str = Field(description="Complete test file content (TypeScript/JavaScript)")
+    summary: str = Field(default="", description="Brief summary of what was tested")
 
-    for i in range(max_iterations):
-        response = await llm_with_tools.ainvoke(conversation, config=config)
-        conversation.append(response)
 
-        if not response.tool_calls:
-            logger.info(f"[_execute_llm_with_tools] Completed after {i + 1} iterations")
-            return response.content or ""
+# =============================================================================
+# Helper Functions
+# =============================================================================
 
-        # Execute tool calls IN PARALLEL for better performance
-        tool_names = [tc["name"] for tc in response.tool_calls]
-        logger.info(f"[_execute_llm_with_tools] Executing {len(tool_names)} tools in parallel: {tool_names}")
-
-        async def _run_single_tool(tc):
-            """Execute a single tool call."""
-            nonlocal explore_count
-            tool_name = tc["name"]
-            tool_args = tc["args"]
-
-            # Count exploration tools
-            if tool_name in explore_tools:
-                explore_count += 1
-                if explore_count > max_explore:
-                    logger.warning(
-                        f"[_execute_llm_with_tools] Too many explore calls ({explore_count})"
-                    )
-                    return ToolMessage(
-                        content="STOP EXPLORING. You have searched enough. Now use write_file to create the test file using the skill template patterns.",
-                        tool_call_id=tc["id"],
-                    )
-
-            if tool_name in tool_map:
-                try:
-                    result = await _execute_tool_async(tool_map[tool_name], tool_args)
-                    logger.info(f"[tool] {tool_name} -> OK")
-                    return ToolMessage(
-                        content=str(result)[:4000], tool_call_id=tc["id"]
-                    )
-                except Exception as e:
-                    logger.warning(f"[tool] {tool_name} -> Error: {e}")
-                    return ToolMessage(
-                        content=f"Error: {str(e)}", tool_call_id=tc["id"]
-                    )
-            else:
-                return ToolMessage(
-                    content=f"Unknown tool: {tool_name}",
-                    tool_call_id=tc["id"],
-                )
-
-        # Run ALL tools in parallel using asyncio.gather
-        tool_messages = await asyncio.gather(
-            *[_run_single_tool(tc) for tc in response.tool_calls]
-        )
-        conversation.extend(tool_messages)
-
-    logger.warning("[_execute_llm_with_tools] Max iterations reached")
-    return conversation[-1].content if hasattr(conversation[-1], "content") else ""
+def _preload_skills(registry: SkillRegistry, skill_ids: list[str]) -> str:
+    """Preload skill content into system prompt (Developer V2 pattern).
+    
+    This eliminates the need for activate_skill tool calls entirely.
+    """
+    if not skill_ids or not registry:
+        return ""
+    
+    parts = []
+    for skill_id in skill_ids:
+        skill = registry.get_skill(skill_id)
+        if not skill:
+            logger.warning(f"[_preload_skills] Skill not found: {skill_id}")
+            continue
+        
+        content = skill.load_content()
+        if not content:
+            continue
+        
+        # Include bundled reference files
+        try:
+            bundled = skill.list_bundled_files()
+            for bf in bundled[:2]:
+                bf_content = skill.load_bundled_file(bf)
+                if bf_content:
+                    content += f"\n\n### Reference: {bf}\n{bf_content}"
+        except Exception as e:
+            logger.warning(f"[_preload_skills] Error loading bundled files: {e}")
+        
+        parts.append(f"## Skill: {skill_id}\n{content}")
+        logger.info(f"[_preload_skills] Preloaded skill: {skill_id} ({len(content)} chars)")
+    
+    if not parts:
+        return ""
+    
+    return "<skills>\n" + "\n\n---\n\n".join(parts) + "\n</skills>"
 
 
 def _cfg(state: dict, name: str) -> dict:
     """Get LLM config with Langfuse callback."""
     h = state.get("langfuse_handler")
-    return {"callbacks": [h], "run_name": name} if h else {}
+    return {"callbacks": [h], "run_name": name} if h else {"run_name": name}
 
 
 def _build_dependencies_context(dependencies_content: dict, step_dependencies: list) -> str:
-    """Build pre-loaded dependencies context for the current step (MetaGPT-style).
-    
-    This includes:
-    1. Step-specific dependencies (from test plan)
-    2. Related source files (API routes, services, etc.) - CRITICAL for LLM
-    3. Common test setup files
-    """
+    """Build pre-loaded dependencies context for the current step (MetaGPT-style)."""
     if not dependencies_content:
         return ""
     
@@ -156,17 +111,15 @@ def _build_dependencies_context(dependencies_content: dict, step_dependencies: l
                 included_paths.add(dep_path)
     
     # 2. Add ALL source files (API routes, services, components)
-    # These are CRITICAL for LLM to understand actual exports, types, functions
     source_patterns = ["src/app/api/", "src/lib/", "src/services/", "app/api/", "pages/api/", "src/components/"]
     for dep_path, content in dependencies_content.items():
         if dep_path in included_paths:
             continue
-        # Normalize path separators for Windows compatibility
         normalized_path = dep_path.replace("\\", "/")
         if any(pattern in normalized_path for pattern in source_patterns):
             ext = dep_path.split(".")[-1] if "." in dep_path else ""
             lang = "typescript" if ext in ["ts", "tsx"] else "javascript"
-            parts.append(f"### {dep_path} (SOURCE CODE - READ FOR ACTUAL EXPORTS/TYPES)\n```{lang}\n{content}\n```")
+            parts.append(f"### {dep_path} (SOURCE CODE)\n```{lang}\n{content}\n```")
             included_paths.add(dep_path)
     
     # 3. Add common test setup files
@@ -181,46 +134,90 @@ def _build_dependencies_context(dependencies_content: dict, step_dependencies: l
         return ""
     
     header = """<pre_loaded_context>
-## ⚠️ IMPORTANT: Read the SOURCE CODE below to understand ACTUAL exports, types, and function signatures.
-## DO NOT invent APIs, imports, or types that don't exist in the source code.
-## Use the EXACT function names, parameter types, and return types shown in the source files.
+## Read SOURCE CODE below for actual exports, types, function signatures.
+## Use EXACT imports from these files.
 
 """
     return header + "\n\n".join(parts) + "\n</pre_loaded_context>"
 
 
+def _write_file_direct(workspace_path: str, file_path: str, content: str) -> str:
+    """Write file directly without tool calling."""
+    try:
+        full_path = Path(workspace_path) / file_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content, encoding="utf-8")
+        logger.info(f"[_write_file_direct] Written: {file_path}")
+        return f"✅ Created: {file_path}"
+    except Exception as e:
+        logger.error(f"[_write_file_direct] Error writing {file_path}: {e}")
+        return f"❌ Error: {e}"
+
+
+async def _invoke_with_retry(
+    structured_llm,
+    messages: list,
+    config: dict,
+    max_retries: int = MAX_RETRIES,
+) -> TestFileOutput:
+    """Invoke structured LLM with retry logic.
+    
+    Retries on:
+    - Timeout errors
+    - Connection errors
+    - Parse errors (structured output validation)
+    """
+    last_error = None
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = await structured_llm.ainvoke(messages, config=config)
+            
+            # Validate result
+            if not result.content or len(result.content) < 50:
+                raise ValueError("Generated content too short")
+            
+            return result
+            
+        except Exception as e:
+            last_error = e
+            logger.warning(f"[implement_tests] Attempt {attempt}/{max_retries} failed: {e}")
+            
+            if attempt < max_retries:
+                wait_time = RETRY_DELAY * attempt  # Exponential backoff
+                logger.info(f"[implement_tests] Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+    
+    # All retries failed
+    raise last_error
+
+
+# =============================================================================
+# Main Node Function
+# =============================================================================
+
 async def implement_tests(state: TesterState, agent=None) -> dict:
-    """Implement tests using React Agent with skills (MetaGPT-style).
+    """Implement tests using structured output (Developer V2 pattern).
 
     This node:
     1. Gets current step from test_plan
-    2. Resets review_count for fresh review attempts
+    2. Preloads skills into system prompt (no tool calls)
     3. Uses pre-loaded dependencies from plan_tests
-    4. Initializes skill registry
-    5. Creates React Agent with filesystem + skill tools
-    6. Executes step (activate_skill -> write_file)
+    4. Single LLM call with structured output + retry
+    5. Direct file write (no tools)
 
     Output:
     - current_step: NOT incremented (review node handles this on LGTM)
+    - files_modified: Updated list
     - review_count: Reset to 0 for fresh review
-    - files_created/files_modified: updated lists
     """
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
     print(f"[NODE] implement_tests - step {current_step + 1}/{total_steps}")
-    
-    # Keep review_count from state (don't reset - review node manages it)
-    # review_count is incremented in review node on LBTM, reset on LGTM (step advance)
 
     test_plan = state.get("test_plan", [])
-    project_id = state.get("project_id", "")
     workspace_path = state.get("workspace_path", "") or state.get("project_path", "")
     tech_stack = state.get("tech_stack", "nextjs")
-    testing_context = state.get("testing_context", {})
-
-    # Set tool context so tools use workspace_path (worktree) instead of project_path
-    set_tool_context(project_id=project_id, workspace_path=workspace_path)
-    logger.info(f"[implement_tests] Set tool context: workspace_path={workspace_path}")
 
     # Check if all steps done
     if current_step >= total_steps or current_step >= len(test_plan):
@@ -237,49 +234,43 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
     story_title = step.get("story_title", "Unknown")
     description = step.get("description", "")
     scenarios = step.get("scenarios", [])
+    step_skills = step.get("skills", [])
+    step_dependencies = step.get("dependencies", [])
 
-    # Reset skill cache for each step
-    reset_skill_cache()
-
-    # Initialize skill registry
+    # Initialize skill registry and preload skills
     skill_registry = SkillRegistry.load(tech_stack)
-    set_skill_context(skill_registry)
+    
+    # Auto-select skills if not specified
+    if not step_skills:
+        step_skills = ["integration-test"] if test_type == "integration" else ["e2e-test"]
+    
+    # Preload skills into prompt (Developer V2 pattern - no tool calls)
+    skills_content = _preload_skills(skill_registry, step_skills)
+    logger.info(f"[implement_tests] Preloaded {len(step_skills)} skills: {step_skills}")
 
-    # Combine tools
-    tools = get_filesystem_tools() + get_skill_tools()
+    # Build pre-loaded dependencies context
+    dependencies_content = state.get("dependencies_content", {})
+    deps_context = _build_dependencies_context(dependencies_content, step_dependencies)
+    if deps_context:
+        logger.info(f"[implement_tests] Built deps_context with {len(deps_context)} chars")
 
-    # Get skill catalog for prompt
-    skill_catalog = skill_registry.get_skill_catalog_for_prompt()
-
-    # Format testing context
-    testing_context_str = ""
-    if testing_context:
-        testing_context_str = json.dumps(testing_context, indent=2, ensure_ascii=False)
+    # Include feedback from previous review (if LBTM)
+    feedback_section = ""
+    review_feedback = state.get("review_feedback", "")
+    if review_feedback:
+        feedback_section = f"\n<previous_feedback>\n{review_feedback}\n</previous_feedback>"
 
     # Format scenarios
     scenarios_str = "\n".join(f"- {s}" for s in scenarios) if scenarios else "N/A"
 
-    # Build pre-loaded dependencies context (MetaGPT-style)
-    dependencies_content = state.get("dependencies_content", {})
-    step_dependencies = step.get("dependencies", [])
-    logger.info(f"[implement_tests] dependencies_content has {len(dependencies_content)} files: {list(dependencies_content.keys())[:5]}...")
-    deps_context = _build_dependencies_context(dependencies_content, step_dependencies)
-    if deps_context:
-        logger.info(f"[implement_tests] Built deps_context with {len(deps_context)} chars")
-    else:
-        logger.warning(f"[implement_tests] No deps_context built! dependencies_content empty or no files matched patterns")
+    # Build system prompt with preloaded skills
+    system_prompt = get_system_prompt("implement")
+    if skills_content:
+        system_prompt += f"\n\n{skills_content}"
 
-    # Include feedback from previous review (if LBTM)
-    feedback_section = ""
-    if state.get("review_feedback"):
-        feedback_section = f"\n<feedback>\n{state.get('review_feedback')}\n</feedback>"
-
-    # Build system prompt
-    system_prompt = get_system_prompt("implement_tests", skill_catalog=skill_catalog)
-
-    # Build user prompt with pre-loaded context
+    # Build user prompt
     user_prompt = get_user_prompt(
-        "implement_tests",
+        "implement",
         step_number=current_step + 1,
         total_steps=total_steps,
         test_type=test_type,
@@ -287,22 +278,15 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
         story_title=story_title,
         description=description,
         scenarios=scenarios_str,
-        files_modified=", ".join(state.get("files_modified", [])) or "None",
-        testing_context=testing_context_str or "N/A",
-        project_id=project_id,
     )
-    
-    # Append pre-loaded context and feedback (with token limits)
+
+    # Append pre-loaded context and feedback
     if deps_context:
-        # Limit deps_context to ~4000 tokens to leave room for LLM response
         truncated_deps = truncate_to_tokens(deps_context, max_tokens=4000)
-        user_prompt += f"\n\n## Pre-loaded Context\n{truncated_deps}"
-        if count_tokens(deps_context) > 4000:
-            logger.info(f"[implement_tests] Truncated deps_context: {count_tokens(deps_context)} -> 4000 tokens")
+        user_prompt += f"\n\n{truncated_deps}"
     if feedback_section:
-        # Limit feedback to ~1000 tokens
         truncated_feedback = truncate_to_tokens(feedback_section, max_tokens=1000)
-        user_prompt += f"\n\n## Previous Review Feedback{truncated_feedback}"
+        user_prompt += f"\n\n{truncated_feedback}"
 
     try:
         # Build messages
@@ -311,46 +295,46 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
             HumanMessage(content=user_prompt),
         ]
 
-        # Execute with tools
+        # Single LLM call with structured output + retry
         logger.info(f"[implement_tests] Step {current_step + 1}: {description[:50]}...")
-
-        last_message = await _execute_llm_with_tools(
-            llm=_llm,
-            tools=tools,
-            messages=messages,
-            state=state,
-            name=f"implement_tests_step_{current_step + 1}",
-            max_iterations=15,
+        
+        structured_llm = _llm.with_structured_output(TestFileOutput)
+        result = await _invoke_with_retry(
+            structured_llm,
+            messages,
+            config=_cfg(state, f"implement_step_{current_step + 1}"),
         )
 
+        # Direct file write (no tools)
+        actual_file_path = result.file_path or file_path
+        write_result = _write_file_direct(workspace_path, actual_file_path, result.content)
+        logger.info(f"[implement_tests] {write_result}")
+
         # Track files
-        files_created = state.get("files_created", []).copy()
         files_modified = state.get("files_modified", []).copy()
+        if actual_file_path and actual_file_path not in files_modified:
+            files_modified.append(actual_file_path)
 
-        if file_path and file_path not in files_created:
-            files_created.append(file_path)
-
-        # Update progress message
+        # Progress message
         msg = f"✅ Step {current_step + 1}/{total_steps}: {description}"
+        if result.summary:
+            msg += f"\n   {result.summary}"
         await send_message(state, agent, msg, "progress")
 
         logger.info(f"[implement_tests] Completed step {current_step + 1}")
 
-        # NOTE: Don't increment current_step here!
-        # current_step is incremented in review node ONLY when LGTM
-        # This ensures LBTM re-implements the SAME step
-        # NOTE: Don't return review_count - let review node manage it
         return {
-            "current_step": current_step,  # Keep same step until review LGTM
-            "files_created": files_created,
+            "current_step": current_step,  # Review node will increment on LGTM
             "files_modified": files_modified,
-            "last_implemented_file": file_path,  # Track for review
+            "last_implemented_file": actual_file_path,
+            "last_test_content": result.content[:2000],  # For review
+            "review_count": 0,  # Reset for fresh review
             "message": msg,
-            "action": "REVIEW",  # Go to review (MetaGPT-style)
+            "action": "REVIEW",
         }
 
     except Exception as e:
-        logger.error(f"[implement_tests] Error: {e}", exc_info=True)
+        logger.error(f"[implement_tests] Error after {MAX_RETRIES} retries: {e}", exc_info=True)
         error_msg = f"Lỗi khi implement step {current_step + 1}: {str(e)}"
         await send_message(state, agent, error_msg, "error")
         return {

@@ -480,8 +480,14 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             # Don't trust LLM to use correct folders
             if step["type"] == "e2e":
                 step["file_path"] = f"{e2e_folder}/story-{slug}.spec.ts"
+                step["skills"] = ["e2e-test"]  # Pre-select skill for implement phase
             else:
                 step["file_path"] = f"{integration_folder}/story-{slug}.test.ts"
+                step["skills"] = ["integration-test"]  # Pre-select skill for implement phase
+            
+            # Dependencies will be auto-discovered from source files
+            if "dependencies" not in step:
+                step["dependencies"] = []
             
             validated_plan.append(step)
         

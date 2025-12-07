@@ -1,75 +1,29 @@
-"""Review node - MetaGPT-style test review with LGTM/LBTM decision."""
+"""Review node - LGTM/LBTM test review (Developer V2 pattern).
+
+Uses prompts from prompts.yaml for consistency.
+No duplicate routing function - routing is in graph.py only.
+"""
+import json
 import logging
 import os
 import re
+from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.tester.src.state import TesterState
+from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.utils.token_utils import smart_truncate_tokens
 from app.agents.tester.src._llm import review_llm
 
 logger = logging.getLogger(__name__)
 
-# Max tokens for review (leave room for LLM response)
-MAX_REVIEW_TOKENS = 8000
-
 _llm = review_llm
 
-
-REVIEW_SYSTEM_PROMPT = """You are a Senior QA Engineer performing test code review.
-Your task is to review the implemented test and decide: LGTM (approve) or LBTM (request changes).
-
-## Review Criteria (Priority Order)
-1. **Runnable**: Test file is syntactically correct and can run
-2. **Core Scenarios**: Main happy path and 1-2 error cases are covered
-3. **Assertions**: Each test has at least one meaningful assertion
-4. **Mocking**: External dependencies are mocked (if needed)
-
-## LGTM Conditions (approve if ANY is true)
-- Test covers main happy path + at least 1 error case
-- Test has 3+ test cases with proper assertions
-- Test follows project conventions and is runnable
-
-## LBTM Conditions (reject ONLY if)
-- Test file has syntax errors or won't run
-- Test has NO assertions (empty expects)
-- Test is completely missing required mocks
-- Test file is incomplete (has TODO/placeholder comments)
-
-## IMPORTANT
-- Do NOT reject for missing edge cases - those can be added later
-- Do NOT reject for missing 1-2 scenarios from plan - main flow is enough
-- Prefer LGTM over LBTM when test is functional
-
-## Output Format
-```
-DECISION: LGTM|LBTM
-
-REVIEW:
-- [issue or approval point]
-
-FEEDBACK: (only if LBTM - be specific)
-[What MUST be fixed to pass]
-```
-"""
-
-REVIEW_INPUT_TEMPLATE = """## Test Task
-{task_description}
-
-## Scenarios to Cover
-{scenarios}
-
-## Test File: {file_path}
-```{file_ext}
-{file_content}
-```
-
-## Testing Context
-{testing_context}
-
-Review the test code above and provide your decision (LGTM or LBTM).
-"""
+# Config
+MAX_REVIEW_TOKENS = 8000
+MAX_LBTM_PER_STEP = 3  # Force advance after 3 LBTM per step
+MAX_REVIEWS = 2  # Max reviews before force advancing
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -80,19 +34,40 @@ def _cfg(state: dict, name: str) -> dict:
 
 def _get_file_extension(file_path: str) -> str:
     """Get file extension for code block."""
-    if file_path.endswith(".ts") or file_path.endswith(".tsx"):
-        return "typescript"
-    elif file_path.endswith(".js") or file_path.endswith(".jsx"):
-        return "javascript"
-    elif file_path.endswith(".py"):
-        return "python"
+    ext_map = {
+        ".ts": "typescript", ".tsx": "typescript",
+        ".js": "javascript", ".jsx": "javascript",
+        ".py": "python",
+    }
+    for ext, lang in ext_map.items():
+        if file_path.endswith(ext):
+            return lang
     return ""
 
 
 def _parse_review_response(response: str) -> dict:
-    """Parse review response to extract decision and feedback."""
-    result = {"decision": "LGTM", "review": "", "feedback": ""}
+    """Parse review response to extract decision and feedback.
+    
+    Handles multiple formats:
+    - DECISION: LGTM/LBTM
+    - JSON format {"decision": "LGTM", ...}
+    """
+    result = {"decision": "LGTM", "review": "", "feedback": "", "issues": []}
 
+    # Try JSON format first
+    try:
+        # Find JSON in response
+        json_match = re.search(r'\{[^{}]*"decision"[^{}]*\}', response, re.DOTALL)
+        if json_match:
+            parsed = json.loads(json_match.group())
+            result["decision"] = parsed.get("decision", "LGTM").upper()
+            result["feedback"] = parsed.get("feedback", "")
+            result["issues"] = parsed.get("issues", [])
+            return result
+    except (json.JSONDecodeError, AttributeError):
+        pass
+
+    # Fallback to text parsing
     # Find ALL decisions and take the LAST one (LLM sometimes reconsiders)
     decisions = re.findall(r"DECISION:\s*(LGTM|LBTM)", response, re.IGNORECASE)
     if decisions:
@@ -105,7 +80,7 @@ def _parse_review_response(response: str) -> dict:
     if review_match:
         result["review"] = review_match.group(1).strip()
 
-    # Extract feedback (only for LBTM)
+    # Extract feedback (for LBTM)
     feedback_match = re.search(r"FEEDBACK:\s*\n?([\s\S]*?)$", response, re.IGNORECASE)
     if feedback_match:
         result["feedback"] = feedback_match.group(1).strip()
@@ -113,230 +88,201 @@ def _parse_review_response(response: str) -> dict:
     return result
 
 
+def _read_test_file(workspace_path: str, file_path: str) -> tuple[str, str]:
+    """Read test file content with error handling.
+    
+    Returns:
+        (content, error_message) - content is empty if error
+    """
+    full_path = Path(workspace_path) / file_path if workspace_path else Path(file_path)
+    
+    if full_path.is_dir():
+        return "", f"Path is a directory, not a file: {file_path}"
+    
+    if not full_path.exists():
+        return "", f"Test file not found: {file_path}"
+    
+    try:
+        content = full_path.read_text(encoding="utf-8")
+        return content, ""
+    except Exception as e:
+        return "", f"Error reading file: {e}"
+
+
+def _get_source_context(state: dict, step: dict) -> str:
+    """Get relevant source code context for review."""
+    dependencies_content = state.get("dependencies_content", {})
+    step_deps = step.get("dependencies", [])
+    
+    if not dependencies_content:
+        return "N/A"
+    
+    parts = []
+    for dep_path in step_deps:
+        if dep_path in dependencies_content:
+            content = dependencies_content[dep_path]
+            # Truncate long files
+            if len(content) > 2000:
+                content = content[:2000] + "\n... (truncated)"
+            parts.append(f"### {dep_path}\n```typescript\n{content}\n```")
+    
+    return "\n\n".join(parts) if parts else "N/A"
+
+
 async def review(state: TesterState, agent=None) -> dict:
-    """Review implemented test with LGTM/LBTM decision (MetaGPT-style).
+    """Review implemented test with LGTM/LBTM decision.
+
+    Uses prompts from prompts.yaml for consistency.
+    Tracks per-step LBTM counts to avoid infinite loops.
 
     Returns:
-        State with review_result: "LGTM" or "LBTM"
-        If LBTM, includes review_feedback for re-implementation
+        - review_result: "LGTM" or "LBTM"
+        - review_feedback: Feedback for re-implementation (if LBTM)
+        - current_step: Incremented on LGTM
     """
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
-    print(f"[NODE] review step {current_step}/{total_steps}")
+    print(f"[NODE] review - step {current_step + 1}/{total_steps}")
+
+    test_plan = state.get("test_plan", [])
+    workspace_path = state.get("workspace_path", "") or state.get("project_path", "")
+    review_count = state.get("review_count", 0)
+
+    # Early exit conditions
+    if not test_plan or current_step < 0 or current_step >= len(test_plan):
+        logger.info("[review] No valid step to review - advancing")
+        return {
+            "current_step": current_step + 1,
+            "review_result": "LGTM",
+            "review_feedback": "",
+            "review_count": 0,
+        }
+
+    # Get current step info
+    step = test_plan[current_step]
+    file_path = step.get("file_path", "")
+    task_description = step.get("description", "")
+    scenarios = step.get("scenarios", [])
+
+    if not file_path:
+        logger.info("[review] No file path - advancing")
+        return {
+            "current_step": current_step + 1,
+            "review_result": "LGTM",
+            "review_feedback": "",
+            "review_count": 0,
+        }
+
+    # Read test file
+    file_content, error = _read_test_file(workspace_path, file_path)
+    
+    if error:
+        logger.warning(f"[review] {error}")
+        new_count = review_count + 1
+        
+        # Force advance if max reviews reached
+        if new_count >= MAX_REVIEWS:
+            logger.info(f"[review] Max reviews ({MAX_REVIEWS}) reached - force advancing")
+            return {
+                "current_step": current_step + 1,
+                "review_result": "LBTM",
+                "review_feedback": error,
+                "review_count": MAX_REVIEWS,
+                "total_lbtm_count": state.get("total_lbtm_count", 0) + 1,
+            }
+        
+        return {
+            "current_step": current_step,
+            "review_result": "LBTM",
+            "review_feedback": error,
+            "review_count": new_count,
+        }
 
     try:
-        test_plan = state.get("test_plan", [])
-        workspace_path = state.get("workspace_path", "") or state.get("project_path", "")
-        testing_context = state.get("testing_context", {})
-
-        if not test_plan or current_step < 0:
-            # No plan or invalid step - skip review, advance to next step
-            return {
-                "current_step": current_step + 1,
-                "review_result": "LGTM",
-                "review_feedback": "",
-            }
-
-        # Get the step that was just implemented
-        # implement_tests uses current_step as 0-indexed step
-        # So we review the same current_step (not current_step - 1)
-        step_index = current_step
-        if step_index < 0:
-            step_index = 0
-        if step_index >= len(test_plan):
-            step_index = len(test_plan) - 1
-
-        step = test_plan[step_index]
-        file_path = step.get("file_path", "")
-        task_description = step.get("description", "")
-        scenarios = step.get("scenarios", [])
-
-        if not file_path:
-            # No file path specified - skip review, advance to next step
-            return {
-                "current_step": current_step + 1,
-                "review_result": "LGTM",
-                "review_feedback": "",
-            }
-
-        # Read the implemented test file
-        full_path = os.path.join(workspace_path, file_path) if workspace_path else file_path
-        
-        # Check max_reviews for file access errors
-        max_reviews = 2
-        current_review_count = state.get("review_count", 0)
-
-        # Check if path is a directory (invalid)
-        if os.path.isdir(full_path):
-            logger.warning(f"[review] Path is a directory, not a file: {full_path}")
-            new_count = current_review_count + 1
-            if new_count >= max_reviews:
-                logger.info(f"[review] Max reviews ({max_reviews}) reached for invalid path - force advancing")
-                return {
-                    "current_step": current_step + 1,
-                    "review_result": "LBTM",
-                    "review_feedback": f"Invalid path: {file_path} is a directory, not a test file.",
-                    "review_count": max_reviews,  # Keep at max so routing knows we hit limit
-                    "total_lbtm_count": state.get("total_lbtm_count", 0) + 1,
-                }
-            return {
-                "current_step": current_step,
-                "review_result": "LBTM",
-                "review_feedback": f"Invalid path: {file_path} is a directory. Please specify a valid test file path.",
-                "review_count": new_count,
-            }
-
-        if not os.path.exists(full_path):
-            logger.warning(f"[review] Test file not found: {full_path}")
-            new_count = current_review_count + 1
-            # Check max_reviews and force advance if exceeded
-            if new_count >= max_reviews:
-                logger.info(f"[review] Max reviews ({max_reviews}) reached for missing file - force advancing")
-                return {
-                    "current_step": current_step + 1,
-                    "review_result": "LBTM",
-                    "review_feedback": f"Test file {file_path} was not created after {max_reviews} attempts.",
-                    "review_count": max_reviews,  # Keep at max so routing knows we hit limit
-                    "total_lbtm_count": state.get("total_lbtm_count", 0) + 1,
-                }
-            # LBTM but keep current_step to retry same step
-            return {
-                "current_step": current_step,
-                "review_result": "LBTM",
-                "review_feedback": f"Test file {file_path} was not created. Please create the file at: {file_path}",
-                "review_count": new_count,
-            }
-
-        with open(full_path, "r", encoding="utf-8") as f:
-            file_content = f.read()
-
-        # Smart truncate file content to fit within token limits
+        # Smart truncate file content
         file_content_review, was_truncated = smart_truncate_tokens(file_content, MAX_REVIEW_TOKENS)
-        truncation_note = " (truncated)" if was_truncated else ""
+        truncation_note = " (truncated - showing head + tail)" if was_truncated else ""
 
-        # Format scenarios
+        # Format data for prompt
         scenarios_str = "\n".join(f"- {s}" for s in scenarios) if scenarios else "N/A"
+        source_context = _get_source_context(state, step)
 
-        # Format testing context
-        testing_context_str = ""
-        if testing_context:
-            import json
-            testing_context_str = json.dumps(testing_context, indent=2, ensure_ascii=False)
-
-        # Build review prompt
-        input_text = REVIEW_INPUT_TEMPLATE.format(
-            task_description=task_description,
-            scenarios=scenarios_str,
+        # Get prompts from YAML
+        system_prompt = get_system_prompt("review")
+        user_prompt = get_user_prompt(
+            "review",
             file_path=file_path + truncation_note,
-            file_ext=_get_file_extension(file_path),
-            file_content=file_content_review,
-            testing_context=testing_context_str or "N/A",
+            test_content=file_content_review,
+            source_code=source_context,
+            scenarios=scenarios_str,
         )
 
         messages = [
-            SystemMessage(content=REVIEW_SYSTEM_PROMPT),
-            HumanMessage(content=input_text),
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
         ]
 
-        # Get review from LLM
-        response = await _llm.ainvoke(messages, config=_cfg(state, "review_test"))
+        # Call LLM
+        response = await _llm.ainvoke(messages, config=_cfg(state, f"review_step_{current_step + 1}"))
         response_text = response.content if hasattr(response, "content") else str(response)
 
         # Parse response
         review_result = _parse_review_response(response_text)
+        decision = review_result["decision"]
 
-        logger.info(f"[review] {file_path}: {review_result['decision']}")
-
-        if review_result["decision"] == "LBTM":
+        logger.info(f"[review] {file_path}: {decision}")
+        if decision == "LBTM":
             logger.info(f"[review] Feedback: {review_result['feedback'][:100]}...")
 
-        # ==============================================
-        # PER-STEP LBTM TRACKING (MetaGPT-style)
-        # ==============================================
+        # Track LBTM per step
         step_lbtm_counts = state.get("step_lbtm_counts", {})
-        step_key = str(step_index)
-        
+        step_key = str(current_step)
         total_lbtm = state.get("total_lbtm_count", 0)
-        new_current_step = state.get("current_step", 0)
-        max_per_step = 4  # Force advance after 4 LBTM per step
-        
-        if review_result["decision"] == "LBTM":
+        new_current_step = current_step
+
+        if decision == "LBTM":
             step_lbtm_counts[step_key] = step_lbtm_counts.get(step_key, 0) + 1
             total_lbtm += 1
             
-            # If this step has been LBTM'd too many times, force LGTM
-            if step_lbtm_counts[step_key] >= max_per_step:
-                logger.warning(f"[review] Step {step_index} has {step_lbtm_counts[step_key]} LBTM attempts, forcing LGTM")
-                review_result["decision"] = "LGTM"
+            # Force LGTM if too many attempts
+            if step_lbtm_counts[step_key] >= MAX_LBTM_PER_STEP:
+                logger.warning(f"[review] Step {current_step} has {step_lbtm_counts[step_key]} LBTM - forcing LGTM")
+                decision = "LGTM"
                 review_result["feedback"] = f"(Force-approved after {step_lbtm_counts[step_key]} attempts)"
                 new_current_step += 1
         else:
-            # LGTM - advance to next step
+            # LGTM - advance
             new_current_step += 1
-            logger.info(f"[review] LGTM - advancing to step {new_current_step}")
-        
-        # Calculate review_count for routing compatibility
-        current_step_lbtm = step_lbtm_counts.get(step_key, 0)
-        
+            logger.info(f"[review] LGTM - advancing to step {new_current_step + 1}")
+
         return {
             "current_step": new_current_step,
-            "review_result": review_result["decision"],
+            "review_result": decision,
             "review_feedback": review_result["feedback"],
             "review_details": review_result["review"],
-            "review_count": current_step_lbtm,  # Per-step count for routing
+            "review_count": step_lbtm_counts.get(step_key, 0),
             "total_lbtm_count": total_lbtm,
-            "step_lbtm_counts": step_lbtm_counts,  # Track all steps
+            "step_lbtm_counts": step_lbtm_counts,
         }
 
     except Exception as e:
         logger.error(f"[review] Error: {e}", exc_info=True)
-        # On error, return LBTM with error info, check max_reviews to avoid infinite loop
-        max_reviews = 2
-        current_review_count = state.get("review_count", 0)
-        new_count = current_review_count + 1
+        new_count = review_count + 1
         
-        if new_count >= max_reviews:
-            logger.info(f"[review] Max reviews ({max_reviews}) reached after error - force advancing")
+        if new_count >= MAX_REVIEWS:
+            logger.info(f"[review] Max reviews reached after error - force advancing")
             return {
                 "current_step": current_step + 1,
-                "review_result": "LGTM",  # Force approve to break loop
-                "review_feedback": f"Force approved after error: {str(e)}",
-                "review_count": max_reviews,  # Keep at max so routing knows we hit limit
-                "total_lbtm_count": state.get("total_lbtm_count", 0) + 1,
+                "review_result": "LGTM",
+                "review_feedback": f"Force approved after error: {e}",
+                "review_count": MAX_REVIEWS,
                 "error": str(e),
             }
+        
         return {
             "current_step": current_step,
             "review_result": "LBTM",
-            "review_feedback": f"Review failed with error: {str(e)}. Please check the file path.",
+            "review_feedback": f"Review failed: {e}",
             "review_count": new_count,
             "error": str(e),
         }
-
-
-def route_after_review(state: TesterState) -> str:
-    """Route based on review result.
-
-    Returns:
-        - "implement_tests": LBTM, need to re-implement with feedback
-        - "summarize": All steps done, go to final summary
-        - "implement_tests": LGTM but more steps remain
-    """
-    review_result = state.get("review_result", "LGTM")
-    review_count = state.get("review_count", 0)
-    max_reviews = 2
-
-    if review_result == "LBTM" and review_count < max_reviews:
-        logger.info(f"[route_after_review] LBTM -> re-implement (attempt {review_count + 1})")
-        return "implement_tests"
-
-    # LGTM or max reviews reached
-    current_step = state.get("current_step", 0)
-    total_steps = state.get("total_steps", 0)
-
-    if current_step >= total_steps:
-        logger.info("[route_after_review] All steps done -> summarize")
-        return "summarize"
-
-    logger.info(f"[route_after_review] LGTM -> next step ({current_step}/{total_steps})")
-    return "implement_tests"
