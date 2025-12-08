@@ -54,6 +54,7 @@ class TesterState(TypedDict, total=False):
     # Pre-loaded dependencies (MetaGPT-style - reduces tool calls)
     # ==========================================================================
     dependencies_content: Dict[str, str]  # {file_path: content}
+    component_context: str  # Analyzed components for unit tests (props, exports, data-attrs)
     
     # ==========================================================================
     # Skills system (aligned with Developer V2)

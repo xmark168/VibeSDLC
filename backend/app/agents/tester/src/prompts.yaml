@@ -95,6 +95,40 @@ tasks:
       - SKIP stories about config/setup/refactoring - only test USER FEATURES
       </rules>
       
+      <mandatory_coverage_rule>
+      ⚠️ ALWAYS CREATE BOTH TEST TYPES FOR MAXIMUM COVERAGE!
+      
+      Every story MUST have:
+      1. **Integration Test** (.test.ts) - Test the API/backend logic
+      2. **Unit Test** (.test.tsx) - Test the UI component that uses the feature
+      
+      If no specific component exists for the story:
+      - Find the CLOSEST related component (e.g., CategoryCard, BookCard, SearchBar)
+      - Test that component's rendering and basic interactions
+      
+      Example - Story: "browse books by category"
+      ```json
+      {
+        "test_plan": [
+          {
+            "order": 1,
+            "type": "integration",
+            "description": "Test /api/categories returns categories",
+            "file_path": "src/__tests__/integration/story-xxx.test.ts"
+          },
+          {
+            "order": 2,
+            "type": "unit",
+            "description": "Test CategoryCard component renders category info",
+            "file_path": "src/__tests__/unit/story-xxx.test.tsx"
+          }
+        ]
+      }
+      ```
+      
+      DO NOT skip unit test just because there's no exact matching component!
+      </mandatory_coverage_rule>
+      
       <critical_rule_scenarios>
       ⛔ ONLY CREATE SCENARIOS FOR FEATURES THAT ACTUALLY EXIST IN THE CODE!
       
@@ -303,6 +337,72 @@ tasks:
       ```
       </test_structure>
       
+      <unit_test_critical_rules>
+      ⛔ UNIT TEST CRITICAL RULES:
+      
+      1. **ONLY import components that EXIST in pre-loaded source code**
+         ```typescript
+         // ⛔ WRONG - Importing non-existent component
+         import {{ EducationLevelFilter }} from '@/components/EducationLevelFilter';
+         
+         // ✅ CORRECT - Import from pre-loaded dependencies
+         import {{ CategoryCard }} from '@/components/categories/CategoryCard';
+         ```
+      
+      2. **Test what the component ACTUALLY does, not imagined features**
+         ```typescript
+         // ⛔ WRONG - Testing features that don't exist
+         expect(fetch).toHaveBeenCalled(); // Component doesn't call fetch!
+         
+         // ✅ CORRECT - Test actual rendering/behavior
+         expect(screen.getByText(category.name)).toBeInTheDocument();
+         ```
+      
+      3. **Use correct props from source code**
+         ```typescript
+         // ⛔ WRONG - Props don't exist
+         render(<CategoryCard onLevelSelect={{jest.fn()}} gradeLevel="high" />);
+         
+         // ✅ CORRECT - Check actual props in source
+         render(<CategoryCard category={{mockCategory}} />);
+         ```
+      
+      4. **If no specific component exists for the story:**
+         - Find a RELATED component that EXISTS (CategoryCard, BookCard, etc.)
+         - Test that component's actual props and rendering
+         - DO NOT invent new components
+      </unit_test_critical_rules>
+      
+      <component_context>
+      {component_context}
+      </component_context>
+      
+      <selector_rules>
+      ⚠️ SELECTOR RULES FOR UNIT TESTS:
+      
+      1. **NEVER assume CSS classes or data attributes**
+         ```typescript
+         // ⛔ WRONG
+         container.querySelector('[class*="badge"]');  // Class may not exist!
+         screen.getAllByTestId('skeleton');  // Uses data-slot, not data-testid!
+         
+         // ✅ CORRECT - Use Testing Library queries
+         screen.getByRole('button', {{ name: /submit/i }});
+         screen.getByText(category.name);
+         ```
+      
+      2. **Don't assume image filenames**
+         ```typescript
+         // ⛔ WRONG
+         expect(img).toHaveAttribute('src', 'elementary-books.jpg');
+         
+         // ✅ CORRECT
+         expect(img).toHaveAttribute('src');  // Just check exists
+         ```
+      
+      3. **Check component_context above for actual props and data attributes**
+      </selector_rules>
+      
       <critical_rules>
       1. Output COMPLETE test file - no TODOs, no placeholders, no "// rest of code"
       2. Use EXACT imports from the pre-loaded source code
@@ -347,6 +447,10 @@ tasks:
       | Checking exact Prisma query | Check behavior via response data, not query structure |
       | Using Date objects in mocks | Use ISO strings: "2023-01-15T00:00:00.000Z" |
       | Mock data with too many fields | Only include fields being tested |
+      | ⛔ [UNIT] Importing non-existent component | Only import components shown in pre-loaded source |
+      | ⛔ [UNIT] Testing fetch when component doesn't use it | Test actual component behavior, not imagined features |
+      | ⛔ [UNIT] Inventing props | Check actual props from component source code |
+      | ⛔ [UNIT] Creating fictional component | Use existing components: CategoryCard, BookCard, etc. |
       </common_mistakes>
       
       <mock_patterns>
@@ -547,6 +651,35 @@ tasks:
       | TS7006 | Parameter implicit any | Add type annotation |
       | TS2304 | Cannot find name | Import missing, add import |
       </typescript_error_codes>
+      
+      <unit_test_errors>
+      ## Unit Test Specific Errors
+      | Error Pattern | Root Cause | Quick Fix |
+      |---------------|------------|-----------|
+      | Cannot find module '@/components/XXX' | Importing non-existent component | Use component that EXISTS in pre-loaded source (CategoryCard, BookCard, etc.) |
+      | expect(fetch).toHaveBeenCalled() fails | Component doesn't call fetch | Remove fetch assertions, test actual rendering/behavior |
+      | Property 'xxx' does not exist on props | Using props that don't exist | Check actual component props from source code |
+      | Element not found by getByText | Component doesn't render that text | Check what component actually renders |
+      </unit_test_errors>
+      
+      <unit_test_fix_strategy>
+      ⛔ UNIT TEST FIX RULES:
+      
+      1. **Import error (Cannot find module):**
+         - DON'T create the missing component
+         - DO use an existing component from pre-loaded source
+         - Example: CategoryCard, BookCard, SearchBar, CategoriesSection
+      
+      2. **Fetch assertion fails:**
+         - DON'T add fetch calls to test
+         - DO test what the component actually renders
+         - Example: expect(screen.getByText('Category Name')).toBeInTheDocument()
+      
+      3. **Props error:**
+         - DON'T invent new props
+         - DO check actual component interface from source
+         - Example: CategoryCard takes `category` prop, not `onSelect`
+      </unit_test_fix_strategy>
       
       <prisma_test_errors>
       ## Prisma Mock Errors

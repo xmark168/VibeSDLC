@@ -201,6 +201,174 @@ def _find_source_files_for_story(workspace_path: str, keywords: list[str]) -> li
     return list(found_files)[:20]  # Limit to 20 files
 
 
+def _analyze_component(file_path: str, content: str) -> dict:
+    """Extract component info for better test generation.
+    
+    Analyzes component source to extract:
+    - Component name
+    - Props interface  
+    - Data attributes (data-testid, data-slot, etc.)
+    - Whether it has skeleton/loading state
+    
+    Returns:
+        Dict with component analysis info
+    """
+    info = {
+        "name": "",
+        "props": [],
+        "data_attributes": [],
+        "has_skeleton": False,
+        "exports": [],
+    }
+    
+    # Extract component name from filename
+    filename = file_path.split("/")[-1].replace(".tsx", "").replace(".ts", "")
+    info["name"] = filename
+    
+    # Extract exports (export function X, export const X, export default)
+    export_patterns = [
+        r'export\s+(?:function|const)\s+(\w+)',
+        r'export\s+default\s+(?:function\s+)?(\w+)',
+        r'export\s+\{\s*([^}]+)\s*\}',
+    ]
+    for pattern in export_patterns:
+        matches = re.findall(pattern, content)
+        for match in matches:
+            if isinstance(match, str):
+                for name in match.split(","):
+                    name = name.strip()
+                    if name and name not in info["exports"]:
+                        info["exports"].append(name)
+    
+    # Extract props from interface/type (simplified)
+    # Look for: interface Props { ... } or type Props = { ... }
+    props_pattern = r'(?:interface|type)\s+\w*Props\w*\s*(?:=\s*)?\{([^}]+)\}'
+    props_match = re.search(props_pattern, content, re.DOTALL)
+    if props_match:
+        props_content = props_match.group(1)
+        # Extract property names
+        prop_names = re.findall(r'(\w+)\s*[?:]', props_content)
+        info["props"] = list(set(prop_names))[:10]  # Limit to 10 props
+    
+    # Extract data attributes used in JSX
+    data_attrs = re.findall(r'data-(\w+)(?:=|["\'])', content)
+    info["data_attributes"] = list(set(data_attrs))
+    
+    # Check for skeleton/loading patterns
+    if "skeleton" in content.lower() or "loading" in content.lower():
+        info["has_skeleton"] = True
+    
+    return info
+
+
+def _find_components_for_unit_test(workspace_path: str, keywords: list[str]) -> list[dict]:
+    """Find components specifically for unit testing with detailed analysis.
+    
+    Unlike _find_source_files_for_story which finds any matching file,
+    this function:
+    1. Focuses on component files (.tsx)
+    2. Excludes UI primitives (button, input, etc.)
+    3. Scores by keyword relevance
+    4. Analyzes each component for props, exports, data attributes
+    
+    Returns:
+        List of component info dicts with path, name, props, exports, data_attributes
+    """
+    from pathlib import Path
+    
+    path = Path(workspace_path)
+    if not path.exists():
+        return []
+    
+    components = []
+    
+    # Component directories to search (prioritized)
+    component_patterns = [
+        "src/components/**/*.tsx",
+        "components/**/*.tsx",
+        "src/app/**/components/**/*.tsx",
+    ]
+    
+    # UI primitives to exclude (these are too generic)
+    exclude_dirs = ["ui/", "primitives/", "icons/", "ui\\", "primitives\\", "icons\\"]
+    
+    for pattern in component_patterns:
+        for file_path in path.glob(pattern):
+            if "node_modules" not in str(file_path):
+                relative_path = str(file_path.relative_to(path)).replace("\\", "/")
+                
+                # Skip UI primitives
+                if any(ex in relative_path for ex in exclude_dirs):
+                    continue
+                
+                # Skip test files
+                if ".test." in relative_path or "__tests__" in relative_path:
+                    continue
+                
+                try:
+                    content = file_path.read_text(encoding="utf-8")
+                    content_lower = content.lower()
+                    filename_lower = relative_path.lower()
+                    
+                    # Score by keyword relevance
+                    score = 0
+                    for keyword in keywords:
+                        if keyword in content_lower:
+                            score += 1
+                        if keyword in filename_lower:
+                            score += 2  # Filename match is more relevant
+                    
+                    if score > 0:
+                        # Analyze component
+                        component_info = _analyze_component(relative_path, content)
+                        component_info["path"] = relative_path
+                        component_info["score"] = score
+                        components.append(component_info)
+                        
+                except Exception as e:
+                    logger.warning(f"[_find_components_for_unit_test] Failed to read {file_path}: {e}")
+    
+    # Sort by score (highest first) and limit
+    components.sort(key=lambda x: x.get("score", 0), reverse=True)
+    
+    logger.info(f"[_find_components_for_unit_test] Found {len(components)} relevant components")
+    return components[:10]  # Return top 10 most relevant
+
+
+def _format_component_context(components: list[dict]) -> str:
+    """Format component info for LLM context.
+    
+    Creates a structured summary of available components for unit testing.
+    """
+    if not components:
+        return "No specific components found for unit testing."
+    
+    lines = ["## Available Components for Unit Testing:\n"]
+    
+    for comp in components:
+        lines.append(f"### {comp.get('name', 'Unknown')}")
+        lines.append(f"- **Path**: `{comp.get('path', '')}`")
+        
+        if comp.get("exports"):
+            lines.append(f"- **Exports**: {', '.join(comp['exports'][:5])}")
+        
+        if comp.get("props"):
+            lines.append(f"- **Props**: {', '.join(comp['props'][:8])}")
+        
+        if comp.get("data_attributes"):
+            attrs = [f"data-{a}" for a in comp["data_attributes"][:5]]
+            lines.append(f"- **Data Attributes**: {', '.join(attrs)}")
+        
+        if comp.get("has_skeleton"):
+            lines.append("- **Has Loading/Skeleton**: Yes")
+        
+        lines.append("")
+    
+    lines.append("⚠️ ONLY use props and attributes listed above!")
+    
+    return "\n".join(lines)
+
+
 def _get_existing_routes(workspace_path: str) -> list[str]:
     """Scan project for existing API routes.
     
@@ -589,7 +757,54 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         # Use validated plan
         test_plan = validated_plan
         
-        # Re-number steps after filtering
+        # MANDATORY COVERAGE: Ensure both integration AND unit tests exist
+        has_integration = any(s["type"] == "integration" for s in test_plan)
+        has_unit = any(s["type"] == "unit" for s in test_plan)
+        
+        # Get story info for auto-generating missing test type
+        if test_plan and (not has_integration or not has_unit):
+            first_story = stories[0] if stories else {}
+            story_title = first_story.get("title", "Unknown Story")
+            slug = _slugify(story_title)
+            
+            if not has_integration:
+                # Add integration test
+                logger.info(f"[plan_tests] Auto-adding integration test for coverage")
+                test_plan.append({
+                    "type": "integration",
+                    "story_id": first_story.get("id", ""),
+                    "story_title": story_title,
+                    "file_path": f"{integration_folder}/story-{slug}.test.ts",
+                    "description": f"Test API endpoints related to: {story_title[:50]}",
+                    "scenarios": [
+                        "returns success response with valid data",
+                        "returns empty array when no data found",
+                        "handles error gracefully"
+                    ],
+                    "skills": ["integration-test"],
+                    "dependencies": [],
+                })
+            
+            if not has_unit:
+                # Add unit test
+                logger.info(f"[plan_tests] Auto-adding unit test for coverage")
+                test_plan.append({
+                    "type": "unit",
+                    "story_id": first_story.get("id", ""),
+                    "story_title": story_title,
+                    "file_path": f"{unit_folder}/story-{slug}.test.tsx",
+                    "description": f"Test UI component related to: {story_title[:50]}",
+                    "scenarios": [
+                        "renders correctly with props",
+                        "displays data from API",
+                        "handles loading state",
+                        "handles empty state"
+                    ],
+                    "skills": ["unit-test"],
+                    "dependencies": [],
+                })
+        
+        # Re-number steps after filtering and adding
         for i, step in enumerate(test_plan):
             step["order"] = i + 1
         
@@ -600,6 +815,12 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         workspace_path = state.get("workspace_path", "") or project_path
         dependencies_content = _preload_test_dependencies(workspace_path, test_plan, stories)
         logger.info(f"[plan_tests] Pre-loaded {len(dependencies_content)} dependency files")
+        
+        # Find and analyze components for unit tests (targeted discovery)
+        keywords = _extract_keywords_from_stories(stories) if stories else []
+        unit_test_components = _find_components_for_unit_test(workspace_path, keywords)
+        component_context = _format_component_context(unit_test_components)
+        logger.info(f"[plan_tests] Analyzed {len(unit_test_components)} components for unit tests")
         
         # Build message
         msg = f"📋 **Test Plan** ({total_steps} bước)\n"
@@ -617,6 +838,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             "test_plan": test_plan,
             "testing_context": testing_context,
             "dependencies_content": dependencies_content,
+            "component_context": component_context,
             "total_steps": total_steps,
             "current_step": 0,
             "review_count": 0,

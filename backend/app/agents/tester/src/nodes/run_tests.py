@@ -53,7 +53,7 @@ def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dic
     
     Always runs tests for specific files only (story's test files).
     Does NOT run entire test suite.
-    Only integration tests supported (no e2e).
+    Supports both integration tests (.test.ts) and unit tests (.test.tsx).
     
     Args:
         project_path: Path to workspace
@@ -63,8 +63,9 @@ def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dic
     """
     commands = []
     
-    # Filter valid integration test files only
+    # Filter valid test files - both integration (.test.ts) and unit (.test.tsx)
     integration_files = []
+    unit_files = []
     
     for file_path in test_files:
         if not file_path:
@@ -75,16 +76,17 @@ def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dic
             logger.warning(f"[_detect_test_commands] File not found: {file_path}")
             continue
         
-        # Only accept .test.ts files (integration tests)
+        # Categorize by extension
         if file_path.endswith('.test.ts'):
             integration_files.append(file_path)
+        elif file_path.endswith('.test.tsx'):
+            unit_files.append(file_path)
     
     pm, run_cmd = _detect_package_manager(project_path)
     
-    # Integration tests command - always use specific files
+    # Integration tests command
     if integration_files:
         files_arg = " ".join(f'"{f}"' for f in integration_files)
-        # Always run jest with specific files, not entire suite
         cmd = f"pnpm exec jest {files_arg} --passWithNoTests"
         
         commands.append({
@@ -93,6 +95,18 @@ def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dic
             "files": integration_files,
         })
         logger.info(f"[_detect_test_commands] Integration: {cmd}")
+    
+    # Unit tests command
+    if unit_files:
+        files_arg = " ".join(f'"{f}"' for f in unit_files)
+        cmd = f"pnpm exec jest {files_arg} --passWithNoTests"
+        
+        commands.append({
+            "type": "unit",
+            "command": cmd,
+            "files": unit_files,
+        })
+        logger.info(f"[_detect_test_commands] Unit: {cmd}")
     
     return commands
 
@@ -137,20 +151,20 @@ def _run_typecheck(project_path: Path, test_files: list[str]) -> dict | None:
     if not test_files:
         return None
     
-    # Filter integration test files only (Jest handles these)
-    integration_files = [
+    # Filter all test files (both .test.ts and .test.tsx)
+    valid_test_files = [
         f for f in test_files 
-        if f and f.endswith('.test.ts') and (project_path / f).exists()
+        if f and (f.endswith('.test.ts') or f.endswith('.test.tsx')) and (project_path / f).exists()
     ]
     
-    if not integration_files:
-        logger.info("[_run_typecheck] No integration test files to check")
+    if not valid_test_files:
+        logger.info("[_run_typecheck] No test files to check")
         return None
     
     try:
-        files_arg = " ".join(f'"{f}"' for f in integration_files)
+        files_arg = " ".join(f'"{f}"' for f in valid_test_files)
         # Use Jest to compile - it has moduleNameMapper configured for @/* paths
-        cmd = f"pnpm exec jest {files_arg} --passWithNoTests --no-coverage --testPathIgnorePatterns=[]"
+        cmd = f"pnpm exec jest {files_arg} --passWithNoTests --no-coverage"
         
         logger.info(f"[_run_typecheck] Running: {cmd}")
         
@@ -224,19 +238,19 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     # 2. files_modified - tracks all files modified during this session
     # 3. test_plan - current plan (may be incomplete after analyze_errors)
     # This ensures we don't lose track of test files after error fixing
-    # Note: Only integration tests (.test.ts) supported - no e2e
+    # Supports both integration tests (.test.ts) and unit tests (.test.tsx)
     
     test_files_set = set()
     
     # From files_created/modified (primary source - always complete)
     for f in state.get("files_created", []) + state.get("files_modified", []):
-        if f and f.endswith('.test.ts'):
+        if f and (f.endswith('.test.ts') or f.endswith('.test.tsx')):
             test_files_set.add(f)
     
     # From test_plan (backup source)
     for step in state.get("test_plan", []):
         file_path = step.get("file_path", "")
-        if file_path and file_path.endswith('.test.ts'):
+        if file_path and (file_path.endswith('.test.ts') or file_path.endswith('.test.tsx')):
             test_files_set.add(file_path)
     
     all_test_files = list(test_files_set)

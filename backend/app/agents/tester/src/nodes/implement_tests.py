@@ -287,6 +287,13 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
     # Append pre-loaded context and feedback (load ALL dependencies)
     if deps_context:
         user_prompt += f"\n\n{deps_context}"
+    
+    # Add component context for unit tests (helps with correct selectors/props)
+    if test_type == "unit":
+        component_context = state.get("component_context", "")
+        if component_context:
+            user_prompt += f"\n\n<component_analysis>\n{component_context}\n</component_analysis>"
+    
     if feedback_section:
         user_prompt += f"\n\n{feedback_section}"
 
