@@ -153,12 +153,17 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     console.log('[WorkspacePanel] Agents loading:', agentsLoading)
     console.log('[WorkspacePanel] WebSocket agent statuses:', agentStatuses)
 
-    if (!projectAgents || !projectAgents.length) {
+    // Handle both { data: [...] } and direct array response
+    const agentsList: AgentPublic[] = Array.isArray(projectAgents) 
+      ? projectAgents 
+      : (projectAgents?.data || [])
+
+    if (!agentsList.length) {
       console.log('[WorkspacePanel] No agents to display')
       return []
     }
 
-    const items = projectAgents.map((agent) => {
+    const items = agentsList.map((agent: AgentPublic) => {
       // Lấy status từ WebSocket (real-time), fallback về database nếu chưa có
       const wsStatus = agentStatuses?.get(agent.human_name)
       const displayStatus = wsStatus?.status || agent.status || 'idle'
