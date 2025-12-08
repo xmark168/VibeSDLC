@@ -14,6 +14,7 @@ from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.core_nodes import send_message
 from app.agents.tester.src.utils.token_utils import truncate_error_logs
 from app.agents.tester.src._llm import analyze_llm
+from app.agents.tester.src.nodes.plan_tests import _get_existing_routes
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,50 @@ def _parse_json(content: str) -> dict:
         raise e
 
 
+def _is_test_file(file_path: str) -> bool:
+    """Check if file_path is a test file (not source code).
+    
+    Test files must contain one of:
+    - __tests__/
+    - .test.ts or .test.tsx
+    - .spec.ts or .spec.tsx
+    - e2e/
+    """
+    if not file_path:
+        return False
+    
+    path_lower = file_path.lower()
+    
+    # Must be a test file
+    test_indicators = [
+        "__tests__/",
+        ".test.ts",
+        ".test.tsx",
+        ".spec.ts",
+        ".spec.tsx",
+        "e2e/",
+        "/tests/",
+    ]
+    
+    is_test = any(ind in path_lower for ind in test_indicators)
+    
+    # Additional check: reject if it looks like source code
+    if not is_test:
+        # Check for source file patterns
+        source_patterns = [
+            "src/app/api/",  # API routes (without __tests__)
+            "src/components/",
+            "src/lib/",
+            "route.ts",
+            "page.tsx",
+            "layout.tsx",
+        ]
+        if any(pat in path_lower for pat in source_patterns):
+            return False
+    
+    return is_test
+
+
 def _sanitize_file_path(file_path: str, workspace_path: str = "") -> str:
     """Sanitize file_path from LLM to be relative to workspace.
     
@@ -296,6 +341,13 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     if debug_history:
         history_str = "\n".join(f"Attempt {i+1}: {h}" for i, h in enumerate(debug_history))
     
+    # Get workspace path and existing routes (same constraint as plan_tests)
+    workspace_path = state.get("workspace_path", "") or state.get("project_path", "")
+    existing_routes = []
+    if workspace_path:
+        existing_routes = _get_existing_routes(workspace_path)
+    existing_routes_text = "\n".join(f"- {r}" for r in existing_routes) if existing_routes else "No API routes found."
+    
     try:
         # Call LLM to analyze errors
         response = await _llm.ainvoke(
@@ -305,6 +357,7 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
                     "analyze_error",
                     error_logs=error_logs,
                     files_modified=", ".join(files_created + files_modified) or "None",
+                    existing_routes=existing_routes_text,
                     debug_count=debug_count + 1,
                     max_debug=max_debug,
                     debug_history=history_str or "First attempt",
@@ -317,11 +370,10 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
         root_cause = result.get("root_cause", "Unknown error")
         fix_steps = result.get("fix_steps", [])
         
-        # Get workspace_path for sanitization
-        workspace_path = state.get("workspace_path", "") or state.get("project_path", "")
-        
         # Build new test_plan from fix_steps with sanitized file paths
         new_test_plan = []
+        skipped_source_files = []
+        
         for i, step in enumerate(fix_steps):
             raw_file_path = step.get("file_path", "")
             sanitized_path = _sanitize_file_path(raw_file_path, workspace_path)
@@ -330,15 +382,25 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
             if not sanitized_path:
                 logger.warning(f"[analyze_errors] Skipping step with invalid path: {raw_file_path}")
                 continue
+            
+            # CRITICAL: Only allow test files, reject source files
+            if not _is_test_file(sanitized_path):
+                logger.warning(f"[analyze_errors] REJECTED source file (tester cannot modify): {sanitized_path}")
+                skipped_source_files.append(sanitized_path)
+                continue
                 
             new_test_plan.append({
-                "order": i + 1,
+                "order": len(new_test_plan) + 1,
                 "type": "fix",
                 "file_path": sanitized_path,
                 "description": step.get("description", "Fix error"),
                 "action": step.get("action", "modify"),
                 "scenarios": [],
             })
+        
+        # Log if any source files were rejected
+        if skipped_source_files:
+            logger.info(f"[analyze_errors] Rejected {len(skipped_source_files)} source files: {skipped_source_files}")
         
         # Update debug history
         new_history = debug_history.copy()

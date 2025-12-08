@@ -92,6 +92,10 @@ tasks:
       {stories}
       </stories>
       
+      <existing_api_routes>
+      {existing_routes}
+      </existing_api_routes>
+      
       <related_code>
       {related_code}
       </related_code>
@@ -103,6 +107,12 @@ tasks:
       <test_structure>
       {test_structure}
       </test_structure>
+      
+      <critical_constraint>
+      ONLY create tests for APIs listed in <existing_api_routes>.
+      DO NOT plan tests for features/routes that do not exist yet.
+      If a story requires code that is not implemented, SKIP that test.
+      </critical_constraint>
       
       Create test plan. Output JSON:
       {{
@@ -409,6 +419,29 @@ tasks:
       - Type error persists → Use `as any` to bypass (last resort)
       - Timeout persists → Increase timeout or skip flaky test
       </debug_strategy>
+      
+      <critical_constraint>
+      ## ONLY MODIFY TEST FILES!
+      You are a TESTER. You can ONLY create/modify test files.
+      
+      ALLOWED file paths (must contain):
+      - `__tests__/` → Jest test files
+      - `.test.ts` or `.test.tsx` → Jest test files
+      - `.spec.ts` or `.spec.tsx` → Playwright test files
+      - `e2e/` → E2E test files
+      
+      FORBIDDEN file paths (NEVER modify):
+      - `src/app/` (without __tests__) → Source code
+      - `src/components/` → Source code
+      - `src/lib/` → Source code
+      - `route.ts` (without .test) → API routes
+      - Any file without test/spec in name
+      
+      If the error is in SOURCE code (e.g., Response.json not working):
+      - DO NOT modify the source file
+      - Instead: Fix the TEST to mock the response correctly
+      - Or: Change test approach (use HTTP request instead of import)
+      </critical_constraint>
 
     user_prompt: |
       <error_logs>
@@ -419,11 +452,21 @@ tasks:
       {files_modified}
       </files_modified>
       
+      <existing_api_routes>
+      {existing_routes}
+      </existing_api_routes>
+      
       <attempt>#{debug_count}/{max_debug}</attempt>
       
       <previous_fixes>
       {debug_history}
       </previous_fixes>
+      
+      <critical_constraint>
+      ONLY import/reference APIs listed in <existing_api_routes>.
+      DO NOT create imports for routes that do not exist (e.g., /api/health/route).
+      If test needs a non-existent route, CHANGE the test approach (mock the response, use fetch with MSW).
+      </critical_constraint>
       
       Analyze error using the error code tables. Output JSON:
       {{

@@ -160,7 +160,8 @@ async def review(state: TesterState, agent=None) -> dict:
 
     # Get current step info
     step = test_plan[current_step]
-    file_path = step.get("file_path", "")
+    # Use actual file written by implement_tests, fallback to plan's file_path
+    file_path = state.get("last_implemented_file") or step.get("file_path", "")
     task_description = step.get("description", "")
     scenarios = step.get("scenarios", [])
 

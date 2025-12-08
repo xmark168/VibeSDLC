@@ -1,7 +1,6 @@
 """Prompt utilities for Tester graph."""
 
 import logging
-import re
 from pathlib import Path
 
 import yaml
@@ -34,9 +33,9 @@ def _safe_format(template: str, **kwargs) -> str:
     """
     result = template
     for key, value in kwargs.items():
-        # Only replace simple {key} patterns, not nested braces
-        pattern = r'\{' + re.escape(key) + r'\}'
-        result = re.sub(pattern, str(value), result)
+        # Simple string replacement - no regex special chars in replacement
+        placeholder = "{" + key + "}"
+        result = result.replace(placeholder, str(value))
     return result
 
 

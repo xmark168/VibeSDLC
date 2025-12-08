@@ -48,11 +48,15 @@ def _detect_package_manager(project_path: Path) -> tuple[str, str]:
     return ("bun", "bun run")
 
 
-def _detect_test_commands(project_path: Path, test_plan: list[dict]) -> list[dict]:
-    """Detect test commands based on test plan.
+def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dict]:
+    """Detect test commands based on test files.
     
     Always runs tests for specific files only (story's test files).
     Does NOT run entire test suite.
+    
+    Args:
+        project_path: Path to workspace
+        test_files: List of test file paths to run
     
     Returns list of {type, command, files} dicts.
     """
@@ -62,10 +66,7 @@ def _detect_test_commands(project_path: Path, test_plan: list[dict]) -> list[dic
     integration_files = []
     e2e_files = []
     
-    for step in test_plan:
-        test_type = step.get("type", "integration")
-        file_path = step.get("file_path", "")
-        
+    for file_path in test_files:
         if not file_path:
             continue
             
@@ -74,9 +75,10 @@ def _detect_test_commands(project_path: Path, test_plan: list[dict]) -> list[dic
             logger.warning(f"[_detect_test_commands] File not found: {file_path}")
             continue
         
-        if test_type == "e2e":
+        # Determine type by extension/path
+        if file_path.endswith('.spec.ts') or '/e2e/' in file_path or '\\e2e\\' in file_path:
             e2e_files.append(file_path)
-        else:
+        elif file_path.endswith('.test.ts'):
             integration_files.append(file_path)
     
     pm, run_cmd = _detect_package_manager(project_path)
@@ -240,16 +242,6 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     """
     print("[NODE] run_tests")
     
-    test_plan = state.get("test_plan", [])
-    
-    if not test_plan:
-        logger.info("[run_tests] No test plan, skipping")
-        return {
-            "run_status": "PASS",
-            "run_result": {"message": "No tests to run"},
-            "message": "Không có tests để chạy.",
-        }
-    
     # Use workspace_path (worktree) where files are written, not project_path from DB
     project_path = _get_workspace_path(state)
     if not project_path:
@@ -261,8 +253,36 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     
     logger.info(f"[run_tests] Using workspace: {project_path}")
     
-    # Collect all test files
-    all_test_files = [step.get("file_path", "") for step in test_plan if step.get("file_path")]
+    # Collect ALL test files from multiple sources:
+    # 1. files_created - tracks all files created during this session
+    # 2. files_modified - tracks all files modified during this session
+    # 3. test_plan - current plan (may be incomplete after analyze_errors)
+    # This ensures we don't lose track of test files after error fixing
+    
+    test_files_set = set()
+    
+    # From files_created/modified (primary source - always complete)
+    for f in state.get("files_created", []) + state.get("files_modified", []):
+        if f and (f.endswith('.test.ts') or f.endswith('.spec.ts')):
+            test_files_set.add(f)
+    
+    # From test_plan (backup source)
+    for step in state.get("test_plan", []):
+        file_path = step.get("file_path", "")
+        if file_path and (file_path.endswith('.test.ts') or file_path.endswith('.spec.ts')):
+            test_files_set.add(file_path)
+    
+    all_test_files = list(test_files_set)
+    
+    if not all_test_files:
+        logger.info("[run_tests] No test files to run")
+        return {
+            "run_status": "PASS",
+            "run_result": {"message": "No tests to run"},
+            "message": "Không có tests để chạy.",
+        }
+    
+    logger.info(f"[run_tests] Found {len(all_test_files)} test files: {all_test_files}")
     
     # Step 1: Run TypeCheck first
     logger.info("[run_tests] Running TypeScript check...")
@@ -292,8 +312,8 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     
     logger.info("[run_tests] TypeCheck passed")
     
-    # Step 2: Detect test commands
-    test_commands = _detect_test_commands(project_path, test_plan)
+    # Step 2: Detect test commands using all collected test files
+    test_commands = _detect_test_commands(project_path, all_test_files)
     
     if not test_commands:
         return {

@@ -12,6 +12,34 @@ description: Write integration tests with Jest for API routes and database opera
 - **READ SOURCE CODE FIRST** - Check actual exports, types, function signatures before writing tests
 - **DO NOT INVENT APIs** - Only test routes/functions that actually exist in the codebase
 
+## ⚠️ Response.json() NOT AVAILABLE IN JEST
+Jest runs in Node.js environment where `Response.json()` method doesn't exist!
+
+```typescript
+// ❌ WRONG - Will fail with "Response.json is not a function"
+import { GET } from '@/app/api/books/route';
+const response = await GET(request);
+const data = await response.json();  // ERROR!
+
+// ✅ CORRECT Option 1 - Use NextResponse from next/server
+import { NextResponse } from 'next/server';
+// Then test the response.body or mock at higher level
+
+// ✅ CORRECT Option 2 - Test the data layer directly instead of route
+import { prisma } from '@/lib/prisma';
+// Mock prisma and test the logic, not the HTTP layer
+
+// ✅ CORRECT Option 3 - Mock the entire route response
+jest.mock('@/app/api/books/route', () => ({
+  GET: jest.fn().mockResolvedValue({
+    status: 200,
+    json: async () => ({ books: [] }),
+  }),
+}));
+```
+
+**BEST PRACTICE:** For integration tests, mock at the database layer (Prisma) and test route handler logic. For full HTTP testing, use E2E tests with Playwright.
+
 ## ⚠️ TYPESCRIPT STRICT RULES
 ```typescript
 // ✅ CORRECT - Explicit types for ALL parameters

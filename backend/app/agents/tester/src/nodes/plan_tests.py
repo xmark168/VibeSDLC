@@ -201,6 +201,47 @@ def _find_source_files_for_story(workspace_path: str, keywords: list[str]) -> li
     return list(found_files)[:20]  # Limit to 20 files
 
 
+def _get_existing_routes(workspace_path: str) -> list[str]:
+    """Scan project for existing API routes.
+    
+    This ensures we only generate tests for code that actually exists,
+    preventing LLM from hallucinating imports for non-existent routes.
+    
+    Returns:
+        List of existing route paths (e.g., ["app/api/books/featured/route.ts"])
+    """
+    from pathlib import Path
+    
+    routes = []
+    path = Path(workspace_path)
+    
+    if not path.exists():
+        return routes
+    
+    # Check common API directories
+    api_dirs = [
+        path / "src" / "app" / "api",  # Next.js 13+ with src
+        path / "app" / "api",           # Next.js 13+ without src
+        path / "pages" / "api",         # Next.js pages router
+    ]
+    
+    for api_dir in api_dirs:
+        if api_dir.exists():
+            for route_file in api_dir.rglob("route.ts"):
+                if "node_modules" not in str(route_file):
+                    relative = route_file.relative_to(path)
+                    routes.append(str(relative).replace("\\", "/"))
+            
+            # Also check for pages API (older Next.js pattern)
+            for api_file in api_dir.rglob("*.ts"):
+                if "node_modules" not in str(api_file) and api_file.name != "route.ts":
+                    relative = api_file.relative_to(path)
+                    routes.append(str(relative).replace("\\", "/"))
+    
+    logger.info(f"[_get_existing_routes] Found {len(routes)} existing API routes")
+    return routes
+
+
 def _preload_test_dependencies(workspace_path: str, test_plan: list, stories: list = None) -> dict:
     """Pre-load source files that tests will need as context (MetaGPT-style).
     
@@ -439,6 +480,15 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
     else:
         related_code_text = "No related code found."
     
+    # Get workspace path (worktree or project path)
+    workspace_path = state.get("workspace_path") or project_path
+    
+    # Get existing API routes to constrain test planning
+    existing_routes = []
+    if workspace_path:
+        existing_routes = _get_existing_routes(workspace_path)
+    existing_routes_text = "\n".join(f"- {r}" for r in existing_routes) if existing_routes else "No API routes found."
+    
     try:
         # Call LLM to create test plan
         response = await _llm.ainvoke(
@@ -450,6 +500,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
                     related_code=related_code_text[:4000],
                     project_context=project_context[:2000] if project_context else "N/A",
                     test_structure=json.dumps(test_structure, indent=2),
+                    existing_routes=existing_routes_text,
                 )),
             ],
             config=_cfg(state, "plan_tests"),
