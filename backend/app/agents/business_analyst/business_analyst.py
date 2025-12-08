@@ -356,9 +356,19 @@ class BusinessAnalyst(BaseAgent):
         
         # Check for file attachments and combine with user message
         user_message = task.content
-        attachments = task.context.get("attachments", []) if task.context else []
+        # Note: use "or []" because attachments key may exist with None value
+        attachments = (task.context.get("attachments") or []) if task.context else []
         pre_collected_info = {}  # Pre-populated from document analysis
         document_is_comprehensive = False
+        
+        # Debug: Log task context
+        logger.info(f"[{self.name}] === TASK CONTEXT DEBUG ===")
+        logger.info(f"[{self.name}] task.context keys: {list(task.context.keys()) if task.context else 'None'}")
+        logger.info(f"[{self.name}] attachments count: {len(attachments)}")
+        if attachments:
+            for i, att in enumerate(attachments):
+                logger.info(f"[{self.name}] Attachment[{i}]: type={att.get('type')}, filename={att.get('filename')}, has_text={bool(att.get('extracted_text'))}, text_len={len(att.get('extracted_text', ''))}")
+        logger.info(f"[{self.name}] === END TASK CONTEXT DEBUG ===")
         
         if attachments:
             logger.info(f"[{self.name}] Found {len(attachments)} attachment(s) in task")
@@ -372,6 +382,7 @@ class BusinessAnalyst(BaseAgent):
                     doc_texts.append(f"[Tài liệu đính kèm: {filename}]\n{extracted}")
                     all_extracted_text += extracted + "\n\n"
                     logger.info(f"[{self.name}] Included document '{filename}' ({len(extracted)} chars)")
+                    logger.info(f"[{self.name}] Document preview (first 300 chars): {extracted[:300]}")
             
             if doc_texts:
                 # Combine user message with document content
@@ -382,8 +393,11 @@ class BusinessAnalyst(BaseAgent):
                 first_filename = attachments[0].get("filename", "document")
                 await self.message_user(
                     "response",
-                    f"📄 Đã nhận file **{first_filename}**. Đang phân tích nội dung tài liệu..."
+                    f"📄 Đã nhận file '{first_filename}'. Đang phân tích nội dung tài liệu..."
                 )
+                
+                # Show typing indicator while analyzing (response above clears it)
+                await self.message_user("thinking", "Đang phân tích tài liệu...")
                 
                 # Analyze document to extract requirements info
                 if len(all_extracted_text) > 500:  # Only analyze if document has substantial content
@@ -404,6 +418,8 @@ class BusinessAnalyst(BaseAgent):
                             "response",
                             f"✅ Tài liệu đầy đủ thông tin! Mình sẽ tạo PRD trực tiếp từ nội dung này."
                         )
+                        # Show typing indicator while generating PRD
+                        await self.message_user("thinking", "Đang tạo PRD...")
                     else:
                         missing = doc_analysis.get("missing_info", [])
                         if missing:
@@ -411,6 +427,8 @@ class BusinessAnalyst(BaseAgent):
                                 "response",
                                 f"📝 Đã trích xuất một số thông tin từ tài liệu. Mình cần hỏi thêm vài câu để làm rõ."
                             )
+                            # Show typing indicator while preparing questions
+                            await self.message_user("thinking", "Đang chuẩn bị câu hỏi...")
         
         # Add user message to shared memory
         self.context.add_message("user", task.content)  # Save original message to memory

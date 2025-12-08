@@ -137,6 +137,13 @@ tasks:
       4. **DOCUMENT + EXISTING PRD RULE:** If user uploads a document (message contains "[Tài liệu đính kèm:") AND existing PRD exists:
          - Default to "prd_update" (assume user wants to update based on document)
          - Only choose "prd_create" if user EXPLICITLY says "tạo mới", "tạo PRD mới", "bỏ PRD cũ"
+      5. **DOCUMENT UPLOAD WITHOUT PRD:** If user uploads a document (message contains "[Tài liệu đính kèm:") AND no existing PRD:
+         - If document looks like requirements/specs → "prd_create"
+         - If document is NOT requirements (meeting notes, general docs) → "interview" (ask what they want to do)
+         - NEVER classify as "conversational" if user explicitly asks to analyze the document
+      6. **"PHÂN TÍCH" WITH ATTACHMENT:** If user says "phân tích tài liệu", "analyze this", etc. with attachment:
+         - This is NOT conversational - user wants analysis
+         - Choose "interview" to ask what kind of analysis they need, OR "prd_create" if it's requirements
       
       **Available Intents:**
       - **conversational**: Greetings, thanks, casual chat NOT about product/project

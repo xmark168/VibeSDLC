@@ -300,15 +300,7 @@ async def respond_conversational(state: BAState, agent=None) -> dict:
         # Send response to user
         if agent:
             await agent.message_user("response", message)
-            
-            # Warning if user attached file but message was conversational
-            if state.get("has_attachments"):
-                logger.info("[BA] File attachment detected in conversational message, sending warning")
-                await agent.message_user(
-                    "response",
-                    "📎 Mình thấy bạn có đính kèm file. Nếu bạn muốn mình phân tích tài liệu này, "
-                    "hãy cho mình biết bạn cần gì nhé! Ví dụ: \"Tạo PRD từ file này\" hoặc \"Cập nhật PRD theo file\"."
-                )
+            # Note: Removed redundant warning about attachments - the main response should address document context
         
         logger.info(f"[BA] Conversational response sent: {message[:50]}...")
         
@@ -346,10 +338,27 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
         questions = parse_questions_response(response.content)
         logger.info(f"[BA] Generated {len(questions)} questions")
         
+        # If no questions generated, send fallback message to user
+        if not questions and agent:
+            logger.warning("[BA] No questions generated, sending fallback message")
+            await agent.message_user(
+                "response",
+                "📄 Mình đã xem qua tài liệu của bạn. Để phân tích chi tiết hơn, bạn có thể cho mình biết:\n"
+                "- Bạn muốn mình làm gì với tài liệu này? (tóm tắt, tạo PRD, trích xuất requirements...)\n"
+                "- Có điểm nào cụ thể bạn muốn mình tập trung phân tích không?"
+            )
+        
         return {"questions": questions}
         
     except Exception as e:
         logger.error(f"[BA] Failed to generate questions: {e}")
+        # Send fallback message on error
+        if agent:
+            await agent.message_user(
+                "response",
+                "📄 Mình đã nhận tài liệu của bạn. Bạn muốn mình làm gì với nội dung này? "
+                "Ví dụ: tạo PRD, tóm tắt, hay phân tích chi tiết?"
+            )
         return {"questions": [], "error": f"Failed to generate questions: {str(e)}"}
 
 
