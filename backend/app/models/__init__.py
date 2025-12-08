@@ -96,6 +96,9 @@ from app.models.billing import (
     Invoice,
 )
 
+# TechStack models
+from app.models.tech_stack import TechStack
+
 __all__ = [
     # SQLModel for alembic
     "SQLModel",
@@ -155,4 +158,6 @@ __all__ = [
     "CreditActivity",
     "Order",
     "Invoice",
+    # TechStack
+    "TechStack",
 ]

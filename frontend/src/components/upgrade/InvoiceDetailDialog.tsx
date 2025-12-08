@@ -41,7 +41,7 @@ export function InvoiceDetailDialog({
       case 'CANCELED':
         return 'text-red-500'
       default:
-        return 'text-slate-400'
+        return 'text-muted-foreground'
     }
   }
 
@@ -62,7 +62,7 @@ export function InvoiceDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl bg-slate-900 border-slate-800 text-white max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Receipt className="h-6 w-6 text-primary" />
@@ -77,21 +77,21 @@ export function InvoiceDetailDialog({
         ) : invoiceData ? (
           <div className="space-y-6">
             {/* Invoice Header */}
-            <div className="bg-secondary/30 rounded-lg p-6 space-y-4">
+            <div className="bg-muted rounded-lg p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-400">Số hóa đơn</p>
+                  <p className="text-sm text-muted-foreground">Số hóa đơn</p>
                   <p className="text-lg font-semibold font-mono">{invoiceData.invoice.invoice_number}</p>
                 </div>
                 <div className={`text-right ${getStatusColor(invoiceData.order.status)}`}>
-                  <p className="text-sm text-slate-400">Trạng thái</p>
+                  <p className="text-sm text-muted-foreground">Trạng thái</p>
                   <p className="text-lg font-semibold">{getStatusText(invoiceData.order.status)}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-slate-400 flex items-center gap-2">
+                  <p className="text-sm text-muted-foreground flex items-center gap-2">
                     <Calendar className="h-4 w-4" />
                     Ngày tạo
                   </p>
@@ -99,7 +99,7 @@ export function InvoiceDetailDialog({
                 </div>
                 {invoiceData.order.paid_at && (
                   <div>
-                    <p className="text-sm text-slate-400 flex items-center gap-2">
+                    <p className="text-sm text-muted-foreground flex items-center gap-2">
                       <Calendar className="h-4 w-4" />
                       Ngày thanh toán
                     </p>
@@ -112,13 +112,13 @@ export function InvoiceDetailDialog({
             {/* Billing Info */}
             <div className="space-y-3">
               <h3 className="font-semibold text-lg">Thông tin khách hàng</h3>
-              <div className="bg-secondary/20 rounded-lg p-4 space-y-2">
+              <div className="bg-muted rounded-lg p-4 space-y-2">
                 <div>
-                  <p className="text-sm text-slate-400">Tên</p>
+                  <p className="text-sm text-muted-foreground">Tên</p>
                   <p className="font-medium">{invoiceData.invoice.billing_name}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-slate-400">Địa chỉ</p>
+                  <p className="text-sm text-muted-foreground">Địa chỉ</p>
                   <p className="font-medium">{invoiceData.invoice.billing_address}</p>
                 </div>
               </div>
@@ -131,26 +131,26 @@ export function InvoiceDetailDialog({
                   <Package className="h-5 w-5" />
                   Chi tiết gói dịch vụ
                 </h3>
-                <div className="bg-secondary/20 rounded-lg p-4 space-y-3">
+                <div className="bg-muted rounded-lg p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Tên gói</span>
+                    <span className="text-muted-foreground">Tên gói</span>
                     <span className="font-semibold">{invoiceData.plan.name}</span>
                   </div>
                   {invoiceData.plan.description && (
                     <div className="flex items-start justify-between">
-                      <span className="text-slate-400">Mô tả</span>
+                      <span className="text-muted-foreground">Mô tả</span>
                       <span className="font-medium text-right max-w-xs">{invoiceData.plan.description}</span>
                     </div>
                   )}
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Chu kỳ</span>
+                    <span className="text-muted-foreground">Chu kỳ</span>
                     <span className="font-medium capitalize">
                       {invoiceData.order.billing_cycle === 'monthly' ? 'Hàng tháng' : 'Hàng năm'}
                     </span>
                   </div>
                   {invoiceData.plan.monthly_credits !== null && (
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Credits / tháng</span>
+                      <span className="text-muted-foreground">Credits / tháng</span>
                       <span className="font-medium">
                         {invoiceData.plan.monthly_credits === -1 ? 'Không giới hạn' : invoiceData.plan.monthly_credits.toLocaleString()}
                       </span>
@@ -158,7 +158,7 @@ export function InvoiceDetailDialog({
                   )}
                   {invoiceData.plan.available_project !== null && (
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Số dự án</span>
+                      <span className="text-muted-foreground">Số dự án</span>
                       <span className="font-medium">
                         {invoiceData.plan.available_project === -1 ? 'Không giới hạn' : invoiceData.plan.available_project}
                       </span>
@@ -174,10 +174,10 @@ export function InvoiceDetailDialog({
                 <CreditCard className="h-5 w-5" />
                 Thông tin thanh toán
               </h3>
-              <div className="bg-secondary/20 rounded-lg p-4 space-y-3">
+              <div className="bg-muted rounded-lg p-4 space-y-3">
                 {invoiceData.order.payos_order_code && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400 flex items-center gap-2">
+                    <span className="text-muted-foreground flex items-center gap-2">
                       <Hash className="h-4 w-4" />
                       Mã đơn hàng
                     </span>
@@ -186,7 +186,7 @@ export function InvoiceDetailDialog({
                 )}
                 {invoiceData.order.payos_transaction_id && (
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Mã giao dịch</span>
+                    <span className="text-muted-foreground">Mã giao dịch</span>
                     <span className="font-mono font-medium text-sm">{invoiceData.order.payos_transaction_id}</span>
                   </div>
                 )}
@@ -204,7 +204,7 @@ export function InvoiceDetailDialog({
             </div>
           </div>
         ) : (
-          <div className="text-center py-12 text-slate-400">
+          <div className="text-center py-12 text-muted-foreground">
             Không tìm thấy thông tin hóa đơn
           </div>
         )}

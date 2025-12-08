@@ -5,7 +5,7 @@ import {
   type PlanUpdate,
   type PlanFilters,
 } from "@/apis/plans"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 // ===== Query Keys =====
 export const planQueryKeys = {

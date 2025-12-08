@@ -20,7 +20,7 @@ import type {
   ExecutionContext,
 } from '@/types'
 import { AuthorType } from '@/types'
-import { toast } from 'sonner'
+import { toast } from "@/lib/toast"
 
 // ============================================================================
 // Helper Functions
@@ -366,9 +366,8 @@ export function useChatWebSocket(
       
       case 'notification':
         // Show as toast
-        toast.info(msg.content, {
-          description: `${msg.agent_name}${details.step ? ` - ${details.step}/${details.total}` : ''}`,
-        })
+        const stepInfo = details.step ? ` (${details.step}/${details.total})` : ''
+        toast.info(`${msg.agent_name}${stepInfo}: ${msg.content}`)
         break
       
       case 'none':
@@ -398,9 +397,7 @@ export function useChatWebSocket(
     
     if (displayMode === 'notification') {
       // Show as toast
-      toast.success(msg.content, {
-        description: msg.agent_name,
-      })
+      toast.success(`${msg.agent_name}: ${msg.content}`)
       return
     }
     

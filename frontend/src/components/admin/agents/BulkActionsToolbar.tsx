@@ -20,7 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useBulkTerminate, useBulkSetIdle, useBulkRestart } from "@/queries/agents"
 
 interface BulkActionsToolbarProps {
@@ -52,30 +52,22 @@ export function BulkActionsToolbar({
       switch (action) {
         case "terminate":
           result = await bulkTerminate.mutateAsync({ agentIds: selectedIds, graceful: true })
-          toast.success(result.message, {
-            description: `${result.success_count} succeeded, ${result.failed_count} failed`,
-          })
+          toast.success(`${result.message} (${result.success_count} succeeded, ${result.failed_count} failed)`)
           break
         case "set-idle":
           result = await bulkSetIdle.mutateAsync(selectedIds)
-          toast.success(result.message, {
-            description: `${result.success_count} succeeded, ${result.failed_count} failed`,
-          })
+          toast.success(`${result.message} (${result.success_count} succeeded, ${result.failed_count} failed)`)
           break
         case "restart":
           result = await bulkRestart.mutateAsync(selectedIds)
-          toast.success(result.message, {
-            description: `${result.success_count} succeeded, ${result.failed_count} failed`,
-          })
+          toast.success(`${result.message} (${result.success_count} succeeded, ${result.failed_count} failed)`)
           break
       }
       
       onClearSelection()
       onActionComplete?.()
     } catch (error: any) {
-      toast.error(`Bulk ${action} failed`, {
-        description: error.message,
-      })
+      toast.error(`Bulk ${action} failed: ${error.message}`)
     }
     
     setConfirmAction(null)

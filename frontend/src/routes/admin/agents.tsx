@@ -5,7 +5,6 @@ import {
   useAgentDashboard,
   useAgentPools,
   useAllAgentHealth,
-  useAgentAlerts,
   useSystemStats,
   useAgentExecutions,
   useCreatePool,
@@ -16,7 +15,6 @@ import {
   useStartMonitoring,
   useStopMonitoring,
   useMetricsTimeseries,
-  useMetricsAggregated,
   useTokenMetrics,
   useSystemStatus,
   useEmergencyPause,
@@ -28,8 +26,6 @@ import {
 import {
   type PoolResponse,
   type AgentHealth,
-  type Alert,
-  type AgentState,
   type AgentExecutionRecord,
   generateAgentDisplayName,
   getStateVariant,
@@ -80,7 +76,6 @@ import {
   MoreVertical,
   Play,
   Square,
-  AlertTriangle,
   CheckCircle,
   XCircle,
   Clock,
@@ -92,31 +87,17 @@ import {
   ChevronRight,
   Loader2,
   Heart,
-  Timer,
   History,
-  FileText,
-  BarChart3,
   Pause,
-  Power,
   Wrench,
-  RefreshCcw,
   ShieldAlert,
   Ban,
   Settings,
-  Scale,
-  FileCode,
 } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { formatDistanceToNow } from "date-fns"
-import {
-  AgentUtilizationChart,
-  ExecutionTrendsChart,
-  TokenUsageChart,
-  SuccessRateChart,
-  LLMCallsChart,
-} from "@/components/charts"
-import { TimeRangeSelector, type TimeRange, MetricCard } from "@/components/admin"
-import { PersonasTab, ActivityTab, AgentConfigDialog, BulkActionsToolbar, ScalingTab, TemplatesTab, SpawnAgentDialog } from "@/components/admin/agents"
+import { MetricCard } from "@/components/admin"
+import { PersonasTab, ActivityTab, AgentConfigDialog, BulkActionsToolbar, SpawnAgentDialog } from "@/components/admin/agents"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AdminLayout } from "@/components/admin/AdminLayout"
 
@@ -134,7 +115,6 @@ function AgentAdminPage() {
   const { data: dashboard, isLoading: dashboardLoading, refetch: refetchDashboard } = useAgentDashboard()
   const { data: pools, isLoading: poolsLoading } = useAgentPools()
   const { data: healthData, isLoading: healthLoading } = useAllAgentHealth()
-  const { data: alerts, isLoading: alertsLoading } = useAgentAlerts(50)
   const { data: executions, isLoading: executionsLoading } = useAgentExecutions({ limit: 100 })
   const { data: systemStats } = useSystemStats()
 
@@ -165,7 +145,7 @@ function AgentAdminPage() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-10">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="pools">
             <Server className="w-4 h-4 mr-2" />
             Pools
@@ -189,27 +169,6 @@ function AgentAdminPage() {
           <TabsTrigger value="executions">
             <History className="w-4 h-4 mr-2" />
             Executions
-          </TabsTrigger>
-          <TabsTrigger value="scaling">
-            <Scale className="w-4 h-4 mr-2" />
-            Scaling
-          </TabsTrigger>
-          <TabsTrigger value="templates">
-            <FileCode className="w-4 h-4 mr-2" />
-            Templates
-          </TabsTrigger>
-          <TabsTrigger value="analytics">
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Analytics
-          </TabsTrigger>
-          <TabsTrigger value="alerts">
-            <AlertTriangle className="w-4 h-4 mr-2" />
-            Alerts
-            {alerts && alerts.length > 0 && (
-              <Badge variant="destructive" className="ml-2 h-5 px-1.5">
-                {alerts.length}
-              </Badge>
-            )}
           </TabsTrigger>
         </TabsList>
 
@@ -235,22 +194,6 @@ function AgentAdminPage() {
 
         <TabsContent value="executions" className="mt-6">
           <ExecutionsTab executions={executions || []} isLoading={executionsLoading} />
-        </TabsContent>
-
-        <TabsContent value="scaling" className="mt-6">
-          <ScalingTab pools={pools || []} />
-        </TabsContent>
-
-        <TabsContent value="templates" className="mt-6">
-          <TemplatesTab pools={pools || []} />
-        </TabsContent>
-
-        <TabsContent value="analytics" className="mt-6">
-          <AnalyticsTab />
-        </TabsContent>
-
-        <TabsContent value="alerts" className="mt-6">
-          <AlertsTab alerts={alerts || []} isLoading={alertsLoading} />
         </TabsContent>
       </Tabs>
     </div>
@@ -1140,90 +1083,6 @@ function HealthTab({
   )
 }
 
-// ===== Alerts Tab =====
-function AlertsTab({
-  alerts,
-  isLoading,
-}: {
-  alerts: Alert[]
-  isLoading: boolean
-}) {
-  if (isLoading) {
-    return (
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center justify-center">
-            <Loader2 className="w-6 h-6 animate-spin" />
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  const getSeverityIcon = (severity: Alert["severity"]) => {
-    switch (severity) {
-      case "ERROR":
-        return <XCircle className="w-4 h-4 text-red-500" />
-      case "WARNING":
-        return <AlertTriangle className="w-4 h-4 text-yellow-500" />
-      case "INFO":
-        return <CheckCircle className="w-4 h-4 text-blue-500" />
-    }
-  }
-
-  const getSeverityBadge = (severity: Alert["severity"]) => {
-    switch (severity) {
-      case "ERROR":
-        return <Badge variant="destructive">{severity}</Badge>
-      case "WARNING":
-        return <Badge variant="secondary">{severity}</Badge>
-      case "INFO":
-        return <Badge variant="outline">{severity}</Badge>
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>System Alerts</CardTitle>
-        <CardDescription>{alerts.length} alerts recorded</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {alerts.length === 0 ? (
-          <div className="text-center text-muted-foreground py-6">
-            No alerts to display
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {alerts.map((alert, index) => (
-              <div
-                key={index}
-                className="flex items-start gap-4 p-4 border rounded-lg"
-              >
-                {getSeverityIcon(alert.severity)}
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    {getSeverityBadge(alert.severity)}
-                    <span className="text-sm text-muted-foreground">
-                      {alert.pool_name}
-                    </span>
-                    <span className="text-sm text-muted-foreground">
-                      {formatDistanceToNow(new Date(alert.timestamp), {
-                        addSuffix: true,
-                      })}
-                    </span>
-                  </div>
-                  <p className="text-sm">{alert.message}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
 // ===== Executions Tab =====
 function ExecutionsTab({
   executions,
@@ -1395,134 +1254,6 @@ function ExecutionsTab({
         )}
       </CardContent>
     </Card>
-  )
-}
-
-// ===== Analytics Tab =====
-function AnalyticsTab() {
-  const [timeRange, setTimeRange] = useState<TimeRange>("24h")
-  const [selectedPool, setSelectedPool] = useState<string | undefined>()
-
-  // Fetch metrics data
-  const { data: utilizationData } = useMetricsTimeseries(
-    { metric_type: "utilization", time_range: timeRange, pool_name: selectedPool },
-    { refetchInterval: 60000 }
-  )
-
-  const { data: executionData } = useMetricsTimeseries(
-    { metric_type: "executions", time_range: timeRange, pool_name: selectedPool },
-    { refetchInterval: 60000 }
-  )
-
-  const { data: tokenData } = useTokenMetrics({ time_range: timeRange })
-
-  return (
-    <div className="space-y-6">
-      {/* Controls */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Analytics & Metrics</h2>
-        <div className="flex items-center gap-4">
-          <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
-        </div>
-      </div>
-
-      {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Agent Utilization Chart */}
-        {utilizationData && (
-          <AgentUtilizationChart
-            data={utilizationData.data.map((d) => ({
-              timestamp: d.timestamp,
-              idle: (d as any).idle || 0,
-              busy: (d as any).busy || 0,
-              error: (d as any).error || 0,
-              total: (d as any).total || 0,
-            }))}
-          />
-        )}
-
-        {/* Execution Trends Chart */}
-        {executionData && (
-          <ExecutionTrendsChart
-            data={executionData.data.map((d) => ({
-              timestamp: d.timestamp,
-              total: (d as any).total || 0,
-              successful: (d as any).successful || 0,
-              failed: (d as any).failed || 0,
-              success_rate: (d as any).success_rate || 0,
-            }))}
-          />
-        )}
-
-        {/* Token Usage Chart */}
-        {tokenData && <TokenUsageChart data={tokenData.data} />}
-
-        {/* Success Rate Chart */}
-        {executionData && (
-          <SuccessRateChart
-            data={executionData.data.map((d) => ({
-              timestamp: d.timestamp,
-              success_rate: (d as any).success_rate || 0,
-              successful: (d as any).successful || 0,
-              failed: (d as any).failed || 0,
-            }))}
-            showArea={true}
-          />
-        )}
-
-        {/* LLM Calls Chart */}
-        {tokenData && (
-          <LLMCallsChart
-            data={tokenData.data.map((d) => ({
-              pool_name: d.pool_name,
-              llm_calls: d.total_llm_calls,
-              tokens: d.total_tokens,
-              avg_tokens_per_call: d.avg_tokens_per_call,
-            }))}
-          />
-        )}
-      </div>
-
-      {/* Summary Stats */}
-      {tokenData && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Summary Statistics</CardTitle>
-            <CardDescription>
-              Aggregated metrics for the selected time range ({timeRange})
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <div className="text-sm text-muted-foreground">Total Tokens</div>
-                <div className="text-2xl font-bold">
-                  {tokenData.summary.total_tokens.toLocaleString()}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">Total LLM Calls</div>
-                <div className="text-2xl font-bold">
-                  {tokenData.summary.total_llm_calls.toLocaleString()}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">Avg Tokens/Call</div>
-                <div className="text-2xl font-bold">
-                  {tokenData.summary.avg_tokens_per_call.toFixed(0)}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">Estimated Cost</div>
-                <div className="text-2xl font-bold">
-                  ${tokenData.summary.estimated_total_cost_usd.toFixed(4)}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
   )
 }
 

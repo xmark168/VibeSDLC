@@ -36,7 +36,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { agentsApi } from "@/apis/agents"
 

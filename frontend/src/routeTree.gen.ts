@@ -14,6 +14,7 @@ import { Route as AuthRouteRouteImport } from './routes/_auth/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AdminStacksRouteImport } from './routes/admin/stacks'
 import { Route as AdminPlansRouteImport } from './routes/admin/plans'
 import { Route as AdminAgentsRouteImport } from './routes/admin/agents'
 import { Route as UserUpgradeRouteImport } from './routes/_user/upgrade'
@@ -51,6 +52,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminStacksRoute = AdminStacksRouteImport.update({
+  id: '/admin/stacks',
+  path: '/admin/stacks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminPlansRoute = AdminPlansRouteImport.update({
@@ -145,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/plans': typeof AdminPlansRoute
+  '/admin/stacks': typeof AdminStacksRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin': typeof AdminIndexRoute
   '/chat/$chatId': typeof UserChatChatIdRoute
@@ -165,6 +172,7 @@ export interface FileRoutesByTo {
   '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/plans': typeof AdminPlansRoute
+  '/admin/stacks': typeof AdminStacksRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin': typeof AdminIndexRoute
   '/chat/$chatId': typeof UserChatChatIdRoute
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   '/_user/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
   '/admin/plans': typeof AdminPlansRoute
+  '/admin/stacks': typeof AdminStacksRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/': typeof AdminIndexRoute
   '/_user/chat/$chatId': typeof UserChatChatIdRoute
@@ -210,6 +219,7 @@ export interface FileRouteTypes {
     | '/upgrade'
     | '/admin/agents'
     | '/admin/plans'
+    | '/admin/stacks'
     | '/admin/users'
     | '/admin'
     | '/chat/$chatId'
@@ -230,6 +240,7 @@ export interface FileRouteTypes {
     | '/upgrade'
     | '/admin/agents'
     | '/admin/plans'
+    | '/admin/stacks'
     | '/admin/users'
     | '/admin'
     | '/chat/$chatId'
@@ -252,6 +263,7 @@ export interface FileRouteTypes {
     | '/_user/upgrade'
     | '/admin/agents'
     | '/admin/plans'
+    | '/admin/stacks'
     | '/admin/users'
     | '/admin/'
     | '/_user/chat/$chatId'
@@ -267,6 +279,7 @@ export interface RootRouteChildren {
   UserUpgradeRoute: typeof UserUpgradeRoute
   AdminAgentsRoute: typeof AdminAgentsRoute
   AdminPlansRoute: typeof AdminPlansRoute
+  AdminStacksRoute: typeof AdminStacksRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
   UserChatChatIdRoute: typeof UserChatChatIdRoute
@@ -308,6 +321,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/users'
       fullPath: '/admin/users'
       preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/stacks': {
+      id: '/admin/stacks'
+      path: '/admin/stacks'
+      fullPath: '/admin/stacks'
+      preLoaderRoute: typeof AdminStacksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/plans': {
@@ -453,6 +473,7 @@ const rootRouteChildren: RootRouteChildren = {
   UserUpgradeRoute: UserUpgradeRoute,
   AdminAgentsRoute: AdminAgentsRoute,
   AdminPlansRoute: AdminPlansRoute,
+  AdminStacksRoute: AdminStacksRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
   UserChatChatIdRoute: UserChatChatIdRoute,

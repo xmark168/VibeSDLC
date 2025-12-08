@@ -114,13 +114,23 @@ export function PersonaDialog({ open, onOpenChange, persona, onSuccess }: Person
 
   const onSubmit = async (data: PersonaFormValues) => {
     try {
+      // Ensure data is properly formatted before sending
+      const payload = {
+        name: data.name,
+        role_type: data.role_type,
+        personality_traits: data.personality_traits || [],
+        communication_style: data.communication_style,
+        display_order: data.display_order ?? 0,
+        persona_metadata: data.persona_metadata || {},
+      }
+
       if (isEditing) {
         await updatePersona.mutateAsync({
           personaId: persona.id,
-          data,
+          data: payload,
         })
       } else {
-        await createPersona.mutateAsync(data)
+        await createPersona.mutateAsync(payload)
       }
       onSuccess?.()
       onOpenChange(false)

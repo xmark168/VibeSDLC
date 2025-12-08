@@ -12,7 +12,7 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { storiesApi } from "@/apis/stories"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 interface InvestIssue {
   code: string

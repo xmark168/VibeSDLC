@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useSpawnAgent } from "@/queries/agents"
 import { useQuery } from "@tanstack/react-query"
 import { projectsApi } from "@/apis/projects"

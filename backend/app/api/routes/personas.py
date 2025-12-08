@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 from typing import Optional
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query, Body
 from sqlmodel import select, func
 
 from app.api.deps import SessionDep, get_current_user
@@ -134,30 +134,29 @@ def get_persona(
 @router.post("", response_model=PersonaResponse, status_code=status.HTTP_201_CREATED)
 def create_persona(
     session: SessionDep,
-    persona_data: PersonaCreate,
-    current_user: User = None,
+    data: PersonaCreate = Body(...),
 ):
     """Create a new persona template"""
     # Check for duplicate name + role_type combination
     existing = session.exec(
         select(AgentPersonaTemplate)
-        .where(AgentPersonaTemplate.name == persona_data.name)
-        .where(AgentPersonaTemplate.role_type == persona_data.role_type)
+        .where(AgentPersonaTemplate.name == data.name)
+        .where(AgentPersonaTemplate.role_type == data.role_type)
     ).first()
     
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Persona '{persona_data.name}' already exists for role type '{persona_data.role_type}'"
+            detail=f"Persona '{data.name}' already exists for role type '{data.role_type}'"
         )
     
-    persona = AgentPersonaTemplate(**persona_data.model_dump())
+    persona = AgentPersonaTemplate(**data.model_dump())
     session.add(persona)
     session.commit()
     session.refresh(persona)
     
     logger.info(
-        f"Created persona template: {persona.name} ({persona.role_type}) by {current_user.email if current_user else 'system'}"
+        f"Created persona template: {persona.name} ({persona.role_type})"
     )
     
     return persona
@@ -165,10 +164,9 @@ def create_persona(
 
 @router.put("/{persona_id}", response_model=PersonaResponse)
 def update_persona(
-    session: SessionDep,
     persona_id: UUID,
-    persona_update: PersonaUpdate,
-    current_user: User = None,
+    session: SessionDep,
+    data: PersonaUpdate = Body(...),
 ):
     """Update a persona template"""
     persona = session.get(AgentPersonaTemplate, persona_id)
@@ -180,9 +178,9 @@ def update_persona(
         )
     
     # Check for duplicate name + role if name or role is being changed
-    if persona_update.name or persona_update.role_type:
-        new_name = persona_update.name or persona.name
-        new_role = persona_update.role_type or persona.role_type
+    if data.name or data.role_type:
+        new_name = data.name or persona.name
+        new_role = data.role_type or persona.role_type
         
         if new_name != persona.name or new_role != persona.role_type:
             existing = session.exec(
@@ -199,7 +197,7 @@ def update_persona(
                 )
     
     # Update fields
-    update_data = persona_update.model_dump(exclude_unset=True)
+    update_data = data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(persona, key, value)
     
@@ -208,7 +206,7 @@ def update_persona(
     session.refresh(persona)
     
     logger.info(
-        f"Updated persona template: {persona.name} ({persona.id}) by {current_user.email if current_user else 'system'}"
+        f"Updated persona template: {persona.name} ({persona.id})"
     )
     
     return persona

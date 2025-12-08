@@ -37,8 +37,6 @@ from app.schemas import (
     UpdatePoolConfigRequest,
     AgentPoolMetricsPublic,
     CreatePoolRequestExtended,
-    ScalePoolRequest,
-    PoolSuggestion,
 )
 
 
@@ -683,19 +681,7 @@ async def get_dashboard_data(
     }
 
 
-@router.get("/monitor/alerts")
-async def get_alerts(
-    limit: int = Query(default=20, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Get recent monitoring alerts.
-
-    Note: Alerts tracking not yet implemented.
-    """
-    return []
-
-
-# ===== Metrics Endpoints for Analytics =====
+# ===== Metrics Endpoints =====
 
 @router.get("/metrics/timeseries")
 async def get_metrics_timeseries(
@@ -706,12 +692,9 @@ async def get_metrics_timeseries(
     pool_name: Optional[str] = Query(default=None, description="Filter by pool name"),
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Get time-series metrics data for visualizations.
-
-    Returns historical metrics snapshots for creating charts and graphs.
-    """
+    """Get time-series metrics data for visualizations."""
     from datetime import datetime, timezone, timedelta
-    from app.models import AgentMetricsSnapshot
+    from sqlalchemy import func
 
     # Parse time range
     time_map = {
@@ -727,50 +710,42 @@ async def get_metrics_timeseries(
 
     cutoff_time = datetime.now(timezone.utc) - time_map[time_range]
 
-    # Build query
-    query = select(AgentMetricsSnapshot).where(
-        AgentMetricsSnapshot.snapshot_timestamp >= cutoff_time
-    ).order_by(AgentMetricsSnapshot.snapshot_timestamp.asc())
+    # Query from AgentExecution for real data
+    query = select(
+        AgentExecution.created_at,
+        AgentExecution.status,
+        AgentExecution.token_used,
+        AgentExecution.llm_calls,
+    ).where(
+        AgentExecution.created_at >= cutoff_time
+    ).order_by(AgentExecution.created_at.asc())
 
-    if pool_name:
-        query = query.where(AgentMetricsSnapshot.pool_name == pool_name)
-
-    snapshots = session.exec(query).all()
+    results = session.exec(query).all()
 
     # Format data based on metric type
     data_points = []
-    for snapshot in snapshots:
+    for r in results:
         point = {
-            "timestamp": snapshot.snapshot_timestamp.isoformat(),
-            "pool_name": snapshot.pool_name,
+            "timestamp": r.created_at.isoformat() if r.created_at else None,
         }
 
         if metric_type == "utilization":
-            point["idle"] = snapshot.idle_agents
-            point["busy"] = snapshot.busy_agents
-            point["error"] = snapshot.error_agents
-            point["total"] = snapshot.total_agents
-            point["utilization_pct"] = snapshot.utilization_percentage or 0
+            point["total"] = 1
+            point["idle"] = 1 if r.status == AgentExecutionStatus.COMPLETED else 0
+            point["busy"] = 1 if r.status == AgentExecutionStatus.RUNNING else 0
         elif metric_type == "executions":
-            point["total"] = snapshot.total_executions
-            point["successful"] = snapshot.successful_executions
-            point["failed"] = snapshot.failed_executions
-            point["success_rate"] = (
-                (snapshot.successful_executions / snapshot.total_executions * 100)
-                if snapshot.total_executions > 0 else 0
-            )
+            point["total"] = 1
+            point["successful"] = 1 if r.status == AgentExecutionStatus.COMPLETED else 0
+            point["failed"] = 1 if r.status == AgentExecutionStatus.FAILED else 0
+            point["success_rate"] = 100 if r.status == AgentExecutionStatus.COMPLETED else 0
         elif metric_type == "tokens":
-            point["tokens"] = snapshot.total_tokens
-            point["llm_calls"] = snapshot.total_llm_calls
-            point["avg_duration_ms"] = snapshot.avg_execution_duration_ms
+            point["tokens"] = r.token_used or 0
+            point["llm_calls"] = r.llm_calls or 0
         elif metric_type == "success_rate":
-            point["total"] = snapshot.total_executions
-            point["successful"] = snapshot.successful_executions
-            point["failed"] = snapshot.failed_executions
-            point["success_rate"] = (
-                (snapshot.successful_executions / snapshot.total_executions * 100)
-                if snapshot.total_executions > 0 else 0
-            )
+            point["total"] = 1
+            point["successful"] = 1 if r.status == AgentExecutionStatus.COMPLETED else 0
+            point["failed"] = 1 if r.status == AgentExecutionStatus.FAILED else 0
+            point["success_rate"] = 100 if r.status == AgentExecutionStatus.COMPLETED else 0
         else:
             raise HTTPException(status_code=400, detail=f"Invalid metric_type: {metric_type}")
 
@@ -786,114 +761,6 @@ async def get_metrics_timeseries(
     }
 
 
-@router.get("/metrics/aggregated")
-async def get_metrics_aggregated(
-    session: SessionDep,
-    time_range: str = Query(default="24h", description="Time range: 1h, 6h, 24h, 7d, 30d"),
-    group_by: str = Query(default="pool", description="Group by: pool, hour, day"),
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Get aggregated metrics statistics.
-
-    Returns summarized metrics grouped by pool, time period, or agent type.
-    """
-    from datetime import datetime, timezone, timedelta
-    from sqlalchemy import and_, func
-    from app.models import AgentMetricsSnapshot
-
-    # Parse time range
-    time_map = {
-        "1h": timedelta(hours=1),
-        "6h": timedelta(hours=6),
-        "24h": timedelta(hours=24),
-        "7d": timedelta(days=7),
-        "30d": timedelta(days=30),
-    }
-
-    if time_range not in time_map:
-        raise HTTPException(status_code=400, detail=f"Invalid time_range: {time_range}")
-
-    cutoff_time = datetime.now(timezone.utc) - time_map[time_range]
-
-    # Build aggregation query based on group_by
-    if group_by == "pool":
-        # Aggregate by pool name
-        query = select(
-            AgentMetricsSnapshot.pool_name,
-            func.avg(AgentMetricsSnapshot.total_agents).label("avg_agents"),
-            func.avg(AgentMetricsSnapshot.utilization_percentage).label("avg_utilization"),
-            func.sum(AgentMetricsSnapshot.total_executions).label("total_executions"),
-            func.sum(AgentMetricsSnapshot.successful_executions).label("successful_executions"),
-            func.sum(AgentMetricsSnapshot.failed_executions).label("failed_executions"),
-            func.sum(AgentMetricsSnapshot.total_tokens).label("total_tokens"),
-            func.sum(AgentMetricsSnapshot.total_llm_calls).label("total_llm_calls"),
-            func.avg(AgentMetricsSnapshot.avg_execution_duration_ms).label("avg_duration_ms"),
-        ).where(
-            AgentMetricsSnapshot.snapshot_timestamp >= cutoff_time
-        ).group_by(
-            AgentMetricsSnapshot.pool_name
-        )
-
-        results = session.exec(query).all()
-
-        aggregated_data = []
-        for row in results:
-            total_exec = row.total_executions or 0
-            success_rate = (
-                (row.successful_executions / total_exec * 100) if total_exec > 0 else 0
-            )
-
-            aggregated_data.append({
-                "pool_name": row.pool_name,
-                "avg_agents": round(row.avg_agents or 0, 2),
-                "avg_utilization": round(row.avg_utilization or 0, 2),
-                "total_executions": total_exec,
-                "successful_executions": row.successful_executions or 0,
-                "failed_executions": row.failed_executions or 0,
-                "success_rate": round(success_rate, 2),
-                "total_tokens": row.total_tokens or 0,
-                "total_llm_calls": row.total_llm_calls or 0,
-                "avg_duration_ms": round(row.avg_duration_ms or 0, 2),
-            })
-
-        return {
-            "group_by": group_by,
-            "time_range": time_range,
-            "data": aggregated_data,
-            "count": len(aggregated_data),
-        }
-
-    elif group_by in ["hour", "day"]:
-        # Time-based aggregation
-        # Note: This is simplified - production code would use date_trunc
-        query = select(AgentMetricsSnapshot).where(
-            AgentMetricsSnapshot.snapshot_timestamp >= cutoff_time
-        ).order_by(AgentMetricsSnapshot.snapshot_timestamp.asc())
-
-        snapshots = session.exec(query).all()
-
-        # Group snapshots by time bucket
-        # Simplified implementation - just return raw snapshots for now
-        return {
-            "group_by": group_by,
-            "time_range": time_range,
-            "data": [
-                {
-                    "timestamp": s.snapshot_timestamp.isoformat(),
-                    "pool_name": s.pool_name,
-                    "total_agents": s.total_agents,
-                    "total_executions": s.total_executions,
-                    "total_tokens": s.total_tokens,
-                }
-                for s in snapshots
-            ],
-            "count": len(snapshots),
-        }
-
-    else:
-        raise HTTPException(status_code=400, detail=f"Invalid group_by: {group_by}")
-
-
 @router.get("/metrics/tokens")
 async def get_token_metrics(
     session: SessionDep,
@@ -901,13 +768,9 @@ async def get_token_metrics(
     group_by: str = Query(default="pool", description="Group by: pool, agent_type"),
     current_user: User = Depends(get_current_user),
 ) -> Any:
-    """Get token usage analytics.
-
-    Returns token consumption, LLM call counts, and cost estimates.
-    """
+    """Get token usage analytics."""
     from datetime import datetime, timezone, timedelta
-    from sqlalchemy import and_, func
-    from app.models import AgentMetricsSnapshot
+    from sqlalchemy import func
 
     # Parse time range
     time_map = {
@@ -923,7 +786,7 @@ async def get_token_metrics(
 
     cutoff_time = datetime.now(timezone.utc) - time_map[time_range]
 
-    # Query token usage from AgentExecution table (real data)
+    # Query token usage from AgentExecution table
     query = select(
         AgentExecution.agent_type,
         func.sum(AgentExecution.token_used).label("total_tokens"),
@@ -946,11 +809,12 @@ async def get_token_metrics(
         tokens = row.total_tokens or 0
         llm_calls = row.total_llm_calls or 0
 
-        # Rough cost estimate (using GPT-4 pricing as example: $0.03/1K tokens)
+        # Cost estimate (GPT-4 pricing: $0.03/1K tokens)
         estimated_cost = (tokens / 1000) * 0.03
 
         token_data.append({
             "agent_type": row.agent_type,
+            "pool_name": row.agent_type,  # Use agent_type as pool_name for compatibility
             "total_tokens": tokens,
             "total_llm_calls": llm_calls,
             "avg_tokens_per_call": round(tokens / llm_calls, 2) if llm_calls > 0 else 0,
@@ -962,11 +826,12 @@ async def get_token_metrics(
         total_tokens += tokens
         total_llm_calls += llm_calls
 
-    # Also get timeseries data for charts
+    # Timeseries data for charts
     timeseries_query = select(
         AgentExecution.created_at,
         AgentExecution.token_used,
         AgentExecution.llm_calls,
+        AgentExecution.agent_type,
     ).where(
         AgentExecution.created_at >= cutoff_time
     ).order_by(AgentExecution.created_at.asc())
@@ -978,6 +843,7 @@ async def get_token_metrics(
             "timestamp": r.created_at.isoformat() if r.created_at else None,
             "total_tokens": r.token_used or 0,
             "llm_calls": r.llm_calls or 0,
+            "pool_name": r.agent_type or "unknown",
         }
         for r in timeseries_results
     ]
@@ -1330,160 +1196,6 @@ async def get_pool_metrics_history(
     )
     
     return metrics
-
-
-@router.post("/pools/{pool_name}/scale")
-async def scale_pool(
-    pool_name: str,
-    request: ScalePoolRequest,
-    session: SessionDep,
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Scale pool to target agent count.
-    
-    Automatically spawns or terminates agents to reach target count.
-    Spawns idle agents first if available in DB, terminates idle agents first when scaling down.
-    """
-    manager = get_manager(pool_name)
-    current_count = len(manager.agents)
-    target_agents = request.target_agents
-    
-    if target_agents == current_count:
-        return {
-            "message": "Pool already at target",
-            "current_count": current_count,
-            "target_count": target_agents
-        }
-    
-    if target_agents > current_count:
-        # Scale up - spawn more agents
-        to_spawn = target_agents - current_count
-        spawned = 0
-        
-        # Get idle agents from DB that can be spawned
-        idle_agents = session.exec(
-            select(Agent).where(
-                Agent.pool_id == manager.pool_id,
-                Agent.status == AgentStatus.stopped
-            ).limit(to_spawn)
-        ).all()
-        
-        # Get role class map
-        role_class_map = ensure_role_class_map()
-        
-        for agent in idle_agents:
-            role_class = role_class_map.get(agent.role_type)
-            if not role_class:
-                continue
-            
-            try:
-                success = await manager.spawn_agent(
-                    agent_id=agent.id,
-                    role_class=role_class,
-                    heartbeat_interval=30,
-                    max_idle_time=300,
-                )
-                if success:
-                    spawned += 1
-            except Exception as e:
-                logger.error(f"Error spawning agent {agent.id}: {e}")
-        
-        return {
-            "message": f"Spawned {spawned} agents",
-            "current_count": current_count + spawned,
-            "target_count": target_agents,
-            "spawned": spawned
-        }
-    
-    else:
-        # Scale down - terminate excess agents
-        to_terminate = current_count - target_agents
-        terminated = 0
-        
-        # Get idle agents first
-        idle_agent_ids = [
-            agent_id for agent_id, agent in manager.agents.items()
-            if agent.state == AgentStatus.idle
-        ]
-        
-        # Terminate idle agents first
-        for agent_id in idle_agent_ids[:to_terminate]:
-            try:
-                success = await manager.terminate_agent(agent_id, graceful=True)
-                if success:
-                    terminated += 1
-            except Exception as e:
-                logger.error(f"Error terminating agent {agent_id}: {e}")
-        
-        # If still need to terminate more, terminate busy agents
-        if terminated < to_terminate:
-            remaining = to_terminate - terminated
-            all_agent_ids = list(manager.agents.keys())
-            
-            for agent_id in all_agent_ids[:remaining]:
-                if agent_id not in idle_agent_ids:  # Skip already terminated
-                    try:
-                        success = await manager.terminate_agent(agent_id, graceful=True)
-                        if success:
-                            terminated += 1
-                    except Exception as e:
-                        logger.error(f"Error terminating agent {agent_id}: {e}")
-        
-        return {
-            "message": f"Terminated {terminated} agents",
-            "current_count": current_count - terminated,
-            "target_count": target_agents,
-            "terminated": terminated
-        }
-
-
-@router.get("/pools/suggestions", response_model=List[PoolSuggestion])
-async def get_pool_suggestions(
-    session: SessionDep,
-    current_user: User = Depends(get_current_user),
-) -> Any:
-    """Get pool creation suggestions based on current load.
-    
-    Analyzes current pool loads and suggests creating new pools when:
-    - Existing pools are above 80% capacity
-    - Specific role types need dedicated pools
-    """
-    from app.agents.core.pool_helpers import get_pool_load, should_create_new_pool
-    
-    suggestions = []
-    
-    for manager in _manager_registry.values():
-        load = get_pool_load(manager)
-        
-        # Suggest overflow pool if above threshold
-        if should_create_new_pool(manager, threshold=0.8):
-            suggestions.append(PoolSuggestion(
-                reason=f"Pool '{manager.pool_name}' is at {load*100:.0f}% capacity",
-                recommended_pool_name=f"overflow_pool_{len(_manager_registry) + 1}",
-                role_type=None,  # Universal
-                estimated_agents=30
-            ))
-        
-        # Suggest role-specific pools if load is high
-        if load > 0.7 and manager.pool_name == "universal_pool":
-            # Analyze which role types are most used
-            role_counts: Dict[str, int] = {}
-            for agent in manager.agents.values():
-                role = getattr(agent, 'role_type', None)
-                if role:
-                    role_counts[role] = role_counts.get(role, 0) + 1
-            
-            # Suggest dedicated pool for roles with > 10 agents
-            for role, count in role_counts.items():
-                if count >= 10:
-                    suggestions.append(PoolSuggestion(
-                        reason=f"{count} {role} agents in universal pool - consider dedicated pool",
-                        recommended_pool_name=f"{role}_pool",
-                        role_type=role,
-                        estimated_agents=count + 5
-                    ))
-    
-    return suggestions
 
 
 # ===== Server-Sent Events (SSE) for Real-time Updates =====
@@ -2812,403 +2524,4 @@ async def trigger_auto_scaling_rule(
         }
 
 
-# ===== Phase 3: Agent Templates =====
 
-class AgentTemplate(BaseModel):
-    """Agent template for saving/restoring configurations."""
-    id: Optional[str] = None
-    name: str
-    description: Optional[str] = None
-    # Agent configuration
-    role_type: str
-    pool_name: str
-    # LLM Config
-    llm_config: Dict[str, Any] = {}
-    # Persona overrides
-    persona_name: Optional[str] = None
-    system_prompt_override: Optional[str] = None
-    # Resource limits
-    max_idle_time: int = 300
-    heartbeat_interval: int = 30
-    # Tags for organization
-    tags: List[str] = []
-    # Metadata
-    created_by: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    use_count: int = 0
-
-
-class AgentTemplateCreate(BaseModel):
-    """Request to create agent template."""
-    name: str
-    description: Optional[str] = None
-    role_type: str
-    pool_name: str = "universal_pool"
-    llm_config: Dict[str, Any] = {}
-    persona_name: Optional[str] = None
-    system_prompt_override: Optional[str] = None
-    max_idle_time: int = 300
-    heartbeat_interval: int = 30
-    tags: List[str] = []
-
-
-class AgentTemplateFromAgent(BaseModel):
-    """Request to create template from existing agent."""
-    agent_id: str
-    template_name: str
-    description: Optional[str] = None
-    tags: List[str] = []
-
-
-# In-memory storage for agent templates
-_agent_templates: Dict[str, AgentTemplate] = {}
-_template_id_counter = 0
-
-
-@router.get("/templates")
-async def list_agent_templates(
-    role_type: Optional[str] = None,
-    tag: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
-) -> List[AgentTemplate]:
-    """List all agent templates."""
-    templates = list(_agent_templates.values())
-    
-    if role_type:
-        templates = [t for t in templates if t.role_type == role_type]
-    
-    if tag:
-        templates = [t for t in templates if tag in t.tags]
-    
-    # Sort by use count (most used first)
-    templates.sort(key=lambda t: t.use_count, reverse=True)
-    
-    return templates
-
-
-@router.post("/templates")
-async def create_agent_template(
-    request: AgentTemplateCreate,
-    current_user: User = Depends(get_current_user),
-) -> AgentTemplate:
-    """Create a new agent template."""
-    global _template_id_counter
-    
-    # Validate role type
-    role_class_map = get_role_class_map()
-    if request.role_type not in role_class_map:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid role_type. Valid: {list(role_class_map.keys())}"
-        )
-    
-    _template_id_counter += 1
-    template_id = f"template_{_template_id_counter}"
-    
-    template = AgentTemplate(
-        id=template_id,
-        name=request.name,
-        description=request.description,
-        role_type=request.role_type,
-        pool_name=request.pool_name,
-        llm_config=request.llm_config,
-        persona_name=request.persona_name,
-        system_prompt_override=request.system_prompt_override,
-        max_idle_time=request.max_idle_time,
-        heartbeat_interval=request.heartbeat_interval,
-        tags=request.tags,
-        created_by=current_user.email,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
-    
-    _agent_templates[template_id] = template
-    logger.info(f"Agent template created by {current_user.email}: {template.name}")
-    
-    return template
-
-
-@router.post("/templates/from-agent")
-async def create_template_from_agent(
-    request: AgentTemplateFromAgent,
-    session: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> AgentTemplate:
-    """Create a template from an existing agent's configuration."""
-    global _template_id_counter
-    
-    # Find agent in database
-    agent_uuid = UUID(request.agent_id)
-    db_agent = session.get(Agent, agent_uuid)
-    
-    if not db_agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    
-    # Find which pool the agent is in
-    pool_name = "universal_pool"
-    for pname, manager in _manager_registry.items():
-        if agent_uuid in manager.agents:
-            pool_name = pname
-            break
-    
-    # Extract LLM config from persona metadata
-    llm_config = {}
-    if db_agent.persona_metadata:
-        llm_config = db_agent.persona_metadata.get("llm_config", {})
-    
-    _template_id_counter += 1
-    template_id = f"template_{_template_id_counter}"
-    
-    template = AgentTemplate(
-        id=template_id,
-        name=request.template_name,
-        description=request.description or f"Template from agent {db_agent.human_name}",
-        role_type=db_agent.role_type,
-        pool_name=pool_name,
-        llm_config=llm_config,
-        persona_name=db_agent.human_name,
-        system_prompt_override=db_agent.persona_metadata.get("system_prompt_override") if db_agent.persona_metadata else None,
-        tags=request.tags,
-        created_by=current_user.email,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
-    
-    _agent_templates[template_id] = template
-    logger.info(f"Agent template created from agent {request.agent_id} by {current_user.email}")
-    
-    return template
-
-
-@router.get("/templates/{template_id}")
-async def get_agent_template(
-    template_id: str,
-    current_user: User = Depends(get_current_user),
-) -> AgentTemplate:
-    """Get a specific agent template."""
-    if template_id not in _agent_templates:
-        raise HTTPException(status_code=404, detail="Template not found")
-    return _agent_templates[template_id]
-
-
-@router.put("/templates/{template_id}")
-async def update_agent_template(
-    template_id: str,
-    request: AgentTemplateCreate,
-    current_user: User = Depends(get_current_user),
-) -> AgentTemplate:
-    """Update an agent template."""
-    if template_id not in _agent_templates:
-        raise HTTPException(status_code=404, detail="Template not found")
-    
-    existing = _agent_templates[template_id]
-    
-    template = AgentTemplate(
-        id=template_id,
-        name=request.name,
-        description=request.description,
-        role_type=request.role_type,
-        pool_name=request.pool_name,
-        llm_config=request.llm_config,
-        persona_name=request.persona_name,
-        system_prompt_override=request.system_prompt_override,
-        max_idle_time=request.max_idle_time,
-        heartbeat_interval=request.heartbeat_interval,
-        tags=request.tags,
-        created_by=existing.created_by,
-        created_at=existing.created_at,
-        updated_at=datetime.utcnow(),
-        use_count=existing.use_count,
-    )
-    
-    _agent_templates[template_id] = template
-    logger.info(f"Agent template updated by {current_user.email}: {template.name}")
-    
-    return template
-
-
-@router.delete("/templates/{template_id}")
-async def delete_agent_template(
-    template_id: str,
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, str]:
-    """Delete an agent template."""
-    if template_id not in _agent_templates:
-        raise HTTPException(status_code=404, detail="Template not found")
-    
-    template = _agent_templates.pop(template_id)
-    logger.info(f"Agent template deleted by {current_user.email}: {template.name}")
-    
-    return {"message": f"Template '{template.name}' deleted"}
-
-
-@router.post("/templates/{template_id}/spawn")
-async def spawn_from_template(
-    template_id: str,
-    project_id: str,
-    count: int = 1,
-    session: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Dict[str, Any]:
-    """Spawn one or more agents from a template."""
-    if template_id not in _agent_templates:
-        raise HTTPException(status_code=404, detail="Template not found")
-    
-    template = _agent_templates[template_id]
-    
-    # Get manager
-    manager = _manager_registry.get(template.pool_name)
-    if not manager:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Pool '{template.pool_name}' not found"
-        )
-    
-    # Check capacity
-    available_slots = manager.max_agents - len(manager.agents)
-    if available_slots < count:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Not enough capacity. Available: {available_slots}, Requested: {count}"
-        )
-    
-    role_class_map = get_role_class_map()
-    role_class = role_class_map.get(template.role_type)
-    if not role_class:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid role_type in template: {template.role_type}"
-        )
-    
-    from app.services.persona_service import PersonaService
-    from app.services.agent_service import AgentService
-    
-    persona_service = PersonaService(session)
-    agent_service = AgentService(session)
-    project_uuid = UUID(project_id)
-    
-    results = []
-    success_count = 0
-    
-    for i in range(count):
-        try:
-            # Get persona
-            persona = persona_service.get_random_persona_for_role(
-                role_type=template.role_type,
-                exclude_ids=[]
-            )
-            
-            if not persona:
-                results.append({
-                    "index": i,
-                    "status": "error",
-                    "error": f"No persona found for {template.role_type}",
-                })
-                continue
-            
-            # Create agent
-            db_agent = agent_service.create_from_template(
-                project_id=project_uuid,
-                persona_template=persona
-            )
-            
-            # Apply template config
-            if template.llm_config or template.system_prompt_override:
-                if not db_agent.persona_metadata:
-                    db_agent.persona_metadata = {}
-                if template.llm_config:
-                    db_agent.persona_metadata["llm_config"] = template.llm_config
-                if template.system_prompt_override:
-                    db_agent.persona_metadata["system_prompt_override"] = template.system_prompt_override
-                session.add(db_agent)
-            
-            # Spawn agent
-            success = await manager.spawn_agent(
-                agent_id=db_agent.id,
-                role_class=role_class,
-                heartbeat_interval=template.heartbeat_interval,
-                max_idle_time=template.max_idle_time,
-            )
-            
-            if success:
-                success_count += 1
-                results.append({
-                    "index": i,
-                    "agent_id": str(db_agent.id),
-                    "agent_name": db_agent.human_name,
-                    "status": "spawned",
-                })
-            else:
-                session.delete(db_agent)
-                results.append({
-                    "index": i,
-                    "status": "spawn_failed",
-                    "error": "Failed to spawn agent",
-                })
-                
-        except Exception as e:
-            results.append({
-                "index": i,
-                "status": "error",
-                "error": str(e),
-            })
-    
-    session.commit()
-    
-    # Increment use count
-    template.use_count += success_count
-    
-    logger.info(
-        f"Spawned {success_count} agents from template '{template.name}' "
-        f"by {current_user.email}"
-    )
-    
-    return {
-        "message": f"Spawned {success_count} of {count} agents from template '{template.name}'",
-        "success_count": success_count,
-        "failed_count": count - success_count,
-        "results": results,
-        "template": template,
-    }
-
-
-@router.post("/templates/{template_id}/duplicate")
-async def duplicate_agent_template(
-    template_id: str,
-    new_name: str,
-    current_user: User = Depends(get_current_user),
-) -> AgentTemplate:
-    """Duplicate an existing template with a new name."""
-    global _template_id_counter
-    
-    if template_id not in _agent_templates:
-        raise HTTPException(status_code=404, detail="Template not found")
-    
-    source = _agent_templates[template_id]
-    
-    _template_id_counter += 1
-    new_template_id = f"template_{_template_id_counter}"
-    
-    template = AgentTemplate(
-        id=new_template_id,
-        name=new_name,
-        description=f"Copy of {source.name}" + (f": {source.description}" if source.description else ""),
-        role_type=source.role_type,
-        pool_name=source.pool_name,
-        llm_config=source.llm_config.copy(),
-        persona_name=source.persona_name,
-        system_prompt_override=source.system_prompt_override,
-        max_idle_time=source.max_idle_time,
-        heartbeat_interval=source.heartbeat_interval,
-        tags=source.tags.copy(),
-        created_by=current_user.email,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        use_count=0,
-    )
-    
-    _agent_templates[new_template_id] = template
-    logger.info(f"Agent template duplicated by {current_user.email}: {source.name} -> {new_name}")
-    
-    return template

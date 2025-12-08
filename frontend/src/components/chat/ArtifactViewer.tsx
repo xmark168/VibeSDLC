@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Check, X, Download, Copy, Loader2 } from 'lucide-react'
 import type { Artifact } from '@/apis/artifacts'
 import { artifactsApi } from '@/apis/artifacts'
-import { toast } from 'sonner'
+import { toast } from "@/lib/toast"
 
 interface ArtifactViewerProps {
   artifact: Artifact

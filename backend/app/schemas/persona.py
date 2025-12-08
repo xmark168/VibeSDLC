@@ -3,7 +3,7 @@
 from uuid import UUID
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PersonaBase(BaseModel):
@@ -14,6 +14,27 @@ class PersonaBase(BaseModel):
     communication_style: str = Field(..., min_length=1, max_length=500)
     persona_metadata: dict = Field(default_factory=dict)
     display_order: int = Field(default=0, ge=0)
+
+    @field_validator('personality_traits', mode='before')
+    @classmethod
+    def ensure_personality_traits_list(cls, v):
+        if v is None:
+            return []
+        return v
+
+    @field_validator('persona_metadata', mode='before')
+    @classmethod
+    def ensure_persona_metadata_dict(cls, v):
+        if v is None:
+            return {}
+        return v
+
+    @field_validator('display_order', mode='before')
+    @classmethod
+    def ensure_display_order_int(cls, v):
+        if v is None:
+            return 0
+        return v
 
 
 class PersonaCreate(PersonaBase):

@@ -189,17 +189,13 @@ class Settings(BaseSettings):
     PAYOS_CLIENT_ID: str = ""
     PAYOS_API_KEY: str = ""
     PAYOS_CHECKSUM_KEY: str = ""
-    PAYOS_WEBHOOK_SECRET: str = (
-        ""  # Optional: only needed for webhook signature verification
-    )
+    PAYOS_WEBHOOK_SECRET: str = ""
 
-    # PAYOS PAYMENT GATEWAY SETTINGS
-    PAYOS_CLIENT_ID: str = ""
-    PAYOS_API_KEY: str = ""
-    PAYOS_CHECKSUM_KEY: str = ""
-    PAYOS_WEBHOOK_SECRET: str = (
-        ""  # Optional: only needed for webhook signature verification
-    )
+    # SEPAY PAYMENT GATEWAY SETTINGS
+    SEPAY_API_KEY: str = ""
+    SEPAY_BANK_CODE: str = "MBBank"
+    SEPAY_ACCOUNT_NUMBER: str = "0377580457"
+    SEPAY_API_URL: str = "https://my.sepay.vn/userapi"
 
     @model_validator(mode="after")
     def _set_default_emails_from(self) -> Self:

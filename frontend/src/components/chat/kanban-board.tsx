@@ -23,7 +23,7 @@ import { CreateStoryDialog, type StoryFormData } from "./create-story-dialog"
 import { useKanbanBoard } from "@/queries/backlog-items"
 import { backlogItemsApi } from "@/apis/backlog-items"
 import { storiesApi } from "@/apis/stories"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 import { useQueryClient } from "@tanstack/react-query"
 
 interface KanbanBoardProps {

@@ -8,10 +8,13 @@ import { formatPrice } from "@/apis/plans"
 import { InvoiceConfirmDialog } from "@/components/upgrade/InvoiceConfirmDialog"
 import { InvoiceDetailDialog } from "@/components/upgrade/InvoiceDetailDialog"
 import { CreditPurchaseDialog } from "@/components/upgrade/CreditPurchaseDialog"
+import { SePayQRDialog } from "@/components/upgrade/SePayQRDialog"
 import { useCreatePaymentLink, usePaymentHistory } from "@/queries/payments"
 import { paymentsApi } from "@/apis/payments"
+import { sepayApi } from "@/apis/sepay"
 import { useCurrentSubscription } from "@/queries/subscription"
 import type { Plan } from "@/types/plan"
+import type { SePayQRResponse } from "@/types/sepay"
 import toast from "react-hot-toast"
 import { useQueryClient } from "@tanstack/react-query"
 import { format } from "date-fns"
@@ -60,6 +63,10 @@ function RouteComponent() {
   // Invoice detail dialog state
   const [invoiceDetailOpen, setInvoiceDetailOpen] = useState(false)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+
+  // SePay QR dialog state
+  const [sepayDialogOpen, setSepayDialogOpen] = useState(false)
+  const [sepayQRData, setSepayQRData] = useState<SePayQRResponse | null>(null)
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
@@ -221,45 +228,40 @@ function RouteComponent() {
     setInvoiceDialogOpen(true)
   }
 
-  // Handle payment confirmation - create order and redirect to PayOS
-  const handlePaymentConfirm = async (autoRenew: boolean) => {
+  // Handle payment confirmation - create SePay QR code
+  const handlePaymentConfirm = async () => {
     if (!selectedPlan) return
 
     try {
-      const paymentData = await createPayment.mutateAsync({
+      const qrData = await sepayApi.createPayment({
         plan_id: selectedPlan.id,
         billing_cycle: billingCycle,
-        auto_renew: autoRenew,
+        auto_renew: false,
       })
 
-      // Close dialog
+      // Close invoice dialog and open SePay QR dialog
       setInvoiceDialogOpen(false)
-
-      // Show loading message
-      const loadingToast = toast.loading("Đang chuyển đến trang thanh toán...", {
-        style: {
-          background: '#1e293b',
-          color: '#fff',
-          border: '1px solid #334155',
-        },
-      })
-
-      // Redirect to PayOS checkout page (same window)
-      setTimeout(() => {
-        toast.dismiss(loadingToast)
-        window.location.href = paymentData.checkout_url
-      }, 1000)
+      setSepayQRData(qrData)
+      setSepayDialogOpen(true)
     } catch (error) {
-      // Error is handled by the mutation hook
       console.error('Payment creation failed:', error)
-      toast.error('Có lỗi xảy ra khi tạo thanh toán', {
-        style: {
-          background: '#1e293b',
-          color: '#fff',
-          border: '1px solid #334155',
-        },
-      })
+      toast.error('Có lỗi xảy ra khi tạo thanh toán')
     }
+  }
+
+  // Handle SePay payment success
+  const handleSepaySuccess = () => {
+    setSepayDialogOpen(false)
+    setSepayQRData(null)
+    // Invalidate subscription query to refetch user's new subscription
+    queryClient.invalidateQueries({ queryKey: ['subscription', 'current'] })
+    queryClient.invalidateQueries({ queryKey: ['payments', 'history'] })
+  }
+
+  // Handle SePay payment cancel
+  const handleSepayCancel = () => {
+    setSepayDialogOpen(false)
+    setSepayQRData(null)
   }
 
   // Handle credit purchase confirmation
@@ -267,34 +269,17 @@ function RouteComponent() {
     setIsPurchasingCredit(true)
 
     try {
-      const paymentData = await paymentsApi.purchaseCredits(creditAmount)
-
-      // Close dialog
-      setCreditPurchaseDialogOpen(false)
-
-      // Show loading message
-      const loadingToast = toast.loading("Đang chuyển đến trang thanh toán...", {
-        style: {
-          background: '#1e293b',
-          color: '#fff',
-          border: '1px solid #334155',
-        },
+      const qrData = await sepayApi.createCreditPurchase({
+        credit_amount: creditAmount,
       })
 
-      // Redirect to PayOS checkout page
-      setTimeout(() => {
-        toast.dismiss(loadingToast)
-        window.location.href = paymentData.checkout_url
-      }, 1000)
+      // Close credit dialog and open SePay QR dialog
+      setCreditPurchaseDialogOpen(false)
+      setSepayQRData(qrData)
+      setSepayDialogOpen(true)
     } catch (error: any) {
       console.error('Credit purchase failed:', error)
-      toast.error(error?.body?.detail || 'Có lỗi xảy ra khi mua credits', {
-        style: {
-          background: '#1e293b',
-          color: '#fff',
-          border: '1px solid #334155',
-        },
-      })
+      toast.error(error?.body?.detail || 'Có lỗi xảy ra khi mua credits')
     } finally {
       setIsPurchasingCredit(false)
     }
@@ -818,6 +803,15 @@ function RouteComponent() {
         open={invoiceDetailOpen}
         onOpenChange={setInvoiceDetailOpen}
         orderId={selectedOrderId}
+      />
+
+      {/* SePay QR Dialog */}
+      <SePayQRDialog
+        open={sepayDialogOpen}
+        onOpenChange={setSepayDialogOpen}
+        qrData={sepayQRData}
+        onSuccess={handleSepaySuccess}
+        onCancel={handleSepayCancel}
       />
     </div>
   )
