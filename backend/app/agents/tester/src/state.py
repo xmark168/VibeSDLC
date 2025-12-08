@@ -4,6 +4,8 @@ from typing import TypedDict, Any, Literal, Dict, Optional, List
 
 Action = Literal["PLAN_TESTS", "TEST_STATUS", "CONVERSATION"]
 
+# Note: E2E tests removed - only integration tests supported
+
 
 class TesterState(TypedDict, total=False):
     """State for Tester LangGraph (MetaGPT-style)."""

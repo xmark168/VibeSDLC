@@ -6,6 +6,10 @@ This simulates the exact flow when a story is moved to REVIEW in the frontend:
 1. Query stories from DB in REVIEW status
 2. Create task context like the router does
 3. Run tester agent's handle_task method
+
+Supports:
+- Integration tests (API routes, DB operations) → src/__tests__/integration/
+- Unit tests (Components, utilities, hooks) → src/__tests__/unit/
 """
 
 # Load environment variables FIRST
@@ -274,7 +278,7 @@ class RealTesterRunner:
             user_id=None,  # Auto-triggered, no user
             project_id=UUID(self.project_id),
             routing_reason="story_status_changed_to_review",
-            content=f"Auto-generate integration tests for: {story_titles}",
+            content=f"Auto-generate tests for: {story_titles}",  # Supports both integration and unit tests
             context={
                 "trigger_type": trigger_type,
                 "story_ids": story_ids,

@@ -155,13 +155,13 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
             except Exception as db_err:
                 logger.warning(f"[setup_workspace] Database setup failed: {db_err}")
         
-        # Run bun install if package.json exists (exactly like developer_v2)
+        # Run pnpm install if package.json exists
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if pkg_json and os.path.exists(pkg_json):
             try:
-                logger.info("[setup_workspace] Running bun install...")
+                logger.info("[setup_workspace] Running pnpm install...")
                 result = subprocess.run(
-                    "bun install --frozen-lockfile",
+                    "pnpm install --frozen-lockfile",
                     cwd=workspace_path,
                     capture_output=True,
                     text=True,
@@ -171,21 +171,21 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
                     shell=True,
                 )
                 if result.returncode == 0:
-                    logger.info("[setup_workspace] bun install successful")
+                    logger.info("[setup_workspace] pnpm install successful")
                 else:
-                    logger.warning(f"[setup_workspace] bun install failed: {result.stderr[:200]}")
+                    logger.warning(f"[setup_workspace] pnpm install failed: {result.stderr[:200]}")
             except subprocess.TimeoutExpired:
-                logger.warning("[setup_workspace] bun install timed out")
+                logger.warning("[setup_workspace] pnpm install timed out")
             except Exception as e:
-                logger.warning(f"[setup_workspace] bun install error: {e}")
+                logger.warning(f"[setup_workspace] pnpm install error: {e}")
         
-        # Run prisma generate if schema exists (exactly like developer_v2)
+        # Run prisma generate if schema exists
         schema_path = os.path.join(workspace_path, "prisma", "schema.prisma") if workspace_path else ""
         if schema_path and os.path.exists(schema_path):
             try:
                 logger.info("[setup_workspace] Running prisma generate...")
                 result = subprocess.run(
-                    "bunx prisma generate",
+                    "pnpm exec prisma generate",
                     cwd=workspace_path,
                     capture_output=True,
                     text=True,
@@ -203,11 +203,11 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
             except Exception as e:
                 logger.warning(f"[setup_workspace] prisma generate error: {e}")
             
-            # Run prisma db push to create tables (temporary for tester, will reuse dev DB later)
+            # Run prisma db push to create tables
             try:
                 logger.info("[setup_workspace] Running prisma db push...")
                 result = subprocess.run(
-                    "bunx prisma db push --skip-generate --accept-data-loss",
+                    "pnpm exec prisma db push --skip-generate --accept-data-loss",
                     cwd=workspace_path,
                     capture_output=True,
                     text=True,

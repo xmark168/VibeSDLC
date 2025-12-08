@@ -38,14 +38,14 @@ def _get_workspace_path(state: dict) -> Path | None:
 
 
 def _detect_package_manager(project_path: Path) -> tuple[str, str]:
-    """Detect package manager and run command."""
-    if (project_path / "bun.lockb").exists() or (project_path / "bun.lock").exists():
-        return ("bun", "bun run")
+    """Detect package manager and run command. Default: pnpm."""
     if (project_path / "pnpm-lock.yaml").exists():
         return ("pnpm", "pnpm")
+    if (project_path / "bun.lockb").exists() or (project_path / "bun.lock").exists():
+        return ("bun", "bun run")
     if (project_path / "yarn.lock").exists():
         return ("yarn", "yarn")
-    return ("bun", "bun run")
+    return ("pnpm", "pnpm")  # Default: pnpm
 
 
 def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dict]:
@@ -53,6 +53,7 @@ def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dic
     
     Always runs tests for specific files only (story's test files).
     Does NOT run entire test suite.
+    Only integration tests supported (no e2e).
     
     Args:
         project_path: Path to workspace
@@ -62,9 +63,8 @@ def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dic
     """
     commands = []
     
-    # Group by test type and filter valid files
+    # Filter valid integration test files only
     integration_files = []
-    e2e_files = []
     
     for file_path in test_files:
         if not file_path:
@@ -75,10 +75,8 @@ def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dic
             logger.warning(f"[_detect_test_commands] File not found: {file_path}")
             continue
         
-        # Determine type by extension/path
-        if file_path.endswith('.spec.ts') or '/e2e/' in file_path or '\\e2e\\' in file_path:
-            e2e_files.append(file_path)
-        elif file_path.endswith('.test.ts'):
+        # Only accept .test.ts files (integration tests)
+        if file_path.endswith('.test.ts'):
             integration_files.append(file_path)
     
     pm, run_cmd = _detect_package_manager(project_path)
@@ -87,7 +85,7 @@ def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dic
     if integration_files:
         files_arg = " ".join(f'"{f}"' for f in integration_files)
         # Always run jest with specific files, not entire suite
-        cmd = f"bunx jest {files_arg} --passWithNoTests"
+        cmd = f"pnpm exec jest {files_arg} --passWithNoTests"
         
         commands.append({
             "type": "integration",
@@ -96,24 +94,11 @@ def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dic
         })
         logger.info(f"[_detect_test_commands] Integration: {cmd}")
     
-    # E2E tests command - always use specific files
-    if e2e_files:
-        files_arg = " ".join(f'"{f}"' for f in e2e_files)
-        # Always run playwright with specific files
-        cmd = f"bunx playwright test {files_arg}"
-        
-        commands.append({
-            "type": "e2e",
-            "command": cmd,
-            "files": e2e_files,
-        })
-        logger.info(f"[_detect_test_commands] E2E: {cmd}")
-    
     return commands
 
 
 def _parse_test_output(stdout: str, stderr: str, test_type: str) -> dict:
-    """Parse test output to extract results."""
+    """Parse test output to extract results (Jest only - no e2e)."""
     combined = stdout + stderr
     result = {
         "passed": 0,
@@ -122,38 +107,21 @@ def _parse_test_output(stdout: str, stderr: str, test_type: str) -> dict:
         "error_messages": [],
     }
     
-    if test_type == "e2e":
-        # Playwright output parsing
-        # Pattern: "X passed, Y failed"
-        match = re.search(r"(\d+)\s*passed", combined)
-        if match:
-            result["passed"] = int(match.group(1))
-        
-        match = re.search(r"(\d+)\s*failed", combined)
-        if match:
-            result["failed"] = int(match.group(1))
-        
-        # Failed test names
-        # Pattern: "[chromium] › file.spec.ts:10 › test name"
-        failed_matches = re.findall(r"✘\s*\[.*?\]\s*›\s*\S+\s*›\s*(.+)", combined)
-        result["failed_tests"] = failed_matches[:10]
-        
-    else:
-        # Jest output parsing
-        # Pattern: "Tests: X failed, Y passed, Z total"
-        match = re.search(r"Tests:\s*(?:(\d+)\s*failed,\s*)?(\d+)\s*passed", combined)
-        if match:
-            result["failed"] = int(match.group(1) or 0)
-            result["passed"] = int(match.group(2) or 0)
-        
-        # Failed test names
-        # Pattern: "✕ test name (123ms)"
-        failed_matches = re.findall(r"[✕✖]\s+(.+?)\s*\(\d+\s*ms\)", combined)
-        result["failed_tests"] = failed_matches[:10]
-        
-        # Error messages
-        error_matches = re.findall(r"Error:\s*(.+?)(?:\n|$)", combined)
-        result["error_messages"] = error_matches[:5]
+    # Jest output parsing
+    # Pattern: "Tests: X failed, Y passed, Z total"
+    match = re.search(r"Tests:\s*(?:(\d+)\s*failed,\s*)?(\d+)\s*passed", combined)
+    if match:
+        result["failed"] = int(match.group(1) or 0)
+        result["passed"] = int(match.group(2) or 0)
+    
+    # Failed test names
+    # Pattern: "✕ test name (123ms)"
+    failed_matches = re.findall(r"[✕✖]\s+(.+?)\s*\(\d+\s*ms\)", combined)
+    result["failed_tests"] = failed_matches[:10]
+    
+    # Error messages
+    error_matches = re.findall(r"Error:\s*(.+?)(?:\n|$)", combined)
+    result["error_messages"] = error_matches[:5]
     
     return result
 
@@ -170,7 +138,6 @@ def _run_typecheck(project_path: Path, test_files: list[str]) -> dict | None:
         return None
     
     # Filter integration test files only (Jest handles these)
-    # E2E files (.spec.ts) are for Playwright, not Jest
     integration_files = [
         f for f in test_files 
         if f and f.endswith('.test.ts') and (project_path / f).exists()
@@ -183,7 +150,7 @@ def _run_typecheck(project_path: Path, test_files: list[str]) -> dict | None:
     try:
         files_arg = " ".join(f'"{f}"' for f in integration_files)
         # Use Jest to compile - it has moduleNameMapper configured for @/* paths
-        cmd = f"bunx jest {files_arg} --passWithNoTests --no-coverage --testPathIgnorePatterns=[]"
+        cmd = f"pnpm exec jest {files_arg} --passWithNoTests --no-coverage --testPathIgnorePatterns=[]"
         
         logger.info(f"[_run_typecheck] Running: {cmd}")
         
@@ -230,9 +197,8 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     This node:
     1. Runs TypeScript type checking first
     2. Detects test commands based on test_plan
-    3. Executes integration tests (if any)
-    4. Executes e2e tests (if any)
-    5. Parses results
+    3. Executes integration tests
+    4. Parses results
     
     Output:
     - run_status: "PASS" | "FAIL" | "ERROR"
@@ -258,18 +224,19 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     # 2. files_modified - tracks all files modified during this session
     # 3. test_plan - current plan (may be incomplete after analyze_errors)
     # This ensures we don't lose track of test files after error fixing
+    # Note: Only integration tests (.test.ts) supported - no e2e
     
     test_files_set = set()
     
     # From files_created/modified (primary source - always complete)
     for f in state.get("files_created", []) + state.get("files_modified", []):
-        if f and (f.endswith('.test.ts') or f.endswith('.spec.ts')):
+        if f and f.endswith('.test.ts'):
             test_files_set.add(f)
     
     # From test_plan (backup source)
     for step in state.get("test_plan", []):
         file_path = step.get("file_path", "")
-        if file_path and (file_path.endswith('.test.ts') or file_path.endswith('.spec.ts')):
+        if file_path and file_path.endswith('.test.ts'):
             test_files_set.add(file_path)
     
     all_test_files = list(test_files_set)

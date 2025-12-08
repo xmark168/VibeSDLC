@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ParsedTestError:
-    """Parsed error from test logs. Types: Jest, Playwright, TypeScript, Import."""
+    """Parsed error from test logs. Types: Jest, TypeScript, Import."""
     file_path: str
     line: Optional[int]
     column: Optional[int]
@@ -36,7 +36,7 @@ class ParsedTestError:
 
 
 def _parse_test_errors_structured(logs: str) -> List[ParsedTestError]:
-    """Parse test error logs into structured format."""
+    """Parse test error logs into structured format (Jest only - no e2e)."""
     errors = []
     
     # 1. TypeScript error format: src/file.tsx(line,col): error TS2307: message
@@ -53,7 +53,7 @@ def _parse_test_errors_structured(logs: str) -> List[ParsedTestError]:
         ))
     
     # 2. Jest test error: FAIL src/file.test.ts + error message
-    jest_fail_pattern = r'FAIL\s+([^\s]+\.(?:test|spec)\.tsx?)'
+    jest_fail_pattern = r'FAIL\s+([^\s]+\.test\.tsx?)'
     for match in re.finditer(jest_fail_pattern, logs):
         errors.append(ParsedTestError(
             file_path=match.group(1),
@@ -78,33 +78,7 @@ def _parse_test_errors_structured(logs: str) -> List[ParsedTestError]:
             raw_line=match.group(0)
         ))
     
-    # 4. Playwright error: Error: locator.click: ...
-    playwright_pattern = r'Error:\s*(locator\.\w+|page\.\w+|expect\(.*?\)\.to\w+).*?:\s*(.+?)(?:\n|$)'
-    for match in re.finditer(playwright_pattern, logs, re.DOTALL):
-        errors.append(ParsedTestError(
-            file_path="e2e/",
-            line=None,
-            column=None,
-            error_code=None,
-            error_type="Playwright",
-            message=f"{match.group(1)}: {match.group(2).strip()[:100]}",
-            raw_line=match.group(0)[:200]
-        ))
-    
-    # 5. Playwright timeout: Timeout 30000ms exceeded
-    timeout_pattern = r'Timeout\s+(\d+)ms\s+exceeded'
-    for match in re.finditer(timeout_pattern, logs):
-        errors.append(ParsedTestError(
-            file_path="e2e/",
-            line=None,
-            column=None,
-            error_code="TIMEOUT",
-            error_type="Playwright",
-            message=f"Timeout {match.group(1)}ms exceeded",
-            raw_line=match.group(0)
-        ))
-    
-    # 6. Module not found: Can't resolve 'package' or Cannot find module
+    # 4. Module not found: Can't resolve 'package' or Cannot find module
     module_pattern = r"(?:Cannot find module|Module not found|Can't resolve)\s*['\"]([^'\"]+)['\"]"
     for match in re.finditer(module_pattern, logs):
         module_name = match.group(1)
@@ -118,7 +92,7 @@ def _parse_test_errors_structured(logs: str) -> List[ParsedTestError]:
             raw_line=match.group(0)
         ))
     
-    # 7. Property does not exist: Property 'X' does not exist on type 'Y'
+    # 5. Property does not exist: Property 'X' does not exist on type 'Y'
     prop_pattern = r"Property\s+'(\w+)'\s+does not exist on type\s+'([^']+)'"
     for match in re.finditer(prop_pattern, logs):
         errors.append(ParsedTestError(
@@ -193,22 +167,18 @@ def _is_test_file(file_path: str) -> bool:
     Test files must contain one of:
     - __tests__/
     - .test.ts or .test.tsx
-    - .spec.ts or .spec.tsx
-    - e2e/
+    Note: Only integration tests supported (no e2e/spec files)
     """
     if not file_path:
         return False
     
     path_lower = file_path.lower()
     
-    # Must be a test file
+    # Must be a test file (integration only - no e2e)
     test_indicators = [
         "__tests__/",
         ".test.ts",
         ".test.tsx",
-        ".spec.ts",
-        ".spec.tsx",
-        "e2e/",
         "/tests/",
     ]
     

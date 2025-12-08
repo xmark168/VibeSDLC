@@ -1,8 +1,8 @@
 """add db
 
-Revision ID: 7c4b94ad99ff
+Revision ID: 50bde58e62a4
 Revises: 
-Create Date: 2025-12-03 13:55:26.737273
+Create Date: 2025-12-08 19:47:43.902969
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision = '7c4b94ad99ff'
+revision = '50bde58e62a4'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -318,6 +318,7 @@ def upgrade():
     sa.Column('message_type', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
     sa.Column('structured_data', sa.JSON(), nullable=True),
     sa.Column('message_metadata', sa.JSON(), nullable=True),
+    sa.Column('attachments', sa.JSON(), nullable=True),
     sa.ForeignKeyConstraint(['agent_id'], ['agents.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['project_id'], ['projects.id'], name='fk_messages_project_id', ondelete='CASCADE', use_alter=True),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),

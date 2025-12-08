@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 # Config files that should not be overwritten if they exist
 CONFIG_FILES = {
     "jest.config.js", "jest.config.ts", "jest.config.mjs",
-    "playwright.config.ts", "playwright.config.js",
     "vitest.config.ts", "vitest.config.js",
     "tsconfig.json", "package.json",
 }
@@ -304,7 +303,7 @@ def write_file(project_id: str, file_path: str, content: str) -> str:
             return (
                 f"⚠️ BLOCKED: {file_name} already exists in project. "
                 f"Do NOT create duplicate config files. "
-                f"Only create TEST files (.test.ts, .spec.ts)."
+                f"Only create TEST files (.test.ts)."
             )
 
         # Create parent directories
@@ -465,7 +464,7 @@ def get_project_structure(project_id: str, max_depth: int = 3) -> str:
         # Key files to highlight
         key_files = {
             "package.json", "tsconfig.json", "jest.config.ts", "jest.config.js",
-            "playwright.config.ts", "jest.setup.ts", "jest.setup.js",
+            "jest.setup.ts", "jest.setup.js",
             "prisma/schema.prisma", ".env.example"
         }
         
@@ -496,7 +495,7 @@ def get_project_structure(project_id: str, max_depth: int = 3) -> str:
                 connector = "└── " if is_last else "├── "
                 
                 # Special markers for test directories
-                if d.name in ("tests", "test", "__tests__", "e2e"):
+                if d.name in ("tests", "test", "__tests__"):
                     result.append(f"{prefix}{connector}🧪 {d.name}/")
                 elif d.name == "src":
                     result.append(f"{prefix}{connector}📦 {d.name}/")
@@ -512,15 +511,11 @@ def get_project_structure(project_id: str, max_depth: int = 3) -> str:
         # Add summary
         result.append("\n--- Summary ---")
         
-        # Count test files
+        # Count test files (integration only - no e2e)
         test_files = list(project_path.glob("**/*.test.ts")) + list(project_path.glob("**/*.test.js"))
         test_files = [f for f in test_files if "node_modules" not in str(f)]
         
-        spec_files = list(project_path.glob("**/*.spec.ts")) + list(project_path.glob("**/*.spec.js"))
-        spec_files = [f for f in spec_files if "node_modules" not in str(f)]
-        
         result.append(f"Integration tests (*.test.ts): {len(test_files)}")
-        result.append(f"E2E tests (*.spec.ts): {len(spec_files)}")
         
         # Check for test config with warnings
         result.append("\n--- ⚠️ Config Status (DO NOT CREATE NEW) ---")
@@ -530,11 +525,6 @@ def get_project_structure(project_id: str, max_depth: int = 3) -> str:
             result.append("⚠️ jest.config.js EXISTS - DO NOT create jest.config.*")
         else:
             result.append("Jest: Not configured")
-        
-        if (project_path / "playwright.config.ts").exists():
-            result.append("⚠️ playwright.config.ts EXISTS - DO NOT create playwright.config.*")
-        else:
-            result.append("Playwright: Not configured")
         
         return "\n".join(result)
         

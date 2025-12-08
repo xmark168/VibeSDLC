@@ -29,7 +29,7 @@ def workspace(tmp_path):
     (workspace / "src" / "app" / "api").mkdir(parents=True)
     (workspace / "src" / "components").mkdir(parents=True)
     (workspace / "src" / "__tests__" / "integration").mkdir(parents=True)
-    (workspace / "e2e").mkdir()
+    (workspace / "src" / "__tests__" / "unit").mkdir(parents=True)
     
     # Create package.json
     (workspace / "package.json").write_text("""{
@@ -62,7 +62,7 @@ export default config;
 
 @pytest.fixture
 def mock_source_file(workspace):
-    """Create a mock source file for testing."""
+    """Create a mock source file for testing (API route for integration tests)."""
     api_dir = workspace / "src" / "app" / "api" / "users"
     api_dir.mkdir(parents=True, exist_ok=True)
     
@@ -95,8 +95,38 @@ export async function POST(request: Request) {
 
 
 @pytest.fixture
+def mock_component_file(workspace):
+    """Create a mock component file for unit testing."""
+    component_file = workspace / "src" / "components" / "Button.tsx"
+    component_file.write_text("""
+import React from 'react';
+
+interface ButtonProps {
+    children: React.ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+    variant?: 'primary' | 'secondary';
+}
+
+export function Button({ children, onClick, disabled = false, variant = 'primary' }: ButtonProps) {
+    return (
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            className={`btn btn-${variant}`}
+        >
+            {children}
+        </button>
+    );
+}
+""")
+    
+    return component_file
+
+
+@pytest.fixture
 def mock_state(workspace, mock_source_file):
-    """Create a mock TesterState for tests."""
+    """Create a mock TesterState for integration tests."""
     return {
         "workspace_path": str(workspace),
         "project_id": str(uuid4()),
@@ -120,6 +150,42 @@ def mock_state(workspace, mock_source_file):
         }],
         "dependencies_content": {
             "src/app/api/users/route.ts": mock_source_file.read_text(),
+            "jest.config.ts": (workspace / "jest.config.ts").read_text(),
+        },
+        "files_modified": [],
+        "review_count": 0,
+        "debug_count": 0,
+        "run_status": None,
+        "test_results": [],
+    }
+
+
+@pytest.fixture
+def mock_unit_state(workspace, mock_component_file):
+    """Create a mock TesterState for unit tests."""
+    return {
+        "workspace_path": str(workspace),
+        "project_id": str(uuid4()),
+        "story_id": str(uuid4()),
+        "tech_stack": "nextjs",
+        "current_step": 0,
+        "total_steps": 1,
+        "review_stories": [{
+            "id": str(uuid4()),
+            "title": "Button component",
+            "description": "As a user, I want a reusable button component",
+            "acceptance_criteria": ["Renders correctly", "Handles click", "Can be disabled"]
+        }],
+        "test_plan": [{
+            "type": "unit",
+            "file_path": "src/__tests__/unit/story-button-component.test.tsx",
+            "title": "Button Component Tests",
+            "scenarios": ["renders correctly", "handles click", "can be disabled"],
+            "skills": ["unit-test"],
+            "dependencies": ["src/components/Button.tsx"]
+        }],
+        "dependencies_content": {
+            "src/components/Button.tsx": mock_component_file.read_text(),
             "jest.config.ts": (workspace / "jest.config.ts").read_text(),
         },
         "files_modified": [],

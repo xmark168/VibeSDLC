@@ -46,7 +46,7 @@ def get_test_files(project_id: str) -> str:
         if not project_path:
             return "Project path not configured."
         
-        test_patterns = ["**/*.test.ts", "**/*.test.js", "**/*.spec.ts", "**/*.spec.js", "**/test_*.py", "**/*_test.py"]
+        test_patterns = ["**/*.test.ts", "**/*.test.js", "**/test_*.py", "**/*_test.py"]
         test_files = []
         
         for pattern in test_patterns:
@@ -280,19 +280,19 @@ def get_stories_in_review(project_id: str) -> str:
 # ============================================================================
 
 def _detect_package_manager(project_path: Path) -> tuple[str, str]:
-    """Detect package manager và run command.
+    """Detect package manager và run command. Default: pnpm.
     
     Returns:
-        (pm_name, run_prefix) - e.g., ("bun", "bun run")
+        (pm_name, run_prefix) - e.g., ("pnpm", "pnpm")
     """
-    if (project_path / "bun.lockb").exists() or (project_path / "bun.lock").exists():
-        return ("bun", "bun run")
     if (project_path / "pnpm-lock.yaml").exists():
         return ("pnpm", "pnpm")
+    if (project_path / "bun.lockb").exists() or (project_path / "bun.lock").exists():
+        return ("bun", "bun run")
     if (project_path / "yarn.lock").exists():
         return ("yarn", "yarn")
-    # Default to bun
-    return ("bun", "bun run")
+    # Default to pnpm
+    return ("pnpm", "pnpm")
 
 
 def _detect_test_command(project_path: Path, test_type: str, test_file: str = "") -> str:
@@ -310,7 +310,7 @@ def _detect_test_command(project_path: Path, test_type: str, test_file: str = ""
             if test_file:
                 if "test" in scripts:
                     return f"{run_cmd} test -- {test_file}"
-                return f"bunx jest {test_file}"
+                return f"pnpm exec jest {test_file}"
             
             # Check for test type variants
             type_variants = [f"test:{test_type}", f"test-{test_type}"]

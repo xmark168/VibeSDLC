@@ -330,16 +330,15 @@ def _detect_test_structure(project_path: str) -> dict:
     
     FIXED STRUCTURE (Best Practice for Next.js):
     - Integration tests: src/__tests__/integration/
-    - E2E tests: e2e/
+    - Unit tests: src/__tests__/unit/
     
     This ensures consistent folder structure across all projects.
     
     Returns:
         dict with:
         - integration_folder: Fixed path for integration tests
-        - e2e_folder: Fixed path for e2e tests
+        - unit_folder: Fixed path for unit tests
         - existing_tests: List of existing test files (for reference)
-        - existing_specs: List of existing spec files (for reference)
     """
     from pathlib import Path
     
@@ -347,9 +346,8 @@ def _detect_test_structure(project_path: str) -> dict:
     # This ensures consistent test organization
     structure = {
         "integration_folder": "src/__tests__/integration",  # FIXED: Next.js standard
-        "e2e_folder": "e2e",                                 # FIXED: Playwright standard
+        "unit_folder": "src/__tests__/unit",  # FIXED: Next.js standard
         "existing_tests": [],
-        "existing_specs": [],
     }
     
     path = Path(project_path)
@@ -366,7 +364,7 @@ def _detect_test_structure(project_path: str) -> dict:
     
     # Create folders if they don't exist
     integration_path = path / structure["integration_folder"]
-    e2e_path = path / structure["e2e_folder"]
+    unit_path = path / structure["unit_folder"]
     
     if not integration_path.exists():
         try:
@@ -375,28 +373,21 @@ def _detect_test_structure(project_path: str) -> dict:
         except Exception as e:
             logger.warning(f"[_detect_test_structure] Failed to create integration folder: {e}")
     
-    if not e2e_path.exists():
+    if not unit_path.exists():
         try:
-            e2e_path.mkdir(parents=True, exist_ok=True)
-            logger.info(f"[_detect_test_structure] Created e2e folder: {structure['e2e_folder']}")
+            unit_path.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[_detect_test_structure] Created unit folder: {structure['unit_folder']}")
         except Exception as e:
-            logger.warning(f"[_detect_test_structure] Failed to create e2e folder: {e}")
+            logger.warning(f"[_detect_test_structure] Failed to create unit folder: {e}")
     
     # Collect existing test files for reference only (not to determine folder)
-    test_files = list(path.glob("**/*.test.ts")) + list(path.glob("**/*.test.js"))
+    test_files = list(path.glob("**/*.test.ts")) + list(path.glob("**/*.test.tsx"))
     test_files = [f for f in test_files if not any(p in str(f) for p in exclude_patterns)]
     test_files = [f for f in test_files if len(f.relative_to(path).parts) <= 5]
     if test_files:
         structure["existing_tests"] = [str(f.relative_to(path)) for f in test_files[:5]]
     
-    # Collect existing spec files for reference only
-    spec_files = list(path.glob("**/*.spec.ts")) + list(path.glob("**/*.spec.js"))
-    spec_files = [f for f in spec_files if not any(p in str(f) for p in exclude_patterns)]
-    spec_files = [f for f in spec_files if len(f.relative_to(path).parts) <= 4]
-    if spec_files:
-        structure["existing_specs"] = [str(f.relative_to(path)) for f in spec_files[:5]]
-    
-    logger.info(f"[_detect_test_structure] Using fixed structure: integration={structure['integration_folder']}, e2e={structure['e2e_folder']}")
+    logger.info(f"[_detect_test_structure] Using fixed structure: integration={structure['integration_folder']}, unit={structure['unit_folder']}")
     
     return structure
 
@@ -407,7 +398,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
     This node:
     1. Detects testing context (auth, ORM, mocks, ESM warnings)
     2. Analyzes stories to identify testable scenarios
-    3. Decides test type (integration vs e2e) for each
+    3. Decides test scenarios for each story
     4. Creates a step-by-step test plan
     
     Output:
@@ -435,7 +426,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             # Detect test folder structure
             test_structure = _detect_test_structure(project_path)
             logger.info(f"[plan_tests] Testing context: auth={testing_context.get('auth_library')}, orm={testing_context.get('orm')}")
-            logger.info(f"[plan_tests] Test structure: integration={test_structure.get('integration_folder')}, e2e={test_structure.get('e2e_folder')}")
+            logger.info(f"[plan_tests] Test structure: integration={test_structure.get('integration_folder')}")
     
     # These are no longer pre-populated, but kept for compatibility
     related_code = state.get("related_code", {})
@@ -511,12 +502,13 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         
         # FIXED folder paths - always use standard structure
         integration_folder = "src/__tests__/integration"
-        e2e_folder = "e2e"
+        unit_folder = "src/__tests__/unit"
         
         # Validate and fix each step
         validated_plan = []
         for i, step in enumerate(test_plan):
             step["order"] = step.get("order", i + 1)
+            # Keep LLM's test type decision, default to integration
             step["type"] = step.get("type", "integration")
             
             story_title = step.get("story_title", "unknown")
@@ -527,14 +519,13 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
                 logger.warning(f"[plan_tests] Skipping invalid step: {story_title}")
                 continue
             
-            # ALWAYS regenerate file path to ensure correct folder structure
-            # Don't trust LLM to use correct folders
-            if step["type"] == "e2e":
-                step["file_path"] = f"{e2e_folder}/story-{slug}.spec.ts"
-                step["skills"] = ["e2e-test"]  # Pre-select skill for implement phase
+            # ALWAYS regenerate file path based on test type
+            if step["type"] == "unit":
+                step["file_path"] = f"{unit_folder}/story-{slug}.test.tsx"
+                step["skills"] = ["unit-test"]
             else:
                 step["file_path"] = f"{integration_folder}/story-{slug}.test.ts"
-                step["skills"] = ["integration-test"]  # Pre-select skill for implement phase
+                step["skills"] = ["integration-test"]
             
             # Dependencies will be auto-discovered from source files
             if "dependencies" not in step:
@@ -560,8 +551,8 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         # Build message
         msg = f"📋 **Test Plan** ({total_steps} bước)\n"
         for step in test_plan:
-            test_type = "🔧 Integration" if step["type"] == "integration" else "🌐 E2E"
-            msg += f"\n{step['order']}. {test_type}: {step.get('description', 'N/A')}"
+            test_icon = "🧩 Unit" if step["type"] == "unit" else "🔧 Integration"
+            msg += f"\n{step['order']}. {test_icon}: {step.get('description', 'N/A')}"
             msg += f"\n   📁 {step.get('file_path', 'N/A')}"
         
         logger.info(f"[plan_tests] Created plan with {total_steps} steps")

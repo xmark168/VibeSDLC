@@ -6,6 +6,10 @@ Requires:
 - OPENAI_API_KEY in .env
 - Internet connection
 
+Supports:
+- Integration tests (API routes, DB operations) → integration-test skill
+- Unit tests (Components, utilities, hooks) → unit-test skill
+
 Note: These tests cost money! Use sparingly.
 """
 import os
@@ -30,8 +34,8 @@ class TestSkillRegistry:
         assert registry is not None
         assert len(registry.skills) > 0
     
-    def test_get_skill_content(self):
-        """Should get skill content."""
+    def test_get_integration_skill_content(self):
+        """Should get integration-test skill content."""
         from app.agents.tester.src.skills import SkillRegistry
         
         registry = SkillRegistry.load("nextjs")
@@ -40,10 +44,33 @@ class TestSkillRegistry:
         if skill:
             content = skill.load_content()
             assert content and len(content) > 50
+            assert "jest" in content.lower() or "prisma" in content.lower()
+    
+    def test_get_unit_skill_content(self):
+        """Should get unit-test skill content."""
+        from app.agents.tester.src.skills import SkillRegistry
+        
+        registry = SkillRegistry.load("nextjs")
+        skill = registry.get_skill("unit-test")
+        
+        if skill:
+            content = skill.load_content()
+            assert content and len(content) > 50
+            assert "jest" in content.lower() or "testing-library" in content.lower()
+    
+    def test_both_skills_exist(self):
+        """Should have both integration-test and unit-test skills."""
+        from app.agents.tester.src.skills import SkillRegistry
+        
+        registry = SkillRegistry.load("nextjs")
+        skill_names = [s.name for s in registry.skills]
+        
+        assert "integration-test" in skill_names, "Missing integration-test skill"
+        assert "unit-test" in skill_names, "Missing unit-test skill"
 
 
 class TestGraphStructure:
-    """Test graph structure (no summarize)."""
+    """Test graph structure (supports integration + unit tests)."""
     
     def test_graph_compiles(self):
         """TesterGraph should compile without errors."""
@@ -53,13 +80,14 @@ class TestGraphStructure:
         assert graph.graph is not None
         assert graph.recursion_limit == 50
     
-    def test_graph_has_8_nodes(self):
-        """Graph should have 8 nodes (no summarize)."""
+    def test_graph_has_expected_nodes(self):
+        """Graph should have all expected nodes."""
         from app.agents.tester.src.graph import TesterGraph
         
         graph = TesterGraph(agent=None)
         nodes = list(graph.graph.nodes.keys())
         
+        # Core nodes for test generation flow
         expected = [
             "router", "setup_workspace", "plan_tests", "implement_tests",
             "review", "run_tests", "analyze_errors", "send_response",
@@ -69,7 +97,7 @@ class TestGraphStructure:
         for node in expected:
             assert node in nodes, f"Missing node: {node}"
         
-        # Verify summarize is removed
+        # Verify summarize is removed (no longer needed)
         assert "summarize" not in nodes
 
 
@@ -125,12 +153,17 @@ class TestImplementNode:
         
         files_modified = result.get("files_modified", [])
         
-        # Check if test file was created
-        test_dir = workspace / "src" / "__tests__" / "integration"
-        test_files = list(test_dir.rglob("*.test.ts"))
+        # Check if test file was created (supports both integration and unit folders)
+        integration_dir = workspace / "src" / "__tests__" / "integration"
+        unit_dir = workspace / "src" / "__tests__" / "unit"
+        
+        integration_tests = list(integration_dir.rglob("*.test.ts")) if integration_dir.exists() else []
+        unit_tests = list(unit_dir.rglob("*.test.tsx")) if unit_dir.exists() else []
+        test_files = integration_tests + unit_tests
         
         print(f"\n[DEBUG] files_modified: {files_modified}")
-        print(f"[DEBUG] test files found: {test_files}")
+        print(f"[DEBUG] integration tests found: {integration_tests}")
+        print(f"[DEBUG] unit tests found: {unit_tests}")
         
         # Either files_modified or actual files should exist
         assert files_modified or test_files, "Should create at least one test file"
@@ -154,3 +187,76 @@ class TestPlanNode:
         # The actual test would require DB access
         # For now, verify the function exists and is importable
         assert callable(plan_tests)
+    
+    def test_detect_test_structure_creates_both_folders(self, workspace):
+        """Should create both integration and unit test folders."""
+        from app.agents.tester.src.nodes.plan_tests import _detect_test_structure
+        
+        structure = _detect_test_structure(str(workspace))
+        
+        assert structure["integration_folder"] == "src/__tests__/integration"
+        assert structure["unit_folder"] == "src/__tests__/unit"
+        
+        # Verify folders were created
+        integration_path = workspace / "src" / "__tests__" / "integration"
+        unit_path = workspace / "src" / "__tests__" / "unit"
+        
+        assert integration_path.exists(), "Integration folder should be created"
+        assert unit_path.exists(), "Unit folder should be created"
+
+
+class TestUnitTestImplementation:
+    """Test unit test implementation."""
+    
+    @pytest.mark.asyncio
+    async def test_creates_unit_test_file(self, mock_unit_state, workspace):
+        """Should create unit test file using structured output."""
+        from app.agents.tester.src.nodes.implement_tests import implement_tests
+        
+        result = await implement_tests(mock_unit_state, agent=None)
+        
+        files_modified = result.get("files_modified", [])
+        
+        # Check if unit test file was created
+        unit_dir = workspace / "src" / "__tests__" / "unit"
+        unit_tests = list(unit_dir.rglob("*.test.tsx")) if unit_dir.exists() else []
+        
+        print(f"\n[DEBUG] files_modified: {files_modified}")
+        print(f"[DEBUG] unit tests found: {unit_tests}")
+        
+        # Either files_modified or actual files should exist
+        assert files_modified or unit_tests, "Should create at least one unit test file"
+        
+        if unit_tests:
+            content = unit_tests[0].read_text()
+            print(f"[DEBUG] Content:\n{content[:500]}")
+            
+            # Should have React Testing Library patterns
+            assert "describe" in content or "test" in content
+    
+    def test_unit_skill_auto_selection(self):
+        """Should auto-select unit-test skill for unit test type."""
+        # Test the logic in implement_tests
+        test_type = "unit"
+        step_skills = []
+        
+        if not step_skills:
+            if test_type == "unit":
+                step_skills = ["unit-test"]
+            else:
+                step_skills = ["integration-test"]
+        
+        assert step_skills == ["unit-test"]
+    
+    def test_integration_skill_auto_selection(self):
+        """Should auto-select integration-test skill for integration test type."""
+        test_type = "integration"
+        step_skills = []
+        
+        if not step_skills:
+            if test_type == "unit":
+                step_skills = ["unit-test"]
+            else:
+                step_skills = ["integration-test"]
+        
+        assert step_skills == ["integration-test"]

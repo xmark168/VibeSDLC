@@ -50,6 +50,7 @@ def _preload_skills(registry: SkillRegistry, skill_ids: list[str]) -> str:
     """Preload skill content into system prompt (Developer V2 pattern).
     
     This eliminates the need for activate_skill tool calls entirely.
+    Loads ALL bundled reference files (aligned with Developer V2).
     """
     if not skill_ids or not registry:
         return ""
@@ -65,10 +66,10 @@ def _preload_skills(registry: SkillRegistry, skill_ids: list[str]) -> str:
         if not content:
             continue
         
-        # Include bundled reference files
+        # Include ALL bundled reference files (Developer V2 pattern - no limit)
         try:
             bundled = skill.list_bundled_files()
-            for bf in bundled[:2]:
+            for bf in bundled:  # Load ALL, not just first 2
                 bf_content = skill.load_bundled_file(bf)
                 if bf_content:
                     content += f"\n\n### Reference: {bf}\n{bf_content}"
@@ -240,9 +241,12 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
     # Initialize skill registry and preload skills
     skill_registry = SkillRegistry.load(tech_stack)
     
-    # Auto-select skills if not specified
+    # Auto-select skills if not specified based on test_type
     if not step_skills:
-        step_skills = ["integration-test"] if test_type == "integration" else ["e2e-test"]
+        if test_type == "unit":
+            step_skills = ["unit-test"]
+        else:
+            step_skills = ["integration-test"]
     
     # Preload skills into prompt (Developer V2 pattern - no tool calls)
     skills_content = _preload_skills(skill_registry, step_skills)
@@ -280,13 +284,11 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
         scenarios=scenarios_str,
     )
 
-    # Append pre-loaded context and feedback
+    # Append pre-loaded context and feedback (load ALL dependencies)
     if deps_context:
-        truncated_deps = truncate_to_tokens(deps_context, max_tokens=4000)
-        user_prompt += f"\n\n{truncated_deps}"
+        user_prompt += f"\n\n{deps_context}"
     if feedback_section:
-        truncated_feedback = truncate_to_tokens(feedback_section, max_tokens=1000)
-        user_prompt += f"\n\n{truncated_feedback}"
+        user_prompt += f"\n\n{feedback_section}"
 
     try:
         # Build messages

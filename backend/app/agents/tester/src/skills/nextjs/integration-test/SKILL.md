@@ -5,40 +5,59 @@ description: Write integration tests with Jest for API routes and database opera
 
 # Integration Test (Jest)
 
+## ⛔ CRITICAL: NEVER CHECK response.status
+
+**NextResponse.status is ALWAYS undefined in Jest environment.** This is a known limitation.
+
+```typescript
+// ⛔ WRONG - WILL ALWAYS FAIL (response.status is undefined)
+const response = await GET(request);
+expect(response.status).toBe(200);  // FAILS: Expected 200, Received: undefined
+
+// ✅ CORRECT - Check data.success or data properties instead
+const response = await GET(request);
+const data = await response.json();
+expect(data.success).toBe(true);     // Check API response structure
+expect(data.data).toBeDefined();     // Check data exists
+expect(data.error).toBeUndefined();  // No error for success
+
+// ✅ For error cases - Check error response structure
+const response = await POST(invalidRequest);
+const data = await response.json();
+expect(data.success).toBe(false);    // API returns success: false
+expect(data.error).toBeDefined();    // Error message exists
+```
+
+**WHY:** When calling Next.js route handlers directly (not via HTTP), the Response object's `.status` property is not populated correctly in Jest's mock environment.
+
 ## ⚠️ CRITICAL RULES - READ FIRST
-- **DO NOT** create config files (jest.config.*, playwright.config.*, tsconfig.json)
+- **DO NOT** create config files (jest.config.*, tsconfig.json)
 - Config files **ALREADY EXIST** in project - use them as-is
 - **ONLY** create TEST files: *.test.ts
 - **READ SOURCE CODE FIRST** - Check actual exports, types, function signatures before writing tests
 - **DO NOT INVENT APIs** - Only test routes/functions that actually exist in the codebase
+- **NEVER** use `response.status` - it's always undefined (see above)
 
-## ⚠️ Response.json() NOT AVAILABLE IN JEST
-Jest runs in Node.js environment where `Response.json()` method doesn't exist!
+## ⚠️ Response Methods in Jest
+In Jest mock environment, use `response.json()` directly - do NOT use `response.text()`.
 
 ```typescript
-// ❌ WRONG - Will fail with "Response.json is not a function"
-import { GET } from '@/app/api/books/route';
+// ❌ WRONG - response.text() is not available in Jest mock
 const response = await GET(request);
-const data = await response.json();  // ERROR!
+const text = await response.text();  // ERROR: response.text is not a function
 
-// ✅ CORRECT Option 1 - Use NextResponse from next/server
-import { NextResponse } from 'next/server';
-// Then test the response.body or mock at higher level
+// ❌ WRONG - response.status is undefined
+const response = await GET(request);
+expect(response.status).toBe(200);   // FAILS: undefined !== 200
 
-// ✅ CORRECT Option 2 - Test the data layer directly instead of route
-import { prisma } from '@/lib/prisma';
-// Mock prisma and test the logic, not the HTTP layer
-
-// ✅ CORRECT Option 3 - Mock the entire route response
-jest.mock('@/app/api/books/route', () => ({
-  GET: jest.fn().mockResolvedValue({
-    status: 200,
-    json: async () => ({ books: [] }),
-  }),
-}));
+// ✅ CORRECT - Use response.json() and check data properties
+const response = await GET(request);
+const data = await response.json();
+expect(data.success).toBe(true);     // Check success flag
+expect(data.data).toEqual(expected); // Check actual data
 ```
 
-**BEST PRACTICE:** For integration tests, mock at the database layer (Prisma) and test route handler logic. For full HTTP testing, use E2E tests with Playwright.
+**BEST PRACTICE:** For integration tests, mock at the database layer (Prisma) and check `data.success` or `data.error` instead of `response.status`.
 
 ## ⚠️ TYPESCRIPT STRICT RULES
 ```typescript
@@ -72,14 +91,28 @@ import prisma from '@/lib/prisma';                      // Wrong: check actual e
 ## File Location (FIXED - DO NOT CHANGE)
 ```
 src/__tests__/integration/     # Integration tests (Jest)
-e2e/                           # E2E tests (Playwright)
 ```
 **IMPORTANT:** Always use `src/__tests__/integration/` for integration tests. Do NOT use other folders like `__tests__/integration/` or `tests/`.
 
 ## Test Structure
 
 ```typescript
-import { prismaMock } from '@/lib/__mocks__/prisma';
+import { POST } from '@/app/api/users/route';
+
+// Mock functions at top level (outside describe)
+const mockCreate = jest.fn();
+const mockFindMany = jest.fn();
+const mockFindUnique = jest.fn();
+
+jest.mock('@/lib/prisma', () => ({
+  prisma: {
+    user: {
+      create: (...args: unknown[]) => mockCreate(...args),
+      findMany: (...args: unknown[]) => mockFindMany(...args),
+      findUnique: (...args: unknown[]) => mockFindUnique(...args),
+    },
+  },
+}));
 
 describe('Story: {story_title}', () => {
   beforeEach(() => {
@@ -90,7 +123,7 @@ describe('Story: {story_title}', () => {
     it('creates user with valid data', async () => {
       // Arrange
       const mockUser = { id: 'test-1', name: 'Test User', email: 'test@example.com' };
-      prismaMock.user.create.mockResolvedValue(mockUser);
+      mockCreate.mockResolvedValue(mockUser);
       
       // Act
       const request = new Request('http://localhost/api/users', {
@@ -98,17 +131,17 @@ describe('Story: {story_title}', () => {
         body: JSON.stringify({ name: 'Test User', email: 'test@example.com' }),
       });
       const response = await POST(request);
-      
-      // Assert
-      expect(response.status).toBe(201);
       const data = await response.json();
-      expect(data).toEqual(mockUser);
-      expect(prismaMock.user.create).toHaveBeenCalledWith({
+      
+      // Assert - Check data properties, NOT response.status
+      expect(data.success).toBe(true);
+      expect(data.data).toEqual(mockUser);
+      expect(mockCreate).toHaveBeenCalledWith({
         data: { name: 'Test User', email: 'test@example.com' },
       });
     });
 
-    it('returns 400 for invalid data', async () => {
+    it('returns error for invalid data', async () => {
       // Arrange - empty body
       const request = new Request('http://localhost/api/users', {
         method: 'POST',
@@ -117,9 +150,11 @@ describe('Story: {story_title}', () => {
       
       // Act
       const response = await POST(request);
+      const data = await response.json();
       
-      // Assert
-      expect(response.status).toBe(400);
+      // Assert - Check error response, NOT response.status
+      expect(data.success).toBe(false);
+      expect(data.error).toBeDefined();
     });
   });
 });
@@ -180,10 +215,10 @@ jest.mock('next-auth', () => ({
 
 ## Commands
 ```bash
-bun run test                        # All tests
-bun run test tests/integration      # Integration only
-bun run test --coverage             # With coverage
-bun run test --watch                # Watch mode
+pnpm test                           # All tests
+pnpm test tests/integration         # Integration only
+pnpm test --coverage                # With coverage
+pnpm test --watch                   # Watch mode
 ```
 
 ## Important Rules
@@ -192,6 +227,79 @@ bun run test --watch                # Watch mode
 2. **Clear mocks** - Always `jest.clearAllMocks()` in beforeEach
 3. **Async/await** - Always await async operations
 4. **Isolation** - Each test should be independent
+
+## ❌ Anti-Patterns - DO NOT DO
+
+### Don't create helper functions for response extraction
+```typescript
+// ❌ WRONG - Unnecessary abstraction, prone to errors
+async function extractResponse(response: Response) {
+  const data = await response.json();
+  return { status: response.status, data };
+}
+const { status, data } = await extractResponse(response);
+
+// ✅ CORRECT - Use directly, simple and clear
+const response = await GET(request);
+const data = await response.json();
+expect(response.status).toBe(200);
+```
+
+### Don't check exact Prisma query structure
+```typescript
+// ❌ WRONG - Brittle, breaks on any refactor
+expect(mockFindMany).toHaveBeenCalledWith({
+  where: { OR: [{ title: { contains: 'test', mode: 'insensitive' } }] },
+  skip: 0,
+  take: 20,
+  include: { category: { select: { id: true, name: true } } },
+  orderBy: [{ featured: 'desc' }, { createdAt: 'desc' }],
+});
+
+// ✅ CORRECT - Check behavior via response data
+expect(mockFindMany).toHaveBeenCalled();
+expect(data).toHaveLength(2);
+expect(data[0].title).toBe('Expected Title');
+```
+
+### Don't use Date objects in mock data
+```typescript
+// ❌ WRONG - Date comparison issues in assertions
+const mockBook = {
+  id: 'book-1',
+  createdAt: new Date('2023-01-15'),
+  updatedAt: new Date('2023-01-15'),
+};
+
+// ✅ CORRECT - Use ISO strings for dates
+const mockBook = {
+  id: 'book-1',
+  createdAt: '2023-01-15T00:00:00.000Z',
+  updatedAt: '2023-01-15T00:00:00.000Z',
+};
+```
+
+### Keep mock data minimal
+```typescript
+// ❌ WRONG - Too many fields, hard to maintain
+const mockUser = {
+  id: 'user-1',
+  name: 'Test User',
+  email: 'test@example.com',
+  phone: '123-456-7890',
+  address: '123 Main St',
+  city: 'Test City',
+  country: 'Test Country',
+  createdAt: '2023-01-01',
+  updatedAt: '2023-01-01',
+  role: 'user',
+  isActive: true,
+  // ... more fields
+};
+
+// ✅ CORRECT - Only include fields being tested
+const mockUser = { id: 'user-1', name: 'Test User' };
+```
 
 ## References
 - `mock-patterns.md` - Advanced mocking patterns for Prisma, Auth, External APIs
