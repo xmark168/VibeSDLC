@@ -346,6 +346,26 @@ export function ChatPanelWS({
     }
   }, [uniqueMessages, projectId, queryClient])
 
+  // Detect project_reset message and refresh Kanban board (after deleting project data)
+  const lastResetMsgIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const resetMessages = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'project_reset'
+    )
+    const latestReset = resetMessages.length > 0
+      ? resetMessages.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )[0]
+      : null
+    
+    if (latestReset && latestReset.id !== lastResetMsgIdRef.current && projectId) {
+      console.log('[ChatPanel] Project reset, refreshing Kanban board...', latestReset.id)
+      lastResetMsgIdRef.current = latestReset.id
+      // Refresh Kanban board to clear deleted stories
+      queryClient.refetchQueries({ queryKey: ['kanban-board', projectId], type: 'active' })
+    }
+  }, [uniqueMessages, projectId, queryClient])
+
   // Track if user manually scrolled up
   const userScrolledUpRef = useRef(false)
   // Force scroll to bottom (bypasses userScrolledUp check)
@@ -825,6 +845,11 @@ export function ChatPanelWS({
           // Activity messages are now shown in the execution dialog
           // Skip rendering them here
           if (msg.message_type === 'activity') {
+            return null;
+          }
+
+          // Skip project_reset messages (internal notification for Kanban refresh, not for display)
+          if (msg.structured_data?.message_type === 'project_reset') {
             return null;
           }
 

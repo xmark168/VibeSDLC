@@ -224,6 +224,11 @@ async def create_message_with_file(
         
         logger.info(f"Saved uploaded file: {file_path} ({len(file_bytes)} bytes)")
         
+        # Log extracted text for debugging
+        logger.info(f"=== EXTRACTED TEXT FROM {file.filename} ({len(extracted_text)} chars) ===")
+        logger.info(f"CONTENT PREVIEW (first 500 chars):\n{extracted_text[:500]}")
+        logger.info(f"=== END EXTRACTED TEXT ===")
+        
         attachment = {
             "type": "document",
             "filename": file.filename,

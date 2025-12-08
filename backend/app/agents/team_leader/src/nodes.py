@@ -114,10 +114,10 @@ def _user_prompt(msg: str, task: str = "routing_decision", **kw) -> str:
 
 # Fallback messages when LLM fails
 _FALLBACK_MESSAGES = {
-    "replace": "OK! Mình sẽ tạo project mới cho bạn nhé! 🚀",
-    "keep": "OK, giữ nguyên project cũ nhé! 😊",
+    "replace": "Đã thay thế project cũ, xóa dữ liệu liên quan và chuyển cho BA phân tích yêu cầu mới nhé! 📋",
+    "keep": "OK, giữ nguyên project hiện tại nhé! 😊",
     "view": "Đây là thông tin project của bạn! 📄",
-    "update": "Mình sẽ chuyển cho BA xử lý nhé! 📝",
+    "update": "Đã ghi nhận yêu cầu cập nhật và chuyển cho BA xử lý nhé! 📝",
     "default": "Đã nhận yêu cầu của bạn! 👍",
 }
 
@@ -216,10 +216,17 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
             except Exception:
                 pass
         
+        # Build user message with attachment info for routing
+        user_message = state["user_message"]
+        if state.get("attachments"):
+            files = [att.get("filename", "file") for att in state["attachments"]]
+            user_message = f"{user_message}\n[Đính kèm: {', '.join(files)}]"
+            logger.info(f"[router] Message includes {len(files)} attachment(s): {files}")
+        
         messages = [
             SystemMessage(content=_sys_prompt(agent)),
             HumanMessage(content=_user_prompt(
-                state["user_message"],
+                user_message,
                 name=agent.name if agent else "Team Leader",
                 conversation_history=state.get("conversation_history", ""),
                 user_preferences=state.get("user_preferences", ""),
@@ -241,106 +248,119 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                     return {**state, "action": "RESPOND", "wip_blocked": True,
                             "message": f"Hiện tại {wip_col} đang full. Cần đợi stories hoàn thành.", "confidence": 0.95}
             
-            # Check for domain change when delegating to BA
+            # Check for domain change when delegating to BA (only if no attachments)
             if result.get("target_role") == "business_analyst" and agent:
-                try:
-                    from sqlmodel import Session
-                    from app.core.db import engine
-                    from app.services.artifact_service import ArtifactService
-                    from app.models import ArtifactType, Epic, Story
-                    
-                    project_id = UUID(state["project_id"])
-                    
-                    with Session(engine) as session:
-                        artifact_service = ArtifactService(session)
-                        existing_prd = artifact_service.get_latest_version(
-                            project_id=project_id,
-                            artifact_type=ArtifactType.PRD
-                        )
+                # IMPORTANT: If user uploaded a file (attachment), skip domain check
+                # "Phân tích tài liệu" should UPDATE existing PRD, not trigger replacement
+                has_attachments = bool(state.get("attachments"))
+                
+                if has_attachments:
+                    logger.info(
+                        f"[router] User uploaded file(s), skipping domain check. "
+                        f"Will delegate to BA for document analysis/update."
+                    )
+                    # Skip domain check - just delegate to BA
+                    # BA will analyze document and update existing PRD
+                else:
+                    # No attachments - proceed with normal domain check
+                    try:
+                        from sqlmodel import Session
+                        from app.core.db import engine
+                        from app.services.artifact_service import ArtifactService
+                        from app.models import ArtifactType, Epic, Story
                         
-                        if existing_prd:
-                            # Check if there are any previous user messages
-                            # If no messages (project was reset), skip domain check and auto-replace
-                            from app.models import Message
-                            from sqlmodel import select
+                        project_id = UUID(state["project_id"])
+                        
+                        with Session(engine) as session:
+                            artifact_service = ArtifactService(session)
+                            existing_prd = artifact_service.get_latest_version(
+                                project_id=project_id,
+                                artifact_type=ArtifactType.PRD
+                            )
                             
-                            message_count = len(session.exec(
-                                select(Message).where(
-                                    Message.project_id == project_id,
-                                    Message.author_type == "user"
-                                )
-                            ).all())
-                            
-                            # If only 1 message (current one) or no messages, skip domain check
-                            # This handles the case where user cleared messages via API
-                            if message_count <= 1:
-                                logger.info(
-                                    f"[router] No previous messages found, skipping domain check. "
-                                    f"Will auto-replace old PRD '{existing_prd.title}'"
-                                )
-                                # Auto-delete old data and proceed
-                                from app.services.artifact_service import ArtifactService
-                                artifact_service.delete_by_type(project_id, ArtifactType.PRD)
-                                artifact_service.delete_by_type(project_id, ArtifactType.USER_STORIES)
+                            if existing_prd:
+                                # Check if there are any previous user messages
+                                # If no messages (project was reset), skip domain check and auto-replace
+                                from app.models import Message
+                                from sqlmodel import select
                                 
-                                # Delete epics and stories
-                                epics = session.exec(select(Epic).where(Epic.project_id == project_id)).all()
-                                for epic in epics:
-                                    session.delete(epic)
-                                stories = session.exec(select(Story).where(Story.project_id == project_id)).all()
-                                for story in stories:
-                                    session.delete(story)
-                                session.commit()
-                                
-                                # Archive docs if available
-                                if agent and hasattr(agent, 'project_files') and agent.project_files:
-                                    await agent.project_files.archive_docs()
-                                
-                                # Continue with normal delegation (no confirmation needed)
-                            else:
-                                # Check if domains are different
-                                is_different = await _check_domain_change(
-                                    state["user_message"],
-                                    existing_prd.title,
-                                    state
-                                )
-                                
-                                # Count existing stories
-                                stories_count = session.exec(
-                                    select(Story).where(Story.project_id == project_id)
-                                ).all()
-                                
-                                if is_different:
-                                    # Different domain → ask to replace
-                                    logger.info(
-                                        f"[router] Domain change detected: '{existing_prd.title}' → new request. "
-                                        f"Asking for confirmation."
+                                message_count = len(session.exec(
+                                    select(Message).where(
+                                        Message.project_id == project_id,
+                                        Message.author_type == "user"
                                     )
+                                ).all())
+                                
+                                # If only 1 message (current one) or no messages, skip domain check
+                                # This handles the case where user cleared messages via API
+                                if message_count <= 1:
+                                    logger.info(
+                                        f"[router] No previous messages found, skipping domain check. "
+                                        f"Will auto-replace old PRD '{existing_prd.title}'"
+                                    )
+                                    # Auto-delete old data and proceed
+                                    from app.services.artifact_service import ArtifactService
+                                    artifact_service.delete_by_type(project_id, ArtifactType.PRD)
+                                    artifact_service.delete_by_type(project_id, ArtifactType.USER_STORIES)
                                     
-                                    return {
-                                        **state,
-                                        "action": "CONFIRM_REPLACE",
-                                        "existing_prd_title": existing_prd.title,
-                                        "existing_stories_count": len(stories_count),
-                                        "needs_replace_confirm": True,
-                                        "wip_blocked": False
-                                    }
+                                    # Delete epics and stories
+                                    epics = session.exec(select(Epic).where(Epic.project_id == project_id)).all()
+                                    for epic in epics:
+                                        session.delete(epic)
+                                    stories = session.exec(select(Story).where(Story.project_id == project_id)).all()
+                                    for story in stories:
+                                        session.delete(story)
+                                    session.commit()
+                                    
+                                    # Archive docs if available
+                                    if agent and hasattr(agent, 'project_files') and agent.project_files:
+                                        await agent.project_files.archive_docs()
+                                    
+                                    # Continue with normal delegation (no confirmation needed)
                                 else:
-                                    # Same domain → PRD already exists, ask what to do
-                                    logger.info(
-                                        f"[router] Same domain detected: '{existing_prd.title}'. "
-                                        f"Asking user what to do with existing project."
+                                    # Check if domains are different
+                                    is_different = await _check_domain_change(
+                                        state["user_message"],
+                                        existing_prd.title,
+                                        state
                                     )
                                     
-                                    return {
-                                        **state,
-                                        "action": "CONFIRM_EXISTING",
-                                        "existing_prd_title": existing_prd.title,
-                                        "existing_stories_count": len(stories_count),
-                                        "wip_blocked": False
-                                    }
-                except Exception as e:
-                    logger.error(f"[router] Error checking domain change: {e}", exc_info=True)
+                                    # Count existing stories
+                                    stories_count = session.exec(
+                                        select(Story).where(Story.project_id == project_id)
+                                    ).all()
+                                    
+                                    if is_different:
+                                        # Different domain → ask to replace
+                                        logger.info(
+                                            f"[router] Domain change detected: '{existing_prd.title}' → new request. "
+                                            f"Asking for confirmation."
+                                        )
+                                        
+                                        return {
+                                            **state,
+                                            "action": "CONFIRM_REPLACE",
+                                            "existing_prd_title": existing_prd.title,
+                                            "existing_stories_count": len(stories_count),
+                                            "needs_replace_confirm": True,
+                                            "wip_blocked": False
+                                        }
+                                    else:
+                                        # Same domain → PRD already exists, ask what to do
+                                        logger.info(
+                                            f"[router] Same domain detected: '{existing_prd.title}'. "
+                                            f"Asking user what to do with existing project."
+                                        )
+                                        
+                                        return {
+                                            **state,
+                                            "action": "CONFIRM_EXISTING",
+                                            "existing_prd_title": existing_prd.title,
+                                            "existing_stories_count": len(stories_count),
+                                            "wip_blocked": False
+                                        }
+                    except Exception as e:
+                        logger.error(f"[router] Error checking domain change: {e}", exc_info=True)
         
         return {**state, **result, "wip_blocked": False}
     except Exception as e:
@@ -362,6 +382,12 @@ async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         if state.get("attachments"):
             task_context["attachments"] = state["attachments"]
             logger.info(f"[delegate] Passing {len(state['attachments'])} attachment(s) to {state['target_role']}")
+            # Debug: Log attachment details
+            for i, att in enumerate(state["attachments"]):
+                text_len = len(att.get("extracted_text", "")) if att.get("extracted_text") else 0
+                logger.info(f"[delegate] Attachment[{i}]: filename={att.get('filename')}, text_len={text_len}")
+        else:
+            logger.info(f"[delegate] No attachments in state to pass")
         
         task = TaskContext(
             task_id=UUID(state["task_id"]), task_type=AgentTaskType.MESSAGE, priority="high",
@@ -497,6 +523,16 @@ async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState
         )
         
         if agent:
+            # IMPORTANT: Include attachments in context so they can be passed to BA after confirmation
+            # Note: use "or []" because attachments may be None
+            attachments = state.get("attachments") or []
+            question_context = {
+                "original_user_message": state.get("user_message", ""),
+                "attachments": attachments
+            }
+            
+            logger.info(f"[confirm_replace] Saving context with {len(attachments)} attachment(s)")
+            
             await agent.message_user(
                 "question",
                 question,
@@ -507,9 +543,7 @@ async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState
                         "Giữ nguyên project cũ"
                     ],
                     "allow_multiple": False,
-                    "context": {
-                        "original_user_message": state.get("user_message", "")
-                    }
+                    "context": question_context
                 }
             )
         
@@ -540,6 +574,18 @@ async def confirm_existing(state: TeamLeaderState, agent=None) -> TeamLeaderStat
         )
         
         if agent:
+            # IMPORTANT: Include attachments in context so they can be passed to BA after confirmation
+            # Note: use "or []" because attachments may be None
+            attachments = state.get("attachments") or []
+            question_context = {
+                "original_user_message": state.get("user_message", ""),
+                "existing_prd_title": existing_title,
+                "existing_stories_count": stories_count,
+                "attachments": attachments
+            }
+            
+            logger.info(f"[confirm_existing] Saving context with {len(attachments)} attachment(s)")
+            
             await agent.message_user(
                 "question",
                 question,
@@ -551,11 +597,7 @@ async def confirm_existing(state: TeamLeaderState, agent=None) -> TeamLeaderStat
                         "Tạo lại từ đầu"
                     ],
                     "allow_multiple": False,
-                    "context": {
-                        "original_user_message": state.get("user_message", ""),
-                        "existing_prd_title": existing_title,
-                        "existing_stories_count": stories_count
-                    }
+                    "context": question_context
                 }
             )
         

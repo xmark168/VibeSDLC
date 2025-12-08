@@ -244,7 +244,7 @@ class TeamLeader(BaseAgent):
                 # Delete existing PRD, Epics, Stories
                 await self._delete_existing_project_data()
                 
-                # Get original user message for context
+                # Get original user message and attachments for context
                 original_context = task.context.get("original_context", {})
                 question_context = original_context.get("question_context", {})
                 original_message = (
@@ -254,6 +254,21 @@ class TeamLeader(BaseAgent):
                     "Tạo project mới"
                 )
                 
+                # IMPORTANT: Get original attachments to pass to BA
+                original_attachments = (
+                    question_context.get("attachments") or
+                    original_context.get("attachments") or
+                    []
+                )
+                
+                logger.info(f"[{self.name}] Original attachments found: {len(original_attachments)}")
+                if original_attachments:
+                    for i, att in enumerate(original_attachments):
+                        logger.info(f"[{self.name}] Attachment[{i}]: {att.get('filename')}, text_len={len(att.get('extracted_text', ''))}")
+                
+                # Show typing indicator while generating response (LLM call takes ~10s)
+                await self.message_user("thinking", "Đang xử lý yêu cầu...")
+                
                 # Generate and send response - mention BA delegation
                 msg = await generate_response_message(
                     action="replace",
@@ -261,10 +276,18 @@ class TeamLeader(BaseAgent):
                     extra_info=f"Yêu cầu của user: {original_message}",
                     agent=self
                 )
-                await self.message_user("response", msg)
+                logger.info(f"[{self.name}] Generated replace response: {msg[:100] if msg else 'EMPTY'}...")
+                await self.message_user("response", msg, display_mode="chat")  # Force chat mode
+                logger.info(f"[{self.name}] Sent replace response to user")
                 
-                # Delegate to BA for new project (original_message already extracted above)
+                # Delegate to BA for new project with attachments
                 logger.info(f"[{self.name}] Delegating to BA with message: {original_message[:50] if original_message else 'empty'}...")
+                logger.info(f"[{self.name}] Passing {len(original_attachments)} attachment(s) to BA")
+                
+                # Build context with attachments
+                new_task_context = {}
+                if original_attachments:
+                    new_task_context["attachments"] = original_attachments
                 
                 new_task = TaskContext(
                     task_id=task.task_id,
@@ -274,6 +297,7 @@ class TeamLeader(BaseAgent):
                     user_id=task.user_id,
                     project_id=self.project_id,
                     content=original_message,
+                    context=new_task_context if new_task_context else None,
                 )
                 await self.delegate_to_role(
                     task=new_task,
@@ -288,12 +312,17 @@ class TeamLeader(BaseAgent):
                 )
             
             # Default: Keep existing project (for CONFIRM_REPLACE - "Giữ nguyên project cũ")
+            # Show typing indicator while generating response
+            await self.message_user("thinking", "Đang xử lý...")
+            
             msg = await generate_response_message(
                 action="keep",
                 context="User chọn giữ nguyên project cũ, không thay đổi gì",
                 agent=self
             )
-            await self.message_user("response", msg)
+            logger.info(f"[{self.name}] Generated keep response: {msg[:100] if msg else 'EMPTY'}...")
+            await self.message_user("response", msg, display_mode="chat")  # Force chat mode
+            logger.info(f"[{self.name}] Sent keep response to user")
             
             return TaskResult(
                 success=True,
@@ -348,6 +377,20 @@ class TeamLeader(BaseAgent):
             if self.project_files:
                 await self.project_files.archive_docs()
                 logger.info(f"[{self.name}] Archived docs files to docs/archive/")
+            
+            # Send WebSocket notification to refresh Kanban board
+            # Note: save_to_db=False to avoid creating empty message in DB
+            await self.message_user(
+                event_type="response",
+                content="",  # No visible message, just trigger refresh
+                details={
+                    "message_type": "project_reset",  # Frontend will refresh Kanban
+                    "deleted_epics": len(epics),
+                    "deleted_stories": len(stories),
+                },
+                save_to_db=False,  # Don't save to DB, just broadcast via WebSocket
+            )
+            logger.info(f"[{self.name}] Sent project_reset notification to frontend")
                 
         except Exception as e:
             logger.error(f"[{self.name}] Error deleting project data: {e}", exc_info=True)
