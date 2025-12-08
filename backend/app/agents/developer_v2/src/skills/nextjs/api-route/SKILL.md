@@ -30,6 +30,38 @@ API routes live in the `app/api/` directory:
 - Many-to-many/One-to-many → **PLURAL** (categories, tags, posts)
 - One-to-one/Many-to-one → **SINGULAR** (category, user, author)
 
+## Many-to-Many qua Join Table
+
+Khi có join table, PHẢI navigate qua nó:
+
+```prisma
+// Schema với join table
+model Category {
+  books BookCategory[]  // Đây là join table records, KHÔNG PHẢI Book[]!
+}
+model BookCategory {
+  book Book @relation(...)
+}
+```
+
+```typescript
+// ❌ WRONG - books là BookCategory[], không có coverImage
+const categories = await prisma.category.findMany({
+  include: { books: true }
+});
+categories[0].books[0].coverImage  // ERROR!
+
+// ✅ CORRECT - include nested relation
+const categories = await prisma.category.findMany({
+  include: { 
+    books: { 
+      include: { book: { select: { id: true, coverImage: true } } }
+    }
+  }
+});
+categories[0].books[0].book.coverImage  // OK
+```
+
 ## Schema Field Validation
 
 **CRITICAL**: ONLY use fields that EXIST in the Prisma schema.

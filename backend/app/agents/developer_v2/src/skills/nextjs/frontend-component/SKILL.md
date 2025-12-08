@@ -1,263 +1,95 @@
 ---
 name: frontend-component
-description: Create React/Next.js 16 components. Use when building pages, client/server components, forms with useActionState, or UI with shadcn/ui. Handles 'use client' directive decisions. ALWAYS activate with frontend-design together.
+description: Create React/Next.js 16 components. Use when building pages, client/server components, forms with useActionState, or UI with shadcn/ui. ALWAYS activate with frontend-design together.
 ---
 
-This skill guides creation of React components in Next.js 16 with React 19. Components follow the App Router architecture with Server Components as default and Client Components for interactivity.
+## ⚠️ CRITICAL RULES
 
-The user needs to build pages, UI components, forms, or interactive elements.
-
-## Before You Start
-
-Always activate the design skill alongside this one for UI work:
-
-```
-activate_skills(["frontend-component", "frontend-design"])
-```
-
-**CRITICAL**: Before importing any custom component from `@/components/*`, you MUST read that file first to check its Props interface. Never guess prop names.
-
-## ⚠️ NULL SAFETY (CRITICAL - READ FIRST)
-
-**NEVER call methods on potentially undefined/null values.**
-
-### Common Crashes to AVOID
-
+### 1. Props Check - ALWAYS read component file first
 ```tsx
-// ❌ CRASHES if parts is undefined
-parts.map((p) => ...)
-data.items.filter(...)
-result.users.length
+// ❌ ERROR
+<BookCard id={book.id} title={book.title} />
+
+// Component expects: interface BookCardProps { book: Book; }
+// ✅ CORRECT
+<BookCard book={book} />
+```
+
+### 2. Layout - NO header in pages
+Root `layout.tsx` has `<Navigation />`. Pages only have content:
+```tsx
+// ✅ CORRECT
+export default function Page() {
+  return <main className="container py-8">...</main>;
+}
+```
+
+### 3. Null Safety
+```tsx
+// ❌ CRASHES
+parts.map(p => ...)
 
 // ✅ SAFE
-(parts ?? []).map((p) => ...)
-(data?.items ?? []).filter(...)
-result?.users?.length ?? 0
-```
+(parts ?? []).map(p => ...)
+data?.items?.length ?? 0
 
-### Rules
+// Props default
+function List({ items = [] }: Props) { ... }
 
-1. **Array from props** → Default value
-```tsx
-function List({ items = [] }: Props) {
-  return items.map(...)  // Safe
-}
-```
-
-2. **Array from API** → Nullish coalescing
-```tsx
-const json = await res.json();
-setItems(json.data ?? []);  // Safe
-```
-
-3. **Nested access** → Optional chaining + default
-```tsx
-const count = data?.results?.items?.length ?? 0;
-return (data?.results?.items ?? []).map(...)
-```
-
-4. **Before .map()/.filter()/.reduce()** → Always check
-```tsx
-// Option A: Default in destructuring
-const { parts = [] } = props;
-return parts.map(...)
-
-// Option B: Inline nullish coalescing  
-return (parts ?? []).map(...)
-
-// Option C: Early return
-if (!parts?.length) return null;
-return parts.map(...)
-```
-
-### State Initialization
-
-```tsx
-// ✅ Always initialize with correct type
+// State init
 const [items, setItems] = useState<Item[]>([]);
-const [user, setUser] = useState<User | null>(null);
-
-// ❌ Never leave undefined
-const [items, setItems] = useState();  // items is undefined!
 ```
 
-## Server vs Client Components
+## Server vs Client
 
-- **Server Components** (default): Fetch data, access database, async/await
-- **Client Components** (`'use client'`): Hooks, events, browser APIs
+- **Server** (default): async/await, no hooks
+- **Client** (`'use client'`): useState, useEffect, onClick
 
-Add `'use client'` when using:
-- `useState`, `useEffect`, `useRef`, `useContext`
-- `useActionState`, `useTransition`
-- `onClick`, `onChange`, `onSubmit` handlers
-- `useRouter`, `usePathname` from next/navigation
+`'use client'` MUST be first line.
 
-## Defensive Prop Handling
-
-**CRITICAL**: Always handle undefined/null props to prevent runtime crashes.
-
-- **Array props**: Always use default `= []`
-- **Object props**: Check before accessing properties
-- **Nested access**: Use optional chaining `?.`
-- **Early return**: Handle loading/empty states first
+## Page with Dynamic Params
 
 ```tsx
-// Array props - always default to empty array
-function List({ items = [] }: Props) {
-  if (!items.length) return <EmptyState />;
-  return items.map(item => <Item key={item.id} {...item} />);
-}
+interface PageProps { params: Promise<{ id: string }>; }
 
-// Object props - check before render
-function Detail({ data }: Props) {
-  if (!data) return null;
-  return <div>{data.name}</div>;
-}
-
-// Nested access - use optional chaining
-function Info({ user }: Props) {
-  return <span>{user?.profile?.avatar ?? '/default.png'}</span>;
-}
-```
-
-## Reading Components Before Import
-
-When importing from `@/components/*`, always read the file first:
-
-```
-WRONG: write_file with <Card searchQuery={...} /> (guessing props)
-CORRECT: read_file first, see Props interface, then write_file
-```
-
-Check interface format for prop passing:
-- Individual props: `{ id, name }` -> pass each or spread
-- Object prop: `{ item: Item }` -> pass whole object
-
-## Page Components
-
-Pages use `export default` and can be async:
-
-```tsx
-// app/users/[id]/page.tsx
-interface PageProps {
-  params: Promise<{ id: string }>;
-}
-
-export default async function UserPage({ params }: PageProps) {
+export default async function Page({ params }: PageProps) {
   const { id } = await params;  // MUST await in Next.js 16
-  const user = await prisma.user.findUnique({ where: { id } });
-  
-  if (!user) notFound();
-  return <UserProfile user={user} />;
+  const data = await prisma.item.findUnique({ where: { id } });
+  if (!data) notFound();
+  return <Detail data={data} />;
 }
 ```
 
 ## Forms with useActionState
 
-Connect forms to Server Actions:
-
 ```tsx
 'use client';
-import { useActionState } from 'react';
-import { createItem } from '@/app/actions/item';
+const [state, action, pending] = useActionState(serverAction, null);
 
-export function CreateForm() {
-  const [state, action, pending] = useActionState(createItem, null);
-  
-  return (
-    <form action={action}>
-      <input name="name" disabled={pending} />
-      {state?.fieldErrors?.name && (
-        <p className="text-destructive">{state.fieldErrors.name[0]}</p>
-      )}
-      <button disabled={pending}>
-        {pending ? 'Saving...' : 'Save'}
-      </button>
-      {state?.error && <p className="text-destructive">{state.error}</p>}
-    </form>
-  );
-}
+<form action={action}>
+  <input name="field" disabled={pending} />
+  {state?.fieldErrors?.field && <p className="text-destructive">{state.fieldErrors.field[0]}</p>}
+  <button disabled={pending}>{pending ? '...' : 'Submit'}</button>
+</form>
 ```
 
-## API Response Handling
+## Data Fetching
 
-API routes wrap data with `successResponse()`. Always extract `.data`:
+```tsx
+const [items, setItems] = useState<Item[]>([]);
+const [error, setError] = useState<string | null>(null);
 
-```typescript
 const res = await fetch('/api/items');
-const json = await res.json();
-setItems(json.data ?? []);  // Extract .data, default to []
+if (!res.ok) { setError('Failed to fetch'); return; }
+setItems((await res.json()).data ?? []);
+
+// Show error
+{error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
 ```
 
-Always initialize useState with proper defaults:
-- Arrays: `useState<Item[]>([])`
-- Objects: `useState<Item | null>(null)`
-- Strings: `useState('')`
-
-## Error Handling for Users
-
-**CRITICAL**: Never silently fail. Always show user-facing error messages.
-
-```tsx
-'use client';
-import { useState } from 'react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-
-export function DataList() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const fetchData = async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const res = await fetch('/api/items');
-      if (!res.ok) throw new Error('Failed to fetch items');
-      
-      const json = await res.json();
-      setItems(json.data ?? []);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'An error occurred';
-      setError(message);
-      // Optional: toast for non-blocking errors
-      // toast.error(message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div>
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      {/* rest of component */}
-    </div>
-  );
-}
-```
-
-**Rules:**
-- Add `error` state alongside data state
-- Show Alert/Banner for blocking errors
-- Use toast (sonner) for non-blocking errors
-- Clear error before new request: `setError(null)`
-
-## Component Export Rules
-
-- **Pages/Layouts**: `export default`
-- **All other components**: Named exports only
-
-NEVER:
-- Use `'use client'` when not needed
-- Guess prop names without reading component file
-- Forget to `await params` in dynamic routes
-- Access array/object props without defensive checks
-- Pass raw API response to useState (extract .data first)
-- Use default exports for non-page components
-
-**IMPORTANT**: The directive `'use client'` must be the very first line, before any imports.
+## NEVER
+- `'use client'` when not needed
+- Guess props without reading component
+- Forget `await params` in dynamic routes
+- Access array/object without null checks
+- Add Header in pages (already in layout)

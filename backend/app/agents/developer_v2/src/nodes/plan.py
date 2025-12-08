@@ -51,11 +51,14 @@ def _smart_prefetch(workspace_path: str, story_title: str, requirements: list) -
     
     context_parts = []
     
-    # Always read core files
+    # Always read core files (expanded for better context)
     core_files = [
         ("package.json", 500),
-        ("prisma/schema.prisma", 2000),
-        ("src/app/layout.tsx", 2000),  # Full content to see rendered components
+        ("prisma/schema.prisma", 3000),
+        ("src/app/layout.tsx", 2000),
+        ("src/lib/prisma.ts", 1000),
+        ("src/types/index.ts", 1500),
+        ("src/app/actions/index.ts", 1000),
         ("tsconfig.json", 300),
     ]
     
@@ -74,16 +77,16 @@ def _smart_prefetch(workspace_path: str, story_title: str, requirements: list) -
     text = f"{story_title} {req_text}".lower()
     keywords = _extract_keywords(text)
     
-    # Find related files based on keywords
-    for keyword in keywords[:5]:
+    # Find related files based on keywords (expanded)
+    for keyword in keywords[:8]:
         pattern = os.path.join(workspace_path, "src", "**", f"*{keyword}*")
         try:
             matches = glob_module.glob(pattern, recursive=True)
-            for match in matches[:2]:
+            for match in matches[:3]:
                 if os.path.isfile(match):
                     rel_path = os.path.relpath(match, workspace_path)
                     with open(match, 'r', encoding='utf-8') as f:
-                        content = f.read()[:1000]
+                        content = f.read()[:1500]
                     context_parts.append(f"### {rel_path}\n```\n{content}\n```")
         except Exception:
             pass
@@ -435,7 +438,7 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
             messages=messages,
             state=state,
             name="analyze_and_plan",
-            max_iterations=8  # Enough for explore + output
+            max_iterations=5  # Sonnet needs fewer iterations with better prefetch
         )
         
         # Truncate if too long (no summarize LLM call needed)

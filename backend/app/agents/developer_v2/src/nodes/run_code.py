@@ -1,6 +1,7 @@
 """Run code node - Execute format, lint fix, typecheck, build."""
 import asyncio
 import concurrent.futures
+import json
 import logging
 from pathlib import Path
 from typing import Tuple, Optional, List
@@ -10,6 +11,18 @@ from app.agents.developer_v2.src.tools.shell_tools import run_shell
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context, get_langfuse_span
 
 logger = logging.getLogger(__name__)
+
+
+def _has_script(workspace_path: str, script_name: str) -> bool:
+    """Check if a script exists in package.json."""
+    try:
+        pkg_path = Path(workspace_path) / "package.json"
+        if pkg_path.exists():
+            pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+            return script_name in pkg.get("scripts", {})
+    except Exception:
+        pass
+    return False
 
 # Thread pool for parallel shell commands
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
@@ -120,7 +133,8 @@ async def _run_service_build(
     
     try:
         # Run typecheck first (catches type errors with clearer messages, ~5s)
-        if typecheck_cmd:
+        # Skip if script doesn't exist in package.json
+        if typecheck_cmd and _has_script(workspace_path, "typecheck"):
             success, stdout, stderr = _run_step(
                 "Typecheck", typecheck_cmd, workspace_path, svc_name, timeout=60
             )
@@ -130,6 +144,8 @@ async def _run_service_build(
                 if svc_span:
                     svc_span.end(output={"status": "TYPECHECK_FAIL"})
                 return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
+        elif typecheck_cmd:
+            logger.info(f"[run_code] [{svc_name}] Skipping typecheck (script not found)")
         
         if build_cmd:
             success, stdout, stderr = _run_step("Build", build_cmd, workspace_path, svc_name, timeout=180)

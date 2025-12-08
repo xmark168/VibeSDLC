@@ -27,7 +27,7 @@ LLM_CONFIG = {
     "router": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     "clarify": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     "respond": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
-    "exploration": {"model": MODELS["fast"], "temperature": 0.2, "timeout": 60},  # Fast exploration with tools
+    "exploration": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 60},  # Sonnet for smarter exploration
     
     # Planning - use medium (sonnet)
     "analyze": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 40},
@@ -46,11 +46,11 @@ LLM_CONFIG = {
 # Model selection by skill type (for implement step)
 # All use Sonnet for speed (Opus too slow, ~26s vs ~10s per step)
 SKILL_MODEL_MAP = {
-    "frontend-design": MODELS["complex"],
-    "frontend-component": MODELS["complex"],
+    "frontend-design": MODELS["complex"],     # Opus for better UI design
+    "frontend-component": MODELS["complex"],  # Opus for accurate components
     "api-route": MODELS["medium"],
     "database-model": MODELS["medium"],
-    "database-seed": MODELS["fast"],  # Simple seed data generation
+    "database-seed": MODELS["medium"],  # Sonnet for better seed data
     "server-action": MODELS["medium"],
     "authentication": MODELS["medium"],
     "state-management": MODELS["medium"],

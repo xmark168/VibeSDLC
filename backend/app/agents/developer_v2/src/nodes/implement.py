@@ -270,6 +270,10 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         step_dependencies = step.get("dependencies", [])
         step_skills = step.get("skills", [])  # Skills from plan
         
+        # Auto-include frontend-component when frontend-design is used
+        if "frontend-design" in step_skills and "frontend-component" not in step_skills:
+            step_skills = step_skills + ["frontend-component"]
+        
         # Load skill registry and preload skills from step
         skill_registry = state.get("skill_registry") or SkillRegistry.load(tech_stack)
         

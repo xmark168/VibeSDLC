@@ -249,15 +249,15 @@ class SimpleDeveloperRunner:
                             "db_type": "postgresql",
                             "validation": "zod",
                             "auth": "next-auth",
-                            "install_cmd": "bun install --ignore-scripts --linker=isolated",
-                            "test_cmd": "bun run test",
-                            "run_cmd": "bun dev",
-                            "build_cmd": "bun run build",
-                            "lint_cmd": "bun run lint",
-                            "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
-                            "format_cmd": "bunx prettier --write .",
+                            "install_cmd": "pnpm install --ignore-scripts ",
+                            "test_cmd": "pnpm run test",
+                            "run_cmd": "pnpm dev",
+                            "build_cmd": "pnpm run build",
+                            "lint_cmd": "pnpm run lint",
+                            "lint_fix_cmd": "pnpm eslint --fix . --ext .ts,.tsx,.js,.jsx",
+                            "format_cmd": "pnpm prettier --write .",
                             "needs_db": True,
-                            "db_cmds": ["bunx prisma generate", "bunx prisma db push --accept-data-loss"],
+                            "db_cmds": ["pnpm prisma generate", "pnpm prisma db push --accept-data-loss"],
                         }
                     ]
                 }

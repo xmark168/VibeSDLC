@@ -255,6 +255,12 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         project_id = state.get("project_id", "default")
         task_id = state.get("task_id") or state.get("story_id", "")
         
+        # Limit debug attempts to prevent infinite loops
+        MAX_DEBUG_ATTEMPTS = 3
+        if debug_count >= MAX_DEBUG_ATTEMPTS:
+            logger.warning(f"[analyze_error] Max debug attempts ({MAX_DEBUG_ATTEMPTS}) reached, giving up")
+            return {**state, "action": "RESPOND", "error": f"Max debug attempts ({MAX_DEBUG_ATTEMPTS}) reached"}
+        
         if not error_logs:
             logger.info("[analyze_error] No error logs")
             return {**state, "action": "RESPOND"}
