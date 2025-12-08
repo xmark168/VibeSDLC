@@ -242,6 +242,52 @@ def _get_existing_routes(workspace_path: str) -> list[str]:
     return routes
 
 
+def _load_api_source_code(workspace_path: str, routes: list[str]) -> str:
+    """Load actual API source code for LLM to analyze.
+    
+    This helps LLM understand WHAT each API actually does:
+    - What query params are supported
+    - What the response structure looks like
+    - What database operations are performed
+    
+    Returns:
+        Formatted string with API source code
+    """
+    from pathlib import Path
+    
+    if not workspace_path or not routes:
+        return "No API source code available."
+    
+    path = Path(workspace_path)
+    api_sources = []
+    
+    for route in routes[:10]:  # Limit to 10 routes to avoid token overflow
+        route_path = path / route
+        if route_path.exists():
+            try:
+                content = route_path.read_text(encoding="utf-8")
+                # Truncate long files
+                if len(content) > 2000:
+                    content = content[:2000] + "\n// ... (truncated)"
+                
+                # Extract route URL from path
+                # e.g., "src/app/api/categories/route.ts" -> "/api/categories"
+                route_url = route.replace("src/app", "").replace("app", "")
+                route_url = route_url.replace("/route.ts", "").replace("/route.tsx", "")
+                route_url = route_url.replace("\\", "/")
+                if not route_url.startswith("/"):
+                    route_url = "/" + route_url
+                
+                api_sources.append(f"### {route_url}\nFile: {route}\n```typescript\n{content}\n```")
+            except Exception as e:
+                logger.warning(f"[_load_api_source_code] Failed to load {route}: {e}")
+    
+    if not api_sources:
+        return "No API source code available."
+    
+    return "\n\n".join(api_sources)
+
+
 def _preload_test_dependencies(workspace_path: str, test_plan: list, stories: list = None) -> dict:
     """Pre-load source files that tests will need as context (MetaGPT-style).
     
@@ -480,6 +526,12 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         existing_routes = _get_existing_routes(workspace_path)
     existing_routes_text = "\n".join(f"- {r}" for r in existing_routes) if existing_routes else "No API routes found."
     
+    # Load actual API source code for LLM to analyze
+    api_source_code = ""
+    if workspace_path and existing_routes:
+        api_source_code = _load_api_source_code(workspace_path, existing_routes)
+        logger.info(f"[plan_tests] Loaded {len(api_source_code)} chars of API source code")
+    
     try:
         # Call LLM to create test plan
         response = await _llm.ainvoke(
@@ -492,6 +544,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
                     project_context=project_context[:2000] if project_context else "N/A",
                     test_structure=json.dumps(test_structure, indent=2),
                     existing_routes=existing_routes_text,
+                    api_source_code=api_source_code,
                 )),
             ],
             config=_cfg(state, "plan_tests"),

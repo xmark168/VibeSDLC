@@ -95,6 +95,37 @@ tasks:
       - SKIP stories about config/setup/refactoring - only test USER FEATURES
       </rules>
       
+      <critical_rule_scenarios>
+      ⛔ ONLY CREATE SCENARIOS FOR FEATURES THAT ACTUALLY EXIST IN THE CODE!
+      
+      Before creating a scenario, CHECK the <existing_api_routes> and source code:
+      - If API has query param `?level=X` → you CAN plan "filter by level" scenario
+      - If API has NO query params → you CANNOT plan filter scenarios
+      - If Component has onClick handler → you CAN plan "click" scenario
+      - If Component has NO props → you CANNOT plan "handles prop X" scenario
+      
+      Example - API without filters:
+      ```typescript
+      // GET /api/categories - NO query params
+      export async function GET() {
+        const categories = await prisma.category.findMany();
+        return successResponse(categories);
+      }
+      ```
+      ✅ Valid scenarios: "returns all categories", "returns empty array when no data"
+      ❌ Invalid scenarios: "filter by gradeLevel", "filter by type" (NOT IN CODE!)
+      
+      Example - API with filters:
+      ```typescript
+      // GET /api/books/search?q=X&level=Y
+      export async function GET(request: NextRequest) {
+        const level = request.nextUrl.searchParams.get('level');
+        // ... uses level to filter
+      }
+      ```
+      ✅ Valid scenarios: "filter by level returns matching books"
+      </critical_rule_scenarios>
+      
       <anti_patterns>
       - DO NOT use __tests__/integration/ (wrong path - missing src/)
       - DO NOT use tests/ folder (non-standard)
@@ -102,6 +133,8 @@ tasks:
       - DO NOT create more than 6 scenarios per test file
       - DO NOT use unit test for API routes (use integration)
       - DO NOT use integration test for React components (use unit)
+      - ⛔ DO NOT invent scenarios for features that don't exist in source code
+      - ⛔ DO NOT assume API has query params without checking the code
       </anti_patterns>
 
     user_prompt: |
@@ -112,6 +145,10 @@ tasks:
       <existing_api_routes>
       {existing_routes}
       </existing_api_routes>
+      
+      <api_source_code>
+      {api_source_code}
+      </api_source_code>
       
       <related_code>
       {related_code}
@@ -129,6 +166,11 @@ tasks:
       ONLY create tests for APIs listed in <existing_api_routes>.
       DO NOT plan tests for features/routes that do not exist yet.
       If a story requires code that is not implemented, SKIP that test.
+      
+      ⛔ READ <api_source_code> CAREFULLY before creating scenarios:
+      - Check if API accepts query params (searchParams.get)
+      - Check what database operations are performed
+      - ONLY create scenarios for features that EXIST in the code
       </critical_constraint>
       
       Create test plan. Output JSON:
