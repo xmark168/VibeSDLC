@@ -223,24 +223,31 @@ def parse_document_analysis_response(response: str) -> dict:
         response: LLM response string
     
     Returns:
-        dict with 'collected_info', 'completeness_score', 'is_comprehensive', 'summary', 'missing_info'
+        dict with 'document_type', 'collected_info', 'completeness_score', 
+        'is_comprehensive', 'summary', 'extracted_items', 'missing_info'
     """
     try:
         result = parse_json_response(response)
         return {
+            "document_type": result.get("document_type", "partial_requirements"),
+            "detected_doc_kind": result.get("detected_doc_kind", ""),
             "collected_info": result.get("collected_info", {}),
             "completeness_score": float(result.get("completeness_score", 0.0)),
             "is_comprehensive": result.get("is_comprehensive", False),
             "summary": result.get("summary", ""),
+            "extracted_items": result.get("extracted_items", []),
             "missing_info": result.get("missing_info", [])
         }
     except (json.JSONDecodeError, ValueError) as e:
         logger.warning(f"[parse_document_analysis] Parse error: {e}")
         return {
+            "document_type": "partial_requirements",
+            "detected_doc_kind": "",
             "collected_info": {},
             "completeness_score": 0.0,
             "is_comprehensive": False,
-            "summary": "Error parsing document analysis",
+            "summary": "Không thể phân tích tài liệu",
+            "extracted_items": [],
             "missing_info": ["target_users", "main_features", "business_model"]
         }
 

@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2 } from "lucide-react"
+import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2, ChevronsRight } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
@@ -404,7 +404,19 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       )}
       {/* Tab bar */}
       <div className="flex items-center gap-1 px-2 pt-2 bg-background mb-2 justify-between">
-        <div className="flex gap-1">
+        <div className="flex gap-1 items-center">
+          {/* Show expand chat button when chat is collapsed */}
+          {chatCollapsed && onExpandChat && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onExpandChat}
+              className="h-8 px-2 mr-1"
+              title="Mở lại Chat"
+            >
+              <ChevronsRight className="w-4 h-4" />
+            </Button>
+          )}
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -431,7 +443,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           </div>
           <div>
             <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
-              Share
+              Public
             </Button>
           </div>
         </div>

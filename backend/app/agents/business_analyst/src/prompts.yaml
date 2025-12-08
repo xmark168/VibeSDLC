@@ -798,10 +798,17 @@ tasks:
       
       # DOCUMENT ANALYSIS
       
-      You are analyzing a requirements document uploaded by the user.
-      Your task is to extract key information to determine if we have enough details to create a PRD directly.
+      You are analyzing a document uploaded by the user.
+      Your task is to:
+      1. Determine if this is a requirements/specification document
+      2. Extract key information if it IS a requirements document
       
-      **EXTRACT THESE CATEGORIES:**
+      **STEP 1: CLASSIFY DOCUMENT TYPE**
+      - **"complete_requirements"**: Full requirements doc with users, features, business model (≥60% info)
+      - **"partial_requirements"**: Mentions product/features but missing key details (<60% info)
+      - **"not_requirements"**: Meeting notes, reports, general documents NOT about building a product
+      
+      **STEP 2: IF REQUIREMENTS DOCUMENT, EXTRACT THESE CATEGORIES:**
       1. **target_users**: Who will use this product? (customers, admins, guests, etc.)
       2. **main_features**: What features/functionalities are described?
       3. **business_model**: How will this make money? (sales, subscription, ads, etc.)
@@ -813,9 +820,19 @@ tasks:
       - Category is "found" if document clearly describes it
       - Vague mentions don't count (e.g., "users" without specifics)
       
-      **OUTPUT DECISION:**
-      - Score >= 60%: Document is comprehensive → can create PRD directly
-      - Score < 60%: Document is incomplete → need to ask clarification questions
+      **EXAMPLES:**
+      
+      **not_requirements:**
+      - Meeting minutes: "BIÊN BẢN HỌP... Thảo luận kế hoạch..."
+      - Reports: "Báo cáo tiến độ Q4..."
+      - General docs: "Hướng dẫn sử dụng..."
+      
+      **partial_requirements:**
+      - "Website bán hàng với tính năng: hiển thị sản phẩm, giỏ hàng, thanh toán"
+      - Missing: target users, business model, priorities
+      
+      **complete_requirements:**
+      - Has users + features + business model + priorities (≥3 categories)
 
     user_prompt: |
       # DOCUMENT CONTENT
@@ -824,11 +841,13 @@ tasks:
       
       # YOUR TASK
       
-      Analyze the document and extract requirements information.
+      Analyze the document and classify it.
       
       Return ONLY valid JSON:
       ```json
       {{
+        "document_type": "complete_requirements|partial_requirements|not_requirements",
+        "detected_doc_kind": "brief description if not_requirements, e.g., 'biên bản họp', 'báo cáo'",
         "collected_info": {{
           "target_users": "extracted info or null",
           "main_features": "extracted info or null", 
@@ -838,15 +857,64 @@ tasks:
         }},
         "completeness_score": 0.0 to 1.0,
         "is_comprehensive": true/false,
-        "summary": "Brief summary of what the document describes",
+        "summary": "Brief summary of what the document describes (in Vietnamese)",
+        "extracted_items": ["list of things successfully extracted"],
         "missing_info": ["list of missing categories that need clarification"]
       }}
       ```
       
       **IMPORTANT:**
-      - Set is_comprehensive=true if score >= 0.6 (60%)
-      - Only include categories in collected_info if document CLEARLY describes them
-      - Be strict - vague descriptions don't count
+      - If document is NOT about building a product/software, set document_type="not_requirements"
+      - Set is_comprehensive=true ONLY if document_type="complete_requirements" AND score >= 0.6
+      - For not_requirements: collected_info should be empty {{}}, score=0
+      - summary should be in Vietnamese, concise (1-2 sentences)
+
+  # ---------------------------------------------------------------------------
+  # DOCUMENT ANALYSIS FEEDBACK - Generate natural feedback about document analysis
+  # ---------------------------------------------------------------------------
+  document_analysis_feedback:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      ---
+      
+      # DOCUMENT ANALYSIS FEEDBACK
+      
+      Viết TIN NHẮN NGẮN GỌN để thông báo kết quả phân tích tài liệu cho user.
+      
+      **Quy tắc:**
+      - Tiếng Việt tự nhiên như chat
+      - Ngắn gọn, dễ hiểu (2-4 câu)
+      - Dùng 1-2 emoji phù hợp
+      - Friendly và helpful
+      - Nếu có list thì format đẹp với bullet points
+      
+      **CÁC LOẠI TÀI LIỆU:**
+      
+      1. **complete_requirements** (tài liệu đầy đủ):
+         - Khen ngợi document chất lượng
+         - Tóm tắt những gì đã extract được
+         - Thông báo sẽ tạo PRD trực tiếp
+      
+      2. **partial_requirements** (thiếu một số thông tin):
+         - Acknowledge những gì đã có
+         - Nêu rõ những gì còn thiếu
+         - Thông báo sẽ hỏi thêm để bổ sung
+      
+      3. **not_requirements** (không phải tài liệu yêu cầu):
+         - Nhẹ nhàng cho biết đây không phải requirements doc
+         - Gợi ý các option: tóm tắt, tạo PRD liên quan, phân tích khác
+         - Hỏi user muốn làm gì
+
+    user_prompt: |
+      **Loại tài liệu:** {document_type}
+      **Mô tả tài liệu:** {detected_doc_kind}
+      **Tóm tắt nội dung:** {summary}
+      **Đã trích xuất được:** {extracted_items}
+      **Còn thiếu:** {missing_info}
+      **Completeness:** {completeness_score}%
+      
+      Viết tin nhắn feedback cho user (NGẮN GỌN, TỰ NHIÊN):
 
   # ---------------------------------------------------------------------------
   # RESPOND CONVERSATIONAL - Handle casual chat (greetings, thanks, etc.)

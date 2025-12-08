@@ -18,6 +18,7 @@ class BAState(TypedDict, total=False):
     user_id: str
     project_path: str
     has_attachments: bool  # True if user uploaded file(s)
+    document_type: str  # "complete_requirements" | "partial_requirements" | "not_requirements" | ""
     
     # Context
     collected_info: dict

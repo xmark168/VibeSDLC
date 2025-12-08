@@ -252,28 +252,91 @@ async def analyze_document_content(document_text: str, agent=None) -> dict:
         }
         
         logger.info(
-            f"[BA] Document analysis: score={result['completeness_score']:.0%}, "
+            f"[BA] Document analysis: type={result['document_type']}, "
+            f"score={result['completeness_score']:.0%}, "
             f"comprehensive={result['is_comprehensive']}, "
             f"collected_categories={list(collected_info.keys())}"
         )
         
         return {
+            "document_type": result["document_type"],
+            "detected_doc_kind": result.get("detected_doc_kind", ""),
             "collected_info": collected_info,
             "is_comprehensive": result["is_comprehensive"],
             "completeness_score": result["completeness_score"],
             "summary": result["summary"],
+            "extracted_items": result.get("extracted_items", []),
             "missing_info": result["missing_info"]
         }
         
     except Exception as e:
         logger.warning(f"[BA] Document analysis failed: {e}")
         return {
+            "document_type": "partial_requirements",
+            "detected_doc_kind": "",
             "collected_info": {},
             "is_comprehensive": False,
             "completeness_score": 0.0,
             "summary": "",
+            "extracted_items": [],
             "missing_info": []
         }
+
+
+# Fallback messages for document analysis feedback
+_DOC_FALLBACK_MESSAGES = {
+    "complete_requirements": "✅ Tài liệu đầy đủ thông tin! Mình sẽ tạo PRD trực tiếp từ nội dung này.",
+    "partial_requirements": "📝 Đã trích xuất một số thông tin từ tài liệu. Mình cần hỏi thêm vài câu để làm rõ.",
+    "not_requirements": "📄 Đây không phải tài liệu yêu cầu dự án. Bạn muốn mình làm gì với nội dung này?",
+}
+
+
+async def generate_document_feedback(
+    document_type: str,
+    detected_doc_kind: str,
+    summary: str,
+    extracted_items: list,
+    missing_info: list,
+    completeness_score: float,
+    agent=None
+) -> str:
+    """Generate natural feedback message about document analysis using LLM.
+    
+    Args:
+        document_type: "complete_requirements" | "partial_requirements" | "not_requirements"
+        detected_doc_kind: Brief description if not_requirements (e.g., "biên bản họp")
+        summary: Summary of document content
+        extracted_items: List of successfully extracted items
+        missing_info: List of missing categories
+        completeness_score: 0.0-1.0 score
+        agent: Agent instance for LLM config
+        
+    Returns:
+        Generated feedback message string
+    """
+    try:
+        system_prompt = _sys_prompt(agent, "document_analysis_feedback")
+        user_prompt = _user_prompt(
+            "document_analysis_feedback",
+            document_type=document_type,
+            detected_doc_kind=detected_doc_kind or "không xác định",
+            summary=summary or "Không có tóm tắt",
+            extracted_items=", ".join(extracted_items) if extracted_items else "Không có",
+            missing_info=", ".join(missing_info) if missing_info else "Không có",
+            completeness_score=f"{completeness_score * 100:.0f}"
+        )
+        
+        response = await _default_llm.ainvoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+        )
+        
+        message = response.content.strip()
+        logger.info(f"[BA] Generated document feedback: {message[:100]}...")
+        return message
+        
+    except Exception as e:
+        logger.warning(f"[BA] generate_document_feedback LLM failed: {e}, using fallback")
+        return _DOC_FALLBACK_MESSAGES.get(document_type, _DOC_FALLBACK_MESSAGES["partial_requirements"])
 
 
 async def respond_conversational(state: BAState, agent=None) -> dict:
@@ -343,9 +406,10 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
             logger.warning("[BA] No questions generated, sending fallback message")
             await agent.message_user(
                 "response",
-                "📄 Mình đã xem qua tài liệu của bạn. Để phân tích chi tiết hơn, bạn có thể cho mình biết:\n"
-                "- Bạn muốn mình làm gì với tài liệu này? (tóm tắt, tạo PRD, trích xuất requirements...)\n"
-                "- Có điểm nào cụ thể bạn muốn mình tập trung phân tích không?"
+                "Để mình giúp bạn tạo PRD, bạn có thể cho mình biết thêm:\n"
+                "- Sản phẩm/dự án bạn muốn làm là gì?\n"
+                "- Đối tượng người dùng là ai?\n"
+                "- Những tính năng chính cần có?"
             )
         
         return {"questions": questions}
@@ -356,8 +420,7 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
         if agent:
             await agent.message_user(
                 "response",
-                "📄 Mình đã nhận tài liệu của bạn. Bạn muốn mình làm gì với nội dung này? "
-                "Ví dụ: tạo PRD, tóm tắt, hay phân tích chi tiết?"
+                "Mình cần thêm thông tin để hỗ trợ bạn. Bạn có thể mô tả sản phẩm/dự án cần làm không?"
             )
         return {"questions": [], "error": f"Failed to generate questions: {str(e)}"}
 

@@ -21,7 +21,7 @@ from app.agents.business_analyst.src.nodes import (
     process_batch_answers,
     generate_prd, extract_stories, save_artifacts,
     check_clarity, analyze_domain, ask_batch_questions,
-    analyze_document_content,
+    analyze_document_content, generate_document_feedback,
 )
 
 logger = logging.getLogger(__name__)
@@ -360,6 +360,7 @@ class BusinessAnalyst(BaseAgent):
         attachments = (task.context.get("attachments") or []) if task.context else []
         pre_collected_info = {}  # Pre-populated from document analysis
         document_is_comprehensive = False
+        document_type = ""  # "complete_requirements" | "partial_requirements" | "not_requirements"
         
         # Debug: Log task context
         logger.info(f"[{self.name}] === TASK CONTEXT DEBUG ===")
@@ -399,36 +400,56 @@ class BusinessAnalyst(BaseAgent):
                 # Show typing indicator while analyzing (response above clears it)
                 await self.message_user("thinking", "Đang phân tích tài liệu...")
                 
-                # Analyze document to extract requirements info
-                if len(all_extracted_text) > 500:  # Only analyze if document has substantial content
-                    doc_analysis = await analyze_document_content(all_extracted_text, agent=self)
-                    pre_collected_info = doc_analysis.get("collected_info", {})
-                    document_is_comprehensive = doc_analysis.get("is_comprehensive", False)
-                    
-                    logger.info(
-                        f"[{self.name}] Document analysis result: "
-                        f"comprehensive={document_is_comprehensive}, "
-                        f"score={doc_analysis.get('completeness_score', 0):.0%}, "
-                        f"collected_info={list(pre_collected_info.keys())}"
+                # Always analyze document (regardless of length)
+                doc_analysis = await analyze_document_content(all_extracted_text, agent=self)
+                document_type = doc_analysis.get("document_type", "partial_requirements")
+                pre_collected_info = doc_analysis.get("collected_info", {})
+                document_is_comprehensive = doc_analysis.get("is_comprehensive", False)
+                summary = doc_analysis.get("summary", "")
+                extracted_items = doc_analysis.get("extracted_items", [])
+                missing_info = doc_analysis.get("missing_info", [])
+                detected_doc_kind = doc_analysis.get("detected_doc_kind", "")
+                
+                logger.info(
+                    f"[{self.name}] Document analysis result: "
+                    f"type={document_type}, "
+                    f"comprehensive={document_is_comprehensive}, "
+                    f"score={doc_analysis.get('completeness_score', 0):.0%}, "
+                    f"collected_info={list(pre_collected_info.keys())}"
+                )
+                
+                # Generate natural feedback message using LLM (with agent personality)
+                feedback_msg = await generate_document_feedback(
+                    document_type=document_type,
+                    detected_doc_kind=detected_doc_kind,
+                    summary=summary,
+                    extracted_items=extracted_items,
+                    missing_info=missing_info,
+                    completeness_score=doc_analysis.get("completeness_score", 0),
+                    agent=self
+                )
+                
+                # Send feedback to user
+                await self.message_user("response", feedback_msg)
+                
+                # Handle based on document type
+                if document_type == "not_requirements":
+                    # Return early - don't run interview, wait for user to clarify
+                    doc_kind_text = detected_doc_kind if detected_doc_kind else "tài liệu chung"
+                    logger.info(f"[{self.name}] Document is not_requirements, waiting for user clarification")
+                    return TaskResult(
+                        success=True,
+                        output=f"Document analyzed as {doc_kind_text}, waiting for user clarification",
+                        structured_data={"action": "waiting_clarification", "document_type": document_type}
                     )
                     
-                    # Notify user about analysis result
-                    if document_is_comprehensive:
-                        await self.message_user(
-                            "response",
-                            f"✅ Tài liệu đầy đủ thông tin! Mình sẽ tạo PRD trực tiếp từ nội dung này."
-                        )
-                        # Show typing indicator while generating PRD
-                        await self.message_user("thinking", "Đang tạo PRD...")
-                    else:
-                        missing = doc_analysis.get("missing_info", [])
-                        if missing:
-                            await self.message_user(
-                                "response",
-                                f"📝 Đã trích xuất một số thông tin từ tài liệu. Mình cần hỏi thêm vài câu để làm rõ."
-                            )
-                            # Show typing indicator while preparing questions
-                            await self.message_user("thinking", "Đang chuẩn bị câu hỏi...")
+                elif document_type == "complete_requirements" and document_is_comprehensive:
+                    # Show typing indicator while generating PRD
+                    await self.message_user("thinking", "Đang tạo PRD...")
+                    
+                else:
+                    # Show typing indicator while preparing questions
+                    await self.message_user("thinking", "Đang chuẩn bị câu hỏi...")
         
         # Add user message to shared memory
         self.context.add_message("user", task.content)  # Save original message to memory
@@ -471,6 +492,7 @@ class BusinessAnalyst(BaseAgent):
             **self._build_base_state(task),
             "user_message": user_message,  # Use combined message with attachments
             "has_attachments": bool(attachments),  # Flag for document upload
+            "document_type": document_type,  # For routing: partial_requirements -> interview
             "collected_info": pre_collected_info,  # Pre-populated from document analysis
             "existing_prd": existing_prd,
             "conversation_context": self.context.format_memory(),

@@ -710,7 +710,7 @@ export function ChatPanelWS({
               Connecting...
             </div>
           )}
-          <Button
+          {/* <Button
             variant="ghost"
             size="icon"
             onClick={toggleTheme}
@@ -722,7 +722,7 @@ export function ChatPanelWS({
             ) : (
               <Sun className="w-4 h-4" />
             )}
-          </Button>
+          </Button> */}
           <Button
             variant="ghost"
             size="icon"
@@ -1140,7 +1140,7 @@ export function ChatPanelWS({
           );
         })}
 
-        {/* Typing Indicators - ChatGPT style inline indicators */}
+        {/* Typing Indicators*/}
         {Array.from(typingAgents.values()).map((typing) => (
           <TypingIndicator
             key={typing.id}
