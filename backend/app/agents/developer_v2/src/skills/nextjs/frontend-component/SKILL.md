@@ -5,7 +5,24 @@ description: Create React/Next.js 16 components. Use when building pages, client
 
 ## ⚠️ CRITICAL RULES
 
-### 1. Props Check - ALWAYS read component file first
+### 1. 'use client' - ADD when using hooks/events
+```tsx
+// MUST add 'use client' as FIRST LINE when component has:
+// - useState, useEffect, useRef, useContext
+// - onClick, onChange, onSubmit, onHover
+// - useRouter, usePathname
+
+'use client';  // ← FIRST LINE, before imports!
+
+import { useState } from 'react';
+
+export function BookCard() {
+  const [liked, setLiked] = useState(false);
+  return <button onClick={() => setLiked(true)}>Like</button>;
+}
+```
+
+### 2. Props Check - ALWAYS read component file first
 ```tsx
 // ❌ ERROR
 <BookCard id={book.id} title={book.title} />
@@ -15,7 +32,7 @@ description: Create React/Next.js 16 components. Use when building pages, client
 <BookCard book={book} />
 ```
 
-### 2. Layout - NO header in pages
+### 3. Layout - NO header in pages
 Root `layout.tsx` has `<Navigation />`. Pages only have content:
 ```tsx
 // ✅ CORRECT
@@ -24,7 +41,7 @@ export default function Page() {
 }
 ```
 
-### 3. Null Safety
+### 4. Null Safety
 ```tsx
 // ❌ CRASHES
 parts.map(p => ...)
@@ -39,13 +56,6 @@ function List({ items = [] }: Props) { ... }
 // State init
 const [items, setItems] = useState<Item[]>([]);
 ```
-
-## Server vs Client
-
-- **Server** (default): async/await, no hooks
-- **Client** (`'use client'`): useState, useEffect, onClick
-
-`'use client'` MUST be first line.
 
 ## Page with Dynamic Params
 
@@ -73,6 +83,19 @@ const [state, action, pending] = useActionState(serverAction, null);
 </form>
 ```
 
+## shadcn/ui Components
+
+All UI components are at `@/components/ui/*`:
+```tsx
+// ✅ CORRECT
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+
+// ❌ WRONG - file doesn't exist!
+import { Badge } from './badge';
+```
+
 ## Data Fetching
 
 ```tsx
@@ -93,3 +116,5 @@ setItems((await res.json()).data ?? []);
 - Forget `await params` in dynamic routes
 - Access array/object without null checks
 - Add Header in pages (already in layout)
+- Import from `'./badge'` - use `'@/components/ui/badge'`
+- Create UI components that already exist in shadcn/ui

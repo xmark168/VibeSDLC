@@ -48,19 +48,10 @@ tasks:
       - Project structure and types already loaded
       DO NOT request additional files. Output JSON directly.
       
-      # OUTPUT FORMAT (REQUIRED)
-      Output JSON immediately:
-      ```json
-      {
-        "content": "... COMPLETE FILE CONTENT HERE ...",
-        "explanation": "brief description of what was implemented"
-      }
-      ```
-      
-      IMPORTANT:
-      - Output the ENTIRE file content, not partial code
-      - Include ALL imports at the top
-      - The file path is already specified, just output content
+      # OUTPUT
+      Output JSON: {"content": "COMPLETE FILE CONTENT"}
+      - ENTIRE file content, not partial
+      - Include ALL imports at top
 
     input_template: |
       # Context
@@ -86,10 +77,7 @@ tasks:
       {feedback_section}
       
       # Instruction
-      Output JSON with complete file content (all context is pre-loaded above):
-      ```json
-      {"content": "COMPLETE FILE CODE HERE", "explanation": "brief description"}
-      ```
+      Output JSON: {"content": "COMPLETE FILE CODE"}
 
   # ---------------------------------------------------------------------------
   # ANALYZE ERROR - Debug and create fix plan
