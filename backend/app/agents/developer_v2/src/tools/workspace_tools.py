@@ -1,7 +1,10 @@
 """Workspace management tools for Developer V2."""
 
 import logging
+import os
 import shutil
+import stat
+import subprocess
 from pathlib import Path
 
 from ._base_context import set_tool_context
@@ -11,6 +14,34 @@ from .git_tools import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _force_remove_dir(path: Path) -> bool:
+    """Force remove directory, handles Windows long paths and read-only files."""
+    if not path.exists():
+        return True
+    
+    try:
+        # Windows: use rd /s /q for long paths in node_modules
+        if os.name == 'nt':
+            result = subprocess.run(
+                f'rd /s /q "{path}"',
+                shell=True, capture_output=True, timeout=60
+            )
+            if not path.exists():
+                return True
+        
+        # Fallback: shutil.rmtree with error handler
+        def on_rm_error(func, path, exc_info):
+            # Handle read-only files
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        
+        shutil.rmtree(path, onerror=on_rm_error)
+        return not path.exists()
+    except Exception as e:
+        logger.warning(f"[workspace] Force remove failed: {e}")
+        return False
 
 
 def cleanup_old_worktree(main_workspace: Path, branch_name: str, agent_name: str = "Developer"):
@@ -27,10 +58,8 @@ def cleanup_old_worktree(main_workspace: Path, branch_name: str, agent_name: str
             logger.warning(f"[{agent_name}] Git worktree remove failed: {e}")
         
         if worktree_path.exists():
-            try:
-                shutil.rmtree(worktree_path)
-            except Exception as e:
-                logger.error(f"[{agent_name}] Failed to remove directory: {e}")
+            if not _force_remove_dir(worktree_path):
+                logger.error(f"[{agent_name}] Failed to remove directory: {worktree_path}")
     
     try:
         set_tool_context(root_dir=str(main_workspace))

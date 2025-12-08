@@ -4,7 +4,8 @@ import re
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.nodes._llm import code_llm
+from app.agents.developer_v2.src.nodes._llm import review_llm
+from app.agents.developer_v2.src.nodes.schemas import SimpleReviewOutput
 from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_files
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
 from app.agents.developer_v2.src.utils.prompt_utils import (
@@ -125,10 +126,11 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
             HumanMessage(content=input_text)
         ]
         
-        response = await code_llm.ainvoke(messages, config=_cfg(state, "review"))
-        flush_langfuse(state)  # Real-time update
-        response_text = response.content if hasattr(response, 'content') else str(response)
-        review_result = _parse_review_response(response_text)
+        # Use structured output for minimal tokens (~30 vs ~300)
+        structured_llm = review_llm.with_structured_output(SimpleReviewOutput)
+        result = await structured_llm.ainvoke(messages, config=_cfg(state, "review"))
+        flush_langfuse(state)
+        review_result = result.model_dump()
         
         logger.info(f"[review] {file_path}: {review_result['decision']}")
         if review_result['decision'] == "LBTM":
@@ -164,8 +166,7 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
             **state,
             "current_step": current_step,
             "review_result": review_result["decision"],
-            "review_feedback": review_result["feedback"],
-            "review_details": review_result["review"],
+            "review_feedback": review_result.get("feedback", ""),
             "review_count": state.get("review_count", 0) + (1 if review_result["decision"] == "LBTM" else 0),
             "total_lbtm_count": total_lbtm,
             "step_lbtm_counts": step_lbtm_counts,

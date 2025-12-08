@@ -3,6 +3,7 @@ import os
 import re
 import logging
 import glob as glob_module
+from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
@@ -12,9 +13,9 @@ from app.agents.developer_v2.src.utils.llm_utils import (
     flush_langfuse,
     execute_llm_with_tools as _llm_with_tools,
 )
-from app.agents.developer_v2.src.nodes._llm import code_llm
+from app.agents.developer_v2.src.nodes._llm import code_llm, exploration_llm, fast_llm
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
-from app.agents.developer_v2.src.nodes.schemas import AnalyzePlanOutput
+from app.agents.developer_v2.src.nodes.schemas import SimplePlanOutput
 from app.agents.developer_v2.src.skills.registry import SkillRegistry
 from app.agents.developer_v2.src.skills import get_project_structure, get_plan_prompts
 from app.agents.developer_v2.src.tools.filesystem_tools import (
@@ -153,6 +154,64 @@ def _preload_dependencies(workspace_path: str, steps: list) -> dict:
     return dependencies_content
 
 
+def _auto_assign_skills(file_path: str) -> list:
+    """Auto-assign skills based on file path."""
+    if not file_path:
+        return []
+    
+    fp = file_path.lower()
+    skills = []
+    
+    # Database
+    if "schema.prisma" in fp:
+        skills.append("database-model")
+    elif "seed.ts" in fp:
+        skills.append("database-seed")
+    # API routes
+    elif "/api/" in fp or "route.ts" in fp:
+        skills.append("api-route")
+    # Server actions
+    elif "/actions/" in fp or "action.ts" in fp:
+        skills.append("server-action")
+    # Auth
+    elif "auth" in fp:
+        skills.append("authentication")
+    # Frontend
+    elif fp.endswith(".tsx"):
+        if "/components/" in fp:
+            skills.extend(["frontend-component", "frontend-design"])
+        elif "/app/" in fp:
+            skills.append("frontend-design")  # Pages
+    # Types
+    elif "/types/" in fp or fp.endswith(".d.ts"):
+        skills.append("typescript-types")
+    
+    return skills
+
+
+def _auto_detect_dependencies(file_path: str) -> list:
+    """Auto-detect dependencies based on file path."""
+    if not file_path:
+        return []
+    
+    fp = file_path.lower()
+    deps = []
+    
+    # All files might need schema
+    if "/api/" in fp or "/actions/" in fp or "seed.ts" in fp:
+        deps.append("prisma/schema.prisma")
+    
+    # Components/pages might need types
+    if fp.endswith(".tsx"):
+        deps.append("src/types/index.ts")
+    
+    # API routes might need lib
+    if "/api/" in fp:
+        deps.append("src/lib/prisma.ts")
+    
+    return deps
+
+
 async def _summarize_if_needed(exploration: str, state: dict) -> str:
     """Summarize exploration if too long, otherwise return as-is."""
     MAX_CHARS = 8000
@@ -172,7 +231,7 @@ Output a bullet-point summary focusing on:
 - Patterns to follow
 - Key insights for implementation"""
 
-    response = await code_llm.ainvoke([
+    response = await fast_llm.ainvoke([
         SystemMessage(content="You are a technical summarizer. Be concise."),
         HumanMessage(content=summary_prompt)
     ], config=_cfg(state, "summarize_exploration"))
@@ -230,18 +289,15 @@ async def _extract_json_with_retry(
     story_description: str,
     max_retries: int = 2
 ) -> dict:
-    """Extract JSON with structured output as PRIMARY method.
+    """Extract plan using simplified structured output (~250 tokens vs ~1000).
     
-    Strategy:
-    1. Try structured output with Pydantic (PRIMARY - 99% reliable)
-    2. If fails, try direct extraction (backup - for cached responses)
-    3. If still fails, fallback plan (never fails)
+    Optimized: Only outputs steps (file_path, action, task).
+    Post-process adds: order, skills, dependencies.
     """
-    # PRIMARY: Structured output with Pydantic (most reliable)
     try:
-        logger.info("[analyze_and_plan] Using structured output (primary)")
+        logger.info("[analyze_and_plan] Using optimized structured output")
         
-        structured_llm = code_llm.with_structured_output(AnalyzePlanOutput)
+        structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
         
         structured_prompt = f"""Convert this exploration into an implementation plan.
 
@@ -278,24 +334,14 @@ Create an implementation plan with:
         
         data = result.model_dump()
         if data and data.get("steps"):
-            logger.info(f"[analyze_and_plan] Structured output: {len(data['steps'])} steps")
+            logger.info(f"[analyze_and_plan] Got {len(data['steps'])} steps")
             return data
             
     except Exception as e:
         logger.warning(f"[analyze_and_plan] Structured output failed: {e}")
     
-    # BACKUP: Direct extraction (for edge cases or cached responses)
-    try:
-        data = extract_json_universal(response, "analyze_and_plan")
-        if data and data.get("steps"):
-            logger.info("[analyze_and_plan] Direct extraction backup success")
-            return data
-    except ValueError:
-        pass
-    
     # FALLBACK: Minimal plan (never fails)
-    logger.error("[analyze_and_plan] All methods failed, using fallback plan")
-    
+    logger.error("[analyze_and_plan] Fallback plan")
     return {
         "story_summary": story_title or "Implementation task",
         "logic_analysis": [],
@@ -384,7 +430,7 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
         ]
         
         response = await _llm_with_tools(
-            llm=code_llm,
+            llm=exploration_llm,  # Fast model (Haiku) for exploration
             tools=tools,
             messages=messages,
             state=state,
@@ -392,10 +438,11 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
             max_iterations=8  # Enough for explore + output
         )
         
-        # Summarize if response is too long
-        response = await _summarize_if_needed(response, state)
+        # Truncate if too long (no summarize LLM call needed)
+        if len(response) > 6000:
+            response = response[:6000]
         
-        # Extract JSON from response with robust retry mechanism
+        # Extract plan using optimized structured output
         data = await _extract_json_with_retry(
             response=response,
             state=state,
@@ -403,55 +450,50 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
             story_description=state.get("story_description", ""),
         )
         
-        # Parse results - MetaGPT style with logic_analysis
-        story_summary = data.get("story_summary", "")
+        # Get steps from simplified output
         steps = data.get("steps", [])
-        logic_analysis = data.get("logic_analysis", [])
+        story_summary = state.get("story_title", "Implementation task")
         
-        # Filter out migration steps (use db push instead)
-        steps = [s for s in steps if "migration" not in s.get("description", "").lower() 
+        # Filter out migration steps
+        steps = [s for s in steps if "migration" not in s.get("task", "").lower() 
                  and "migration" not in s.get("file_path", "").lower()]
+        
+        # Post-process: add order, skills, dependencies, description
+        for i, step in enumerate(steps):
+            step["order"] = i + 1
+            step["description"] = step.get("task", "")  # For backward compatibility
+            step["skills"] = _auto_assign_skills(step.get("file_path", ""))
+            step["dependencies"] = _auto_detect_dependencies(step.get("file_path", ""))
         
         # Auto-add seed step when database models are created
         has_schema_step = any(
-            s.get("file_path", "").endswith("schema.prisma") or 
-            "database-model" in s.get("skills", [])
+            s.get("file_path", "").endswith("schema.prisma")
             for s in steps
         )
         if has_schema_step:
-            # Find the schema step to add seed after it
-            schema_order = next(
-                (s.get("order", 1) for s in steps 
-                 if s.get("file_path", "").endswith("schema.prisma")),
-                1
+            seed_file = Path(workspace_path) / "prisma" / "seed.ts" if workspace_path else None
+            seed_exists = seed_file and seed_file.exists()
+            
+            schema_idx = next(
+                (i for i, s in enumerate(steps) if s.get("file_path", "").endswith("schema.prisma")),
+                0
             )
             seed_step = {
-                "order": schema_order + 1,
+                "order": schema_idx + 2,
                 "task": "Create seed data for new database models",
                 "description": "Seed database with sample data for testing and development",
                 "file_path": "prisma/seed.ts",
-                "action": "create",
-                "skills": ["database-model"],
+                "action": "modify" if seed_exists else "create",
+                "skills": ["database-seed"],
                 "dependencies": ["prisma/schema.prisma"]
             }
-            # Insert after schema step
-            steps.insert(schema_order, seed_step)
-            logger.info("[analyze_and_plan] Auto-added seed step after schema changes")
+            # Insert after schema step (schema_idx + 1)
+            steps.insert(schema_idx + 1, seed_step)
+            logger.info("[analyze_and_plan] Auto-added seed step after schema")
         
-        # Re-number steps after filtering
+        # Re-number after modifications
         for i, s in enumerate(steps):
             s["order"] = i + 1
-        
-        # Auto-assign frontend-design skill for all .tsx files
-        for step in steps:
-            file_path = step.get("file_path", "")
-            skills = step.get("skills", [])
-            
-            # All .tsx files (components AND pages) should have frontend-design
-            if file_path.endswith(".tsx"):
-                if "frontend-component" in skills and "frontend-design" not in skills:
-                    step["skills"] = skills + ["frontend-design"]
-                    logger.debug(f"[analyze_and_plan] Added frontend-design to {file_path}")
         
         # Build analysis from summary
         analysis = {
@@ -460,35 +502,27 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
             "summary": story_summary,
         }
         
-        logger.info(f"[analyze_and_plan] {len(steps)} steps, {len(logic_analysis)} logic entries")
+        logger.info(f"[analyze_and_plan] {len(steps)} steps")
         
-        # Pre-load dependency files (MetaGPT-style - reduces tool calls in implement)
+        # Pre-load dependency files
         dependencies_content = _preload_dependencies(workspace_path, steps)
-        logger.info(f"[analyze_and_plan] Pre-loaded {len(dependencies_content)} dependency files")
+        logger.info(f"[analyze_and_plan] Pre-loaded {len(dependencies_content)} files")
         
-        # Format message with file paths
-        steps_text = []
-        for i, s in enumerate(steps):
-            desc = s.get('description', '')
-            file_path = s.get('file_path', '')
-            action = s.get('action', '')
-            if file_path:
-                steps_text.append(f"  {s.get('order', i+1)}. [{action}] {file_path}: {desc}")
-            else:
-                steps_text.append(f"  {s.get('order', i+1)}. {desc}")
+        # Format message
+        steps_text = [
+            f"  {s.get('order', i+1)}. [{s.get('action', '')}] {s.get('file_path', '')}"
+            for i, s in enumerate(steps)
+        ]
         msg = f"📋 **{story_summary}**\n\n" + "\n".join(steps_text)
         
         return {
             **state,
-            # Analysis results
             "analysis_result": analysis,
             "task_type": "feature",
             "complexity": analysis["complexity"],
             "affected_files": [s.get("file_path") for s in steps if s.get("file_path")],
-            # Plan results - MetaGPT style
             "implementation_plan": steps,
-            "logic_analysis": logic_analysis,
-            "dependencies_content": dependencies_content,  # Pre-loaded!
+            "dependencies_content": dependencies_content,
             "total_steps": len(steps),
             "current_step": 0,
             "message": msg,

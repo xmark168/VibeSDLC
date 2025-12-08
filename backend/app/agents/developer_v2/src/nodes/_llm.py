@@ -27,6 +27,7 @@ LLM_CONFIG = {
     "router": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     "clarify": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     "respond": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
+    "exploration": {"model": MODELS["fast"], "temperature": 0.2, "timeout": 60},  # Fast exploration with tools
     
     # Planning - use medium (sonnet)
     "analyze": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 40},
@@ -49,6 +50,7 @@ SKILL_MODEL_MAP = {
     "frontend-component": MODELS["complex"],
     "api-route": MODELS["medium"],
     "database-model": MODELS["medium"],
+    "database-seed": MODELS["fast"],  # Simple seed data generation
     "server-action": MODELS["medium"],
     "authentication": MODELS["medium"],
     "state-management": MODELS["medium"],
@@ -67,11 +69,14 @@ def get_model_for_skills(skills: list[str]) -> str:
     
     has_complex = any(SKILL_MODEL_MAP.get(s) == MODELS["complex"] for s in skills)
     has_medium = any(SKILL_MODEL_MAP.get(s) == MODELS["medium"] for s in skills)
+    has_fast = any(SKILL_MODEL_MAP.get(s) == MODELS["fast"] for s in skills)
     
     if has_complex:
         return MODELS["complex"]
     elif has_medium:
         return MODELS["medium"]
+    elif has_fast:
+        return MODELS["fast"]
     else:
         return MODELS["medium"]  # Default to medium
 
@@ -219,8 +224,9 @@ code_llm = get_llm("implement")
 
 # Step-specific LLMs (optional, for fine-tuning)
 router_llm = get_llm("router")
+exploration_llm = get_llm("exploration")  # Fast model for codebase exploration
 analyze_llm = get_llm("analyze")
 plan_llm = get_llm("plan")
 implement_llm = get_llm("implement")
 debug_llm = get_llm("debug")
-review_llm=get_llm("review")
+review_llm = get_llm("review")

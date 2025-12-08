@@ -66,8 +66,6 @@ def _update_pnpm_install_cache(workspace_path: str) -> None:
 
 
 
-
-
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
     """Setup git workspace/branch for code modification."""
     logger.info("[NODE] setup_workspace")
@@ -75,8 +73,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
         
         if state.get("workspace_ready"):
-            logger.info("[setup_workspace] Workspace already ready, skipping")
-            return state
+            logger.info("[setup_workspace] Workspace ready, checking dependencies...")
         
         short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
         branch_name = f"story_{short_id}"
@@ -142,16 +139,12 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             except Exception as db_err:
                 logger.warning(f"[setup_workspace] Database setup failed: {db_err}")
         
-        # Run pnpm install if package.json exists (with caching optimization)
-        # pnpm uses content-addressable store for fast installs (~5-15s vs 60s+ for npm/bun)
+        # Setup node_modules via pnpm install
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if pkg_json and os.path.exists(pkg_json):
-            # Check if we can skip install (lockfile unchanged)
-            if _should_skip_pnpm_install(workspace_path):
-                logger.info("[setup_workspace] Skipping pnpm install (cached, lockfile unchanged)")
-            else:
+            if not _should_skip_pnpm_install(workspace_path):
                 try:
-                    logger.info("[setup_workspace] Running pnpm install...")
+                    logger.info("[setup_workspace] Running pnpm install --frozen-lockfile...")
                     result = subprocess.run(
                         "pnpm install --frozen-lockfile",
                         cwd=workspace_path,
@@ -171,6 +164,8 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                     logger.warning("[setup_workspace] pnpm install timed out")
                 except Exception as e:
                     logger.warning(f"[setup_workspace] pnpm install error: {e}")
+            else:
+                logger.info("[setup_workspace] Skipping pnpm install (cached)")
         
         # Run prisma generate if schema exists
         schema_path = os.path.join(workspace_path, "prisma", "schema.prisma") if workspace_path else ""

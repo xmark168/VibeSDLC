@@ -6,6 +6,7 @@ import platform
 import re
 import subprocess
 from datetime import date
+from pathlib import Path
 from typing import List, Dict, Optional
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -14,9 +15,8 @@ from app.agents.developer_v2.src.state import DeveloperState
 
 
 class ImplementOutput(BaseModel):
-    """Structured output for implementation step."""
+    """Structured output for implementation step - content only."""
     content: str = Field(description="COMPLETE file content")
-    explanation: str = Field(default="", description="Brief explanation of changes")
 
 from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_files, reset_modified_files, _modified_files
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
@@ -384,7 +384,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(output.content)
             _modified_files.add(file_path)  # Track for prisma auto-push
-            logger.info(f"[implement] {action.upper()} {file_path}: {output.explanation[:100] if output.explanation else 'done'}")
+            logger.info(f"[implement] {action.upper()} {file_path}")
         elif not output:
             logger.warning(f"[implement] Failed to parse JSON output, trying code block fallback")
             # Fallback: try to extract code from response and write
@@ -408,23 +408,37 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         if prisma_modified:
             workspace = state.get("workspace_path", "")
             if workspace:
-                logger.info("[implement] Prisma schema modified, running generate + db:push...")
+                logger.info("[implement] Prisma schema modified, running generate + db:push + seed...")
                 try:
-                    # Generate client first (direct subprocess, no tools)
+                    # Generate client first
                     result = subprocess.run(
-                        "bunx prisma generate", cwd=workspace, shell=True,
+                        "pnpm exec prisma generate", cwd=workspace, shell=True,
                         capture_output=True, text=True, timeout=60,
                         encoding='utf-8', errors='replace'
                     )
                     logger.info(f"[implement] prisma generate: {result.stdout[:200] if result.stdout else 'OK'}")
                     
-                    # Then push schema to DB
+                    # Push schema to DB
                     result = subprocess.run(
-                        "bunx prisma db push --accept-data-loss", cwd=workspace, shell=True,
+                        "pnpm exec prisma db push --accept-data-loss", cwd=workspace, shell=True,
                         capture_output=True, text=True, timeout=60,
                         encoding='utf-8', errors='replace'
                     )
                     logger.info(f"[implement] db:push: {result.stdout[:200] if result.stdout else 'OK'}")
+                    
+                    # Auto seed if seed.ts exists
+                    seed_file = Path(workspace) / "prisma" / "seed.ts"
+                    if seed_file.exists():
+                        logger.info("[implement] Running database seed...")
+                        result = subprocess.run(
+                            "pnpm exec tsx prisma/seed.ts", cwd=workspace, shell=True,
+                            capture_output=True, text=True, timeout=60,
+                            encoding='utf-8', errors='replace'
+                        )
+                        if result.returncode == 0:
+                            logger.info("[implement] Database seeded successfully")
+                        else:
+                            logger.warning(f"[implement] Seed failed: {result.stderr[:200] if result.stderr else 'unknown'}")
                 except Exception as e:
                     logger.warning(f"[implement] prisma commands failed: {e}")
         
