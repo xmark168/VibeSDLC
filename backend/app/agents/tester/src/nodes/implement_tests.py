@@ -194,42 +194,22 @@ async def _invoke_with_retry(
 
 
 # =============================================================================
-# Main Node Function
+# Single Step Implementation (used by parallel executor)
 # =============================================================================
 
-async def implement_tests(state: TesterState, agent=None) -> dict:
-    """Implement tests using structured output (Developer V2 pattern).
-
-    This node:
-    1. Gets current step from test_plan
-    2. Preloads skills into system prompt (no tool calls)
-    3. Uses pre-loaded dependencies from plan_tests
-    4. Single LLM call with structured output + retry
-    5. Direct file write (no tools)
-
-    Output:
-    - current_step: NOT incremented (review node handles this on LGTM)
-    - files_modified: Updated list
-    - review_count: Reset to 0 for fresh review
+async def _implement_single_step(
+    state: TesterState,
+    step: dict,
+    step_index: int,
+    total_steps: int,
+    skill_registry: SkillRegistry,
+    workspace_path: str,
+) -> dict:
+    """Implement a single test step (called in parallel).
+    
+    Returns:
+        Dict with file_path, content, success, error
     """
-    current_step = state.get("current_step", 0)
-    total_steps = state.get("total_steps", 0)
-    print(f"[NODE] implement_tests - step {current_step + 1}/{total_steps}")
-
-    test_plan = state.get("test_plan", [])
-    workspace_path = state.get("workspace_path", "") or state.get("project_path", "")
-    tech_stack = state.get("tech_stack", "nextjs")
-
-    # Check if all steps done
-    if current_step >= total_steps or current_step >= len(test_plan):
-        logger.info("[implement_tests] All steps completed")
-        return {
-            "message": "Hoàn thành tất cả steps.",
-            "action": "RUN",
-        }
-
-    # Get current step
-    step = test_plan[current_step]
     test_type = step.get("type", "integration")
     file_path = step.get("file_path", "")
     story_title = step.get("story_title", "Unknown")
@@ -237,45 +217,39 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
     scenarios = step.get("scenarios", [])
     step_skills = step.get("skills", [])
     step_dependencies = step.get("dependencies", [])
-
-    # Initialize skill registry and preload skills
-    skill_registry = SkillRegistry.load(tech_stack)
     
     # Auto-select skills if not specified based on test_type
     if not step_skills:
-        if test_type == "unit":
-            step_skills = ["unit-test"]
-        else:
-            step_skills = ["integration-test"]
+        step_skills = ["unit-test"] if test_type == "unit" else ["integration-test"]
     
-    # Preload skills into prompt (Developer V2 pattern - no tool calls)
+    # Preload skills into prompt
     skills_content = _preload_skills(skill_registry, step_skills)
-    logger.info(f"[implement_tests] Preloaded {len(step_skills)} skills: {step_skills}")
-
+    
     # Build pre-loaded dependencies context
     dependencies_content = state.get("dependencies_content", {})
     deps_context = _build_dependencies_context(dependencies_content, step_dependencies)
-    if deps_context:
-        logger.info(f"[implement_tests] Built deps_context with {len(deps_context)} chars")
-
-    # Include feedback from previous review (if LBTM)
+    
+    # Include feedback from previous review (if LBTM - for re-implementation)
     feedback_section = ""
     review_feedback = state.get("review_feedback", "")
-    if review_feedback:
+    failed_files = state.get("failed_files", [])
+    
+    # Only include feedback if this specific file failed
+    if review_feedback and file_path in failed_files:
         feedback_section = f"\n<previous_feedback>\n{review_feedback}\n</previous_feedback>"
-
+    
     # Format scenarios
     scenarios_str = "\n".join(f"- {s}" for s in scenarios) if scenarios else "N/A"
-
+    
     # Build system prompt with preloaded skills
     system_prompt = get_system_prompt("implement")
     if skills_content:
         system_prompt += f"\n\n{skills_content}"
-
+    
     # Build user prompt
     user_prompt = get_user_prompt(
         "implement",
-        step_number=current_step + 1,
+        step_number=step_index + 1,
         total_steps=total_steps,
         test_type=test_type,
         file_path=file_path,
@@ -283,12 +257,12 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
         description=description,
         scenarios=scenarios_str,
     )
-
-    # Append pre-loaded context and feedback (load ALL dependencies)
+    
+    # Append pre-loaded context
     if deps_context:
         user_prompt += f"\n\n{deps_context}"
     
-    # Add component context for unit tests (helps with correct selectors/props)
+    # Add component context for unit tests
     if test_type == "unit":
         component_context = state.get("component_context", "")
         if component_context:
@@ -296,58 +270,148 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
     
     if feedback_section:
         user_prompt += f"\n\n{feedback_section}"
-
+    
     try:
-        # Build messages
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt),
         ]
-
-        # Single LLM call with structured output + retry
-        logger.info(f"[implement_tests] Step {current_step + 1}: {description[:50]}...")
+        
+        logger.info(f"[implement_tests] Step {step_index + 1}: {description[:50]}...")
         
         structured_llm = _llm.with_structured_output(TestFileOutput)
         result = await _invoke_with_retry(
             structured_llm,
             messages,
-            config=_cfg(state, f"implement_step_{current_step + 1}"),
+            config=_cfg(state, f"implement_step_{step_index + 1}"),
         )
-
-        # Direct file write (no tools)
+        
+        # Direct file write
         actual_file_path = result.file_path or file_path
         write_result = _write_file_direct(workspace_path, actual_file_path, result.content)
         logger.info(f"[implement_tests] {write_result}")
-
-        # Track files
-        files_modified = state.get("files_modified", []).copy()
-        if actual_file_path and actual_file_path not in files_modified:
-            files_modified.append(actual_file_path)
-
-        # Progress message
-        msg = f"✅ Step {current_step + 1}/{total_steps}: {description}"
-        if result.summary:
-            msg += f"\n   {result.summary}"
-        await send_message(state, agent, msg, "progress")
-
-        logger.info(f"[implement_tests] Completed step {current_step + 1}")
-
+        
         return {
-            "current_step": current_step,  # Review node will increment on LGTM
-            "files_modified": files_modified,
-            "last_implemented_file": actual_file_path,
-            "last_test_content": result.content[:2000],  # For review
-            "review_count": 0,  # Reset for fresh review
-            "message": msg,
-            "action": "REVIEW",
+            "success": True,
+            "file_path": actual_file_path,
+            "content": result.content,
+            "summary": result.summary,
+            "step_index": step_index,
+            "test_type": test_type,
         }
-
+        
     except Exception as e:
-        logger.error(f"[implement_tests] Error after {MAX_RETRIES} retries: {e}", exc_info=True)
-        error_msg = f"Lỗi khi implement step {current_step + 1}: {str(e)}"
-        await send_message(state, agent, error_msg, "error")
+        logger.error(f"[implement_tests] Step {step_index + 1} failed: {e}")
         return {
+            "success": False,
+            "file_path": file_path,
             "error": str(e),
-            "message": error_msg,
-            "action": "RESPOND",
+            "step_index": step_index,
+            "test_type": test_type,
         }
+
+
+# =============================================================================
+# Main Node Function - PARALLEL EXECUTION
+# =============================================================================
+
+async def implement_tests(state: TesterState, agent=None) -> dict:
+    """Implement ALL test steps in PARALLEL using asyncio.gather.
+
+    This node:
+    1. Gets ALL steps from test_plan
+    2. Runs all implementations in parallel (IT + UT simultaneously)
+    3. Collects results and writes all files
+    4. Returns all modified files for parallel review
+
+    Benefits:
+    - 50% faster: IT and UT run at the same time
+    - Same quality: Each step gets full context
+    """
+    test_plan = state.get("test_plan", [])
+    total_steps = len(test_plan)
+    workspace_path = state.get("workspace_path", "") or state.get("project_path", "")
+    tech_stack = state.get("tech_stack", "nextjs")
+    
+    # Check for re-implementation mode (after LBTM)
+    failed_files = state.get("failed_files", [])
+    is_reimplementation = bool(failed_files)
+    
+    if is_reimplementation:
+        # Only re-implement failed files
+        steps_to_run = [
+            (i, step) for i, step in enumerate(test_plan)
+            if step.get("file_path", "") in failed_files
+        ]
+        print(f"[NODE] implement_tests - RE-IMPLEMENTING {len(steps_to_run)} failed files")
+    else:
+        # First run: implement ALL steps
+        steps_to_run = list(enumerate(test_plan))
+        print(f"[NODE] implement_tests - PARALLEL {total_steps} steps")
+    
+    if not steps_to_run:
+        logger.info("[implement_tests] No steps to implement")
+        return {
+            "message": "Không có steps cần implement.",
+            "action": "RUN",
+        }
+    
+    # Initialize skill registry once (shared across all steps)
+    skill_registry = SkillRegistry.load(tech_stack)
+    logger.info(f"[SkillRegistry] Loaded {len(skill_registry.skills)} skills for '{tech_stack}'")
+    
+    # Create tasks for ALL steps
+    tasks = []
+    for step_index, step in steps_to_run:
+        task = _implement_single_step(
+            state=state,
+            step=step,
+            step_index=step_index,
+            total_steps=total_steps,
+            skill_registry=skill_registry,
+            workspace_path=workspace_path,
+        )
+        tasks.append(task)
+    
+    # Run ALL implementations in PARALLEL
+    logger.info(f"[implement_tests] Running {len(tasks)} steps in parallel...")
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Collect results
+    files_modified = state.get("files_modified", []).copy() if is_reimplementation else []
+    implementation_results = []
+    success_count = 0
+    
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error(f"[implement_tests] Task exception: {result}")
+            continue
+        
+        if isinstance(result, dict):
+            implementation_results.append(result)
+            
+            if result.get("success"):
+                success_count += 1
+                file_path = result.get("file_path", "")
+                if file_path and file_path not in files_modified:
+                    files_modified.append(file_path)
+    
+    # Progress message
+    msg = f"✅ Implemented {success_count}/{len(tasks)} test files in parallel"
+    for result in implementation_results:
+        if result.get("success"):
+            test_icon = "🧩" if result.get("test_type") == "unit" else "🔧"
+            msg += f"\n   {test_icon} {result.get('file_path', 'unknown')}"
+    
+    await send_message(state, agent, msg, "progress")
+    logger.info(f"[implement_tests] Completed: {success_count}/{len(tasks)} successful")
+    
+    return {
+        "current_step": total_steps,  # All steps done
+        "files_modified": files_modified,
+        "implementation_results": implementation_results,
+        "review_count": 0,  # Reset for fresh review
+        "failed_files": [],  # Clear failed files after re-implementation
+        "message": msg,
+        "action": "REVIEW",
+    }

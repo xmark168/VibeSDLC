@@ -52,19 +52,18 @@ def route_after_router(
 
 def route_after_implement(
     state: TesterState,
-) -> Literal["review", "implement_tests", "run_tests"]:
-    """Route after implement: go to review."""
+) -> Literal["review", "run_tests"]:
+    """Route after implement: go to review or run_tests.
+    
+    With parallel execution, implement_tests handles ALL steps at once,
+    so we always go to review (which also handles all files at once).
+    """
     use_code_review = state.get("use_code_review", True)  # Default ON
     
     if use_code_review:
         return "review"
     
-    # Skip review - go to next step or run_tests
-    current = state.get("current_step", 0)
-    total = state.get("total_steps", 0)
-    
-    if current < total:
-        return "implement_tests"
+    # Skip review - go directly to run_tests
     return "run_tests"
 
 
@@ -73,39 +72,30 @@ def route_after_review(
 ) -> Literal["implement_tests", "run_tests"]:
     """Route based on review result (LGTM/LBTM).
     
-    Note: Per-step LBTM limit (max 2) is enforced in review node.
-    If step gets LBTM 2+ times, review node forces LGTM and increments current_step.
+    With parallel execution:
+    - LBTM: Re-implement only the FAILED files (stored in failed_files)
+    - LGTM: All files passed -> run_tests
     
-    Returns:
-        - "implement_tests": LBTM, need to re-implement
-        - "implement_tests": LGTM but more steps remain
-        - "run_tests": All steps done
+    Max 2 review cycles to prevent infinite loops.
     """
     review_result = state.get("review_result", "LGTM")
     review_count = state.get("review_count", 0)
+    failed_files = state.get("failed_files", [])
     
-    logger.info(f"[route_after_review] review_result={review_result}, review_count={review_count}")
+    logger.info(f"[route_after_review] review_result={review_result}, review_count={review_count}, failed_files={len(failed_files)}")
     
-    # LBTM: re-implement only if under max reviews limit
+    # LBTM with failed files: re-implement only failed files
     max_reviews = 2
-    if review_result == "LBTM" and review_count < max_reviews:
-        logger.info(f"[route_after_review] LBTM -> re-implement (attempt {review_count + 1})")
+    if review_result == "LBTM" and failed_files and review_count < max_reviews:
+        logger.info(f"[route_after_review] LBTM -> re-implement {len(failed_files)} failed files")
         return "implement_tests"
     
-    # If LBTM but max reviews reached, treat as LGTM (force advance)
-    if review_result == "LBTM" and review_count >= max_reviews:
-        logger.info(f"[route_after_review] LBTM but max reviews ({max_reviews}) reached -> advancing")
+    # LGTM or max reviews reached -> run_tests
+    if review_count >= max_reviews and failed_files:
+        logger.info(f"[route_after_review] Max reviews ({max_reviews}) reached - proceeding to run_tests")
+    else:
+        logger.info("[route_after_review] All files LGTM -> run_tests")
     
-    # LGTM - check if more steps
-    current = state.get("current_step", 0)
-    total = state.get("total_steps", 0)
-    
-    if current < total:
-        logger.info(f"[route_after_review] Advancing to next step ({current + 1}/{total})")
-        return "implement_tests"
-    
-    # All steps done -> run_tests
-    logger.info("[route_after_review] All steps done -> run_tests")
     return "run_tests"
 
 
@@ -208,13 +198,12 @@ class TesterGraph:
         # Test generation flow: plan → implement
         graph.add_edge("plan_tests", "implement_tests")
 
-        # After implement → review
+        # After implement → review (parallel: all steps done at once)
         graph.add_conditional_edges(
             "implement_tests",
             route_after_implement,
             {
                 "review": "review",
-                "implement_tests": "implement_tests",
                 "run_tests": "run_tests",
             },
         )

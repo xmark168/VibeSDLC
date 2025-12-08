@@ -80,14 +80,17 @@ class TesterState(TypedDict, total=False):
     files_modified: List[str]
     
     # ==========================================================================
-    # Review (MetaGPT-style LGTM/LBTM)
+    # Review (MetaGPT-style LGTM/LBTM) - Supports PARALLEL review
     # ==========================================================================
-    review_result: Optional[str]      # "LGTM" or "LBTM"
-    review_feedback: Optional[str]    # Feedback if LBTM
+    review_result: Optional[str]      # Overall: "LGTM" or "LBTM"
+    review_feedback: Optional[str]    # Combined feedback if LBTM
     review_details: Optional[str]     # Full review details
-    review_count: int                 # Count of reviews for current step
-    total_lbtm_count: int             # Track total LBTM across all steps
+    review_count: int                 # Count of review cycles (for parallel)
+    total_lbtm_count: int             # Track total LBTM across all files
     step_lbtm_counts: Dict[str, int]  # Per-step LBTM tracking {"0": 2, "1": 1}
+    review_results: List[Dict]        # Individual results [{file_path, decision, feedback}]
+    failed_files: List[str]           # Files that got LBTM (for re-implementation)
+    implementation_results: List[Dict]  # Results from parallel implement
     
     # ==========================================================================
     # Summarize (MetaGPT-style IS_PASS gate)
