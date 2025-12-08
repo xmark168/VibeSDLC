@@ -480,7 +480,6 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             "run_status": None,
             "skill_registry": skill_registry,
             "files_modified": all_modified,
-            "dependencies_content": dependencies_content,  # Refreshed with modified files
             "last_implemented_file": file_path,
             "message": f"✅ Task {current_step + 1}: {task_description}",
             "action": "IMPLEMENT" if next_step < len(plan_steps) else "VALIDATE",

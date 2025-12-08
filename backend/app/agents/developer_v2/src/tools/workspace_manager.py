@@ -26,8 +26,10 @@ class ProjectWorkspaceManager:
         self.project_id = project_id
         
         # Find backend root
+        # Path: backend/app/agents/developer_v2/workspace_manager.py
+        # Need to go up 4 levels: developer_v2 -> agents -> app -> backend
         current_file = Path(__file__).resolve()
-        self.backend_root = current_file.parent.parent.parent
+        self.backend_root = current_file.parent.parent.parent.parent
 
         # Projects workspace root (shared with developer for now)
         self.workspace_root = self.backend_root / "app" / "agents" / "developer" / "projects_workspace"
