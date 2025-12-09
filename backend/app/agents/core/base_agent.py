@@ -1194,35 +1194,6 @@ class BaseAgent(ABC):
         timeout: int = 300,
     ) -> str:
         """Ask another specialist agent directly for collaboration.
-        
-        This enables direct agent-to-agent communication for:
-        - Clarification requests (Dev → BA)
-        - Review requests (Tester → Dev)  
-        - Estimation requests (BA → Dev)
-        - Validation requests (any → any)
-        
-        Args:
-            target_role: Target agent role ("business_analyst", "developer", "tester")
-            question: The question or request to send
-            request_type: Type of request ("clarification", "review", "estimation", "validation")
-            context: Additional context (story_id, code_snippet, etc.)
-            timeout: Max wait time in seconds (default: 300 = 5 min)
-            
-        Returns:
-            Response string from the target agent
-            
-        Raises:
-            CollaborationTimeoutError: If target doesn't respond in time
-            CollaborationError: If collaboration fails
-            
-        Example:
-            # Developer asking BA for clarification
-            answer = await self.ask_specialist(
-                target_role="business_analyst",
-                question="What's the expected behavior for login failure?",
-                request_type="clarification",
-                context={"story_id": "123"}
-            )
         """
         from app.kafka.event_schemas import AgentCollaborationRequest
         
@@ -1290,48 +1261,9 @@ class BaseAgent(ABC):
         from_agent_role: str,
         context: Dict[str, Any]
     ) -> str:
-        """Handle incoming collaboration request from another agent.
-        
-        Override this method in subclasses to provide custom handling.
-        Default implementation uses LLM to generate a response based on the agent's expertise.
-        
-        Args:
-            request_id: Unique request identifier
-            question: The question being asked
-            request_type: Type of request (clarification, review, estimation, validation)
-            from_agent_role: Role of the requesting agent
-            context: Additional context provided
-            
-        Returns:
-            Response string to send back
-        """
-        # Default implementation - subclasses can override for custom behavior
-        logger.info(
-            f"[{self.name}] Handling collaboration request from {from_agent_role}: "
-            f"{question[:50]}..."
-        )
-        
-        # Generate response based on agent's expertise
-        prompt = f"""You are a {self.role_type} agent. Another agent ({from_agent_role}) is asking for {request_type}:
-
-Question: {question}
-
-Context: {context}
-
-Provide a helpful, concise response based on your expertise as a {self.role_type}.
-"""
-        
-        # Use LLM to generate response (if available)
-        try:
-            from langchain_openai import ChatOpenAI
-            from langchain_core.messages import HumanMessage
-            
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
-            response = await llm.ainvoke([HumanMessage(content=prompt)])
-            return response.content
-        except Exception as e:
-            logger.error(f"[{self.name}] Failed to generate collaboration response: {e}")
-            return f"I apologize, I couldn't process your {request_type} request at this time."
+        """Handle incoming collaboration request from another agent."""
+        logger.info(f"[{self.name}] Handling {request_type} request from {from_agent_role}: {question[:50]}...")
+        return f"[{self.role_type}] Acknowledged request. Context received: {len(context)} items."
 
     async def _send_collaboration_response(
         self,
