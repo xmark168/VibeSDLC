@@ -620,7 +620,19 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         all_modified = []
         all_errors = []
         step_count = 0
-        created_components = {}  # Track created component import paths
+        
+        # Pre-populate ALL component import paths from plan (critical for parallel execution)
+        # So components in same layer know each other's paths
+        created_components = {}
+        for step in plan_steps:
+            file_path = step.get("file_path", "")
+            if "/components/" in file_path and file_path.endswith(".tsx"):
+                comp_name = os.path.basename(file_path).replace(".tsx", "")
+                import_path = "@/" + file_path.replace(".tsx", "")
+                created_components[comp_name] = import_path
+        
+        if created_components:
+            logger.info(f"[parallel] Pre-populated {len(created_components)} component paths from plan")
         
         for layer_num in sorted_layers:
             layer_steps = layers[layer_num]

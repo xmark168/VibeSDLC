@@ -36,13 +36,17 @@ system_prompt: |
   - Example 1: Navigation imports SearchBar → Navigation.dependencies = ["src/components/SearchBar.tsx"]
   - Example 2: search/page.tsx uses SearchBar → dependencies = ["src/components/SearchBar.tsx"]
   
-  CRITICAL FOR PAGES: Pages MUST include ALL components they render in dependencies (to see props interface)
+  CRITICAL FOR PAGES (MANDATORY):
+  - Pages MUST include ALL components created in this plan in dependencies
+  - Scan your plan: if ComponentX.tsx created → page MUST depend on it
+  - Example: Created EditorToolbar.tsx → page.tsx deps = ["src/components/EditorToolbar.tsx"]
   
   CRITICAL FOR COMPONENTS: Any component with "Section", "List", "Grid", "Carousel" MUST:
   1. Have a corresponding API route created FIRST
   2. Include that API route in dependencies
   - Example: HeroSection → dependencies = ["src/app/api/featured/route.ts"]
-  - Example: ProductList → dependencies = ["src/app/api/products/route.ts"]
+  - Example: ReviewsList → dependencies = ["src/app/api/reviews/route.ts"]
+  - Example: ProductGrid → dependencies = ["src/app/api/products/route.ts"]
   
   CRITICAL FOR NAVIGATION: Components using router.push()/Link MUST include target page in dependencies
   - Example: SearchBar → dependencies = ["src/app/search/page.tsx"]
@@ -150,16 +154,20 @@ zero_shot_system: |
   - Example 2: search/page.tsx uses SearchBar → dependencies = ["src/components/SearchBar.tsx"]
   - This ensures correct execution order
   
-  CRITICAL FOR PAGES:
-  - Pages MUST include ALL components they will render in dependencies
-  - This ensures page sees component props interface
-  - Missing dependency = props mismatch errors at build time
+  CRITICAL FOR PAGES (MANDATORY):
+  - Pages MUST include ALL components created in this plan in dependencies
+  - Scan your plan: if you created ComponentX.tsx, page MUST have it in dependencies
+  - Example: Created EditorToolbar.tsx, RichTextArea.tsx → page.tsx dependencies = ["src/components/EditorToolbar.tsx", "src/components/RichTextArea.tsx"]
+  - Example: Created AnnouncementCard.tsx → admin/page.tsx dependencies = ["src/components/AnnouncementCard.tsx"]
+  - Missing dependency = build errors, props mismatch
   
   CRITICAL FOR COMPONENTS THAT FETCH DATA:
-  - ANY component with "Section", "List", "Grid", "Carousel", "Feed" in name MUST fetch from API
+  - ANY component with "Section", "List", "Grid", "Carousel" in name MUST fetch from API
   - These components MUST include the API route in dependencies
   - Example: BestsellersSection → dependencies = ["src/app/api/books/bestsellers/route.ts"]
-  - Example: HeroSection with featured items → dependencies = ["src/app/api/featured/route.ts"]
+  - Example: HeroSection → dependencies = ["src/app/api/featured/route.ts"]
+  - Example: ReviewsList → dependencies = ["src/app/api/reviews/route.ts"]
+  - Example: ProductGrid → dependencies = ["src/app/api/products/route.ts"]
   - This ensures component uses EXACT API path (not guessing)
   
   CRITICAL FOR COMPONENTS THAT NAVIGATE:

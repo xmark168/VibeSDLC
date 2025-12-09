@@ -176,7 +176,44 @@ function List({ items = [] }: Props) { ... }
 const [items, setItems] = useState<Item[]>([]);
 ```
 
-### 4. Route Navigation - USE EXACT PATHS
+### 4. Type Casting - Filter/Toggle Functions ⚠️
+
+Filter values from UI components are often union types:
+
+```tsx
+interface ActiveFilter {
+  type: 'category' | 'author' | 'rating';
+  value: string | number | boolean;  // Union type!
+}
+
+// ❌ WRONG - TypeScript error: Type 'string | number | boolean' not assignable to 'string'
+const handleRemoveFilter = (filter: ActiveFilter) => {
+  switch (filter.type) {
+    case 'category':
+      toggleCategory(filter.value);  // Error!
+      break;
+  }
+};
+
+// ✅ CORRECT - Cast to expected type
+const handleRemoveFilter = (filter: ActiveFilter) => {
+  switch (filter.type) {
+    case 'category':
+      toggleCategory(filter.value as string);  // OK
+      break;
+    case 'rating':
+      setMinRating(filter.value as number);  // OK
+      break;
+  }
+};
+
+// ✅ ALSO CORRECT - Use String() for string conversion
+toggleCategory(String(filter.value));
+```
+
+**RULE:** When filter.value/item.value has union type, cast before passing to typed functions
+
+### 5. Route Navigation - USE EXACT PATHS
 Check the plan/context for existing page routes before using `router.push()` or `<Link>`:
 
 ```tsx

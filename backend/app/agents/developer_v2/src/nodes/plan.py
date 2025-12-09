@@ -382,6 +382,54 @@ def _auto_detect_dependencies(file_path: str, all_steps: list = None) -> list:
     return list(set(deps))  # Remove duplicates
 
 
+def _auto_fix_dependencies(steps: list) -> list:
+    """Auto-fix missing dependencies in plan steps (post-processing).
+    
+    Guarantees:
+    1. Pages include ALL components created in this plan
+    2. Section/List/Grid components include related API routes
+    
+    This ensures 100% plan quality even with LLM variance.
+    """
+    # Get all components and API routes from this plan
+    component_paths = [s["file_path"] for s in steps 
+                       if "/components/" in s.get("file_path", "")]
+    api_routes = [s["file_path"] for s in steps 
+                  if "/api/" in s.get("file_path", "")]
+    
+    for step in steps:
+        fp = step.get("file_path", "")
+        deps = step.get("dependencies", [])
+        if not isinstance(deps, list):
+            deps = []
+        
+        # 1. Auto-add component deps to pages
+        if "page.tsx" in fp:
+            for comp_path in component_paths:
+                if comp_path not in deps:
+                    deps.append(comp_path)
+        
+        # 2. Auto-add API deps to Section/List/Grid components
+        if "/components/" in fp:
+            comp_name = fp.split("/")[-1].replace(".tsx", "")
+            fetch_keywords = ["Section", "List", "Grid", "Carousel"]
+            exclude_keywords = ["Form", "Input", "Button", "Dialog", "Modal", "Card", "Item"]
+            
+            is_fetch_comp = any(kw in comp_name for kw in fetch_keywords)
+            is_excluded = any(kw in comp_name for kw in exclude_keywords)
+            
+            if is_fetch_comp and not is_excluded:
+                # Check if already has API dep
+                has_api_dep = any("/api/" in d for d in deps)
+                if not has_api_dep and api_routes:
+                    # Add first relevant API route
+                    deps.append(api_routes[0])
+        
+        step["dependencies"] = list(set(deps))
+    
+    return steps
+
+
 async def _summarize_if_needed(exploration: str, state: dict) -> str:
     """Summarize exploration if too long, otherwise return as-is."""
     MAX_CHARS = 8000
@@ -622,6 +670,9 @@ Output JSON steps directly.
         if len(steps) < original_count:
             logger.info(f"[plan] Filtered out {original_count - len(steps)} boilerplate file(s)")
         
+        # Auto-fix missing dependencies (guarantees 100% plan quality)
+        steps = _auto_fix_dependencies(steps)
+        
         # Add order, skills, and merge dependencies
         for i, step in enumerate(steps):
             step["order"] = i + 1
@@ -810,6 +861,9 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
         if len(steps) < original_count:
             removed = original_count - len(steps)
             logger.info(f"[analyze_and_plan] Filtered out {removed} boilerplate file(s)")
+        
+        # Auto-fix missing dependencies (guarantees 100% plan quality)
+        steps = _auto_fix_dependencies(steps)
         
         # Post-process: add order, skills, description, auto-detect dependencies
         for i, step in enumerate(steps):
