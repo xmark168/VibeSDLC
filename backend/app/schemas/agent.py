@@ -167,3 +167,34 @@ class PoolSuggestion(BaseModel):
     recommended_pool_name: str
     role_type: Optional[str] = None
     estimated_agents: int
+
+
+# ===== Agent Activity Schemas =====
+
+class CurrentTaskInfo(BaseModel):
+    """Current task being executed by agent."""
+    id: UUID
+    name: str
+    status: str
+    progress: Optional[int] = None
+    started_at: datetime
+
+
+class RecentActivity(BaseModel):
+    """Recent activity item."""
+    id: UUID
+    activity_type: str  # "message", "question", "execution"
+    content: str
+    created_at: datetime
+
+
+class AgentActivityResponse(BaseModel):
+    """Agent activity response for popup."""
+    agent_id: UUID
+    human_name: str
+    role_type: str
+    status: str
+    status_message: Optional[str] = None
+    skills: list[str] = []
+    current_task: Optional[CurrentTaskInfo] = None
+    recent_activities: list[RecentActivity] = []

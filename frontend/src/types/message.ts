@@ -31,6 +31,15 @@ export interface AgentQuestionData {
   context?: any
 }
 
+export interface MessageAttachment {
+  type: 'document'
+  filename: string
+  file_path: string
+  file_size: number
+  mime_type?: string
+  extracted_text?: string
+}
+
 export type Message = {
   id: string
   project_id: string
@@ -39,9 +48,10 @@ export type Message = {
   agent_id?: string
   agent_name?: string    // "Team Leader" | "Business Analyst" | "Developer" | "Tester"
   content: string
-  message_type?: string  // "text" | "artifact_created" (PRD, analysis, etc.) | "stories_created" | "agent_question" | etc.
+  message_type?: string  // "text" | "artifact_created" (PRD, analysis, etc.) | "stories_created" | "agent_question" | "document_upload" | etc.
   structured_data?: ArtifactData | StoriesCreatedData | AgentQuestionData | any  // JSON data for cards/previews
   message_metadata?: any // Message metadata (agent_name, preview_id, incomplete_flag, etc.)
+  attachments?: MessageAttachment[]  // File attachments (for document uploads)
   created_at: string
   updated_at: string
   status?: MessageStatus // Message delivery status (for user messages)

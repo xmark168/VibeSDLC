@@ -14,6 +14,7 @@ class TeamLeaderState(TypedDict, total=False):
     conversation_history: str
     user_preferences: str
     langfuse_handler: Any
+    attachments: list  # File attachments from user upload
     # Output
     action: Action
     target_role: str

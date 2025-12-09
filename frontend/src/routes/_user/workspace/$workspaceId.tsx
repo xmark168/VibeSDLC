@@ -29,6 +29,8 @@ function WorkspacePage() {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
   // Track selected file for viewing
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  // Callback to insert @mention in chat
+  const insertMentionRef = useRef<((agentName: string) => void) | null>(null)
 
   const handleOpenArtifact = (artifactId: string) => {
     console.log('[Workspace] Opening artifact:', artifactId)
@@ -40,6 +42,18 @@ function WorkspacePage() {
     console.log('[Workspace] Opening file:', filePath)
     setSelectedFile(filePath)
     setActiveTab('file') // Switch to file tab
+  }
+
+  const handleMessageAgent = (agentName: string) => {
+    console.log('[Workspace] Messaging agent:', agentName)
+    // Expand chat if collapsed
+    if (chatCollapsed) {
+      setChatCollapsed(false)
+    }
+    // Insert @mention via the ref callback
+    if (insertMentionRef.current) {
+      insertMentionRef.current(agentName)
+    }
   }
 
   // Stable resize handler - directly manipulates DOM for smooth dragging
@@ -63,33 +77,32 @@ function WorkspacePage() {
         />
 
         <div className="flex flex-1 overflow-hidden">
-          {!chatCollapsed && (
-            <>
-              <div
-                ref={chatContainerRef}
-                className="flex flex-col overflow-hidden"
-                style={{ width: `${chatWidthRef.current}%` }}
-              >
-                <ChatPanelWS
-                  sidebarCollapsed={sidebarCollapsed}
-                  onToggleSidebar={() => setSidebarCollapsed(false)}
-                  onCollapse={() => setChatCollapsed(true)}
-                  onSidebarHover={setSidebarHovered}
-                  projectId={workspaceId}
-                  onSendMessageReady={(sendFn) => {
-                    sendMessageRef.current = sendFn
-                  }}
-                  onConnectionChange={setIsWebSocketConnected}
-                  onKanbanDataChange={setKanbanData}
-                  onActiveTabChange={setActiveTab}
-                  onAgentStatusesChange={setAgentStatuses}
-                  onOpenArtifact={handleOpenArtifact}
-                  onOpenFile={handleOpenFile}
-                />
-              </div>
-
-            </>
-          )}
+          {/* Always mount ChatPanelWS to keep WebSocket alive, just hide with CSS */}
+          <div
+            ref={chatContainerRef}
+            className={`flex flex-col overflow-hidden ${chatCollapsed ? 'hidden' : ''}`}
+            style={{ width: `${chatWidthRef.current}%` }}
+          >
+            <ChatPanelWS
+              sidebarCollapsed={sidebarCollapsed}
+              onToggleSidebar={() => setSidebarCollapsed(false)}
+              onCollapse={() => setChatCollapsed(true)}
+              onSidebarHover={setSidebarHovered}
+              projectId={workspaceId}
+              onSendMessageReady={(sendFn) => {
+                sendMessageRef.current = sendFn
+              }}
+              onConnectionChange={setIsWebSocketConnected}
+              onKanbanDataChange={setKanbanData}
+              onActiveTabChange={setActiveTab}
+              onAgentStatusesChange={setAgentStatuses}
+              onOpenArtifact={handleOpenArtifact}
+              onOpenFile={handleOpenFile}
+              onInsertMentionReady={(fn) => {
+                insertMentionRef.current = fn
+              }}
+            />
+          </div>
 
           <div className="flex-1 overflow-hidden">
             <WorkspacePanel
@@ -102,6 +115,7 @@ function WorkspacePage() {
               selectedArtifactId={selectedArtifactId}
               initialSelectedFile={selectedFile}
               onResize={handleResize}
+              onMessageAgent={handleMessageAgent}
             />
           </div>
         </div>

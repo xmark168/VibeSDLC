@@ -289,7 +289,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         epic_domain: item.epic_domain,
         acceptance_criteria: item.acceptance_criteria,
         requirements: item.requirements,
-        dependencies: item.dependencies,
+        dependencies: item.dependencies || [],
         created_at: item.created_at,
         updated_at: item.updated_at,
       })
@@ -333,29 +333,63 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
       .sort((a, b) => (a.rank || 999) - (b.rank || 999))
   }, [cards])
 
-  // Filter cards
+  // Check if card has incomplete dependencies (blocked state)
+  // Cards in Done or Archived columns are never shown as blocked
+  // Optional cardsSource parameter to use original cards during drag operations
+  const checkDependenciesCompleted = useCallback((card: KanbanCardData, cardsSource?: KanbanCardData[]): { 
+    isBlocked: boolean
+    incompleteDeps: KanbanCardData[]
+    blockedByCount: number
+  } => {
+    const sourceCards = cardsSource || cards
+    
+    // Don't show blocked state for cards already in Done or Archived
+    if (!card.dependencies?.length || card.columnId === 'done' || card.columnId === 'archived') {
+      return { isBlocked: false, incompleteDeps: [], blockedByCount: 0 }
+    }
+    
+    const incompleteDeps = card.dependencies
+      .map(depId => sourceCards.find(c => c.id === depId))
+      .filter((dep): dep is KanbanCardData => 
+        dep !== undefined && dep.columnId !== 'done' && dep.columnId !== 'archived'
+      )
+    
+    return { 
+      isBlocked: incompleteDeps.length > 0, 
+      incompleteDeps,
+      blockedByCount: incompleteDeps.length
+    }
+  }, [cards])
+
+  // Filter cards and enrich with blocked state
   const filterCards = useCallback((cardsToFilter: KanbanCardData[]) => {
-    return cardsToFilter.filter(card => {
-      const matchesSearch = !searchQuery ||
-        card.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        card.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    return cardsToFilter
+      .filter(card => {
+        const matchesSearch = !searchQuery ||
+          card.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          card.description?.toLowerCase().includes(searchQuery.toLowerCase())
 
-      const matchesType = selectedFilters.types.length === 0 ||
-        (card.type && selectedFilters.types.includes(card.type))
+        const matchesType = selectedFilters.types.length === 0 ||
+          (card.type && selectedFilters.types.includes(card.type))
 
-      let matchesPriority = true
-      if (selectedFilters.priorities.length > 0 && card.rank !== undefined) {
-        matchesPriority = selectedFilters.priorities.some(priority => {
-          if (priority === "high" && card.rank! <= 3) return true
-          if (priority === "medium" && card.rank! > 3 && card.rank! <= 7) return true
-          if (priority === "low" && card.rank! > 7) return true
-          return false
-        })
-      }
+        let matchesPriority = true
+        if (selectedFilters.priorities.length > 0 && card.rank !== undefined) {
+          matchesPriority = selectedFilters.priorities.some(priority => {
+            if (priority === "high" && card.rank! <= 3) return true
+            if (priority === "medium" && card.rank! > 3 && card.rank! <= 7) return true
+            if (priority === "low" && card.rank! > 7) return true
+            return false
+          })
+        }
 
-      return matchesSearch && matchesType && matchesPriority
-    })
-  }, [searchQuery, selectedFilters])
+        return matchesSearch && matchesType && matchesPriority
+      })
+      .map(card => {
+        // Enrich card with blocked state
+        const { isBlocked, blockedByCount } = checkDependenciesCompleted(card)
+        return { ...card, isBlocked, blockedByCount }
+      })
+  }, [searchQuery, selectedFilters, checkDependenciesCompleted])
 
   // Find container for an item (official dnd-kit pattern)
   const findContainer = useCallback((id: string): string | undefined => {
@@ -427,6 +461,17 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     const { active, over } = event
     // IMPORTANT: Use clonedCards to get original column, not current cards state
     const originalColumnId = clonedCards?.find(c => c.id === active.id)?.columnId
+    
+    // Debug log
+    const draggedCard = clonedCards?.find(c => c.id === active.id)
+    console.log('[Kanban] DragEnd:', {
+      activeId: active.id,
+      overId: over?.id,
+      originalColumnId,
+      draggedCardTitle: draggedCard?.content,
+      draggedCardDeps: draggedCard?.dependencies,
+      clonedCardsExists: !!clonedCards,
+    })
     // Save clonedCards for potential revert before resetting
     const savedClonedCards = clonedCards
 
@@ -461,6 +506,12 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
 
     if (!activeContainer || !overContainer) return
+
+    console.log('[Kanban] Container check:', {
+      activeContainer,
+      overContainer,
+      isCrossContainer: activeContainer !== overContainer
+    })
 
     const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
       'todo': 'Todo',
@@ -531,9 +582,34 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
       // Build final ordered list: insert active card at newIndex
       const finalOrder = [...otherCardsInTarget]
-      const activeCard = cards.find(c => c.id === active.id)
+      // Use original card from clonedCards to get correct dependencies data
+      const activeCard = savedClonedCards?.find(c => c.id === active.id) || cards.find(c => c.id === active.id)
       if (activeCard) {
         finalOrder.splice(newIndex, 0, activeCard)
+      }
+
+      // Validate dependencies - block move if dependencies not completed (except moving to Todo/Archived)
+      if (activeCard && overContainer !== 'todo' && overContainer !== 'archived') {
+        // Use savedClonedCards to check dependencies (original state before drag)
+        const { isBlocked, incompleteDeps } = checkDependenciesCompleted(activeCard, savedClonedCards || undefined)
+        console.log('[Kanban] Dependency check:', { 
+          cardTitle: activeCard.content,
+          targetColumn: overContainer,
+          dependencies: activeCard.dependencies,
+          isBlocked, 
+          incompleteDeps: incompleteDeps.map(d => d.content)
+        })
+        if (isBlocked) {
+          toast.error(`Không thể di chuyển story`, {
+            description: `${incompleteDeps.length} dependencies chưa hoàn thành: ${incompleteDeps.map(d => d.content).slice(0, 2).join(', ')}${incompleteDeps.length > 2 ? '...' : ''}`,
+            duration: 4000,
+          })
+          // Revert to original state
+          if (savedClonedCards) {
+            setCards(savedClonedCards)
+          }
+          return
+        }
       }
 
       // Calculate new ranks
@@ -574,7 +650,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         }
       }
     }
-  }, [cards, clonedCards, findContainer, projectId])
+  }, [cards, clonedCards, findContainer, projectId, checkDependenciesCompleted])
 
   // Handle drag cancel - restore original state
   const handleDragCancel = useCallback(() => {
@@ -732,6 +808,18 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     const card = cards.find(c => c.id === cardId)
     if (!card || card.columnId === targetColumnId) return
 
+    // Validate dependencies - block move if dependencies not completed (except moving to Todo/Archived)
+    if (targetColumnId !== 'todo' && targetColumnId !== 'archived') {
+      const { isBlocked, incompleteDeps } = checkDependenciesCompleted(card)
+      if (isBlocked) {
+        toast.error(`Không thể di chuyển story`, {
+          description: `${incompleteDeps.length} dependencies chưa hoàn thành: ${incompleteDeps.map(d => d.content).slice(0, 2).join(', ')}${incompleteDeps.length > 2 ? '...' : ''}`,
+          duration: 4000,
+        })
+        return
+      }
+    }
+
     setCards(prev => prev.map(c =>
       c.id === cardId ? { ...c, columnId: targetColumnId } : c
     ))
@@ -751,7 +839,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         c.id === cardId ? { ...c, columnId: card.columnId } : c
       ))
     }
-  }, [cards])
+  }, [cards, checkDependenciesCompleted])
 
   const handleEditCard = useCallback((card: KanbanCardData) => {
     const storyType = card.type?.toLowerCase() === "enablerstory" ? "EnablerStory" : "UserStory"
@@ -942,6 +1030,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         open={!!currentSelectedCard}
         onOpenChange={() => setSelectedCard(null)}
         onDownloadResult={handleDownloadResult}
+        //allStories={columns.flatMap(col => col.cards)}
+        projectId={projectId}
         allStories={cards}
       />
 

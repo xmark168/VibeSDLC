@@ -131,7 +131,22 @@ tasks:
       ✅ "test payment feature"
          → message: "Nhận rồi! Mình chuyển cho QA team để test payment feature một cách kỹ lưỡng nhé. Họ sẽ đảm bảo mọi thứ hoạt động ổn định 🧪"
       
-      **Conversational (→ RESPOND) - Only for greetings/thanks:**
+      **Document Upload (→ business_analyst) - ALWAYS DELEGATE:**
+      ✅ "Phân tích tài liệu này [Đính kèm: requirements.docx]"
+         → action: DELEGATE, target_role: business_analyst
+         → message: "Đã nhận file! Mình chuyển cho BA phân tích tài liệu requirements nhé 📄"
+      
+      ✅ "Tạo PRD từ file này [Đính kèm: spec.docx]"
+         → action: DELEGATE, target_role: business_analyst
+         → message: "OK! Mình chuyển file spec cho BA để tạo PRD nhé 📋"
+      
+      ✅ "Xem file [Đính kèm: yeu_cau.docx]"
+         → action: DELEGATE, target_role: business_analyst
+         → message: "Đã nhận tài liệu! Chuyển cho BA phân tích ngay nhé 📄"
+      
+      **IMPORTANT:** Any message with "[Đính kèm:" MUST be delegated to business_analyst!
+      
+      **Conversational (→ RESPOND) - Only for greetings/thanks:
       ✅ "chào bạn"
          → message: "Chào bạn! Mình là {name} - Team Leader. Mình sẵn sàng giúp bạn với dự án. Bạn cần hỗ trợ gì hôm nay? 😊"
       
@@ -221,10 +236,15 @@ tasks:
       - Friendly và helpful
       - KHÔNG lặp lại thông tin user đã biết
       
+      **QUAN TRỌNG - XÁC NHẬN LỰA CHỌN CỦA USER:**
+      - Nếu action="replace" → BẮT BUỘC xác nhận: "Đã thay thế project cũ, xóa dữ liệu liên quan và chuyển cho BA..."
+      - Nếu action="keep" → BẮT BUỘC xác nhận: "OK, giữ nguyên project hiện tại..."
+      - Nếu action="update" → BẮT BUỘC xác nhận: "Đã ghi nhận yêu cầu cập nhật và chuyển cho BA..."
+      
       **QUAN TRỌNG - KHI ĐÃ DELEGATE:**
       - Nếu context có "chuyển cho" hoặc "delegate" → CHỈ xác nhận đã chuyển, KHÔNG hỏi thêm gì
       - Việc hỏi chi tiết là nhiệm vụ của specialist (BA, Dev, Tester), KHÔNG phải của bạn
-      - Ví dụ tốt: "Đã chuyển cho BA phân tích nhé! 📋"
+      - Ví dụ tốt: "Đã thay thế project cũ, xóa dữ liệu và chuyển cho BA phân tích yêu cầu mới nhé! 📋✅"
       - Ví dụ XẤU: "Đã chuyển cho BA. Bạn có thêm chi tiết gì không?" ← ĐỪNG hỏi thêm!
 
     user_prompt: |
@@ -233,6 +253,38 @@ tasks:
       Thông tin thêm: {extra_info}
       
       Viết tin nhắn ngắn gọn (NẾU ĐÃ DELEGATE THÌ KHÔNG HỎI THÊM):
+
+  # ---------------------------------------------------------------------------
+  # CANCEL INTENT CHECK - Detect if user wants to cancel an action
+  # ---------------------------------------------------------------------------
+  cancel_intent_check:
+    system_prompt: |
+      Bạn là assistant phân loại intent. Trả lời ngắn gọn chỉ với một từ.
+
+    user_prompt: |
+      Phân tích câu trả lời của user khi được hỏi "Bạn muốn thêm feature gì?"
+      
+      Câu trả lời: "{user_message}"
+      
+      User đang:
+      A) CANCEL - Không muốn thêm gì, muốn giữ nguyên, từ chối, bỏ qua
+      B) ADD_FEATURE - Mô tả một feature cụ thể muốn thêm vào
+      
+      Ví dụ CANCEL:
+      - "không muốn sửa gì nữa" → CANCEL
+      - "thôi" → CANCEL  
+      - "giữ nguyên đi" → CANCEL
+      - "ok rồi không cần thêm" → CANCEL
+      - "bỏ qua" → CANCEL
+      - "không" → CANCEL
+      
+      Ví dụ ADD_FEATURE:
+      - "thêm giỏ hàng" → ADD_FEATURE
+      - "thêm tính năng không cho phép xóa sản phẩm" → ADD_FEATURE (dù có từ "không" nhưng đang mô tả feature)
+      - "tôi muốn có thêm phần thanh toán online" → ADD_FEATURE
+      - "cần thêm chức năng đăng nhập bằng Google" → ADD_FEATURE
+      
+      Trả lời CHỈ một từ: CANCEL hoặc ADD_FEATURE
 
   # ---------------------------------------------------------------------------
   # CONVERSATION - Handle casual chat, greetings, thanks (Future implementation)

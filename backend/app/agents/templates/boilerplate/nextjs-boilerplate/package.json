@@ -15,7 +15,12 @@
     "typecheck": "tsc --noEmit",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
-    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage"
+    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
+    "test:e2e": "bunx playwright test",
+    "test:e2e:ui": "bunx playwright test --ui",
+    "test:e2e:headed": "bunx playwright test --headed",
+    "test:e2e:report": "bunx playwright show-report",
+    "test:e2e:install": "bunx playwright install chromium"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^1.0.0",
@@ -74,6 +79,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@faker-js/faker": "^9.3.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",

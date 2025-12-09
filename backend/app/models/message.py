@@ -42,6 +42,10 @@ class Message(BaseModel, table=True):
     message_type: str = Field(default="text", nullable=True)
     structured_data: dict | None = Field(default=None, sa_column=Column(JSON))
     message_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
+    
+    # File attachments (documents, images, etc.)
+    # Format: [{"type": "document", "filename": "...", "file_path": "...", "file_size": 123, "mime_type": "...", "extracted_text": "..."}]
+    attachments: list[dict] | None = Field(default=None, sa_column=Column(JSON))
 
     agent: Optional["Agent"] = Relationship(back_populates="messages")
 

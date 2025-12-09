@@ -76,6 +76,9 @@ from .agent import (
     CreatePoolRequestExtended,
     ScalePoolRequest,
     PoolSuggestion,
+    CurrentTaskInfo,
+    RecentActivity,
+    AgentActivityResponse,
 )
 
 # Story schemas
@@ -254,6 +257,9 @@ __all__ = [
     "CreatePoolRequestExtended",
     "ScalePoolRequest",
     "PoolSuggestion",
+    "CurrentTaskInfo",
+    "RecentActivity",
+    "AgentActivityResponse",
     
     # Story
     "StoryBase",

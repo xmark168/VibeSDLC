@@ -48,8 +48,8 @@ interface TechStackOption {
 
 const TECH_STACK_OPTIONS: TechStackOption[] = [
   {
-    value: "nodejs-react",
-    label: "Node.js + Express + React Vite",
+    value: "Next.js",
+    label: "Next.js + Prisma + TailwindCSS",
     icon: "/assets/images/icon/1.png",
     description: "Fast development with modern tooling",
     category: "Full Stack",

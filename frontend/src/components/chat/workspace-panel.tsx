@@ -4,13 +4,13 @@ import type React from "react"
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2 } from "lucide-react"
+import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2, ChevronsRight, Download, FileText } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
-import { DatabaseAgentDetailSheet } from "../agents/database-agent-detail-sheet"
+import { AgentPopup } from "../agents/agent-popup"
 import { useProjectAgents } from "@/queries/agents"
 import { useQueryClient } from "@tanstack/react-query"
 import type { AgentPublic } from "@/client/types.gen"
@@ -33,6 +33,7 @@ interface WorkspacePanelProps {
   selectedArtifactId?: string | null
   initialSelectedFile?: string | null
   onResize?: (delta: number) => void
+  onMessageAgent?: (agentName: string) => void // Callback to @mention agent in chat
 }
 
 // Generate avatar URL from agent human_name using DiceBear API
@@ -58,7 +59,7 @@ const getRoleDesignation = (roleType: string): string => {
   return roleMap[roleType] || roleType
 }
 
-export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId, onResize, initialSelectedFile }: WorkspacePanelProps) {
+export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId, onResize, initialSelectedFile, onMessageAgent }: WorkspacePanelProps) {
   const queryClient = useQueryClient()
 
   // Resize handle state - use refs to avoid re-renders during drag
@@ -152,12 +153,17 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     console.log('[WorkspacePanel] Agents loading:', agentsLoading)
     console.log('[WorkspacePanel] WebSocket agent statuses:', agentStatuses)
 
-    if (!projectAgents || !projectAgents.length) {
+    // Handle both { data: [...] } and direct array response
+    const agentsList: AgentPublic[] = Array.isArray(projectAgents) 
+      ? projectAgents 
+      : (projectAgents?.data || [])
+
+    if (!agentsList.length) {
       console.log('[WorkspacePanel] No agents to display')
       return []
     }
 
-    const items = projectAgents.map((agent) => {
+    const items = agentsList.map((agent: AgentPublic) => {
       // Lấy status từ WebSocket (real-time), fallback về database nếu chưa có
       const wsStatus = agentStatuses?.get(agent.human_name)
       const displayStatus = wsStatus?.status || agent.status || 'idle'
@@ -222,6 +228,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   const [fileContent, setFileContent] = useState<string>("")
   const [isLoadingFile, setIsLoadingFile] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
+  const [isFileBinary, setIsFileBinary] = useState(false)
 
   // Artifact state
   const [selectedArtifact, setSelectedArtifact] = useState<any | null>(null)
@@ -261,6 +268,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     } else {
       setFileContent("")
       setFileError(null)
+      setIsFileBinary(false)
     }
   }, [selectedFile, projectId])
 
@@ -269,16 +277,58 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
     setIsLoadingFile(true)
     setFileError(null)
+    setIsFileBinary(false)
 
     try {
       const response = await filesApi.getFileContent(projectId, path)
       setFileContent(response.content)
+      setIsFileBinary(response.is_binary || false)
     } catch (err: any) {
       console.error("Failed to fetch file content:", err)
       setFileError(err.message || "Failed to load file")
       setFileContent("")
     } finally {
       setIsLoadingFile(false)
+    }
+  }
+  
+  // Download file from uploads folder
+  const handleDownloadFile = async () => {
+    if (!projectId || !selectedFile) return
+    
+    try {
+      // Get token for auth
+      const token = localStorage.getItem("access_token")
+      const baseUrl = import.meta.env.VITE_API_URL || ''
+      
+      // Fetch file as blob
+      const response = await fetch(
+        `${baseUrl}/api/v1/projects/${projectId}/files/download?path=${encodeURIComponent(selectedFile)}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      )
+      
+      if (!response.ok) {
+        throw new Error('Download failed')
+      }
+      
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      // Get filename from path
+      const filename = selectedFile.split('/').pop() || 'download'
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Download failed:', err)
+      alert('Không thể tải file. Vui lòng thử lại.')
     }
   }
 
@@ -369,6 +419,20 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
                   <div className="flex items-center justify-center h-full text-destructive">
                     {fileError}
                   </div>
+                ) : isFileBinary ? (
+                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+                    <div className="flex items-center justify-center w-16 h-16 bg-muted rounded-lg">
+                      <FileText className="w-8 h-8" />
+                    </div>
+                    <div className="text-center">
+                      <p className="font-medium text-foreground">{selectedFile.split('/').pop()}</p>
+                      <p className="text-sm mt-1">Binary file - cannot preview</p>
+                    </div>
+                    <Button onClick={handleDownloadFile} className="gap-2">
+                      <Download className="w-4 h-4" />
+                      Download File
+                    </Button>
+                  </div>
                 ) : (
                   <CodeViewer filePath={selectedFile} content={fileContent} />
                 )
@@ -403,7 +467,19 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       )}
       {/* Tab bar */}
       <div className="flex items-center gap-1 px-2 pt-2 bg-background mb-2 justify-between">
-        <div className="flex gap-1">
+        <div className="flex gap-1 items-center">
+          {/* Show expand chat button when chat is collapsed */}
+          {chatCollapsed && onExpandChat && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onExpandChat}
+              className="h-8 px-2 mr-1"
+              title="Mở lại Chat"
+            >
+              <ChevronsRight className="w-4 h-4" />
+            </Button>
+          )}
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -430,7 +506,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           </div>
           <div>
             <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
-              Share
+              Public
             </Button>
           </div>
         </div>
@@ -448,11 +524,12 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         </div>
       </div>
 
-      {/* Agent Detail Sheet */}
-      <DatabaseAgentDetailSheet
+      {/* Agent Popup */}
+      <AgentPopup
         agent={selectedAgent}
         open={agentDetailOpen}
         onOpenChange={setAgentDetailOpen}
+        onMessage={onMessageAgent}
       />
     </div>
   )

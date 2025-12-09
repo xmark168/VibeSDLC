@@ -83,6 +83,8 @@ class WebSocketKafkaBridge:
             self.consumer.register_handler("story.created", self.story_handler.handle_story_created)
             self.consumer.register_handler("story.updated", self.story_handler.handle_story_updated)
             self.consumer.register_handler("story.status.changed", self.story_handler.handle_story_status_changed)
+            self.consumer.register_handler("story.message.created", self.story_handler.handle_story_message_created)
+            self.consumer.register_handler("story.agent_state.changed", self.story_handler.handle_story_agent_state_changed)
 
             # Register flow handlers
             self.consumer.register_handler("flow.started", self.flow_handler.handle_flow_event)

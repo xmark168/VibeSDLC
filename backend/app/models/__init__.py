@@ -66,7 +66,7 @@ from app.models.project import (
 from app.models.story import (
     Epic,
     Story,
-    Comment,
+    StoryMessage,
     IssueActivity,
 )
 
@@ -137,7 +137,7 @@ __all__ = [
     # Story
     "Epic",
     "Story",
-    "Comment",
+    "StoryMessage",
     "IssueActivity",
     # Message
     "Message",
