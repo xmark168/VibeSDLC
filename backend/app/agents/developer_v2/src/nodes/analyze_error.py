@@ -1,239 +1,262 @@
-"""Analyze error node - Error analysis + fix planning in ONE LLM call."""
+"""Analyze error node - Zero-shot error analysis with preloaded context."""
 import logging
+import os
+import re
+import subprocess
+from dataclasses import dataclass
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
-from typing import Literal, List
+from typing import Literal, List, Optional
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import PlanStep
-from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, glob
-from app.agents.developer_v2.src.utils.llm_utils import (
-    get_langfuse_config as _cfg,
-    execute_llm_with_tools as _llm_with_tools,
-)
-from app.agents.developer_v2.src.utils.prompt_utils import (
-    format_input_template as _format_input_template,
-    build_system_prompt as _build_system_prompt,
-)
+from app.agents.developer_v2.src.config import MAX_DEBUG_ATTEMPTS
+from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
+from app.agents.developer_v2.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
 from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
 from app.agents.developer_v2.src.nodes._llm import code_llm
-from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
+from app.agents.developer_v2.src.tools import set_tool_context
 from app.agents.developer_v2.src.skills import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
 
-def _clean_error_logs(logs: str, max_lines: int = 50) -> str:
-    """Clean error logs by removing noise and keeping relevant lines."""
+@dataclass
+class ParsedError:
+    """Parsed error from logs."""
+    file_path: str
+    line: Optional[int]
+    column: Optional[int]
+    error_code: Optional[str]
+    error_type: str
+    message: str
+
+
+def _parse_errors(logs: str) -> List[ParsedError]:
+    """Parse error logs into structured format."""
+    errors = []
+    
+    # TypeScript: file.tsx(line,col): error TS2307: message
+    for m in re.finditer(r'([^\s(]+\.tsx?)\((\d+),(\d+)\):\s*error\s*(TS\d+):\s*(.+)', logs):
+        errors.append(ParsedError(m.group(1), int(m.group(2)), int(m.group(3)), m.group(4), "TypeScript", m.group(5).strip()))
+    
+    # Next.js: ./src/file.tsx:line:col
+    for m in re.finditer(r'\./([^\s:]+\.tsx?):(\d+):(\d+)\s*\n?\s*(.+?)(?:\n|$)', logs):
+        errors.append(ParsedError(m.group(1), int(m.group(2)), int(m.group(3)), None, "NextJS", m.group(4).strip()))
+    
+    # Props mismatch TS2322/TS2739
+    for m in re.finditer(r"([^\s(]+\.tsx?)\((\d+),(\d+)\):\s*error\s*(TS2322|TS2739):\s*Type '\{[^}]*\}' is not assignable to type '([^']+)'", logs):
+        errors.append(ParsedError(m.group(1), int(m.group(2)), int(m.group(3)), m.group(4), "PropsMatch", f"Props mismatch - check {m.group(5)} interface"))
+    
+    # Module not found
+    for m in re.finditer(r"(?:Cannot find module|Module not found|Can't resolve)\s*['\"]([^'\"]+)['\"]", logs):
+        errors.append(ParsedError("unknown", None, None, "TS2307", "Import", f"Cannot find module '{m.group(1)}'"))
+    
+    return errors
+
+
+def _format_errors(errors: List[ParsedError]) -> str:
+    if not errors:
+        return ""
+    lines = ["## PARSED ERRORS:\n"]
+    for i, e in enumerate(errors[:10], 1):
+        loc = f":{e.line}:{e.column}" if e.line else ""
+        code = f" [{e.error_code}]" if e.error_code else ""
+        lines.append(f"{i}. **{e.file_path}{loc}**{code}: {e.message}")
+    return "\n".join(lines)
+
+
+def _preload_error_context(workspace_path: str, errors: List[ParsedError], files_modified: List[str]) -> str:
+    """Preload files mentioned in errors and modified files."""
+    parts = []
+    loaded = set()
+    
+    # Load error files
+    for err in errors[:5]:
+        fp = err.file_path
+        if fp == "unknown" or fp in loaded:
+            continue
+        full = os.path.join(workspace_path, fp)
+        if os.path.exists(full):
+            try:
+                with open(full, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                parts.append(f"### {fp}\n```\n{content[:4000]}\n```")
+                loaded.add(fp)
+            except:
+                pass
+    
+    # Load recently modified files
+    for fp in files_modified[:5]:
+        if fp in loaded:
+            continue
+        full = os.path.join(workspace_path, fp)
+        if os.path.exists(full):
+            try:
+                with open(full, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                parts.append(f"### {fp} (modified)\n```\n{content[:3000]}\n```")
+                loaded.add(fp)
+            except:
+                pass
+    
+    # Always load schema if exists
+    schema = os.path.join(workspace_path, "prisma/schema.prisma")
+    if os.path.exists(schema) and "prisma/schema.prisma" not in loaded:
+        try:
+            with open(schema, 'r', encoding='utf-8') as f:
+                parts.append(f"### prisma/schema.prisma\n```\n{f.read()[:2000]}\n```")
+        except:
+            pass
+    
+    return "\n\n".join(parts)
+
+
+def _clean_logs(logs: str, max_lines: int = 50) -> str:
     if not logs:
         return ""
-    
-    # Noise patterns to filter out
-    noise_patterns = [
-        "baseline-browser-mapping",
-        "npm WARN",
-        "bun install",
-        "modules old",
-        "update:",
-        "Compiling",
-        "Compiled",
-        "webpack",
-        "Module not found",  # Keep only if it's the actual error
-    ]
-    
-    # Important patterns to keep
-    important_patterns = [
-        "Error:",
-        "error:",
-        "FAIL",
-        "fail",
-        "TypeError",
-        "ReferenceError",
-        "SyntaxError",
-        "Cannot",
-        "cannot",
-        "Expected",
-        "expected",
-        "Received",
-        "received",
-        "at Object",
-        "at Module",
-        ".test.ts",
-        ".test.tsx",
-        "✕",
-        "●",
-    ]
-    
+    noise = ["baseline-browser-mapping", "npm WARN", "pnpm install", "Compiling", "Compiled", "webpack"]
+    important = ["Error:", "error:", "FAIL", "TypeError", "Cannot", "Expected", "✕", "●"]
     lines = logs.split('\n')
-    filtered = []
-    
-    for line in lines:
-        # Skip noise
-        if any(noise in line for noise in noise_patterns):
-            continue
-        # Keep important lines
-        if any(important in line for important in important_patterns):
-            filtered.append(line)
-        # Keep lines with file paths
-        elif '.ts' in line or '.tsx' in line or '.js' in line:
-            filtered.append(line)
-    
-    # Limit lines
-    result = '\n'.join(filtered[:max_lines])
-    return result if result else logs[:2000]  # Fallback to truncated original
+    filtered = [l for l in lines if not any(n in l for n in noise) and (any(i in l for i in important) or '.ts' in l)]
+    return '\n'.join(filtered[:max_lines]) or logs[:2000]
 
 
 class ErrorAnalysisAndPlan(BaseModel):
-    """Combined error analysis and fix plan."""
-    error_type: Literal["TEST_ERROR", "SOURCE_ERROR", "IMPORT_ERROR", "CONFIG_ERROR", "UNFIXABLE"] = Field(
-        description="Type of error"
-    )
-    file_to_fix: str = Field(description="Primary file that needs fixing")
-    root_cause: str = Field(description="Root cause (1-2 sentences)")
+    error_type: Literal["TEST_ERROR", "SOURCE_ERROR", "IMPORT_ERROR", "CONFIG_ERROR", "UNFIXABLE"] = Field(description="Error type")
+    file_to_fix: str = Field(description="Primary file to fix")
+    root_cause: str = Field(description="Root cause")
     should_continue: bool = Field(description="True if fixable")
-    fix_steps: List[PlanStep] = Field(
-        default_factory=list,
-        description="Fix steps: order, description, file_path, action (create/modify)"
-    )
+    fix_steps: List[PlanStep] = Field(default_factory=list)
 
 
 async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
-    """Analyze error and create fix plan in ONE LLM call."""
-    print("[NODE] analyze_error")
+    """Zero-shot error analysis with preloaded context."""
+    logger.info("[NODE] analyze_error")
     
     try:
-        error_logs = state.get("run_stderr", "")
+        error_logs = state.get("run_stderr", "") or state.get("run_stdout", "")
+        workspace_path = state.get("workspace_path", "")
         files_modified = state.get("files_modified", [])
         debug_count = state.get("debug_count", 0)
         debug_history = state.get("debug_history", [])
-        workspace_path = state.get("workspace_path", "")
-        project_id = state.get("project_id", "default")
-        task_id = state.get("task_id") or state.get("story_id", "")
+        
+        # Auto-fix: Prisma/npm errors
+        if workspace_path and error_logs:
+            auto_fixed = False
+            prisma_errors = ["Cannot find module '@prisma/client'", "PrismaClient is unable to run", "Error: P1001", "Error: P2021"]
+            if any(e in error_logs for e in prisma_errors):
+                try:
+                    subprocess.run("pnpm exec prisma generate", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
+                    subprocess.run("pnpm exec prisma db push --accept-data-loss", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
+                    auto_fixed = True
+                except:
+                    pass
+            
+            if not auto_fixed and any(e in error_logs for e in ["Cannot find module", "Module not found"]):
+                local_pattern = r"(?:Cannot find module|Can't resolve) ['\"](@/[^'\"]+|\.{1,2}/[^'\"]+)['\"]"
+                if not re.findall(local_pattern, error_logs):
+                    try:
+                        subprocess.run("pnpm install --frozen-lockfile", cwd=workspace_path, shell=True, capture_output=True, timeout=120)
+                        auto_fixed = True
+                    except:
+                        pass
+            
+            if auto_fixed:
+                return {**state, "action": "VALIDATE", "run_status": None, "error_analysis": {"auto_fixed": True}}
+        
+        if debug_count >= MAX_DEBUG_ATTEMPTS:
+            return {**state, "action": "RESPOND", "error": f"Max debug attempts ({MAX_DEBUG_ATTEMPTS}) reached"}
         
         if not error_logs:
-            logger.info("[analyze_error] No error logs")
             return {**state, "action": "RESPOND"}
         
-        setup_tool_context(workspace_path, project_id, task_id)
+        set_tool_context(root_dir=workspace_path, project_id=state.get("project_id", ""), task_id=state.get("task_id") or state.get("story_id", ""))
         
-        # Load skill registry
         tech_stack = state.get("tech_stack", "nextjs")
-        skill_registry = state.get("skill_registry")
-        if not skill_registry:
-            skill_registry = SkillRegistry.load(tech_stack)
+        skill_registry = state.get("skill_registry") or SkillRegistry.load(tech_stack)
         
-        # Build history context
-        history_context = ""
+        # Parse errors and preload context
+        parsed_errors = _parse_errors(error_logs)
+        error_context = _format_errors(parsed_errors)
+        file_context = _preload_error_context(workspace_path, parsed_errors, files_modified)
+        cleaned_logs = _clean_logs(error_logs)
+        
+        logger.info(f"[analyze_error] Parsed {len(parsed_errors)} errors, preloaded {file_context.count('###')} files")
+        
+        # History context
+        history = ""
         if debug_history:
-            history_context = "\n## PREVIOUS ATTEMPTS (DO NOT REPEAT!)\n"
-            for h in debug_history[-3:]:
-                history_context += f"- #{h.get('iteration')}: {h.get('fix_description', '')[:80]} -> FAILED\n"
+            history = "\n## PREVIOUS ATTEMPTS (DO NOT REPEAT!):\n" + "\n".join(f"- #{h.get('iteration')}: {h.get('fix_description', '')[:80]} -> FAILED" for h in debug_history[-3:])
         
-        # Clean error logs to remove noise
-        cleaned_logs = _clean_error_logs(error_logs)
-        
-        # Use prompts from yaml
-        input_text = _format_input_template(
-            "analyze_error",
-            error_logs=cleaned_logs,
-            files_modified=', '.join(files_modified) if files_modified else 'None',
-            history_context=history_context,
-            debug_count=debug_count + 1,
-        )
+        # Build prompt with preloaded context
+        system_prompt = _build_system_prompt("analyze_error")
+        input_text = f"""## Error Logs
+{error_context}
 
-        tools = [read_file_safe, list_directory_safe, glob]
-        messages = [
-            SystemMessage(content=_build_system_prompt("analyze_error")),
-            HumanMessage(content=input_text)
-        ]
-        
-        # Tool exploration
-        exploration = await _llm_with_tools(
-            llm=code_llm,
-            tools=tools,
-            messages=messages,
-            state=state,
-            name="analyze_error",
-            max_iterations=2
-        )
-        
-        # Request JSON response with result tags
-        json_instruction = """
-Based on your analysis, respond ONLY with JSON wrapped in <result> tags:
+{cleaned_logs[:3000]}
 
+## Preloaded Files (NO NEED TO READ - already provided)
+{file_context}
+
+## Modified Files
+{', '.join(files_modified) if files_modified else 'None'}
+{history}
+
+## Debug Attempt: {debug_count + 1}/{MAX_DEBUG_ATTEMPTS}
+
+Analyze the error and respond with JSON in <result> tags:
 <result>
-{
+{{
   "error_type": "TEST_ERROR|SOURCE_ERROR|IMPORT_ERROR|CONFIG_ERROR|UNFIXABLE",
   "file_to_fix": "path/to/file.ts",
-  "root_cause": "Brief explanation of root cause",
+  "root_cause": "Brief explanation",
   "should_continue": true,
-  "fix_steps": [
-    {"order": 1, "description": "Fix description", "file_path": "path/to/file.ts", "action": "modify"}
-  ]
-}
-</result>
+  "fix_steps": [{{"order": 1, "description": "Fix", "file_path": "path/file.ts", "action": "modify"}}]
+}}
+</result>"""
 
-CRITICAL: Respond ONLY with the JSON in <result> tags. No other text.
-"""
-        messages.append(HumanMessage(content=f"Context:\n{exploration[:3000]}\n\n{json_instruction}"))
+        # Single LLM call (no tools)
+        response = await code_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "analyze_error"))
+        flush_langfuse(state)
         
-        # Invoke LLM and extract JSON
-        response = await code_llm.ainvoke(messages, config=_cfg(state, "analyze_error"))
-        response_text = response.content if hasattr(response, 'content') else str(response)
+        parsed = extract_json_universal(response.content if hasattr(response, 'content') else str(response), "analyze_error")
         
-        # Parse JSON from response
-        parsed = extract_json_universal(response_text, "analyze_error")
+        # Validate steps
+        valid_steps = []
+        for step in parsed.get("fix_steps", []):
+            step["action"] = step.get("action", "modify") if step.get("action") in {'create', 'modify', 'delete'} else "modify"
+            try:
+                valid_steps.append(PlanStep(**step))
+            except:
+                pass
         
-        # Convert to ErrorAnalysisAndPlan
         result = ErrorAnalysisAndPlan(
             error_type=parsed.get("error_type", "UNFIXABLE"),
             file_to_fix=parsed.get("file_to_fix", ""),
-            root_cause=parsed.get("root_cause", "Unknown error"),
+            root_cause=parsed.get("root_cause", "Unknown"),
             should_continue=parsed.get("should_continue", False),
-            fix_steps=[PlanStep(**step) for step in parsed.get("fix_steps", [])]
+            fix_steps=valid_steps
         )
         
-        logger.info(f"[analyze_error] {result.error_type}: {result.root_cause}")
+        logger.info(f"[analyze_error] {result.error_type}: {result.root_cause[:60]}")
         
         if not result.should_continue or not result.fix_steps:
-            return {
-                **state,
-                "error_analysis": {"error_type": result.error_type, "root_cause": result.root_cause},
-                "action": "RESPOND",
-            }
-        
-        logger.info(f"[analyze_error] {len(result.fix_steps)} fix steps")
-        
-        steps_text = "\n".join(f"  {s.order}. [{s.action}] {s.description}" for s in result.fix_steps)
-        msg = f"""🔧 **Bug Fix** (Attempt #{debug_count + 1})
-
-**Error:** {result.error_type}
-**Cause:** {result.root_cause[:100]}
-
-{steps_text}
-"""
+            return {**state, "error_analysis": {"error_type": result.error_type, "root_cause": result.root_cause}, "action": "RESPOND"}
         
         return {
             **state,
-            "error_analysis": {
-                "error_type": result.error_type,
-                "file_to_fix": result.file_to_fix,
-                "root_cause": result.root_cause,
-            },
+            "error_analysis": {"error_type": result.error_type, "file_to_fix": result.file_to_fix, "root_cause": result.root_cause},
             "task_type": "bug_fix",
             "complexity": "low",
-            "affected_files": [result.file_to_fix],
             "summarize_feedback": f"Error: {result.root_cause}",
             "implementation_plan": [s.model_dump() for s in result.fix_steps],
             "total_steps": len(result.fix_steps),
             "current_step": 0,
-            "message": msg,
             "action": "IMPLEMENT",
             "skill_registry": skill_registry,
-            "tech_stack": tech_stack,
             "debug_count": debug_count + 1,
         }
-        
     except Exception as e:
         logger.error(f"[analyze_error] Error: {e}", exc_info=True)
         return {**state, "action": "RESPOND", "error": str(e)}

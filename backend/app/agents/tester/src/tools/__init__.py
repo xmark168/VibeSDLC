@@ -37,9 +37,13 @@ from app.agents.tester.src.tools.tester_tools import (
 )
 
 from app.agents.tester.src.tools.workspace_tools import (
+    setup_git_worktree,
+    cleanup_old_worktree,
     commit_workspace_changes,
     cleanup_worktree,
     merge_to_main,
+    get_agents_md,
+    get_project_context,
 )
 
 __all__ = [
@@ -74,7 +78,11 @@ __all__ = [
     "TESTER_TOOLS",
     "TESTER_EXECUTION_TOOLS",
     # Workspace tools
+    "setup_git_worktree",
+    "cleanup_old_worktree",
     "commit_workspace_changes",
     "cleanup_worktree",
     "merge_to_main",
+    "get_agents_md",
+    "get_project_context",
 ]

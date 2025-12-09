@@ -36,6 +36,10 @@ export const storiesApi = {
     epic_id?: string
     tags?: string[]
     labels?: string[]
+    // New epic fields
+    new_epic_title?: string
+    new_epic_domain?: string
+    new_epic_description?: string
   }): Promise<Story> => {
     return __request<Story>(OpenAPI, {
       method: 'POST',
@@ -53,6 +57,10 @@ export const storiesApi = {
         epic_id: data.epic_id,
         tags: data.tags || [],
         labels: data.labels || [],
+        // New epic fields
+        new_epic_title: data.new_epic_title,
+        new_epic_domain: data.new_epic_domain,
+        new_epic_description: data.new_epic_description,
       },
     })
   },
@@ -154,14 +162,59 @@ export const storiesApi = {
       suggested_acceptance_criteria?: string[]
       suggested_requirements?: string[]
     }
-  ): Promise<{ message: string; story_id: string }> => {
-    return __request<{ message: string; story_id: string }>(OpenAPI, {
+  ): Promise<{ 
+    message: string
+    story_id: string
+    story?: {
+      id: string
+      title: string
+      description?: string
+      acceptance_criteria?: string[]
+      requirements?: string[]
+    }
+  }> => {
+    return __request<{ 
+      message: string
+      story_id: string
+      story?: {
+        id: string
+        title: string
+        description?: string
+        acceptance_criteria?: string[]
+        requirements?: string[]
+      }
+    }>(OpenAPI, {
       method: 'POST',
       url: `/api/v1/stories/${storyId}/review-action`,
       body: {
         action,
         ...suggestions
       },
+    })
+  },
+
+  /**
+   * List all epics for a project
+   */
+  listEpics: async (
+    projectId: string
+  ): Promise<{ data: { id: string; epic_code?: string; title: string; description?: string; domain?: string; status?: string }[]; count: number }> => {
+    return __request<{ data: { id: string; epic_code?: string; title: string; description?: string; domain?: string; status?: string }[]; count: number }>(OpenAPI, {
+      method: 'GET',
+      url: `/api/v1/stories/epics/${projectId}`,
+    })
+  },
+
+  /**
+   * Bulk update ranks for multiple stories in one request
+   */
+  bulkUpdateRanks: async (
+    updates: { story_id: string; rank: number }[]
+  ): Promise<{ updated: number }> => {
+    return __request<{ updated: number }>(OpenAPI, {
+      method: 'PATCH',
+      url: '/api/v1/stories/bulk-rank',
+      body: { updates },
     })
   }
 }

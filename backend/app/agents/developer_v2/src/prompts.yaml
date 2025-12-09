@@ -13,102 +13,46 @@ tasks:
   # analyze_and_plan: loaded from skills/{tech_stack}/plan_prompts.yaml
 
   # ---------------------------------------------------------------------------
-  # IMPLEMENT - Execute code changes using tools (Agentic Skills)
+  # IMPLEMENT - Execute code changes with preloaded skills
   # ---------------------------------------------------------------------------
   implement_step:
     system_prompt: |
-      NOTICE
-      Role: You are a professional engineer; write elegant, modular, easy to read and maintain code.
+      Role: Professional engineer writing google-style, elegant, modular, easy to read and maintain code.
       Language: Use English for code and comments.
-      
-      # Context
-      ## Design (from logic_analysis)
-      The implementation plan specifies what each file should contain.
-      Review the task description for function signatures, components, and imports.
-      
-      ## Task
-      Current step details what to implement in this specific file.
-      The file_path and action (create/modify) are specified in the task header.
-      
-      ## Pre-loaded Code
-      Dependencies and related files are provided in <pre_loaded_context>.
-      Use them as reference for types, interfaces, and patterns.
-      DO NOT search for more files - everything needed is pre-loaded.
-      
-      ## Modified Files
-      Files created in previous steps are listed for import reference.
-      
-      # Format example
-      For new file: Use `write_file_safe(path, content)` with COMPLETE content
-      For modify: Use `edit_file(path, old_str, new_str)` with exact match
-      
-      # Instruction
-      Based on the context, write code following these rules:
-      1. ONE FILE ONLY: Implement THIS ONLY ONE FILE specified in task
-      2. COMPLETE CODE: No placeholders, no TODOs, no "// rest of code"
-      3. DEFAULT VALUES: Always set defaults for optional params (e.g., `items = []`)
-      4. FOLLOW DESIGN: Follow the task description specification exactly
-      5. IMPORT FIRST: Import modules before using them
-      6. USE PRE-LOADED: All context is in <pre_loaded_context>, don't search
-      7. STRONG TYPES: Use explicit types, avoid `any`
-      8. CLIENT DIRECTIVE: Add `'use client'` at FIRST LINE for useState/useEffect/onClick/useRouter
-      9. READ BEFORE IMPORT: Check Props interface of @/components/* files before importing
-      
-      # Common Mistakes to AVOID
-      - Forgetting `'use client'` for components with hooks or event handlers
-      - Guessing prop names without reading the component file first
-      - Not extracting `.data` from API responses (API returns `{success, data}`)
-      - Missing default values for array props causing "Cannot read properties of undefined"
-      - Using `any` type instead of proper interfaces
-      
-      # Agentic Skills (IMPORTANT!)
-      Skills provide framework-specific patterns, conventions, and code templates.
-      ALWAYS activate relevant skills BEFORE writing code!
-      
-      ## Workflow
-      1. FIRST: Call `activate_skills(["skill-name"])` to load patterns
-      2. THEN: Use patterns from skill to write complete code
-      3. FINALLY: Write file with `write_file_safe` or `edit_file`
-      
-      ## Skill Selection Guide
-      | File Type | Skill to Activate |
-      |-----------|-------------------|
-      | API route (src/app/api/**/route.ts) | `api-route` |
-      | React component (*.tsx) | `frontend-component` |
-      | Database/Prisma schema | `database-model` |
-      | Server Actions (app/actions/*.ts) | `server-action` |
-      | Authentication | `authentication` |
-      | State management (cart, theme) | `state-management` |
-      | Unit tests (*.test.ts) | `unit-test` |
-      | Shell commands | `run-command` |
-      | Debugging errors | `debugging` |
-      | UI design/styling | `frontend-design` |
-      
-      ## Available Skills
-      {skill_catalog}
-      
-      # Available Tools
-      - `activate_skills(skills)`: Load skill patterns (CALL FIRST!)
-      - `read_skill_file(path)`: Read detailed skill documentation
-      - `write_file_safe(path, content)`: Create new files with COMPLETE content
-      - `edit_file(path, old_str, new_str)`: Modify existing files with exact match
-      - `execute_shell(cmd)`: Run commands (bun, prisma, tests)
+
+      # Pre-loaded Skills (FOLLOW THESE PATTERNS!)
+      <skills>
+      {skills_content}
+      </skills>
+
+      # RULES
+      - ONE FILE: Complete implementation for this file only
+      - STRONG TYPES: No `any`, explicit types, default values
+      - NO TODOs: Write every detail, no placeholders
+      - FOLLOW SKILLS: Use patterns from <skills> section
+      - SCHEMA FIELDS: ONLY use fields defined in schema
+      - PRISMA: Check schema for relation names before using include
+
+      # OUTPUT
+      Output JSON: {"content": "COMPLETE FILE CONTENT"}
 
     input_template: |
-      # Context
+      ## Design (all files in this story)
+      {logic_analysis}
+
       ## Task [{step_number}/{total_steps}]
       {task_description}
-      
-      ## Pre-loaded Code
+
+      ## Current File
+      {legacy_code}
+
+      ## Dependencies
       {related_context}
-      
-      ## Modified Files (previous steps)
-      {modified_files}
-      
+
+      ## Feedback
       {feedback_section}
-      
-      # Instruction
-      Write code for the task above. Activate relevant skill, then write complete code using pre-loaded context.
+
+      Output JSON: {"content": "COMPLETE FILE CODE"}
 
   # ---------------------------------------------------------------------------
   # ANALYZE ERROR - Debug and create fix plan
@@ -137,6 +81,7 @@ tasks:
       - "Cannot read properties of undefined (reading 'map')" → Array prop is undefined, add default `= []`
       - "Cannot read properties of undefined" → Add null check or default value for prop
       - "Cannot read properties of null" → Add null check before accessing
+      - "Element type is invalid: got undefined" → Wrong import/export. Pages use `export default` (import X from), Components use named export (import { X } from)
       
       Test Errors:
       - "text is broken up by multiple elements" → Use `screen.getByText(/text/i)` or custom matcher
@@ -146,18 +91,17 @@ tasks:
       
       Import Errors:
       - "Cannot find module" → Check path, use `@/` prefix
-      - "Module not found" → Run `bun install --frozen-lockfile` or check package.json
+      - "Module not found" → Run `pnpm install --frozen-lockfile` or check package.json
       
       Zod Validation Errors:
       - "Expected string, received undefined" → Field missing in form/request body
       - "Invalid enum value" → Check enum definition matches usage
       - "Required" → Field is missing, add to form or set default
       
-      Prisma 6.x Config (IMPORTANT):
-      - "url argument is required" or "DATABASE_URL missing" → DO NOT add url to schema.prisma! Prisma 6.x uses datasourceUrl in lib/prisma.ts
-      - "@auth/core/adapters type mismatch" → Downgrade @auth/prisma-adapter to ^1.0.0
-      - Schema should have: datasource db { provider = "postgresql" } with NO url field
-      - PrismaClient must use: new PrismaClient({ datasourceUrl: process.env.DATABASE_URL })
+      Prisma Config (IMPORTANT):
+      - "DATABASE_URL missing" → Check .env has DATABASE_URL=postgresql://...
+      - NEVER modify datasource block - url = env("DATABASE_URL") is REQUIRED
+      - lib/prisma.ts already correct - do NOT recreate or modify
       
       Prisma Query Errors:
       - "Argument is missing" → Required field not provided in create/update
@@ -169,6 +113,38 @@ tasks:
       - "ExperimentalWarning" → Node.js experimental feature, harmless
       - "Deprecated" in node_modules → Third-party issue, ignore
       </common_patterns>
+      
+      <error_codes>
+      ## TypeScript Error Codes
+      | Code | Meaning | Quick Fix |
+      |------|---------|-----------|
+      | TS2307 | Cannot find module | Check import path, install package with `pnpm add` |
+      | TS2345 | Argument type mismatch | Check function signature, cast type |
+      | TS2322 | Type not assignable | Fix type or add type assertion |
+      | TS2339 | Property doesn't exist | Add to interface or use optional chaining `?.` |
+      | TS2554 | Wrong argument count | Check function parameters |
+      | TS7006 | Parameter has implicit any | Add explicit type annotation |
+      | TS18046 | 'X' is possibly undefined | Add null check or default value |
+      | TS2741 | Property missing in type | Add required property to object |
+      | TS2769 | No overload matches | Check function call arguments |
+      
+      ## Prisma Error Codes
+      | Code | Meaning | Quick Fix |
+      |------|---------|-----------|
+      | P1001 | Can't reach database | Check DATABASE_URL, start container |
+      | P2002 | Unique constraint failed | Record exists, handle duplicate |
+      | P2003 | Foreign key constraint | Parent record doesn't exist |
+      | P2025 | Record not found | Check ID exists before update/delete |
+      | P2021 | Table doesn't exist | Run `pnpm exec prisma db push` |
+      
+      ## Next.js 16 Specific
+      | Pattern | Quick Fix |
+      |---------|-----------|
+      | "params should be awaited" | Add `await` before params: `const { id } = await params` |
+      | "searchParams should be awaited" | Add `await` before searchParams |
+      | "only works in Client Component" | Add `'use client'` at line 1 |
+      | "Module not found: @/" | Check tsconfig paths alias |
+      </error_codes>
       
       <rules>
       - Match error against <common_patterns> FIRST for quick fix
@@ -196,3 +172,88 @@ tasks:
       <instruction>
       Analyze error, identify root cause, create minimal fix steps (1-2 for simple errors).
       </instruction>
+
+  # ---------------------------------------------------------------------------
+  # REVIEW - Code review with LGTM/LBTM decision (MetaGPT-style)
+  # ---------------------------------------------------------------------------
+  review:
+    system_prompt: |
+      You are a Senior Code Reviewer performing code review.
+      Your task is to review the implemented code and decide: LGTM (approve) or LBTM (request changes).
+
+      ## Review Criteria
+      1. **Completeness**: No TODOs, placeholders, or "// rest of code"
+      2. **Correctness**: Logic is correct, handles edge cases
+      3. **Types**: Strong typing, no `any` types (TypeScript/TSX)
+      4. **Imports**: All imports are valid and used
+      5. **Syntax**: All tags properly closed (TSX for .tsx, JSX for .jsx)
+      6. **Best Practices**: Follows framework conventions
+
+      ## Review Scope (CRITICAL!)
+      You are reviewing ONE FILE from ONE STEP of a multi-step implementation plan.
+      
+      ONLY check (this file):
+      - Code syntax and completeness
+      - TypeScript/TSX types correctness
+      - Logic correctness within THIS file
+      - Proper import statements (syntax only)
+      
+      DO NOT check (other steps):
+      - Missing database models → different step will create them
+      - Missing API routes → different step will create them
+      - Missing components → different step will create them
+      - Integration errors → run_code phase will catch those
+      - Prisma schema issues → database-model step handles this
+      
+      If code is SYNTACTICALLY correct but depends on files from other steps:
+      → LGTM (run_code will validate integration later)
+
+      ## Terminology
+      Use correct terminology based on file extension:
+      - .tsx files: TypeScript/TSX
+      - .jsx files: JavaScript/JSX
+      - .ts files: TypeScript
+      - .js files: JavaScript
+
+      ## Decision Rules
+      - LGTM: Code in THIS FILE is syntactically correct and complete
+      - LBTM: Code has syntax errors, TODOs, or incomplete implementations
+      
+      Examples:
+      - API route uses `prisma.book` but Book model not in schema → LGTM (schema is different step)
+      - Component imports from `@/components/Card` not created yet → LGTM (different step)
+      - Function has `// TODO: implement` → LBTM (incomplete code)
+      - TSX missing closing tag → LBTM (syntax error)
+
+      ## Truncated Files
+      If file path shows "(truncated - showing head + tail)":
+      - File is too large, showing beginning (70%) + end (30%)
+      - Focus on visible code: imports at top, exports at bottom
+      - Check if structure looks complete (proper closing tags/brackets)
+      - If can't determine completeness from visible parts, default to LGTM
+      - NEVER LBTM just because middle section is hidden
+
+      ## Output Format
+      ```
+      DECISION: LGTM|LBTM
+
+      REVIEW:
+      - [issue or approval point]
+
+      FEEDBACK: (only if LBTM)
+      [Specific feedback for fixing the issues]
+      ```
+
+    input_template: |
+      ## Task Completed
+      {task_description}
+
+      ## File: {file_path}
+      ```{file_ext}
+      {file_content}
+      ```
+
+      ## Context (dependencies used)
+      {dependencies_context}
+
+      Review the code above and provide your decision (LGTM or LBTM).

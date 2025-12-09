@@ -19,6 +19,14 @@ interface InvestIssue {
   issue: string
 }
 
+interface UpdatedStoryData {
+  id: string
+  title: string
+  description?: string
+  acceptance_criteria?: string[]
+  requirements?: string[]
+}
+
 interface StorySuggestionsCardProps {
   storyId: string
   storyTitle: string
@@ -31,9 +39,9 @@ interface StorySuggestionsCardProps {
   suggestedRequirements?: string[]
   hasSuggestions?: boolean
   initialActionTaken?: 'applied' | 'kept' | 'removed' | null
-  onApplied?: () => void
+  onApplied?: (updatedStory?: UpdatedStoryData) => void
   onKeep?: () => void
-  onRemove?: () => void
+  onRemove?: (storyId: string) => void
 }
 
 export function StorySuggestionsCard({
@@ -74,13 +82,14 @@ export function StorySuggestionsCard({
     
     setIsApplying(true)
     try {
-      await storiesApi.reviewAction(storyId, 'apply', {
+      const result = await storiesApi.reviewAction(storyId, 'apply', {
         suggested_title: suggestedTitle,
         suggested_acceptance_criteria: suggestedAcceptanceCriteria,
         suggested_requirements: suggestedRequirements
       })
       setActionTaken('applied')
-      onApplied?.()
+      // Pass updated story data to callback for immediate UI update
+      onApplied?.(result.story)
     } catch (error) {
       console.error("Failed to apply suggestions:", error)
       toast.error("Không thể áp dụng gợi ý")
@@ -105,7 +114,8 @@ export function StorySuggestionsCard({
     try {
       await storiesApi.reviewAction(storyId, 'remove')
       setActionTaken('removed')
-      onRemove?.()
+      // Pass storyId for removal from UI
+      onRemove?.(storyId)
     } catch (error) {
       console.error("Failed to remove story:", error)
       toast.error("Không thể loại bỏ story")

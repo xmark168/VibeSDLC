@@ -49,10 +49,9 @@ def activate_skill(skill_id: str) -> str:
     
     Available skills:
     - integration-test: Jest integration tests for API routes and database operations
-    - e2e-test: Playwright E2E tests for full user flows and UI interactions
     
     Args:
-        skill_id: The skill to activate (e.g., "integration-test", "e2e-test")
+        skill_id: The skill to activate (e.g., "integration-test")
     
     Returns:
         Detailed testing instructions, patterns, and examples for the skill

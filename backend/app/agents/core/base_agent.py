@@ -733,7 +733,7 @@ class BaseAgent(ABC):
         # For now, return question_id - the calling code should handle the pause/resume
         logger.info(f"[{self.name}] Waiting for approval (question_id={question_id})")
         
-        # Return placeholder - actual implementation will need CrewAI Flow pause/resume
+        # Return placeholder - actual implementation will need async pause/resume
         return {
             "question_id": str(question_id),
             "status": "waiting_approval"
@@ -1004,6 +1004,8 @@ class BaseAgent(ABC):
         from app.models import StoryMessage
         from app.kafka.event_schemas import StoryMessageEvent, KafkaTopics
         
+        logger.info(f"[{self.name}] message_story called: story_id={story_id}, type={message_type}")
+        
         try:
             # 1. Save to DB
             with Session(engine) as session:
@@ -1021,6 +1023,7 @@ class BaseAgent(ABC):
                 session.refresh(msg)
                 message_id = msg.id
                 created_at = msg.created_at
+                logger.info(f"[{self.name}] Story message saved to DB: id={message_id}")
             
             # 2. Publish Kafka event (handler will broadcast WebSocket)
             producer = await self._get_producer()
@@ -1038,7 +1041,7 @@ class BaseAgent(ABC):
             )
             await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
             
-            logger.info(f"[{self.name}] Story message: {content[:50]}...")
+            logger.info(f"[{self.name}] Story message published: {content[:50]}...")
             return message_id
                 
         except Exception as e:

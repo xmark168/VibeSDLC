@@ -25,6 +25,20 @@ def _resolve_shared_context(template: str) -> str:
     return template
 
 
+def _safe_format(template: str, **kwargs) -> str:
+    """Safely format template, only replacing provided keys.
+    
+    Unlike str.format(), this doesn't fail on unmatched placeholders.
+    Handles code examples with curly braces gracefully.
+    """
+    result = template
+    for key, value in kwargs.items():
+        # Simple string replacement - no regex special chars in replacement
+        placeholder = "{" + key + "}"
+        result = result.replace(placeholder, str(value))
+    return result
+
+
 def get_prompt(task_name: str, prompt_type: str = "user_prompt", **kwargs) -> str:
     """Get a prompt for a specific task.
     
@@ -49,12 +63,8 @@ def get_prompt(task_name: str, prompt_type: str = "user_prompt", **kwargs) -> st
     # Resolve shared context first
     template = _resolve_shared_context(template)
     
-    # Then format with kwargs
-    try:
-        return template.format(**kwargs)
-    except KeyError as e:
-        logger.warning(f"Missing key {e} in prompt kwargs for {task_name}")
-        return template
+    # Safe format - only replaces provided keys
+    return _safe_format(template, **kwargs)
 
 
 def get_system_prompt(task_name: str, **kwargs) -> str:

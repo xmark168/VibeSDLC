@@ -146,7 +146,7 @@ class Settings(BaseSettings):
     MAX_TOKENS: int = 2000
     MAX_LLM_CALL_RETRIES: int = 3
 
-    # CrewAI Model Settings (from .env)
+    # LLM Model Settings
     STRONG_MODEL: str = "openai/gpt-4.1"  # For creative agents (BA, Designer)
     LIGHT_MODEL: str = "openai/gpt-4.1"  # For validators/coordinators
 
@@ -172,7 +172,7 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     KAFKA_ENABLE_AUTO_COMMIT: bool = True
     KAFKA_AUTO_OFFSET_RESET: Literal["earliest", "latest"] = "latest"
-    KAFKA_GROUP_ID: str = "crewai_agents"
+    KAFKA_GROUP_ID: str = "vibes_agents"
     KAFKA_SASL_MECHANISM: str | None = None
     KAFKA_SASL_USERNAME: str | None = None
     KAFKA_SASL_PASSWORD: str | None = None
@@ -231,3 +231,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Document Upload Configuration
+DOCUMENT_UPLOAD_LIMITS = {
+    "max_file_size": 10 * 1024 * 1024,  # 10 MB
+    "max_text_length": 50_000,  # 50K characters after extraction (safe for LLM)
+    "allowed_extensions": [".docx", ".txt"],  # Word and plain text
+    "max_files_per_message": 1,
+}

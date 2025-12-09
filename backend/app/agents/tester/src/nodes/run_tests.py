@@ -9,12 +9,23 @@ from pathlib import Path
 from uuid import UUID
 
 from app.agents.tester.src.state import TesterState
+from app.agents.tester.src.core_nodes import send_message
 
 logger = logging.getLogger(__name__)
 
 
-def _get_project_path(project_id: str) -> Path | None:
-    """Get project path from database."""
+def _get_workspace_path(state: dict) -> Path | None:
+    """Get workspace path from state (worktree) or fallback to project path from DB."""
+    # Prefer workspace_path (worktree) where files are actually written
+    workspace_path = state.get("workspace_path")
+    if workspace_path:
+        return Path(workspace_path)
+    
+    # Fallback to project path from DB
+    project_id = state.get("project_id")
+    if not project_id:
+        return None
+        
     from sqlmodel import Session
     from app.core.db import engine
     from app.models import Project
@@ -27,88 +38,62 @@ def _get_project_path(project_id: str) -> Path | None:
 
 
 def _detect_package_manager(project_path: Path) -> tuple[str, str]:
-    """Detect package manager and run command."""
-    if (project_path / "bun.lockb").exists() or (project_path / "bun.lock").exists():
-        return ("bun", "bun run")
+    """Detect package manager and run command. Default: pnpm."""
     if (project_path / "pnpm-lock.yaml").exists():
         return ("pnpm", "pnpm")
+    if (project_path / "bun.lockb").exists() or (project_path / "bun.lock").exists():
+        return ("bun", "bun run")
     if (project_path / "yarn.lock").exists():
         return ("yarn", "yarn")
-    return ("npm", "npm run")
+    return ("pnpm", "pnpm")  # Default: pnpm
 
 
-def _detect_test_commands(project_path: Path, test_plan: list[dict]) -> list[dict]:
-    """Detect test commands based on test plan.
+def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dict]:
+    """Detect test commands based on test files.
     
-    Returns list of {type, command, files} dicts.
+    Returns SINGLE command with ALL test files - Jest handles parallelism internally.
+    This is faster than running separate commands for integration/unit tests.
+    
+    Args:
+        project_path: Path to workspace
+        test_files: List of test file paths to run
+    
+    Returns list with single {type, command, files} dict.
     """
-    commands = []
+    # Filter valid test files that exist
+    valid_files = []
     
-    # Group by test type
-    integration_files = []
-    e2e_files = []
-    
-    for step in test_plan:
-        test_type = step.get("type", "integration")
-        file_path = step.get("file_path", "")
+    for file_path in test_files:
+        if not file_path:
+            continue
+            
+        # Check file exists
+        if not (project_path / file_path).exists():
+            logger.warning(f"[_detect_test_commands] File not found: {file_path}")
+            continue
         
-        if test_type == "e2e":
-            e2e_files.append(file_path)
-        else:
-            integration_files.append(file_path)
+        # Accept both .test.ts (integration) and .test.tsx (unit)
+        if file_path.endswith('.test.ts') or file_path.endswith('.test.tsx'):
+            valid_files.append(file_path)
     
-    pm, run_cmd = _detect_package_manager(project_path)
+    if not valid_files:
+        return []
     
-    # Check package.json for scripts
-    pkg_scripts = {}
-    pkg_path = project_path / "package.json"
-    if pkg_path.exists():
-        try:
-            pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
-            pkg_scripts = pkg.get("scripts", {})
-        except Exception:
-            pass
+    # SINGLE command with ALL test files - Jest runs them in parallel
+    files_arg = " ".join(f'"{f}"' for f in valid_files)
+    cmd = f"pnpm exec jest {files_arg} --passWithNoTests"
     
-    # Integration tests command
-    if integration_files:
-        if "test:integration" in pkg_scripts:
-            cmd = f"{run_cmd} test:integration"
-        elif "test" in pkg_scripts:
-            # Run with specific files
-            files_arg = " ".join(integration_files)
-            cmd = f"{run_cmd} test -- {files_arg}"
-        else:
-            files_arg = " ".join(integration_files)
-            cmd = f"npx jest {files_arg}"
-        
-        commands.append({
-            "type": "integration",
-            "command": cmd,
-            "files": integration_files,
-        })
+    logger.info(f"[_detect_test_commands] Running {len(valid_files)} test files in parallel: {cmd[:100]}...")
     
-    # E2E tests command
-    if e2e_files:
-        if "test:e2e" in pkg_scripts:
-            cmd = f"{run_cmd} test:e2e"
-        elif "e2e" in pkg_scripts:
-            cmd = f"{run_cmd} e2e"
-        else:
-            # Default Playwright command
-            files_arg = " ".join(e2e_files)
-            cmd = f"npx playwright test {files_arg}"
-        
-        commands.append({
-            "type": "e2e",
-            "command": cmd,
-            "files": e2e_files,
-        })
-    
-    return commands
+    return [{
+        "type": "all",
+        "command": cmd,
+        "files": valid_files,
+    }]
 
 
 def _parse_test_output(stdout: str, stderr: str, test_type: str) -> dict:
-    """Parse test output to extract results."""
+    """Parse test output to extract results (Jest only - no e2e)."""
     combined = stdout + stderr
     result = {
         "passed": 0,
@@ -117,49 +102,97 @@ def _parse_test_output(stdout: str, stderr: str, test_type: str) -> dict:
         "error_messages": [],
     }
     
-    if test_type == "e2e":
-        # Playwright output parsing
-        # Pattern: "X passed, Y failed"
-        match = re.search(r"(\d+)\s*passed", combined)
-        if match:
-            result["passed"] = int(match.group(1))
-        
-        match = re.search(r"(\d+)\s*failed", combined)
-        if match:
-            result["failed"] = int(match.group(1))
-        
-        # Failed test names
-        # Pattern: "[chromium] › file.spec.ts:10 › test name"
-        failed_matches = re.findall(r"✘\s*\[.*?\]\s*›\s*\S+\s*›\s*(.+)", combined)
-        result["failed_tests"] = failed_matches[:10]
-        
-    else:
-        # Jest output parsing
-        # Pattern: "Tests: X failed, Y passed, Z total"
-        match = re.search(r"Tests:\s*(?:(\d+)\s*failed,\s*)?(\d+)\s*passed", combined)
-        if match:
-            result["failed"] = int(match.group(1) or 0)
-            result["passed"] = int(match.group(2) or 0)
-        
-        # Failed test names
-        # Pattern: "✕ test name (123ms)"
-        failed_matches = re.findall(r"[✕✖]\s+(.+?)\s*\(\d+\s*ms\)", combined)
-        result["failed_tests"] = failed_matches[:10]
-        
-        # Error messages
-        error_matches = re.findall(r"Error:\s*(.+?)(?:\n|$)", combined)
-        result["error_messages"] = error_matches[:5]
+    # Jest output parsing
+    # Pattern: "Tests: X failed, Y passed, Z total"
+    match = re.search(r"Tests:\s*(?:(\d+)\s*failed,\s*)?(\d+)\s*passed", combined)
+    if match:
+        result["failed"] = int(match.group(1) or 0)
+        result["passed"] = int(match.group(2) or 0)
+    
+    # Failed test names
+    # Pattern: "✕ test name (123ms)"
+    failed_matches = re.findall(r"[✕✖]\s+(.+?)\s*\(\d+\s*ms\)", combined)
+    result["failed_tests"] = failed_matches[:10]
+    
+    # Error messages
+    error_matches = re.findall(r"Error:\s*(.+?)(?:\n|$)", combined)
+    result["error_messages"] = error_matches[:5]
     
     return result
+
+
+def _run_typecheck(project_path: Path, test_files: list[str]) -> dict | None:
+    """Run TypeScript type checking using Jest's compiler.
+    
+    Uses Jest with --passWithNoTests to leverage moduleNameMapper config
+    which properly resolves @/* path aliases.
+    
+    Returns None if pass, or dict with error info if fail.
+    """
+    if not test_files:
+        return None
+    
+    # Filter all test files (both .test.ts and .test.tsx)
+    valid_test_files = [
+        f for f in test_files 
+        if f and (f.endswith('.test.ts') or f.endswith('.test.tsx')) and (project_path / f).exists()
+    ]
+    
+    if not valid_test_files:
+        logger.info("[_run_typecheck] No test files to check")
+        return None
+    
+    try:
+        files_arg = " ".join(f'"{f}"' for f in valid_test_files)
+        # Use Jest to compile - it has moduleNameMapper configured for @/* paths
+        cmd = f"pnpm exec jest {files_arg} --passWithNoTests --no-coverage"
+        
+        logger.info(f"[_run_typecheck] Running: {cmd}")
+        
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            cwd=str(project_path),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            encoding="utf-8",
+            errors="replace",
+        )
+        
+        if result.returncode != 0:
+            output = (result.stdout or "") + (result.stderr or "")
+            
+            # Check for TypeScript/compilation errors
+            if "error TS" in output or "Cannot find module" in output or "SyntaxError" in output:
+                error_lines = [
+                    line for line in output.split("\n") 
+                    if "error TS" in line or "Cannot find module" in line or "SyntaxError" in line
+                ]
+                logger.info(f"[_run_typecheck] Found {len(error_lines)} TypeScript errors")
+                return {
+                    "success": False,
+                    "errors": error_lines[:20],
+                    "raw_output": output[:3000],
+                }
+        
+        return None  # Pass
+        
+    except subprocess.TimeoutExpired:
+        logger.warning("[_run_typecheck] TypeCheck timeout")
+        return None
+    except Exception as e:
+        logger.warning(f"[_run_typecheck] Error: {e}")
+        return None
 
 
 async def run_tests(state: TesterState, agent=None) -> dict:
     """Execute tests and capture results.
     
     This node:
-    1. Detects test commands based on test_plan
-    2. Executes integration tests (if any)
-    3. Executes e2e tests (if any)
+    1. Runs TypeScript type checking first
+    2. Detects test commands based on test_plan
+    3. Executes integration tests
     4. Parses results
     
     Output:
@@ -170,27 +203,79 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     """
     print("[NODE] run_tests")
     
-    project_id = state.get("project_id", "")
-    test_plan = state.get("test_plan", [])
+    # Use workspace_path (worktree) where files are written, not project_path from DB
+    project_path = _get_workspace_path(state)
+    if not project_path:
+        return {
+            "run_status": "ERROR",
+            "error": "Workspace path not configured",
+            "message": "Lỗi: Không tìm thấy workspace path.",
+        }
     
-    if not test_plan:
-        logger.info("[run_tests] No test plan, skipping")
+    logger.info(f"[run_tests] Using workspace: {project_path}")
+    
+    # Collect ALL test files from multiple sources:
+    # 1. files_created - tracks all files created during this session
+    # 2. files_modified - tracks all files modified during this session
+    # 3. test_plan - current plan (may be incomplete after analyze_errors)
+    # This ensures we don't lose track of test files after error fixing
+    # Supports both integration tests (.test.ts) and unit tests (.test.tsx)
+    
+    test_files_set = set()
+    
+    # From files_created/modified (primary source - always complete)
+    for f in state.get("files_created", []) + state.get("files_modified", []):
+        if f and (f.endswith('.test.ts') or f.endswith('.test.tsx')):
+            test_files_set.add(f)
+    
+    # From test_plan (backup source)
+    for step in state.get("test_plan", []):
+        file_path = step.get("file_path", "")
+        if file_path and (file_path.endswith('.test.ts') or file_path.endswith('.test.tsx')):
+            test_files_set.add(file_path)
+    
+    all_test_files = list(test_files_set)
+    
+    if not all_test_files:
+        logger.info("[run_tests] No test files to run")
         return {
             "run_status": "PASS",
             "run_result": {"message": "No tests to run"},
             "message": "Không có tests để chạy.",
         }
     
-    project_path = _get_project_path(project_id)
-    if not project_path:
+    logger.info(f"[run_tests] Found {len(all_test_files)} test files: {all_test_files}")
+    
+    # Step 1: Run TypeCheck first
+    logger.info("[run_tests] Running TypeScript check...")
+    typecheck_result = _run_typecheck(project_path, all_test_files)
+    
+    if typecheck_result:
+        # TypeScript errors found
+        error_summary = "\n".join(typecheck_result["errors"][:10])
+        msg = f"❌ TypeScript errors found:\n```\n{error_summary}\n```"
+        
+        await send_message(state, agent, msg, "error")
+        
+        logger.info(f"[run_tests] TypeCheck FAILED: {len(typecheck_result['errors'])} errors")
+        
         return {
-            "run_status": "ERROR",
-            "error": "Project path not configured",
-            "message": "Lỗi: Không tìm thấy project path.",
+            "run_status": "FAIL",
+            "run_result": {
+                "passed": 0,
+                "failed": 0,
+                "typecheck_errors": typecheck_result["errors"],
+            },
+            "run_stdout": "",
+            "run_stderr": typecheck_result["raw_output"],
+            "message": msg,
+            "action": "ANALYZE",
         }
     
-    # Detect test commands
-    test_commands = _detect_test_commands(project_path, test_plan)
+    logger.info("[run_tests] TypeCheck passed")
+    
+    # Step 2: Detect test commands using all collected test files
+    test_commands = _detect_test_commands(project_path, all_test_files)
     
     if not test_commands:
         return {
@@ -199,9 +284,8 @@ async def run_tests(state: TesterState, agent=None) -> dict:
             "message": "Không phát hiện test commands.",
         }
     
-    # Notify user
-    if agent:
-        await agent.message_user("response", f"🧪 Đang chạy tests ({len(test_commands)} command)...")
+    # Notify via appropriate channel
+    await send_message(state, agent, f"🧪 Đang chạy tests ({len(test_commands)} command)...", "progress")
     
     all_stdout = []
     all_stderr = []
@@ -277,8 +361,9 @@ async def run_tests(state: TesterState, agent=None) -> dict:
                 for test_name in res["failed_tests"][:5]:
                     msg += f"\n  • {test_name}"
     
-    if agent:
-        await agent.message_user("response", msg)
+    # Notify via appropriate channel
+    message_type = "test_result" if run_status == "PASS" else "error"
+    await send_message(state, agent, msg, message_type)
     
     logger.info(f"[run_tests] Status: {run_status}, Passed: {overall_passed}, Failed: {overall_failed}")
     

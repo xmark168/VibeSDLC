@@ -37,6 +37,10 @@ class StoryBase(SQLModel):
 class StoryCreate(StoryBase):
     project_id: UUID
     story_code: Optional[str] = Field(None, max_length=50)  # e.g., "EPIC-001-US-001"
+    # New epic fields (when creating new epic)
+    new_epic_title: Optional[str] = Field(None, max_length=255)
+    new_epic_domain: Optional[str] = Field(None, max_length=100)
+    new_epic_description: Optional[str] = Field(None)
 
 
 class StoryPublic(StoryBase):
@@ -89,6 +93,8 @@ class StoryUpdate(SQLModel):
     blocking: Optional[list[str]] = None  # Story IDs
     attachments: Optional[list[str]] = None
     labels: Optional[list[str]] = None
+    # Kanban ordering
+    rank: Optional[int] = None
     # Agent tracking
     agent_state: Optional[StoryAgentState] = None
     assigned_agent_id: Optional[UUID] = None
@@ -98,3 +104,12 @@ class StoryUpdate(SQLModel):
 class StoriesPublic(SQLModel):
     data: list[dict]
     count: int
+
+
+class BulkRankUpdate(SQLModel):
+    story_id: UUID
+    rank: int
+
+
+class BulkRankUpdateRequest(SQLModel):
+    updates: list[BulkRankUpdate]

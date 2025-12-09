@@ -1,7 +1,14 @@
-"""Tester nodes for LangGraph flow."""
+"""Tester nodes for LangGraph flow.
+
+Optimized flow (no summarize):
+  setup_workspace -> plan_tests -> implement_tests -> review -> run_tests
+                                          ↑              │          ↓
+                                          └── LBTM ──────┘    analyze_errors
+"""
 
 from app.agents.tester.src.nodes.plan_tests import plan_tests
 from app.agents.tester.src.nodes.implement_tests import implement_tests
+from app.agents.tester.src.nodes.review import review
 from app.agents.tester.src.nodes.run_tests import run_tests
 from app.agents.tester.src.nodes.analyze_errors import analyze_errors
 from app.agents.tester.src.nodes.setup_workspace import setup_workspace
@@ -9,6 +16,7 @@ from app.agents.tester.src.nodes.setup_workspace import setup_workspace
 __all__ = [
     "plan_tests",
     "implement_tests",
+    "review",
     "run_tests",
     "analyze_errors",
     "setup_workspace",

@@ -1,4 +1,13 @@
-"""Tester LangGraph with Setup → Plan → Implement → Run flow."""
+"""Tester LangGraph with Setup → Plan → Implement → Review → Run flow.
+
+Optimized flow (no summarize):
+  router → setup_workspace → plan → implement → review → run_tests → END
+      ↓                                   ↑        │           ↓
+ test_status                              └─ LBTM ─┘     analyze_errors
+ conversation
+      ↓
+     END
+"""
 
 import logging
 from functools import partial
@@ -15,6 +24,7 @@ from app.agents.tester.src.core_nodes import (
 from app.agents.tester.src.nodes.analyze_errors import analyze_errors
 from app.agents.tester.src.nodes.implement_tests import implement_tests
 from app.agents.tester.src.nodes.plan_tests import plan_tests
+from app.agents.tester.src.nodes.review import review
 from app.agents.tester.src.nodes.run_tests import run_tests
 from app.agents.tester.src.nodes.setup_workspace import setup_workspace
 from app.agents.tester.src.state import TesterState
@@ -42,13 +52,50 @@ def route_after_router(
 
 def route_after_implement(
     state: TesterState,
-) -> Literal["implement_tests", "run_tests"]:
-    """Route after implement: continue implementing or run tests."""
-    current = state.get("current_step", 0)
-    total = state.get("total_steps", 0)
+) -> Literal["review", "run_tests"]:
+    """Route after implement: go to review or run_tests.
+    
+    With parallel execution, implement_tests handles ALL steps at once,
+    so we always go to review (which also handles all files at once).
+    """
+    use_code_review = state.get("use_code_review", True)  # Default ON
+    
+    if use_code_review:
+        return "review"
+    
+    # Skip review - go directly to run_tests
+    return "run_tests"
 
-    if current < total:
+
+def route_after_review(
+    state: TesterState,
+) -> Literal["implement_tests", "run_tests"]:
+    """Route based on review result (LGTM/LBTM).
+    
+    With parallel execution:
+    - LBTM: Re-implement only the FAILED files (stored in failed_files)
+    - LGTM: All files passed -> run_tests
+    
+    Max 2 review cycles to prevent infinite loops.
+    """
+    review_result = state.get("review_result", "LGTM")
+    review_count = state.get("review_count", 0)
+    failed_files = state.get("failed_files", [])
+    
+    logger.info(f"[route_after_review] review_result={review_result}, review_count={review_count}, failed_files={len(failed_files)}")
+    
+    # LBTM with failed files: re-implement only failed files
+    max_reviews = 2
+    if review_result == "LBTM" and failed_files and review_count < max_reviews:
+        logger.info(f"[route_after_review] LBTM -> re-implement {len(failed_files)} failed files")
         return "implement_tests"
+    
+    # LGTM or max reviews reached -> run_tests
+    if review_count >= max_reviews and failed_files:
+        logger.info(f"[route_after_review] Max reviews ({max_reviews}) reached - proceeding to run_tests")
+    else:
+        logger.info("[route_after_review] All files LGTM -> run_tests")
+    
     return "run_tests"
 
 
@@ -85,15 +132,25 @@ def route_after_analyze(
 
 
 class TesterGraph:
-    """LangGraph-based Tester with Setup → Plan → Implement → Run flow.
+    """LangGraph-based Tester with optimized flow.
 
-     Flow:
-     router → setup_workspace → plan_tests → implement_tests ⟷ run_tests → END
-         ↓                            ↑              ↓
-    test_status                  analyze_errors ←───┘
-    conversation
-         ↓
-        END
+    Flow:
+    router → setup_workspace → plan → implement → review → run_tests → END
+        ↓                                  ↑         │           ↓
+   test_status                             └─ LBTM ──┘     analyze_errors
+   conversation
+        ↓
+       END
+
+    Nodes (8 total):
+    1. router - Entry point, decide action
+    2. setup_workspace - Git worktree, project context
+    3. plan_tests - Create test plan with pre-loaded dependencies
+    4. implement_tests - Generate tests using structured output
+    5. review - LGTM/LBTM code review
+    6. run_tests - Execute tests
+    7. analyze_errors - Debug failing tests
+    8. send_response - Final message to user
     """
 
     def __init__(self, agent=None):
@@ -105,12 +162,13 @@ class TesterGraph:
         # Router (entry point - also queries stories and gets tech_stack)
         graph.add_node("router", partial(router, agent=agent))
         
-        # Setup workspace (git worktree, CocoIndex, project context)
+        # Setup workspace (git worktree, project context)
         graph.add_node("setup_workspace", partial(setup_workspace, agent=agent))
 
-        # Main flow: Plan → Implement → Run
+        # Main flow: Plan → Implement → Review → Run
         graph.add_node("plan_tests", partial(plan_tests, agent=agent))
         graph.add_node("implement_tests", partial(implement_tests, agent=agent))
+        graph.add_node("review", partial(review, agent=agent))
         graph.add_node("run_tests", partial(run_tests, agent=agent))
         graph.add_node("analyze_errors", partial(analyze_errors, agent=agent))
         graph.add_node("send_response", partial(send_response, agent=agent))
@@ -140,10 +198,20 @@ class TesterGraph:
         # Test generation flow: plan → implement
         graph.add_edge("plan_tests", "implement_tests")
 
-        # Implement loop
+        # After implement → review (parallel: all steps done at once)
         graph.add_conditional_edges(
             "implement_tests",
             route_after_implement,
+            {
+                "review": "review",
+                "run_tests": "run_tests",
+            },
+        )
+
+        # Review routing: LBTM → implement, LGTM → [implement or run_tests]
+        graph.add_conditional_edges(
+            "review",
+            route_after_review,
             {
                 "implement_tests": "implement_tests",
                 "run_tests": "run_tests",
@@ -175,5 +243,7 @@ class TesterGraph:
         graph.add_edge("test_status", END)
         graph.add_edge("conversation", END)
 
+        # Compile with higher recursion limit for complex test generation
         self.graph = graph.compile()
-        logger.info("[TesterGraph] Compiled with Setup → Plan → Implement → Run flow")
+        self.recursion_limit = 50  # Increased from default 25
+        logger.info("[TesterGraph] Compiled with optimized flow (no summarize), recursion_limit=50")

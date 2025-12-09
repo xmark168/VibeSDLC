@@ -1,14 +1,7 @@
-"""
-Skill Loader - Load skills using Anthropic's Agent Skills pattern.
+"""Skill Loader - Load skills using Anthropic's Agent Skills pattern.
 
-Skills use SKILL.md format with YAML frontmatter:
-- name: skill identifier
-- description: what the skill does and when to use it
-
-Progressive disclosure:
-1. Level 1: name + description (loaded at startup for catalog)
-2. Level 2: Full SKILL.md body (loaded when skill is activated)
-3. Level 3: Bundled files in references/, scripts/, assets/ (loaded as needed)
+Progressive disclosure: L1=metadata, L2=content, L3=bundled files.
+Skills use SKILL.md with YAML frontmatter (name, description, internal).
 """
 import logging
 from pathlib import Path
@@ -24,23 +17,22 @@ SKILLS_DIR = Path(__file__).parent
 
 @dataclass
 class SkillMetadata:
-    """Level 1: Skill metadata from YAML frontmatter."""
+    """Level 1 metadata from SKILL.md frontmatter (name, description, internal)."""
     name: str
     description: str
-    internal: bool = False  # If True, skill is hidden from catalog (used internally by nodes)
+    internal: bool = False
     
     def matches(self, context: str) -> int:
         """Return match score based on description keywords."""
         context_lower = context.lower()
         desc_lower = self.description.lower()
-        # Simple keyword matching from description
         keywords = [w for w in desc_lower.split() if len(w) > 3]
         return sum(1 for kw in keywords if kw in context_lower)
 
 
 @dataclass
 class Skill:
-    """Full skill definition with progressive disclosure."""
+    """Full skill with progressive disclosure (L1=metadata, L2=content, L3=bundled files)."""
     id: str
     metadata: SkillMetadata
     skill_dir: Path
@@ -93,8 +85,9 @@ class Skill:
         if filepath in self._bundled_files:
             return self._bundled_files[filepath]
         
-        file_path = self.skill_dir / filepath
+        file_path = self.skill_dir.resolve() / filepath
         if not file_path.exists():
+            logger.debug(f"[Skill] Bundled file not found: {file_path}")
             return ""
         
         try:
@@ -107,10 +100,13 @@ class Skill:
     
     def list_references(self) -> List[str]:
         """List files in references/ directory."""
-        refs_dir = self.skill_dir / "references"
+        refs_dir = self.skill_dir.resolve() / "references"
         if not refs_dir.exists():
+            logger.debug(f"[Skill] References dir not found: {refs_dir}")
             return []
-        return [f.name for f in refs_dir.iterdir() if f.is_file()]
+        files = [f.name for f in refs_dir.iterdir() if f.is_file()]
+        logger.debug(f"[Skill] Found references for {self.id}: {files}")
+        return files
     
     def list_scripts(self) -> List[str]:
         """List files in scripts/ directory."""

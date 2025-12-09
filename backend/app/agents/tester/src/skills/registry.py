@@ -13,6 +13,16 @@ logger = logging.getLogger(__name__)
 
 SKILLS_DIR = Path(__file__).parent
 
+# Map tech_stack aliases to skill directories
+TECH_STACK_ALIASES = {
+    "nodejs-react": "nextjs",
+    "nodejs-nextjs": "nextjs",
+    "react": "nextjs",
+    "next": "nextjs",
+    "Next.js": "nextjs",  # Frontend value
+    "nextjs": "nextjs",
+}
+
 
 @dataclass
 class SkillRegistry:
@@ -24,11 +34,15 @@ class SkillRegistry:
     def load(cls, tech_stack: str) -> "SkillRegistry":
         """Load all skills for a tech stack."""
         registry = cls(tech_stack=tech_stack)
-        stack_dir = SKILLS_DIR / tech_stack
+        
+        # Resolve tech_stack alias
+        resolved_stack = TECH_STACK_ALIASES.get(tech_stack, tech_stack)
+        stack_dir = SKILLS_DIR / resolved_stack
         
         if stack_dir.exists():
             skills = discover_skills(stack_dir)
             registry.skills.update(skills)
+            logger.debug(f"[SkillRegistry] Resolved '{tech_stack}' -> '{resolved_stack}'")
         
         # Load general skills (available for all tech stacks)
         general_dir = SKILLS_DIR / "general"

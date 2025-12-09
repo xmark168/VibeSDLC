@@ -10,8 +10,43 @@ from langchain_core.tools import tool
 
 logger = logging.getLogger(__name__)
 
+# Config files that should not be overwritten if they exist
+CONFIG_FILES = {
+    "jest.config.js", "jest.config.ts", "jest.config.mjs",
+    "vitest.config.ts", "vitest.config.js",
+    "tsconfig.json", "package.json",
+}
 
-def _get_project_path(project_id: str) -> Path | None:
+# Tool context - set before invoking tools
+_tool_context = {
+    "project_id": None,
+    "workspace_path": None,
+}
+
+
+def set_tool_context(project_id: str = None, workspace_path: str = None):
+    """Set global context for tools. Called by nodes before agent invocation."""
+    if project_id:
+        _tool_context["project_id"] = project_id
+    if workspace_path:
+        _tool_context["workspace_path"] = workspace_path
+
+
+def _get_workspace_path() -> Path | None:
+    """Get workspace path from context (preferred) or fallback to database."""
+    # Prefer workspace_path from context (worktree)
+    if _tool_context.get("workspace_path"):
+        return Path(_tool_context["workspace_path"])
+    
+    # Fallback: query from database
+    project_id = _tool_context.get("project_id")
+    if project_id:
+        return _get_project_path_from_db(project_id)
+    
+    return None
+
+
+def _get_project_path_from_db(project_id: str) -> Path | None:
     """Get project path from database."""
     from sqlmodel import Session
 
@@ -45,7 +80,7 @@ def glob_files(
         List of matching file paths
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
@@ -114,7 +149,7 @@ def grep_files(
         Matching lines with file paths and line numbers
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
@@ -200,7 +235,7 @@ def read_file(
         File content with line numbers
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
@@ -256,11 +291,20 @@ def write_file(project_id: str, file_path: str, content: str) -> str:
         Confirmation message
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
         full_path = project_path / file_path
+
+        # Check if trying to overwrite protected config file
+        file_name = Path(file_path).name
+        if file_name in CONFIG_FILES and full_path.exists():
+            return (
+                f"⚠️ BLOCKED: {file_name} already exists in project. "
+                f"Do NOT create duplicate config files. "
+                f"Only create TEST files (.test.ts)."
+            )
 
         # Create parent directories
         full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -268,6 +312,7 @@ def write_file(project_id: str, file_path: str, content: str) -> str:
         # Write file
         full_path.write_text(content, encoding="utf-8")
 
+        logger.info(f"[write_file] Wrote {len(content)} chars to {full_path}")
         return f"Successfully wrote {len(content)} chars to {file_path}"
 
     except Exception as e:
@@ -294,7 +339,7 @@ def edit_file(project_id: str, file_path: str, old_str: str, new_str: str) -> st
         Confirmation message
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
@@ -343,7 +388,7 @@ def list_directory(
         List of files and directories
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
 
@@ -406,7 +451,7 @@ def get_project_structure(project_id: str, max_depth: int = 3) -> str:
         Tree-like structure of the project with key files highlighted
     """
     try:
-        project_path = _get_project_path(project_id)
+        project_path = _get_workspace_path()
         if not project_path:
             return "Project path not configured."
         
@@ -419,7 +464,7 @@ def get_project_structure(project_id: str, max_depth: int = 3) -> str:
         # Key files to highlight
         key_files = {
             "package.json", "tsconfig.json", "jest.config.ts", "jest.config.js",
-            "playwright.config.ts", "jest.setup.ts", "jest.setup.js",
+            "jest.setup.ts", "jest.setup.js",
             "prisma/schema.prisma", ".env.example"
         }
         
@@ -450,7 +495,7 @@ def get_project_structure(project_id: str, max_depth: int = 3) -> str:
                 connector = "└── " if is_last else "├── "
                 
                 # Special markers for test directories
-                if d.name in ("tests", "test", "__tests__", "e2e"):
+                if d.name in ("tests", "test", "__tests__"):
                     result.append(f"{prefix}{connector}🧪 {d.name}/")
                 elif d.name == "src":
                     result.append(f"{prefix}{connector}📦 {d.name}/")
@@ -466,21 +511,20 @@ def get_project_structure(project_id: str, max_depth: int = 3) -> str:
         # Add summary
         result.append("\n--- Summary ---")
         
-        # Count test files
+        # Count test files (integration only - no e2e)
         test_files = list(project_path.glob("**/*.test.ts")) + list(project_path.glob("**/*.test.js"))
         test_files = [f for f in test_files if "node_modules" not in str(f)]
         
-        spec_files = list(project_path.glob("**/*.spec.ts")) + list(project_path.glob("**/*.spec.js"))
-        spec_files = [f for f in spec_files if "node_modules" not in str(f)]
-        
         result.append(f"Integration tests (*.test.ts): {len(test_files)}")
-        result.append(f"E2E tests (*.spec.ts): {len(spec_files)}")
         
-        # Check for test config
-        if (project_path / "jest.config.ts").exists() or (project_path / "jest.config.js").exists():
-            result.append("Jest: ✅ Configured")
-        if (project_path / "playwright.config.ts").exists():
-            result.append("Playwright: ✅ Configured")
+        # Check for test config with warnings
+        result.append("\n--- ⚠️ Config Status (DO NOT CREATE NEW) ---")
+        if (project_path / "jest.config.ts").exists():
+            result.append("⚠️ jest.config.ts EXISTS - DO NOT create jest.config.*")
+        elif (project_path / "jest.config.js").exists():
+            result.append("⚠️ jest.config.js EXISTS - DO NOT create jest.config.*")
+        else:
+            result.append("Jest: Not configured")
         
         return "\n".join(result)
         

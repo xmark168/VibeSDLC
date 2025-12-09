@@ -26,13 +26,15 @@ import {
   Loader2,
   Crown,
   PaperclipIcon,
+  FileText,
 } from "lucide-react";
 import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { TypingIndicator } from "./TypingIndicator";
 import { useAuth } from "@/hooks/useAuth";
-import { useMessages } from "@/queries/messages";
+import { useInfiniteMessages, useCreateMessageWithFile } from "@/queries/messages";
+import { messagesApi } from "@/apis/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { MessageStatusIndicator } from "./message-status-indicator";
 import { AgentQuestionCard } from "./AgentQuestionCard";
@@ -63,6 +65,7 @@ interface ChatPanelProps {
   onAgentStatusesChange?: (statuses: Map<string, { status: string; lastUpdate: string }>) => void; // NEW
   onOpenArtifact?: (artifactId: string) => void;
   onOpenFile?: (filePath: string) => void;
+  onInsertMentionReady?: (fn: (agentName: string) => void) => void; // Callback to insert @mention
 }
 
 export function ChatPanelWS({
@@ -78,6 +81,7 @@ export function ChatPanelWS({
   onAgentStatusesChange, // NEW
   onOpenArtifact,
   onOpenFile,
+  onInsertMentionReady,
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -86,15 +90,20 @@ export function ChatPanelWS({
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessagesLengthRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Get access token
   const token = localStorage.getItem("access_token");
+
+  // File upload mutation
+  const { mutateAsync: createMessageWithFile, isPending: isUploading } = useCreateMessageWithFile();
 
   // Fetch real agents from database
   const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
@@ -129,31 +138,84 @@ export function ChatPanelWS({
     };
   });
 
-  // Fetch existing messages
-  const { data: messagesData } = useMessages({
-    project_id: projectId || "",
-    skip: 0,
-    limit: 500,  // Increased from 100 to handle more messages
-  });
+  // Fetch existing messages with infinite scroll
+  const {
+    data: messagesData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: isLoadingMessages,
+  } = useInfiniteMessages(projectId || "");
+
+  // Flatten all pages into single array of messages
+  // API returns messages in DESC order (newest first)
+  // We need to reverse to get chronological order (oldest first for display)
+  const apiMessages = messagesData?.pages
+    ? messagesData.pages.flatMap(page => page.messages).reverse()
+    : [];
+  const totalMessageCount = messagesData?.pages?.[0]?.totalCount || 0;
+
+  // Ref for scroll position preservation when loading older messages
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+  const isLoadingMoreRef = useRef(false);
 
   // Debug log for API messages
   useEffect(() => {
-    if (messagesData) {
-      console.log('[ChatPanel] 📊 API messages loaded:', {
-        count: messagesData.count,
-        actual: messagesData.data.length,
-        projectId,
-        firstMessage: messagesData.data[0]?.id,
-        lastMessage: messagesData.data[messagesData.data.length - 1]?.id
+    if (messagesData && messagesData.pages?.length > 0) {
+      console.log('[ChatPanel] 📊 Messages loaded:', {
+        total: totalMessageCount,
+        loaded: apiMessages.length,
+        pages: messagesData.pages?.length,
+        hasOlder: hasNextPage,
       })
     }
-  }, [messagesData, projectId])
+  }, [messagesData, totalMessageCount, apiMessages.length, hasNextPage])
+
+  // Intersection Observer for infinite scroll - load more when scrolling to top
+  useEffect(() => {
+    const trigger = loadMoreTriggerRef.current;
+    const container = messagesContainerRef.current;
+    if (!trigger || !container) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage && !isLoadingMoreRef.current) {
+          console.log('[ChatPanel] 🔄 Loading more messages...');
+          isLoadingMoreRef.current = true;
+          
+          // Save scroll position before loading
+          const scrollHeightBefore = container.scrollHeight;
+          const scrollTopBefore = container.scrollTop;
+          
+          fetchNextPage().then(() => {
+            // Restore scroll position after loading (to prevent jump)
+            requestAnimationFrame(() => {
+              const scrollHeightAfter = container.scrollHeight;
+              const heightDiff = scrollHeightAfter - scrollHeightBefore;
+              container.scrollTop = scrollTopBefore + heightDiff;
+              isLoadingMoreRef.current = false;
+              console.log('[ChatPanel] ✅ Scroll position restored');
+            });
+          });
+        }
+      },
+      { 
+        root: container,
+        threshold: 0.1,
+        rootMargin: '100px 0px 0px 0px' // Trigger 100px before reaching top
+      }
+    );
+
+    observer.observe(trigger);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // WebSocket connection (simplified with 5 message types)
   const {
     isConnected,
     messages: wsMessages,
     agentStatus,
+    agentStatuses: wsAgentStatuses,  // Individual agent statuses from WebSocket
     typingAgents,
     answeredBatchIds,  // Track which batches have been answered
     conversationOwner,
@@ -162,8 +224,15 @@ export function ChatPanelWS({
     sendBatchAnswers,
   } = useChatWebSocket(projectId ?? null, token || '');
 
+  // Notify parent when agent statuses change
+  useEffect(() => {
+    if (onAgentStatusesChange && wsAgentStatuses.size > 0) {
+      console.log('[ChatPanel] Agent statuses changed:', Object.fromEntries(wsAgentStatuses));
+      onAgentStatusesChange(wsAgentStatuses);
+    }
+  }, [wsAgentStatuses, onAgentStatusesChange]);
+
   // Combine existing messages with WebSocket messages
-  const apiMessages = messagesData?.data || [];
   const wsMessagesArray = wsMessages || [];
 
   // Combine API messages with WebSocket messages (no temp messages anymore)
@@ -309,15 +378,42 @@ export function ChatPanelWS({
   // Detect stories_approved message and refresh Kanban board
   const lastApprovedMsgIdRef = useRef<string | null>(null)
   useEffect(() => {
-    const latestApproved = uniqueMessages.find(
+    // Find the MOST RECENT stories_approved message (not the first one)
+    const approvedMessages = uniqueMessages.filter(
       msg => msg.structured_data?.message_type === 'stories_approved'
     )
+    const latestApproved = approvedMessages.length > 0
+      ? approvedMessages.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )[0]
+      : null
     
     // Only refresh if it's a NEW approval message we haven't processed yet
     if (latestApproved && latestApproved.id !== lastApprovedMsgIdRef.current && projectId) {
-      console.log('[ChatPanel] Stories approved, refreshing Kanban board...')
+      console.log('[ChatPanel] Stories approved, refreshing Kanban board...', latestApproved.id)
       lastApprovedMsgIdRef.current = latestApproved.id
-      queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+      // Use refetchQueries for immediate refetch instead of invalidateQueries
+      queryClient.refetchQueries({ queryKey: ['kanban-board', projectId], type: 'active' })
+    }
+  }, [uniqueMessages, projectId, queryClient])
+
+  // Detect project_reset message and refresh Kanban board (after deleting project data)
+  const lastResetMsgIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const resetMessages = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'project_reset'
+    )
+    const latestReset = resetMessages.length > 0
+      ? resetMessages.sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )[0]
+      : null
+    
+    if (latestReset && latestReset.id !== lastResetMsgIdRef.current && projectId) {
+      console.log('[ChatPanel] Project reset, refreshing Kanban board...', latestReset.id)
+      lastResetMsgIdRef.current = latestReset.id
+      // Refresh Kanban board to clear deleted stories
+      queryClient.refetchQueries({ queryKey: ['kanban-board', projectId], type: 'active' })
     }
   }, [uniqueMessages, projectId, queryClient])
 
@@ -450,10 +546,10 @@ export function ChatPanelWS({
     }
   };
 
-  const handleSend = (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault(); // Prevent form submission from navigating
-    if (!message.trim()) return;
-    if (!isConnected) {
+    if (!message.trim() && !selectedFile) return;
+    if (!isConnected && !selectedFile) {
       console.error("WebSocket not connected");
       return;
     }
@@ -472,6 +568,25 @@ export function ChatPanelWS({
       setPendingQuestion(null); // Hide notification immediately
       // Force scroll to bottom after sending
       forceScrollRef.current = true;
+      return;
+    }
+
+    // Handle file upload via REST API
+    if (selectedFile && projectId) {
+      try {
+        await createMessageWithFile({
+          project_id: projectId,
+          content: finalMessage || "Phân tích tài liệu này",
+          file: selectedFile,
+        });
+        setSelectedFile(null);
+        setMessage("");
+        // Force scroll to bottom after sending
+        forceScrollRef.current = true;
+      } catch (error) {
+        console.error("Failed to upload file:", error);
+        alert("Không thể upload file. Vui lòng thử lại.");
+      }
       return;
     }
 
@@ -594,6 +709,25 @@ export function ChatPanelWS({
     }
   }, [isConnected, onConnectionChange]);
 
+  // Expose insertMention function to parent for @mention from agent popup
+  useEffect(() => {
+    if (onInsertMentionReady) {
+      const insertMentionByName = (agentName: string) => {
+        const agent = AGENTS.find(a => a.name === agentName);
+        if (agent) {
+          // Insert @agentName at the start of the message
+          setMessage(`@${agentName} `);
+          setMentionedAgent({ id: agent.id, name: agent.name });
+          // Focus the textarea
+          setTimeout(() => {
+            textareaRef.current?.focus();
+          }, 100);
+        }
+      };
+      onInsertMentionReady(insertMentionByName);
+    }
+  }, [onInsertMentionReady, AGENTS]);
+
 
 
   return (
@@ -627,7 +761,7 @@ export function ChatPanelWS({
               Connecting...
             </div>
           )}
-          <Button
+          {/* <Button
             variant="ghost"
             size="icon"
             onClick={toggleTheme}
@@ -639,7 +773,7 @@ export function ChatPanelWS({
             ) : (
               <Sun className="w-4 h-4" />
             )}
-          </Button>
+          </Button> */}
           <Button
             variant="ghost"
             size="icon"
@@ -682,19 +816,6 @@ export function ChatPanelWS({
             <Button
               variant="ghost"
               size="icon"
-              onClick={toggleTheme}
-              className="w-8 h-8 text-foreground hover:bg-accent"
-              title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-            >
-              {theme === "light" ? (
-                <Moon className="w-4 h-4" />
-              ) : (
-                <Sun className="w-4 h-4" />
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
               onClick={onCollapse}
               className="w-8 h-8 text-foreground hover:bg-accent"
               title="Hide chat panel"
@@ -709,6 +830,29 @@ export function ChatPanelWS({
         ref={messagesContainerRef}
         className="flex-1 overflow-y-auto px-6 py-6 space-y-4"
       >
+        {/* Infinite scroll trigger - loads more messages when visible */}
+        <div ref={loadMoreTriggerRef} className="h-1" />
+        
+        {/* Loading indicator for older messages */}
+        {isFetchingNextPage && (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">Loading older messages...</span>
+          </div>
+        )}
+        
+        {/* Show how many messages loaded / total */}
+        {hasNextPage && !isFetchingNextPage && totalMessageCount > 0 && (
+          <div className="flex items-center justify-center py-2">
+            <button 
+              onClick={() => fetchNextPage()}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              ↑ Load older messages ({apiMessages.length} / {totalMessageCount})
+            </button>
+          </div>
+        )}
+
         {uniqueMessages.map((msg) => {
           const isUserMessage = msg.author_type === AuthorType.USER;
 
@@ -717,6 +861,32 @@ export function ChatPanelWS({
               <div key={msg.id} className="flex justify-end">
                 <div className="max-w-[70%]">
                   <div className="space-y-1.5">
+                    {/* File attachment display */}
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className="flex flex-col gap-1.5 items-end">
+                        {msg.attachments.map((att, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => messagesApi.downloadAttachment(msg.id, att.filename, idx)}
+                            className="flex items-center gap-3 px-3 py-2.5 bg-muted border border-border rounded-lg w-fit hover:bg-accent transition-colors cursor-pointer"
+                            title={`Download ${att.filename}`}
+                          >
+                            <div className="flex items-center justify-center w-10 h-10 bg-primary/15 rounded-lg">
+                              <FileText className="w-5 h-5 text-primary" />
+                            </div>
+                            <div className="flex flex-col items-start">
+                              <span className="text-sm font-medium text-foreground">
+                                {att.filename}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {(att.file_size / 1024).toFixed(1)} KB
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {/* Message content */}
                     <div className="rounded-lg px-3 py-2 bg-muted w-fit ml-auto">
                       <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
                         {msg.content || ''}
@@ -749,6 +919,11 @@ export function ChatPanelWS({
           // Activity messages are now shown in the execution dialog
           // Skip rendering them here
           if (msg.message_type === 'activity') {
+            return null;
+          }
+
+          // Skip project_reset messages (internal notification for Kanban refresh, not for display)
+          if (msg.structured_data?.message_type === 'project_reset') {
             return null;
           }
 
@@ -975,9 +1150,31 @@ export function ChatPanelWS({
                       suggestedRequirements={msg.structured_data.suggested_requirements}
                       hasSuggestions={msg.structured_data.has_suggestions}
                       initialActionTaken={msg.structured_data.action_taken}
-                      onApplied={() => {
+                      onApplied={async (updatedStory) => {
                         if (projectId) {
-                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          console.log('[ChatPanel] onApplied called with updated story:', updatedStory)
+                          // Update cache directly with new story data for immediate UI update
+                          if (updatedStory) {
+                            queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
+                              if (!oldData?.board) return oldData
+                              // Update story in the appropriate column
+                              const newBoard = { ...oldData.board }
+                              for (const column of Object.keys(newBoard)) {
+                                newBoard[column] = newBoard[column].map((story: any) => 
+                                  story.id === updatedStory.id 
+                                    ? { ...story, title: updatedStory.title, acceptance_criteria: updatedStory.acceptance_criteria, requirements: updatedStory.requirements }
+                                    : story
+                                )
+                              }
+                              console.log('[ChatPanel] Updated kanban cache with new story data')
+                              return { ...oldData, board: newBoard }
+                            })
+                          }
+                          // Also refetch to ensure consistency
+                          await queryClient.refetchQueries({ 
+                            queryKey: ['kanban-board', projectId],
+                            type: 'all'
+                          })
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
@@ -986,9 +1183,26 @@ export function ChatPanelWS({
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
-                      onRemove={() => {
+                      onRemove={async (removedStoryId) => {
                         if (projectId) {
-                          queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
+                          console.log('[ChatPanel] onRemove called for story:', removedStoryId)
+                          // Remove story from cache directly for immediate UI update
+                          if (removedStoryId) {
+                            queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
+                              if (!oldData?.board) return oldData
+                              const newBoard = { ...oldData.board }
+                              for (const column of Object.keys(newBoard)) {
+                                newBoard[column] = newBoard[column].filter((story: any) => story.id !== removedStoryId)
+                              }
+                              console.log('[ChatPanel] Removed story from kanban cache')
+                              return { ...oldData, board: newBoard }
+                            })
+                          }
+                          // Also refetch to ensure consistency
+                          await queryClient.refetchQueries({ 
+                            queryKey: ['kanban-board', projectId],
+                            type: 'all'
+                          })
                           queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
                         }
                       }}
@@ -1000,7 +1214,7 @@ export function ChatPanelWS({
           );
         })}
 
-        {/* Typing Indicators - ChatGPT style inline indicators */}
+        {/* Typing Indicators*/}
         {Array.from(typingAgents.values()).map((typing) => (
           <TypingIndicator
             key={typing.id}
@@ -1051,6 +1265,65 @@ export function ChatPanelWS({
           />
         )}
 
+        {/* Hidden file input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          className="hidden"
+          accept=".docx,.txt"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              // Validate size (10MB)
+              if (file.size > 10 * 1024 * 1024) {
+                alert("File quá lớn. Giới hạn: 10MB");
+                e.target.value = "";
+                return;
+              }
+              // Validate extension
+              const fileName = file.name.toLowerCase();
+              const allowedExtensions = ['.docx', '.txt'];
+              const hasValidExt = allowedExtensions.some(ext => fileName.endsWith(ext));
+              if (!hasValidExt) {
+                alert("Chỉ hỗ trợ file .docx và .txt");
+                e.target.value = "";
+                return;
+              }
+              setSelectedFile(file);
+            }
+            e.target.value = ""; // Reset to allow selecting same file again
+          }}
+        />
+
+        {/* File preview */}
+        {selectedFile && (
+          <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-muted rounded-lg">
+            {isUploading ? (
+              <Loader2 className="w-4 h-4 text-blue-500 flex-shrink-0 animate-spin" />
+            ) : (
+              <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
+            )}
+            <span className="text-sm truncate flex-1">
+              {isUploading ? "Đang upload..." : selectedFile.name}
+            </span>
+            {!isUploading && (
+              <>
+                <span className="text-xs text-muted-foreground">
+                  {(selectedFile.size / 1024).toFixed(1)} KB
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setSelectedFile(null)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+
         {/* <div className="bg-transparent rounded-4xl p-1 border-0"> */}
         <PromptInput onSubmit={handleSend}
         >
@@ -1059,16 +1332,20 @@ export function ChatPanelWS({
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder="Type your message..."
+            placeholder={selectedFile ? "Thêm mô tả cho file..." : "Type your message..."}
           />
           <PromptInputToolbar>
             <PromptInputTools>
-              <PromptInputButton>
+              <PromptInputButton
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className={selectedFile ? "text-blue-500" : ""}
+              >
                 <PaperclipIcon size={16} />
               </PromptInputButton>
 
             </PromptInputTools>
-            <PromptInputSubmit disabled={!isConnected || shouldBlockChat || !message.trim()} />
+            <PromptInputSubmit disabled={(!isConnected && !selectedFile) || shouldBlockChat || isUploading || (!message.trim() && !selectedFile)} />
           </PromptInputToolbar>
         </PromptInput>
         {/* <div className="flex items-center justify-between pt-3">

@@ -571,6 +571,38 @@ export const agentsApi = {
       query: { new_name: newName },
     })
   },
+
+  // Agent Activity (for popup)
+  getAgentActivity: async (agentId: string, limit: number = 5): Promise<AgentActivityResponse> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: `/api/v1/agents/${agentId}/activity`,
+      query: { limit },
+    })
+  },
+}
+
+// Agent Activity Response Type
+export interface AgentActivityResponse {
+  agent_id: string
+  human_name: string
+  role_type: string
+  status: string
+  status_message: string | null
+  skills: string[]
+  current_task: {
+    id: string
+    name: string
+    status: string
+    progress: number | null
+    started_at: string
+  } | null
+  recent_activities: Array<{
+    id: string
+    activity_type: string
+    content: string
+    created_at: string
+  }>
 }
 
 // ===== Utility Functions =====

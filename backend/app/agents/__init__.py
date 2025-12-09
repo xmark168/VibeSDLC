@@ -24,22 +24,37 @@ Usage:
     await initialize_default_pools()
 """
 
-from app.agents.team_leader import TeamLeader
-from app.agents.developer import Developer
-from app.agents.developer_v2 import DeveloperV2
-from app.agents.tester import Tester
-from app.agents.business_analyst import BusinessAnalyst
-from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-
-
 __all__ = [
-    # New Architecture
     "BaseAgent",
     "TaskContext",
     "TaskResult",
     "TeamLeader",
-    "Developer",
     "DeveloperV2",
     "Tester",
     "BusinessAnalyst",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy import agents to avoid loading heavy dependencies at import time."""
+    if name == "TeamLeader":
+        from app.agents.team_leader import TeamLeader
+        return TeamLeader
+    elif name == "DeveloperV2":
+        from app.agents.developer_v2 import DeveloperV2
+        return DeveloperV2
+    elif name == "Tester":
+        from app.agents.tester import Tester
+        return Tester
+    elif name == "BusinessAnalyst":
+        from app.agents.business_analyst import BusinessAnalyst
+        return BusinessAnalyst
+    elif name in ("BaseAgent", "TaskContext", "TaskResult"):
+        from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+        if name == "BaseAgent":
+            return BaseAgent
+        elif name == "TaskContext":
+            return TaskContext
+        elif name == "TaskResult":
+            return TaskResult
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

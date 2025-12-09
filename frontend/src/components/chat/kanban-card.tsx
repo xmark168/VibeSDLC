@@ -1,4 +1,4 @@
-import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight, Link2 } from "lucide-react"
+import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight, Link2, Ban } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -48,6 +48,9 @@ export type KanbanCardData = {
   // TraDS ============= Kanban Hierarchy: Parent/children relationships
   parent?: KanbanCardData
   children?: KanbanCardData[]
+  // Blocked state - dependencies not completed
+  isBlocked?: boolean
+  blockedByCount?: number
 }
 
 interface KanbanCardProps {
@@ -138,11 +141,15 @@ function KanbanCardComponent({
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={`
-        bg-card rounded-xl border border-border/50
+        rounded-xl border
         p-4 group relative
-        hover:shadow-sm hover:border-border
+        hover:shadow-sm
         transition-all duration-200 cursor-pointer
         ${isDragging ? "opacity-50 scale-95" : ""}
+        ${card.isBlocked 
+          ? "bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900/60 hover:border-red-300 dark:hover:border-red-800" 
+          : "bg-card border-border/50 hover:border-border"
+        }
       `}
     >
       {/* Action Buttons - Quick Actions Menu */}
@@ -236,12 +243,18 @@ function KanbanCardComponent({
       </div>
 
       <div className="space-y-3">
-        {/* Header: Type Badge and Age */}
+        {/* Header: Type Badge, Blocked Badge and Age */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             {card.type && (
               <Badge variant="outline" className={`text-xs font-medium ${getTypeBadgeColor(card.type)}`}>
                 {formatTypeName(card.type)}
+              </Badge>
+            )}
+            {card.isBlocked && (
+              <Badge variant="outline" className="text-xs font-medium gap-1 bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700" title={`${card.blockedByCount || card.dependencies?.length || 0} dependencies chưa hoàn thành`}>
+                <Ban className="w-3 h-3" />
+                Blocked
               </Badge>
             )}
             {card.age_hours !== undefined && formatAge(card.age_hours) && (
@@ -252,7 +265,7 @@ function KanbanCardComponent({
           </div>
           <div className="flex items-center gap-2">
             {card.dependencies && card.dependencies.length > 0 && (
-              <div className="flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400 font-medium" title={`Depends on: ${card.dependencies.join(', ')}`}>
+              <div className={`flex items-center gap-1 text-xs font-medium ${card.isBlocked ? 'text-red-600 dark:text-red-400' : 'text-orange-600 dark:text-orange-400'}`} title={`Depends on: ${card.dependencies.join(', ')}`}>
                 <Link2 className="w-3.5 h-3.5" />
                 <span>{card.dependencies.length}</span>
               </div>
@@ -326,10 +339,18 @@ export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
   if (prevProps.card.type !== nextProps.card.type) return false
   if (prevProps.card.rank !== nextProps.card.rank) return false
   if (prevProps.card.story_point !== nextProps.card.story_point) return false
+  if (prevProps.card.priority !== nextProps.card.priority) return false
   if (prevProps.card.assignee_id !== nextProps.card.assignee_id) return false
   if (prevProps.card.age_hours !== nextProps.card.age_hours) return false
-  // Check dependencies array
+  if (prevProps.card.epic_id !== nextProps.card.epic_id) return false
+  if (prevProps.card.updated_at !== nextProps.card.updated_at) return false
+  // Check blocked state
+  if (prevProps.card.isBlocked !== nextProps.card.isBlocked) return false
+  if (prevProps.card.blockedByCount !== nextProps.card.blockedByCount) return false
+  // Check arrays - important for edit form data sync
   if (JSON.stringify(prevProps.card.dependencies) !== JSON.stringify(nextProps.card.dependencies)) return false
+  if (JSON.stringify(prevProps.card.acceptance_criteria) !== JSON.stringify(nextProps.card.acceptance_criteria)) return false
+  if (JSON.stringify(prevProps.card.requirements) !== JSON.stringify(nextProps.card.requirements)) return false
 
   // Re-render if dragging state changed
   if (prevProps.isDragging !== nextProps.isDragging) return false

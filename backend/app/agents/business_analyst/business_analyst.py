@@ -5,8 +5,6 @@ from pathlib import Path
 from uuid import UUID
 
 from sqlmodel import Session, select
-from langfuse import get_client
-from langfuse.langchain import CallbackHandler
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.core.project_context import ProjectContext
@@ -19,8 +17,9 @@ from app.agents.business_analyst.src import BusinessAnalystGraph
 from app.agents.business_analyst.src.nodes import (
     process_answer, ask_one_question, 
     process_batch_answers,
-    generate_prd, extract_stories, save_artifacts,
-    check_clarity, analyze_domain, ask_batch_questions
+    generate_prd, update_prd, extract_stories, save_artifacts,
+    check_clarity, analyze_domain, ask_batch_questions,
+    analyze_document_content, generate_document_feedback,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +58,15 @@ class BusinessAnalyst(BaseAgent):
         
         logger.info(f"[{self.name}] LangGraph initialized successfully")
     
+    def _build_base_state(self, task: TaskContext) -> dict:
+        """Build base state dict with common fields for all task types."""
+        return {
+            "project_id": str(self.project_id),
+            "task_id": str(task.task_id),
+            "user_id": str(task.user_id) if task.user_id else "",
+            "project_path": str(self.project_files.project_path) if self.project_files else "",
+        }
+
     def _load_existing_prd(self) -> dict | None:
         """Load existing PRD from Artifact table."""
         try:
@@ -76,11 +84,11 @@ class BusinessAnalyst(BaseAgent):
             logger.debug(f"[{self.name}] No existing PRD: {e}")
             return None
     
-    def _load_existing_epics_and_stories(self) -> tuple[list, list]:
+    def _load_existing_epics_and_stories(self) -> tuple[list, list, str]:
         """Load existing epics and stories from Artifact table (for approval flow).
         
         Returns:
-            Tuple of (epics_list, stories_list)
+            Tuple of (epics_list, stories_list, approval_message)
         """
         try:
             with Session(engine) as session:
@@ -93,14 +101,15 @@ class BusinessAnalyst(BaseAgent):
                     content = artifact.content
                     epics = content.get("epics", [])
                     stories = content.get("stories", [])
+                    approval_message = content.get("approval_message", "")  # Load saved approval message
                     logger.info(f"[{self.name}] Loaded existing epics/stories from artifact {artifact.id}: {len(epics)} epics, {len(stories)} stories")
-                    return epics, stories
+                    return epics, stories, approval_message
                 else:
                     logger.info(f"[{self.name}] No USER_STORIES artifact found for project {self.project_id}")
-                return [], []
+                return [], [], ""
         except Exception as e:
             logger.warning(f"[{self.name}] Error loading epics/stories: {e}", exc_info=True)
-            return [], []
+            return [], [], ""
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task using LangGraph.
@@ -119,7 +128,13 @@ class BusinessAnalyst(BaseAgent):
         logger.info(f"[{self.name}] Processing task with LangGraph: {task.content[:50] if task.content else 'empty'}")
         
         try:
-            # Validate user message (only for non-resume tasks)
+            # Check for UPDATE MODE first (feature is in context, not content)
+            is_update_mode = task.context.get("is_update_mode", False) if task.context else False
+            if is_update_mode:
+                logger.info(f"[{self.name}] Detected UPDATE MODE from context")
+                return await self._handle_update_mode(task)
+            
+            # Validate user message (only for non-resume, non-update tasks)
             if not task.content or not task.content.strip():
                 logger.error(f"[{self.name}] Empty task content received")
                 return TaskResult(
@@ -177,18 +192,11 @@ class BusinessAnalyst(BaseAgent):
         existing_prd = self._load_existing_prd()
         
         # Build state with batch answers
-        # user_message is required for PRD generation - get from interview_state or use default
-        user_message = interview_state.get("user_message", "")
-        if not user_message:
-            # Fallback: extract from collected_info or use generic message
-            user_message = interview_state.get("original_request", "Tạo PRD dựa trên thông tin đã thu thập")
+        user_message = interview_state.get("user_message", "") or interview_state.get("original_request", "Tạo PRD dựa trên thông tin đã thu thập")
         
         state = {
-            "project_id": str(self.project_id),
-            "task_id": str(task.task_id),
-            "user_id": str(task.user_id) if task.user_id else "",
-            "project_path": str(self.project_files.project_path) if self.project_files else "",
-            "user_message": user_message,  # Required for generate_prd
+            **self._build_base_state(task),
+            "user_message": user_message,
             "collected_info": interview_state.get("collected_info", {}),
             "existing_prd": existing_prd,
             "intent": "interview",
@@ -196,7 +204,7 @@ class BusinessAnalyst(BaseAgent):
             "batch_answers": batch_answers,
             "waiting_for_answer": False,
             "all_questions_answered": False,
-            "research_loop_count": interview_state.get("research_loop_count", 0),  # Restore loop count
+            "research_loop_count": interview_state.get("research_loop_count", 0),
         }
         
         # Process all batch answers
@@ -279,11 +287,8 @@ class BusinessAnalyst(BaseAgent):
         
         # Build state from saved interview state + user answer
         state = {
+            **self._build_base_state(task),
             "user_message": answer,
-            "project_id": str(self.project_id),
-            "task_id": str(task.task_id),
-            "user_id": str(task.user_id) if task.user_id else "",
-            "project_path": str(self.project_files.project_path) if self.project_files else "",
             "collected_info": interview_state.get("collected_info", {}),
             "existing_prd": existing_prd,
             "intent": "interview",
@@ -354,52 +359,156 @@ class BusinessAnalyst(BaseAgent):
         # Load shared context (cached, parallel loading) - same as Team Leader
         await self.context.ensure_loaded()
         
+        # Note: UPDATE MODE is already checked in handle_task() before calling this method
+        
+        # Check for file attachments and combine with user message
+        user_message = task.content
+        # Note: use "or []" because attachments key may exist with None value
+        attachments = (task.context.get("attachments") or []) if task.context else []
+        pre_collected_info = {}  # Pre-populated from document analysis
+        document_is_comprehensive = False
+        document_type = ""  # "complete_requirements" | "partial_requirements" | "not_requirements"
+        
+        # Debug: Log task context
+        logger.info(f"[{self.name}] === TASK CONTEXT DEBUG ===")
+        logger.info(f"[{self.name}] task.context keys: {list(task.context.keys()) if task.context else 'None'}")
+        logger.info(f"[{self.name}] attachments count: {len(attachments)}")
+        if attachments:
+            for i, att in enumerate(attachments):
+                logger.info(f"[{self.name}] Attachment[{i}]: type={att.get('type')}, filename={att.get('filename')}, has_text={bool(att.get('extracted_text'))}, text_len={len(att.get('extracted_text', ''))}")
+        logger.info(f"[{self.name}] === END TASK CONTEXT DEBUG ===")
+        
+        if attachments:
+            logger.info(f"[{self.name}] Found {len(attachments)} attachment(s) in task")
+            doc_texts = []
+            all_extracted_text = ""
+            
+            for att in attachments:
+                if att.get("type") == "document" and att.get("extracted_text"):
+                    filename = att.get("filename", "document")
+                    extracted = att.get("extracted_text", "")
+                    doc_texts.append(f"[Tài liệu đính kèm: {filename}]\n{extracted}")
+                    all_extracted_text += extracted + "\n\n"
+                    logger.info(f"[{self.name}] Included document '{filename}' ({len(extracted)} chars)")
+                    logger.info(f"[{self.name}] Document preview (first 300 chars): {extracted[:300]}")
+            
+            if doc_texts:
+                # Combine user message with document content
+                user_message = f"{task.content}\n\n---\n\n" + "\n\n---\n\n".join(doc_texts)
+                logger.info(f"[{self.name}] Combined message length: {len(user_message)} chars")
+                
+                # Send acknowledgment message to user
+                first_filename = attachments[0].get("filename", "document")
+                await self.message_user(
+                    "response",
+                    f"📄 Đã nhận file '{first_filename}'. Đang phân tích nội dung tài liệu..."
+                )
+                
+                # Show typing indicator while analyzing (response above clears it)
+                await self.message_user("thinking", "Đang phân tích tài liệu...")
+                
+                # Always analyze document (regardless of length)
+                doc_analysis = await analyze_document_content(all_extracted_text, agent=self)
+                document_type = doc_analysis.get("document_type", "partial_requirements")
+                pre_collected_info = doc_analysis.get("collected_info", {})
+                document_is_comprehensive = doc_analysis.get("is_comprehensive", False)
+                summary = doc_analysis.get("summary", "")
+                extracted_items = doc_analysis.get("extracted_items", [])
+                missing_info = doc_analysis.get("missing_info", [])
+                detected_doc_kind = doc_analysis.get("detected_doc_kind", "")
+                
+                logger.info(
+                    f"[{self.name}] Document analysis result: "
+                    f"type={document_type}, "
+                    f"comprehensive={document_is_comprehensive}, "
+                    f"score={doc_analysis.get('completeness_score', 0):.0%}, "
+                    f"collected_info={list(pre_collected_info.keys())}"
+                )
+                
+                # Generate natural feedback message using LLM (with agent personality)
+                feedback_msg = await generate_document_feedback(
+                    document_type=document_type,
+                    detected_doc_kind=detected_doc_kind,
+                    summary=summary,
+                    extracted_items=extracted_items,
+                    missing_info=missing_info,
+                    completeness_score=doc_analysis.get("completeness_score", 0),
+                    agent=self
+                )
+                
+                # Send feedback to user
+                await self.message_user("response", feedback_msg)
+                
+                # Handle based on document type
+                if document_type == "not_requirements":
+                    # Return early - don't run interview, wait for user to clarify
+                    doc_kind_text = detected_doc_kind if detected_doc_kind else "tài liệu chung"
+                    logger.info(f"[{self.name}] Document is not_requirements, waiting for user clarification")
+                    return TaskResult(
+                        success=True,
+                        output=f"Document analyzed as {doc_kind_text}, waiting for user clarification",
+                        structured_data={"action": "waiting_clarification", "document_type": document_type}
+                    )
+                    
+                elif document_type == "complete_requirements" and document_is_comprehensive:
+                    # Show typing indicator while generating PRD
+                    await self.message_user("thinking", "Đang tạo PRD...")
+                    
+                else:
+                    # Show typing indicator while preparing questions
+                    await self.message_user("thinking", "Đang chuẩn bị câu hỏi...")
+        
         # Add user message to shared memory
-        self.context.add_message("user", task.content)
+        self.context.add_message("user", task.content)  # Save original message to memory
         
         # Load existing PRD from database
         existing_prd = self._load_existing_prd()
         
         # Load existing epics/stories from database (for approval flow)
-        existing_epics, existing_stories = self._load_existing_epics_and_stories()
+        existing_epics, existing_stories, existing_approval_message = self._load_existing_epics_and_stories()
         logger.info(f"[{self.name}] Initial state: existing_epics={len(existing_epics)}, existing_stories={len(existing_stories)}")
         
         # Setup Langfuse tracing (1 trace for entire graph - same as Team Leader)
         langfuse_handler = None
         langfuse_span = None
         langfuse_ctx = None
-        try:
-            langfuse = get_client()
-            # Create parent span for entire graph execution
-            langfuse_ctx = langfuse.start_as_current_observation(
-                as_type="span",
-                name="business_analyst_graph"
-            )
-            # Enter context and get span object
-            langfuse_span = langfuse_ctx.__enter__()
-            # Update trace with metadata
-            langfuse_span.update_trace(
-                user_id=str(task.user_id) if task.user_id else None,
-                session_id=str(self.project_id),
-                input={"message": task.content[:200] if task.content else ""},
-                tags=["business_analyst", self.role_type],
-                metadata={"agent": self.name, "task_id": str(task.task_id)}
-            )
-            # Handler inherits trace context automatically
-            langfuse_handler = CallbackHandler()
-        except Exception as e:
-            logger.debug(f"[{self.name}] Langfuse setup: {e}")
+        
+        # Check if Langfuse is enabled before initializing
+        from app.core.config import settings
+        if settings.LANGFUSE_ENABLED:
+            try:
+                from langfuse import get_client
+                from langfuse.langchain import CallbackHandler
+                langfuse = get_client()
+                # Create parent span for entire graph execution
+                langfuse_ctx = langfuse.start_as_current_observation(
+                    as_type="span",
+                    name="business_analyst_graph"
+                )
+                # Enter context and get span object
+                langfuse_span = langfuse_ctx.__enter__()
+                # Update trace with metadata
+                langfuse_span.update_trace(
+                    user_id=str(task.user_id) if task.user_id else None,
+                    session_id=str(self.project_id),
+                    input={"message": task.content[:200] if task.content else ""},
+                    tags=["business_analyst", self.role_type],
+                    metadata={"agent": self.name, "task_id": str(task.task_id)}
+                )
+                # Handler inherits trace context automatically
+                langfuse_handler = CallbackHandler()
+            except Exception as e:
+                logger.debug(f"[{self.name}] Langfuse setup: {e}")
         
         # Prepare initial state
         initial_state = {
-            "user_message": task.content,
-            "project_id": str(self.project_id),
-            "task_id": str(task.task_id),
-            "user_id": str(task.user_id) if task.user_id else "",
-            "project_path": str(self.project_files.project_path) if self.project_files else "",
-            "collected_info": {},
+            **self._build_base_state(task),
+            "user_message": user_message,  # Use combined message with attachments
+            "has_attachments": bool(attachments),  # Flag for document upload
+            "document_type": document_type,  # For routing: partial_requirements -> interview
+            "collected_info": pre_collected_info,  # Pre-populated from document analysis
             "existing_prd": existing_prd,
-            "conversation_context": self.context.format_memory(),  # Conversation history from ProjectContext
+            "conversation_context": self.context.format_memory(),
             "intent": "",
             "reasoning": "",
             "questions": [],
@@ -411,15 +520,16 @@ class BusinessAnalyst(BaseAgent):
             "prd_final": None,
             "prd_saved": False,
             "change_summary": "",
-            "epics": existing_epics,  # Load existing epics for approval flow
-            "stories": existing_stories,  # Load existing stories for approval flow
+            "epics": existing_epics,
+            "stories": existing_stories,
+            "stories_approval_message": existing_approval_message,  # Pre-load from artifact for approve flow
             "stories_saved": False,
             "analysis_text": "",
             "error": None,
             "retry_count": 0,
             "result": {},
             "is_complete": False,
-            "langfuse_handler": langfuse_handler,  # Pass to nodes for LLM tracing
+            "langfuse_handler": langfuse_handler,
         }
         
         logger.info(f"[{self.name}] Invoking LangGraph...")
@@ -551,3 +661,105 @@ class BusinessAnalyst(BaseAgent):
             logger.info(f"[{self.name}] Interview state saved (question index: {state.get('current_question_index', 0)})")
         except Exception as e:
             logger.error(f"[{self.name}] Failed to save interview state: {e}")
+    
+    async def _handle_update_mode(self, task: TaskContext) -> TaskResult:
+        """Handle UPDATE MODE - add features to existing PRD.
+        
+        When user wants to add/update features:
+        1. Load existing PRD
+        2. Get feature description from context
+        3. Generate updated PRD with new features
+        4. Extract new stories for the feature
+        """
+        try:
+            # Get feature info from context (set by Team Leader)
+            ctx = task.context or {}
+            feature_description = ctx.get("feature_to_add") or task.content or ""
+            existing_title = ctx.get("existing_prd_title", "project hiện tại")
+            
+            logger.info(f"[{self.name}] UPDATE MODE: Adding feature to '{existing_title}': {feature_description[:100]}...")
+            
+            # Load existing PRD
+            existing_prd = self._load_existing_prd()
+            
+            if not existing_prd:
+                # No existing PRD - tell user to create one first
+                logger.warning(f"[{self.name}] No existing PRD found for update")
+                await self.message_user(
+                    "response",
+                    "Chưa có PRD nào để cập nhật. Bạn cần tạo PRD trước khi thêm feature mới nhé! 📝\n\nHãy mô tả dự án bạn muốn làm để mình tạo PRD."
+                )
+                return TaskResult(
+                    success=True,
+                    output="No PRD to update",
+                    structured_data={"action": "need_create_prd_first"}
+                )
+            
+            # Send acknowledgment
+            await self.message_user(
+                "response",
+                f"📝 Đang cập nhật PRD \"{existing_title}\" với feature mới: {feature_description[:50]}..."
+            )
+            await self.message_user("thinking", "Đang cập nhật PRD...")
+            
+            # Load existing epics/stories
+            existing_epics, existing_stories, existing_approval_message = self._load_existing_epics_and_stories()
+            
+            # Build state for update
+            initial_state = {
+                **self._build_base_state(task),
+                "user_message": feature_description,  # The feature to add
+                "collected_info": {},
+                "existing_prd": existing_prd,
+                "conversation_context": self.context.format_memory(),
+                "intent": "prd_update",  # Special intent for update flow
+                "questions": [],
+                "current_question_index": 0,
+                "collected_answers": [],
+                "waiting_for_answer": False,
+                "all_questions_answered": True,  # Skip interview
+                "prd_draft": None,
+                "prd_final": None,
+                "prd_saved": False,
+                "change_summary": "",
+                "epics": existing_epics,
+                "stories": existing_stories,
+                "stories_approval_message": existing_approval_message,
+                "stories_saved": False,
+                "analysis_text": "",
+                "error": None,
+                "retry_count": 0,
+                "result": {},
+                "is_complete": False,
+                "is_update_mode": True,  # Flag for update mode
+                "feature_to_add": feature_description,
+            }
+            
+            # Update existing PRD with new feature (use update_prd, not generate_prd)
+            logger.info(f"[{self.name}] Updating PRD with new feature...")
+            initial_state = {**initial_state, **(await update_prd(initial_state, agent=self))}
+            
+            # Extract new stories
+            logger.info(f"[{self.name}] Extracting stories for new feature...")
+            initial_state = {**initial_state, **(await extract_stories(initial_state, agent=self))}
+            
+            # Save artifacts
+            initial_state = {**initial_state, **(await save_artifacts(initial_state, agent=self))}
+            
+            return TaskResult(
+                success=True,
+                output="PRD updated with new feature",
+                structured_data=initial_state.get("result", {})
+            )
+            
+        except Exception as e:
+            logger.error(f"[{self.name}] Error in UPDATE MODE: {e}", exc_info=True)
+            await self.message_user(
+                "response",
+                "Có lỗi xảy ra khi cập nhật PRD. Vui lòng thử lại! 😅"
+            )
+            return TaskResult(
+                success=False,
+                output="",
+                error_message=str(e)
+            )

@@ -7,20 +7,15 @@ from pathlib import Path
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from sqlmodel import Session, select
 
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.state import TesterState
+from app.agents.tester.src._llm import get_llm, default_llm
 from app.core.db import engine
 from app.models import Project, Story, StoryStatus
 
 logger = logging.getLogger(__name__)
-
-# Use custom API endpoint if configured
-_api_key = os.getenv("TESTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-_base_url = os.getenv("TESTER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
-_model = os.getenv("TESTER_MODEL", "gpt-4.1")
 
 
 # ============================================================================
@@ -158,19 +153,8 @@ SAFE PACKAGES:
 # ============================================================================
 
 
-_llm = ChatOpenAI(
-    model=_model,
-    temperature=0,
-    api_key=_api_key,
-    base_url=_base_url,
-) if _base_url else ChatOpenAI(model=_model, temperature=0)
-
-_chat_llm = ChatOpenAI(
-    model=_model,
-    temperature=0.7,
-    api_key=_api_key,
-    base_url=_base_url,
-) if _base_url else ChatOpenAI(model=_model, temperature=0.7)
+_llm = default_llm
+_chat_llm = get_llm("default")  # Will use same model with default temp
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -203,6 +187,43 @@ def _parse_json(content: str) -> list | dict:
 def _should_message_user(state: TesterState) -> bool:
     """Check if should send message to user - only for user messages."""
     return state.get("task_type") == "message"
+
+
+async def send_message(state: TesterState, agent, content: str, message_type: str = "update"):
+    """Send message to appropriate channel based on context.
+    
+    - Auto-run (is_auto=True): Send to story channel (visible in story detail)
+    - User chat (is_auto=False): Send to main chat (visible in project chat)
+    
+    Args:
+        state: Current state with is_auto and story_ids
+        agent: Agent instance with message_user() and message_story() methods
+        content: Message content
+        message_type: Type for story messages ("update", "test_result", "progress", "error")
+    """
+    if not agent:
+        logger.warning("[send_message] No agent provided, skipping message")
+        return
+    
+    is_auto = state.get("is_auto", False)
+    story_ids = state.get("story_ids", [])
+    
+    logger.debug(f"[send_message] is_auto={is_auto}, story_ids={story_ids}, content={content[:50]}...")
+    
+    if is_auto and story_ids:
+        # Auto-run: message to story channel (not main chat)
+        for story_id in story_ids:
+            try:
+                logger.info(f"[send_message] Sending to story {story_id}: {content[:50]}...")
+                await agent.message_story(UUID(story_id), content, message_type)
+                logger.info(f"[send_message] Successfully sent to story {story_id}")
+            except Exception as e:
+                logger.error(f"[send_message] Failed to message story {story_id}: {e}", exc_info=True)
+    elif not is_auto:
+        # User chat (@mention or direct): message to user
+        await agent.message_user("response", content)
+    else:
+        logger.warning(f"[send_message] is_auto={is_auto} but no story_ids, message dropped: {content[:50]}...")
 
 
 # ============================================================================
@@ -367,15 +388,13 @@ async def test_status(state: TesterState, agent=None) -> dict:
 
         msg = result["messages"][-1].content
 
-        if agent and _should_message_user(state):
-            await agent.message_user("response", msg)
+        await send_message(state, agent, msg)
 
         return {"message": msg, "result": {"action": "test_status"}}
     except Exception as e:
         logger.error(f"[test_status] {e}")
         msg = f"Lỗi khi kiểm tra test status: {e}"
-        if agent and _should_message_user(state):
-            await agent.message_user("response", msg)
+        await send_message(state, agent, msg, "error")
         return {"message": msg, "error": str(e)}
 
 
@@ -398,15 +417,13 @@ async def conversation(state: TesterState, agent=None) -> dict:
 
         msg = result["messages"][-1].content
 
-        if agent and _should_message_user(state):
-            await agent.message_user("response", msg)
+        await send_message(state, agent, msg)
 
         return {"message": msg, "result": {"action": "conversation"}}
     except Exception as e:
         logger.error(f"[conversation] {e}")
         msg = f"Xin lỗi, có lỗi xảy ra: {e}"
-        if agent and _should_message_user(state):
-            await agent.message_user("response", msg)
+        await send_message(state, agent, msg, "error")
         return {"message": msg, "error": str(e)}
 
 
@@ -482,8 +499,7 @@ async def send_response(state: TesterState, agent=None) -> dict:
             except Exception as e:
                 logger.warning(f"[send_response] Failed to update story {story_id}: {e}")
 
-    # Message user if user-initiated
-    if agent and _should_message_user(state):
-        await agent.message_user("response", msg)
+    # Message to appropriate channel
+    await send_message(state, agent, msg, "test_result")
 
     return {"message": msg, "merged": bool(commit_msg)}

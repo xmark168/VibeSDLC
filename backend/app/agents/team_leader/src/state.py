@@ -2,7 +2,7 @@
 
 from typing import TypedDict, Literal, Any
 
-Action = Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK", "CLARIFY", "CONFIRM_REPLACE"]
+Action = Literal["DELEGATE", "RESPOND", "CONVERSATION", "STATUS_CHECK", "CLARIFY", "CONFIRM_REPLACE", "CONFIRM_EXISTING"]
 
 
 class TeamLeaderState(TypedDict, total=False):
@@ -14,6 +14,7 @@ class TeamLeaderState(TypedDict, total=False):
     conversation_history: str
     user_preferences: str
     langfuse_handler: Any
+    attachments: list  # File attachments from user upload
     # Output
     action: Action
     target_role: str
