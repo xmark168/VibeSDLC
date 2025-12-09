@@ -66,6 +66,8 @@ def setup_logging() -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
+    logging.getLogger("anthropic").setLevel(logging.WARNING)
+    logging.getLogger("anthropic._base_client").setLevel(logging.WARNING)
 
     # Enable HTTP access logs (Uvicorn)
     uvicorn_access_logger = logging.getLogger("uvicorn.access")

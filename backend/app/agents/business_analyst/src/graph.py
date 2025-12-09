@@ -77,13 +77,19 @@ def route_by_intent(state: BAState) -> Literal["conversational", "interview", "p
         )
         return "interview"
     
-    # For stories_update/approve, we need existing epics
-    if intent in ["stories_update", "stories_approve"] and not epics:
+    # For stories_update, we need existing epics
+    # For stories_approve, let the node handle loading from artifact
+    if intent == "stories_update" and not epics:
         logger.warning(
-            f"[BA Graph] Overriding '{intent}' -> 'extract_stories': "
+            f"[BA Graph] Overriding 'stories_update' -> 'extract_stories': "
             f"No existing stories found, need to create stories first"
         )
         return "extract_stories"
+    
+    # stories_approve: always route to approve_stories, it will load from artifact if needed
+    if intent == "stories_approve":
+        logger.info("[BA Graph] Routing to 'stories_approve' (will load from artifact if needed)")
+        return "stories_approve"
     
     logger.info(f"[BA Graph] Routing to '{intent}': {reasoning[:80] if reasoning else 'no reason'}")
     return intent
