@@ -9,13 +9,72 @@ from uuid import UUID
 from langchain_core.messages import HumanMessage, SystemMessage
 from sqlmodel import Session, select
 
-from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
+from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt, build_system_prompt_with_persona
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src._llm import get_llm, default_llm
 from app.core.db import engine
 from app.models import Project, Story, StoryStatus
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# PERSONA-DRIVEN MESSAGES (Team Leader Pattern)
+# ============================================================================
+
+# Fallback messages when LLM fails
+FALLBACK_MESSAGES = {
+    "plan_created": "📋 Đã tạo test plan! Bắt đầu implement nhé~",
+    "tests_running": "🧪 Đang chạy tests, đợi mình chút nhé...",
+    "tests_passed": "🎉 Tuyệt vời! All tests passed!",
+    "tests_failed": "❌ Có tests fail rồi, để mình xem...",
+    "analyzing": "🔍 Đang phân tích lỗi...",
+    "fixing": "🔧 Đang fix, đợi mình chút nhé!",
+    "implement_done": "✅ Đã implement xong tests!",
+    "max_retries": "⚠️ Đã thử nhiều lần nhưng vẫn fail. Cần review manual.",
+    "typecheck_error": "❌ Có lỗi TypeScript, để mình xem...",
+    "default": "Đã nhận! 👍",
+}
+
+
+async def generate_user_message(
+    action: str,
+    context: str,
+    agent=None,
+    extra_info: str = "",
+) -> str:
+    """Generate natural message with persona (Team Leader pattern).
+    
+    This function uses LLM to generate personality-driven messages instead
+    of hardcoded technical messages.
+    
+    Args:
+        action: The action type (e.g., 'tests_passed', 'analyzing')
+        context: Description of the situation
+        agent: Optional agent instance for persona extraction
+        extra_info: Additional context info
+        
+    Returns:
+        Generated message string with personality
+    """
+    try:
+        sys_prompt = build_system_prompt_with_persona("response_generation", agent)
+        user_prompt = get_user_prompt(
+            "response_generation",
+            action=action,
+            context=context,
+            extra_info=extra_info or "N/A"
+        )
+        
+        _llm = get_llm()
+        response = await _llm.ainvoke([
+            SystemMessage(content=sys_prompt),
+            HumanMessage(content=user_prompt)
+        ])
+        return response.content.strip()
+    except Exception as e:
+        logger.debug(f"[generate_user_message] LLM failed: {e}, using fallback")
+        return FALLBACK_MESSAGES.get(action, FALLBACK_MESSAGES["default"])
 
 
 # ============================================================================

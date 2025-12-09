@@ -23,7 +23,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.skills import SkillRegistry
 from app.agents.tester.src.state import TesterState
-from app.agents.tester.src.core_nodes import send_message
+from app.agents.tester.src.core_nodes import send_message, generate_user_message
 from app.agents.tester.src.utils.token_utils import truncate_to_tokens
 from app.agents.tester.src._llm import (
     implement_llm, 
@@ -626,8 +626,13 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
                     except Exception as e:
                         logger.warning(f"[implement_tests] Failed to refresh {file_path}: {e}")
     
-    # Progress message
-    msg = f"✅ Implemented {success_count}/{len(tasks)} test files in parallel"
+    # Progress message (persona-driven intro + file list)
+    intro = await generate_user_message(
+        "implement_done",
+        f"{success_count}/{len(tasks)} test files created",
+        agent
+    )
+    msg = intro
     for result in implementation_results:
         if result.get("success"):
             test_icon = "🧩" if result.get("test_type") == "unit" else "🔧"
