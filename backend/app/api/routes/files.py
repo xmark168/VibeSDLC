@@ -144,14 +144,43 @@ def get_file_content(
             detail="Path is not a file",
         )
 
+    # Check if file is binary by extension
+    BINARY_EXTENSIONS = {
+        '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt',  # Office
+        '.pdf',  # PDF
+        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp', '.svg',  # Images
+        '.zip', '.rar', '.7z', '.tar', '.gz',  # Archives
+        '.exe', '.dll', '.so', '.dylib',  # Binaries
+        '.mp3', '.mp4', '.wav', '.avi', '.mov',  # Media
+        '.woff', '.woff2', '.ttf', '.eot',  # Fonts
+    }
+    
+    file_ext = full_path.suffix.lower()
+    if file_ext in BINARY_EXTENSIONS:
+        # Return placeholder for binary files
+        stat = full_path.stat()
+        return FileContentResponse(
+            path=path,
+            name=full_path.name,
+            content=f"[Binary file: {file_ext}]\n\nThis file type cannot be previewed as text.\nFile size: {stat.st_size:,} bytes",
+            size=stat.st_size,
+            modified=str(stat.st_mtime),
+            is_binary=True,
+        )
+    
     # Read file content
     try:
         content = full_path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        # Binary file - return base64 or error
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot read binary file as text",
+        # Binary file - return placeholder
+        stat = full_path.stat()
+        return FileContentResponse(
+            path=path,
+            name=full_path.name,
+            content=f"[Binary file]\n\nThis file cannot be displayed as text.\nFile size: {stat.st_size:,} bytes",
+            size=stat.st_size,
+            modified=str(stat.st_mtime),
+            is_binary=True,
         )
     except Exception as e:
         raise HTTPException(
@@ -168,6 +197,98 @@ def get_file_content(
         content=content,
         size=stat.st_size,
         modified=str(stat.st_mtime),
+    )
+
+
+@router.get("/download")
+def download_file(
+    project_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    path: str = Query(..., description="Relative path to the file"),
+):
+    """
+    Download a file from the project.
+    
+    Args:
+        project_id: UUID of the project
+        session: Database session
+        current_user: Current authenticated user
+        path: Relative path to the file
+        
+    Returns:
+        The file as a download response
+    """
+    from fastapi.responses import FileResponse
+    
+    # Get project and verify access
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    if current_user.role != Role.ADMIN and project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this project",
+        )
+
+    # Build full path
+    project_path = project.project_path or f"projects/{project_id}"
+    full_path = Path(project_path) / path
+
+    # Security check: ensure path is within project folder
+    try:
+        full_path = full_path.resolve()
+        project_folder = Path(project_path).resolve()
+        if not str(full_path).startswith(str(project_folder)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid path: path traversal not allowed",
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid path: {str(e)}",
+        )
+
+    # Check if file exists
+    if not full_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found",
+        )
+
+    if not full_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Path is not a file",
+        )
+
+    # Determine MIME type
+    ext = full_path.suffix.lower()
+    mime_types = {
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        '.pdf': 'application/pdf',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.zip': 'application/zip',
+    }
+    media_type = mime_types.get(ext, 'application/octet-stream')
+    
+    logger.info(f"Download file: {full_path} ({full_path.stat().st_size} bytes, {media_type})")
+
+    return FileResponse(
+        path=full_path,
+        filename=full_path.name,
+        media_type=media_type,
     )
 
 

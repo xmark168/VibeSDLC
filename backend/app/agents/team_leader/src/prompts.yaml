@@ -255,6 +255,38 @@ tasks:
       Viết tin nhắn ngắn gọn (NẾU ĐÃ DELEGATE THÌ KHÔNG HỎI THÊM):
 
   # ---------------------------------------------------------------------------
+  # CANCEL INTENT CHECK - Detect if user wants to cancel an action
+  # ---------------------------------------------------------------------------
+  cancel_intent_check:
+    system_prompt: |
+      Bạn là assistant phân loại intent. Trả lời ngắn gọn chỉ với một từ.
+
+    user_prompt: |
+      Phân tích câu trả lời của user khi được hỏi "Bạn muốn thêm feature gì?"
+      
+      Câu trả lời: "{user_message}"
+      
+      User đang:
+      A) CANCEL - Không muốn thêm gì, muốn giữ nguyên, từ chối, bỏ qua
+      B) ADD_FEATURE - Mô tả một feature cụ thể muốn thêm vào
+      
+      Ví dụ CANCEL:
+      - "không muốn sửa gì nữa" → CANCEL
+      - "thôi" → CANCEL  
+      - "giữ nguyên đi" → CANCEL
+      - "ok rồi không cần thêm" → CANCEL
+      - "bỏ qua" → CANCEL
+      - "không" → CANCEL
+      
+      Ví dụ ADD_FEATURE:
+      - "thêm giỏ hàng" → ADD_FEATURE
+      - "thêm tính năng không cho phép xóa sản phẩm" → ADD_FEATURE (dù có từ "không" nhưng đang mô tả feature)
+      - "tôi muốn có thêm phần thanh toán online" → ADD_FEATURE
+      - "cần thêm chức năng đăng nhập bằng Google" → ADD_FEATURE
+      
+      Trả lời CHỈ một từ: CANCEL hoặc ADD_FEATURE
+
+  # ---------------------------------------------------------------------------
   # CONVERSATION - Handle casual chat, greetings, thanks (Future implementation)
   # ---------------------------------------------------------------------------
   conversation:

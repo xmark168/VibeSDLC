@@ -5,6 +5,7 @@ export type FetchMessagesParams = {
   project_id: string
   skip?: number
   limit?: number
+  order?: 'asc' | 'desc'  // asc = oldest first, desc = newest first
 }
 
 export type CreateMessageBody = {

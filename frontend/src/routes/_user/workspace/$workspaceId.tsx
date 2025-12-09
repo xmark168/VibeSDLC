@@ -77,36 +77,32 @@ function WorkspacePage() {
         />
 
         <div className="flex flex-1 overflow-hidden">
-          {!chatCollapsed && (
-            <>
-              <div
-                ref={chatContainerRef}
-                className="flex flex-col overflow-hidden"
-                style={{ width: `${chatWidthRef.current}%` }}
-              >
-                <ChatPanelWS
-                  sidebarCollapsed={sidebarCollapsed}
-                  onToggleSidebar={() => setSidebarCollapsed(false)}
-                  onCollapse={() => setChatCollapsed(true)}
-                  onSidebarHover={setSidebarHovered}
-                  projectId={workspaceId}
-                  onSendMessageReady={(sendFn) => {
-                    sendMessageRef.current = sendFn
-                  }}
-                  onConnectionChange={setIsWebSocketConnected}
-                  onKanbanDataChange={setKanbanData}
-                  onActiveTabChange={setActiveTab}
-                  onAgentStatusesChange={setAgentStatuses}
-                  onOpenArtifact={handleOpenArtifact}
-                  onOpenFile={handleOpenFile}
-                  onInsertMentionReady={(fn) => {
-                    insertMentionRef.current = fn
-                  }}
-                />
-              </div>
-
-            </>
-          )}
+          {/* Always mount ChatPanelWS to keep WebSocket alive, just hide with CSS */}
+          <div
+            ref={chatContainerRef}
+            className={`flex flex-col overflow-hidden ${chatCollapsed ? 'hidden' : ''}`}
+            style={{ width: `${chatWidthRef.current}%` }}
+          >
+            <ChatPanelWS
+              sidebarCollapsed={sidebarCollapsed}
+              onToggleSidebar={() => setSidebarCollapsed(false)}
+              onCollapse={() => setChatCollapsed(true)}
+              onSidebarHover={setSidebarHovered}
+              projectId={workspaceId}
+              onSendMessageReady={(sendFn) => {
+                sendMessageRef.current = sendFn
+              }}
+              onConnectionChange={setIsWebSocketConnected}
+              onKanbanDataChange={setKanbanData}
+              onActiveTabChange={setActiveTab}
+              onAgentStatusesChange={setAgentStatuses}
+              onOpenArtifact={handleOpenArtifact}
+              onOpenFile={handleOpenFile}
+              onInsertMentionReady={(fn) => {
+                insertMentionRef.current = fn
+              }}
+            />
+          </div>
 
           <div className="flex-1 overflow-hidden">
             <WorkspacePanel
