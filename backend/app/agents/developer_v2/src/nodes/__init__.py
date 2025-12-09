@@ -1,13 +1,5 @@
-"""Developer V2 Graph Nodes.
-
-MetaGPT-style flow:
-  plan -> implement -> review -> run_code
-  
-  - plan: Zero-tool mode with comprehensive prefetch
-  - review: LGTM/LBTM decision after each step
-  - run_code: Build and validate
-
-Bug fix flow: analyze_error -> implement -> review -> run_code
+"""
+Developer V2 Graph Nodes.
 """
 from app.agents.developer_v2.src.nodes.setup_workspace import setup_workspace
 from app.agents.developer_v2.src.nodes.plan import plan
