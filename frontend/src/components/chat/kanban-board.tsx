@@ -550,10 +550,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
             const rankUpdates: { story_id: string; rank: number }[] = []
             newRanks.forEach((rank, cardId) => rankUpdates.push({ story_id: cardId, rank }))
             await storiesApi.bulkUpdateRanks(rankUpdates)
-            toast.success("Đã cập nhật thứ tự")
+            toast.success("Order updated")
           } catch (error) {
             console.error("Failed to update rank:", error)
-            toast.error("Không thể cập nhật thứ tự")
+            toast.error("Failed to update order")
           }
         }
       }
@@ -600,8 +600,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
           incompleteDeps: incompleteDeps.map(d => d.content)
         })
         if (isBlocked) {
-          toast.error(`Không thể di chuyển story`, {
-            description: `${incompleteDeps.length} dependencies chưa hoàn thành: ${incompleteDeps.map(d => d.content).slice(0, 2).join(', ')}${incompleteDeps.length > 2 ? '...' : ''}`,
+          toast.error(`Cannot move story`, {
+            description: `${incompleteDeps.length} incomplete dependencies: ${incompleteDeps.map(d => d.content).slice(0, 2).join(', ')}${incompleteDeps.length > 2 ? '...' : ''}`,
             duration: 4000,
           })
           // Revert to original state
@@ -641,9 +641,9 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         if (rankUpdates.length > 0) {
           await storiesApi.bulkUpdateRanks(rankUpdates)
         }
-        toast.success("Đã cập nhật trạng thái story")
+        toast.success("Story status updated")
       } catch (error) {
-        toast.error("Không thể cập nhật trạng thái")
+        toast.error("Failed to update status")
         // Revert to original state on error
         if (savedClonedCards) {
           setCards(savedClonedCards)
@@ -783,10 +783,10 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     setCards(prev => prev.filter(card => card.id !== cardId))
     try {
       await storiesApi.delete(cardId)
-      toast.success("Đã xóa story")
+      toast.success("Story deleted")
     } catch (error) {
       console.error("Failed to delete story:", error)
-      toast.error("Không thể xóa story")
+      toast.error("Failed to delete story")
       if (projectId) {
         queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
       }

@@ -92,7 +92,7 @@ export function StorySuggestionsCard({
       onApplied?.(result.story)
     } catch (error) {
       console.error("Failed to apply suggestions:", error)
-      toast.error("Không thể áp dụng gợi ý")
+      toast.error("Failed to apply suggestion")
     } finally {
       setIsApplying(false)
     }
@@ -105,7 +105,7 @@ export function StorySuggestionsCard({
       onKeep?.()
     } catch (error) {
       console.error("Failed to keep story:", error)
-      toast.error("Có lỗi xảy ra")
+      toast.error("An error occurred")
     }
   }
 
@@ -118,7 +118,7 @@ export function StorySuggestionsCard({
       onRemove?.(storyId)
     } catch (error) {
       console.error("Failed to remove story:", error)
-      toast.error("Không thể loại bỏ story")
+      toast.error("Failed to remove story")
     } finally {
       setIsRemoving(false)
     }
@@ -163,7 +163,7 @@ export function StorySuggestionsCard({
         {isDuplicate && duplicateOf && (
           <div className="flex items-center gap-2 text-sm text-yellow-600 dark:text-yellow-400">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-            <span>Bị trùng với story <strong>"{duplicateOf}"</strong></span>
+            <span>Duplicate of story <strong>"{duplicateOf}"</strong></span>
           </div>
         )}
 
@@ -172,9 +172,9 @@ export function StorySuggestionsCard({
           <div className="flex items-center gap-2 text-sm ">
             <Check className="w-4 h-4" />
             <span>
-              {actionTaken === 'applied' && 'Đã áp dụng gợi ý'}
-              {actionTaken === 'kept' && 'Đã giữ nguyên story'}
-              {actionTaken === 'removed' && 'Đã xóa story'}
+              {actionTaken === 'applied' && 'Suggestion applied'}
+              {actionTaken === 'kept' && 'Story kept'}
+              {actionTaken === 'removed' && 'Story removed'}
             </span>
           </div>
         )}
@@ -190,10 +190,10 @@ export function StorySuggestionsCard({
                 onClick={handleApplySuggestions}
                 disabled={isApplying || isRemoving}
               >
-                {isApplying ? 'Đang áp dụng...' : (
+                {isApplying ? 'Applying...' : (
                   <>
                     <Sparkles className="w-3.5 h-3.5 mr-1" />
-                    Áp dụng gợi ý
+                    Apply suggestion
                   </>
                 )}
               </Button>
@@ -205,7 +205,7 @@ export function StorySuggestionsCard({
               disabled={isApplying || isRemoving}
             >
               <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-              Giữ nguyên
+              Keep
             </Button>
             <Button
               size="sm"
@@ -214,10 +214,10 @@ export function StorySuggestionsCard({
               onClick={handleRemove}
               disabled={isApplying || isRemoving}
             >
-              {isRemoving ? 'Đang xóa...' : (
+              {isRemoving ? 'Removing...' : (
                 <>
                   <XCircle className="w-3.5 h-3.5 mr-1" />
-                  Loại bỏ
+                  Remove
                 </>
               )}
             </Button>
@@ -235,7 +235,7 @@ export function StorySuggestionsCard({
 
             {/* 2. Issues - Always show */}
             <div className="space-y-2">
-              <p className="text-sm font-bold">Vấn đề:</p>
+              <p className="text-sm font-bold">Issues:</p>
               {investIssues.length > 0 ? (
                 investIssues.map((issue, idx) => {
                   const codeNames: Record<string, string> = {
@@ -258,25 +258,25 @@ export function StorySuggestionsCard({
                   )
                 })
               ) : (
-                <p className="text-sm pl-4">✓ Story đạt chuẩn INVEST</p>
+                <p className="text-sm pl-4">✓ Story meets INVEST standards</p>
               )}
             </div>
 
             {/* 3. Suggestions - Only if available */}
             {hasSuggestions && (suggestedTitle || (suggestedAcceptanceCriteria && suggestedAcceptanceCriteria.length > 0) || (suggestedRequirements && suggestedRequirements.length > 0)) && (
               <div className="space-y-2">
-                <p className="text-sm font-bold">Gợi ý cải thiện:</p>
+                <p className="text-sm font-bold">Improvement suggestions:</p>
 
                 {suggestedTitle && (
                   <div className="space-y-1">
-                    <p className="text-sm font-medium pl-4">Title đề xuất:</p>
+                    <p className="text-sm font-medium pl-4">Suggested title:</p>
                     <p className="text-sm pl-8">- {suggestedTitle}</p>
                   </div>
                 )}
 
                 {suggestedRequirements && suggestedRequirements.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-sm font-medium pl-4">Requirements đề xuất:</p>
+                    <p className="text-sm font-medium pl-4">Suggested requirements:</p>
                     {suggestedRequirements.map((req, idx) => (
                       <p key={idx} className="text-sm pl-8">
                         - {req}
@@ -287,7 +287,7 @@ export function StorySuggestionsCard({
 
                 {suggestedAcceptanceCriteria && suggestedAcceptanceCriteria.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-sm font-medium pl-4">Acceptance Criteria đề xuất:</p>
+                    <p className="text-sm font-medium pl-4">Suggested acceptance criteria:</p>
                     {suggestedAcceptanceCriteria.map((ac, idx) => (
                       <div key={idx} className="text-sm pl-8 space-y-0.5">
                         <p>- {ac.split('\n')[0]}</p>

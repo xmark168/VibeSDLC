@@ -178,7 +178,6 @@ async def extract_preferences(state: TeamLeaderState, agent=None) -> dict:
             [SystemMessage(content=prompts["system_prompt"]), HumanMessage(content=f'Analyze: "{msg}"')],
             config=_cfg(state, "extract_preferences")
         )
-        _track_response(response, agent)
         clean_json = _clean_json(response.content)
         result = ExtractedPreferences.model_validate_json(clean_json)
         detected = {k: v for k, v in result.model_dump().items() if v and k != "additional"}
@@ -250,7 +249,6 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         ]
 
         response = await _fast_llm.ainvoke(messages, config=_cfg(state, "router"))
-        _track_response(response, agent)
         clean_json = _clean_json(response.content)
         decision = RoutingDecision.model_validate_json(clean_json)
         logger.info(f"[router] Decision: action={decision.action}, target={decision.target_role}")
@@ -437,7 +435,6 @@ Hãy viết MỘT câu hỏi clarification thân thiện, tự nhiên để hi�
             [SystemMessage(content=sys_prompt), HumanMessage(content=user_prompt)],
             config=_cfg(state, "clarify")
         )
-        _track_response(response, agent)
         question = response.content
     except Exception as e:
         logger.error(f"[clarify] LLM error: {e}")
@@ -489,7 +486,6 @@ async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
             [SystemMessage(content=sys_prompt), HumanMessage(content=state["user_message"])],
             config=_cfg(state, "conversational")
         )
-        _track_response(response, agent)
         if agent:
             await agent.message_user("response", response.content)
         return {**state, "message": response.content, "action": "CONVERSATION"}

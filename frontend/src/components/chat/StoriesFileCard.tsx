@@ -53,7 +53,7 @@ export function StoriesFileCard({
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-medium text-green-700 dark:text-green-400">
-              ✅ Stories đã được phê duyệt
+              ✅ Stories have been approved
             </h4>
           </div>
           <Button size="sm" variant="outline" onClick={onView}>
@@ -75,7 +75,7 @@ export function StoriesFileCard({
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400">
-              📋 Stories đã được tạo {!hasSubmitted && '- Chờ phê duyệt'}
+              📋 Stories created {!hasSubmitted && '- Awaiting approval'}
             </h4>
           </div>
           <Button 
@@ -92,7 +92,7 @@ export function StoriesFileCard({
         {/* Old version - no actions */}
         {!showActions && (
           <div className="text-xs text-muted-foreground italic">
-            Phiên bản cũ
+            Old version
           </div>
         )}
 
@@ -100,7 +100,7 @@ export function StoriesFileCard({
         {showActions && hasSubmitted && (
           <div className="flex items-center gap-2 text-sm">
             <Check className="w-4 h-4" />
-            <span>Đã gửi yêu cầu</span>
+            <span>Request submitted</span>
           </div>
         )}
 
@@ -108,7 +108,7 @@ export function StoriesFileCard({
         {showActions && isEditing && !hasSubmitted && (
           <div className="space-y-2">
             <Textarea
-              placeholder="Nhập yêu cầu chỉnh sửa Epics/Stories..."
+              placeholder="Enter Epics/Stories edit request..."
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
               className="min-h-[80px] text-sm"
@@ -120,7 +120,7 @@ export function StoriesFileCard({
                 disabled={!feedback.trim()}
               >
                 <Check className="w-3.5 h-3.5 mr-1" />
-                Gửi yêu cầu
+                Submit
               </Button>
               <Button 
                 size="sm" 
@@ -131,7 +131,7 @@ export function StoriesFileCard({
                 }}
               >
                 <X className="w-3.5 h-3.5 mr-1" />
-                Hủy
+                Cancel
               </Button>
             </div>
           </div>
@@ -146,7 +146,7 @@ export function StoriesFileCard({
               onClick={handleApprove}
             >
               <Check className="w-3.5 h-3.5 mr-1" />
-              Phê duyệt
+              Approve
             </Button>
             <Button 
               size="sm" 
@@ -154,7 +154,7 @@ export function StoriesFileCard({
               onClick={() => setIsEditing(true)}
             >
               <Pencil className="w-3.5 h-3.5 mr-1" />
-              Yêu cầu chỉnh sửa
+              Request edit
             </Button>
           </div>
         )}

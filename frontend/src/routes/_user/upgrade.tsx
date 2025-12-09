@@ -142,7 +142,7 @@ function RouteComponent() {
 
       // If successful payment, sync order status first
       if (paymentStatus === 'success' && orderCode) {
-        const loadingToast = toast.loading('Đang xác nhận thanh toán...', {
+        const loadingToast = toast.loading('Confirming payment...', {
           style: {
             background: '#1e293b',
             color: '#fff',
@@ -160,7 +160,7 @@ function RouteComponent() {
               // Invalidate subscription query to refetch user's new subscription
               queryClient.invalidateQueries({ queryKey: ['subscription', 'current'] })
 
-              toast.success('Thanh toán thành công!\nGói dịch vụ của bạn đã được kích hoạt', {
+              toast.success('Payment successful!\nYour subscription has been activated', {
                 duration: 5000,
                 style: {
                   background: '#1e293b',
@@ -174,7 +174,7 @@ function RouteComponent() {
                 },
               })
             } else {
-              toast('Thanh toán đang được xử lý\nVui lòng kiểm tra lại sau ít phút', {
+              toast('Payment is being processed\nPlease check again in a few minutes', {
                 duration: 5000,
                 icon: '⏳',
                 style: {
@@ -189,7 +189,7 @@ function RouteComponent() {
           .catch((error) => {
             toast.dismiss(loadingToast)
             console.error('Failed to sync payment status:', error)
-            toast.error('Không thể xác nhận thanh toán\nVui lòng kiểm tra lịch sử giao dịch', {
+            toast.error('Unable to confirm payment\nPlease check transaction history', {
               duration: 5000,
               style: {
                 background: '#1e293b',
@@ -205,7 +205,7 @@ function RouteComponent() {
           })
       } else if (paymentStatus === 'cancel') {
         // Show cancel notification
-        toast.error('Thanh toán đã bị hủy\nBạn có thể thử lại bất cứ lúc nào', {
+        toast.error('Payment was cancelled\nYou can try again anytime', {
           duration: 4000,
           style: {
             background: '#1e293b',
@@ -245,7 +245,7 @@ function RouteComponent() {
       setSepayDialogOpen(true)
     } catch (error) {
       console.error('Payment creation failed:', error)
-      toast.error('Có lỗi xảy ra khi tạo thanh toán')
+      toast.error('An error occurred while creating payment')
     }
   }
 
@@ -279,7 +279,7 @@ function RouteComponent() {
       setSepayDialogOpen(true)
     } catch (error: any) {
       console.error('Credit purchase failed:', error)
-      toast.error(error?.body?.detail || 'Có lỗi xảy ra khi mua credits')
+      toast.error(error?.body?.detail || 'An error occurred while purchasing credits')
     } finally {
       setIsPurchasingCredit(false)
     }

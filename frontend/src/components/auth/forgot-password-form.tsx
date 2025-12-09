@@ -48,9 +48,9 @@ export function ForgotPasswordForm() {
         )
       }),
       {
-        loading: "Đang gửi mã xác nhận...",
-        success: <b>Gửi mã xác nhận thành công!</b>,
-        error: <b>Gửi mã thất bại. Vui lòng thử lại.</b>,
+        loading: "Sending verification code...",
+        success: <b>Verification code sent successfully!</b>,
+        error: <b>Failed to send code. Please try again.</b>,
       },
     )
   }
@@ -74,10 +74,10 @@ export function ForgotPasswordForm() {
 
         <div className="space-y-2">
           <h2 className="text-3xl font-bold text-foreground">
-            Kiểm tra Email của bạn
+            Check your email
           </h2>
           <p className="text-muted-foreground">
-            {"Chúng tôi đã gửi mã xác nhận đến"}
+            {"We've sent a verification code to"}
             <br />
             <span className="font-semibold text-foreground">{email}</span>
           </p>
@@ -90,14 +90,14 @@ export function ForgotPasswordForm() {
           className="space-y-4"
         >
           <p className="text-sm text-muted-foreground">
-            {"Chưa nhận được mã? Kiểm tra thư mục spam hoặc"}
+            {"Didn't receive the code? Check your spam folder or"}
           </p>
           <Button
             variant="outline"
             onClick={() => setIsSubmitted(false)}
             className="w-full h-12"
           >
-            Thử email khác
+            Try another email
           </Button>
         </motion.div>
       </motion.div>
@@ -135,7 +135,7 @@ export function ForgotPasswordForm() {
           transition={{ delay: 0.4 }}
           className="text-3xl font-bold text-foreground"
         >
-          Quên mật khẩu?
+          Forgot password?
         </motion.h2>
         <motion.p
           initial={{ opacity: 0 }}
@@ -143,7 +143,7 @@ export function ForgotPasswordForm() {
           transition={{ delay: 0.5 }}
           className="text-muted-foreground"
         >
-          {"Đừng lo, chúng tôi sẽ gửi hướng dẫn đặt lại mật khẩu"}
+          {"Don't worry, we'll send you password reset instructions"}
         </motion.p>
       </div>
 
@@ -161,14 +161,14 @@ export function ForgotPasswordForm() {
             className="space-y-2"
           >
             <Label htmlFor="email" className="text-sm font-medium">
-              Địa chỉ Email
+              Email address
             </Label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
               <Input
                 id="email"
                 type="email"
-                placeholder="Nhập email của bạn"
+                placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="h-12 bg-secondary/50 border-border text-base pl-10"
@@ -176,7 +176,7 @@ export function ForgotPasswordForm() {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              {"Chúng tôi sẽ gửi mã xác nhận đến email này"}
+              {"We'll send a verification code to this email"}
             </p>
           </motion.div>
 
@@ -202,7 +202,7 @@ export function ForgotPasswordForm() {
                   className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
                 />
               ) : (
-                "Gửi mã xác nhận"
+                "Send verification code"
               )}
             </Button>
 

@@ -51,16 +51,16 @@ export function ResetPasswordForm() {
   })
 
   const passwordRequirements = [
-    { label: "Ít nhất 8 ký tự", met: formData.password.length >= 8 },
+    { label: "At least 8 characters", met: formData.password.length >= 8 },
     {
-      label: "Chứa chữ in hoa",
+      label: "Contains uppercase letter",
       met: /[A-Z]/.test(formData.password),
     },
     {
-      label: "Chứa chữ thường",
+      label: "Contains lowercase letter",
       met: /[a-z]/.test(formData.password),
     },
-    { label: "Chứa số", met: /[0-9]/.test(formData.password) },
+    { label: "Contains number", met: /[0-9]/.test(formData.password) },
   ]
 
   const passwordsMatch =
@@ -107,10 +107,10 @@ export function ResetPasswordForm() {
 
         <div className="space-y-2">
           <h2 className="text-3xl font-bold text-foreground">
-            Đặt lại mật khẩu thành công!
+            Password reset successful!
           </h2>
           <p className="text-muted-foreground">
-            Mật khẩu của bạn đã được đặt lại thành công
+            Your password has been reset successfully
           </p>
         </div>
 
@@ -120,7 +120,7 @@ export function ResetPasswordForm() {
           transition={{ delay: 0.5 }}
         >
           <p className="text-sm text-muted-foreground">
-            Đang chuyển hướng đến trang đăng nhập...
+            Redirecting to login page...
           </p>
         </motion.div>
       </motion.div>
@@ -149,7 +149,7 @@ export function ResetPasswordForm() {
           transition={{ delay: 0.4 }}
           className="text-3xl font-bold text-foreground"
         >
-          Tạo mật khẩu mới
+          Create new password
         </motion.h2>
         <motion.p
           initial={{ opacity: 0 }}
@@ -157,7 +157,7 @@ export function ResetPasswordForm() {
           transition={{ delay: 0.5 }}
           className="text-muted-foreground"
         >
-          Mật khẩu mới phải khác với các mật khẩu đã sử dụng trước đó
+          Your new password must be different from previously used passwords
         </motion.p>
       </div>
 
@@ -175,13 +175,13 @@ export function ResetPasswordForm() {
             className="space-y-2"
           >
             <Label htmlFor="password" className="text-sm font-medium">
-              Mật khẩu mới
+              New password
             </Label>
             <div className="relative">
               <Input
                 id="password"
                 type={showPassword ? "text" : "password"}
-                placeholder="Tạo mật khẩu mạnh"
+                placeholder="Create a strong password"
                 value={formData.password}
                 onChange={(e) =>
                   setFormData({ ...formData, password: e.target.value })
@@ -245,13 +245,13 @@ export function ResetPasswordForm() {
             className="space-y-2"
           >
             <Label htmlFor="confirmPassword" className="text-sm font-medium">
-              Xác nhận mật khẩu mới
+              Confirm new password
             </Label>
             <div className="relative">
               <Input
                 id="confirmPassword"
                 type={showConfirmPassword ? "text" : "password"}
-                placeholder="Nhập lại mật khẩu"
+                placeholder="Re-enter password"
                 value={formData.confirmPassword}
                 onChange={(e) =>
                   setFormData({ ...formData, confirmPassword: e.target.value })
@@ -282,7 +282,7 @@ export function ResetPasswordForm() {
                 className="text-sm text-red-500 flex items-center gap-1"
               >
                 <X className="h-4 w-4" />
-                Mật khẩu không khớp
+                Passwords do not match
               </motion.p>
             )}
             {passwordsMatch && (
@@ -292,7 +292,7 @@ export function ResetPasswordForm() {
                 className="text-sm text-green-500 flex items-center gap-1"
               >
                 <Check className="h-4 w-4" />
-                Mật khẩu khớp
+                Passwords match
               </motion.p>
             )}
           </motion.div>
@@ -318,7 +318,7 @@ export function ResetPasswordForm() {
                   className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
                 />
               ) : (
-                "Đặt lại mật khẩu"
+                "Reset password"
               )}
             </Button>
           </motion.div>

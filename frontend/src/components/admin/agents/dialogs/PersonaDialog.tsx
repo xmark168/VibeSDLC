@@ -567,4 +567,8 @@ export function PersonaDialog({ open, onOpenChange, persona, onSuccess }: Person
             </DialogFooter>
           </TabsContent>
         </Tabs>
-6f
+
+      </DialogContent>
+    </Dialog>
+  )
+}

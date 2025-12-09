@@ -41,11 +41,11 @@ export function SePayQRDialog({
       
       if (result.status === "paid") {
         setIsPolling(false)
-        toast.success("Thanh toán thành công!")
-        // Không tự đóng, để user bấm "Đóng" thủ công
+        toast.success("Payment successful!")
+        // Don't auto-close, let user click "Close" manually
       } else if (result.status === "expired") {
         setIsPolling(false)
-        toast.error("Đơn hàng đã hết hạn")
+        toast.error("Order has expired")
       }
     } catch (error) {
       console.error("Error checking payment status:", error)
@@ -105,7 +105,7 @@ export function SePayQRDialog({
   const copyTransactionCode = () => {
     if (qrData?.transaction_code) {
       navigator.clipboard.writeText(qrData.transaction_code)
-      toast.success("Đã copy mã giao dịch")
+      toast.success("Transaction code copied")
     }
   }
 
@@ -121,9 +121,9 @@ export function SePayQRDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-center">Thanh toán trực tuyến</DialogTitle>
+          <DialogTitle className="text-center">Online Payment</DialogTitle>
           <DialogDescription className="text-center">
-            Quét mã QR bằng ứng dụng ngân hàng để thanh toán
+            Scan QR code with your banking app to pay
           </DialogDescription>
         </DialogHeader>
 
@@ -132,7 +132,7 @@ export function SePayQRDialog({
           <div className="relative">
             <img
               src={qrData.qr_url}
-              alt="QR Code thanh toán"
+              alt="Payment QR Code"
               className="w-64 h-64 border rounded-lg bg-white"
             />
             {status?.status === "paid" && (
@@ -168,19 +168,19 @@ export function SePayQRDialog({
             {isPolling && status?.status === "pending" && (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                <span className="text-muted-foreground">Đang chờ thanh toán...</span>
+                <span className="text-muted-foreground">Waiting for payment...</span>
               </>
             )}
             {status?.status === "paid" && (
               <>
                 <CheckCircle className="w-4 h-4 text-green-500" />
-                <span className="text-green-500">Thanh toán thành công!</span>
+                <span className="text-green-500">Payment successful!</span>
               </>
             )}
             {status?.status === "expired" && (
               <>
                 <XCircle className="w-4 h-4 text-destructive" />
-                <span className="text-destructive">Đơn hàng đã hết hạn</span>
+                <span className="text-destructive">Order has expired</span>
               </>
             )}
           </div>
@@ -189,15 +189,15 @@ export function SePayQRDialog({
           {status?.status === "pending" && timeLeft > 0 && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Clock className="w-4 h-4" />
-              <span>Còn lại: {formatTimeLeft(timeLeft)}</span>
+              <span>Time left: {formatTimeLeft(timeLeft)}</span>
             </div>
           )}
 
           {/* Instructions */}
           <div className="text-xs text-muted-foreground text-center space-y-1">
-            <p>1. Mở ứng dụng ngân hàng và quét mã QR</p>
-            <p>2. Kiểm tra số tiền và nội dung chuyển khoản</p>
-            <p>3. Xác nhận thanh toán</p>
+            <p>1. Open your banking app and scan the QR code</p>
+            <p>2. Verify the amount and transfer details</p>
+            <p>3. Confirm payment</p>
           </div>
         </div>
 
@@ -206,22 +206,22 @@ export function SePayQRDialog({
           {status?.status === "pending" && (
             <>
               <Button variant="outline" className="flex-1" onClick={handleCancel}>
-                Hủy
+                Cancel
               </Button>
               <Button variant="outline" className="flex-1" onClick={checkPaymentStatus}>
                 <RefreshCw className="w-4 h-4 mr-2" />
-                Kiểm tra
+                Check
               </Button>
             </>
           )}
           {status?.status === "paid" && (
             <Button className="w-full" onClick={onSuccess}>
-              Đóng
+              Close
             </Button>
           )}
           {status?.status === "expired" && (
             <Button variant="outline" className="w-full" onClick={() => onOpenChange(false)}>
-              Đóng
+              Close
             </Button>
           )}
         </div>

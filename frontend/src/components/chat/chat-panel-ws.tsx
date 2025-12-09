@@ -343,8 +343,8 @@ export function ChatPanelWS({
     // Look for user messages after this card
     const messagesAfterCard = uniqueMessages.slice(cardMsgIndex + 1)
     const keywords = cardType === 'prd' 
-      ? ['Phê duyệt PRD', 'Chỉnh sửa PRD']
-      : ['Phê duyệt Stories', 'Chỉnh sửa Stories']
+      ? ['Approve PRD', 'Edit PRD']
+      : ['Approve Stories', 'Edit Stories']
     
     return messagesAfterCard.some(m => 
       m.author_type === AuthorType.USER && 
@@ -576,7 +576,7 @@ export function ChatPanelWS({
       try {
         await createMessageWithFile({
           project_id: projectId,
-          content: finalMessage || "Phân tích tài liệu này",
+          content: finalMessage || "Analyze this document",
           file: selectedFile,
         });
         setSelectedFile(null);
@@ -585,7 +585,7 @@ export function ChatPanelWS({
         forceScrollRef.current = true;
       } catch (error) {
         console.error("Failed to upload file:", error);
-        alert("Không thể upload file. Vui lòng thử lại.");
+        alert("Failed to upload file. Please try again.");
       }
       return;
     }
@@ -749,7 +749,7 @@ export function ChatPanelWS({
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
               <Crown className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
               <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
-                {conversationOwner.agentName} đang tiếp nhận câu hỏi
+                {conversationOwner.agentName} is receiving questions
               </span>
             </div>
           )}
@@ -807,7 +807,7 @@ export function ChatPanelWS({
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
                 <Crown className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
                 <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
-                  {conversationOwner.agentName} đang tiếp nhận câu hỏi
+                  {conversationOwner.agentName} is receiving questions
                 </span>
               </div>
             )}
@@ -1092,10 +1092,10 @@ export function ChatPanelWS({
                         }
                       }}
                       onApprove={() => {
-                        wsSendMessage("Phê duyệt PRD này, hãy tạo user stories")
+                        wsSendMessage("Approve this PRD, please create user stories")
                       }}
                       onEdit={(feedback) => {
-                        wsSendMessage(`Chỉnh sửa PRD: ${feedback}`)
+                        wsSendMessage(`Edit PRD: ${feedback}`)
                       }}
                     />
                   )}
@@ -1116,10 +1116,10 @@ export function ChatPanelWS({
                         }
                       }}
                       onApprove={() => {
-                        wsSendMessage("Phê duyệt Stories")
+                        wsSendMessage("Approve Stories")
                       }}
                       onEdit={(feedback) => {
-                        wsSendMessage(`Chỉnh sửa Stories: ${feedback}`)
+                        wsSendMessage(`Edit Stories: ${feedback}`)
                       }}
                     />
                   )}
@@ -1276,7 +1276,7 @@ export function ChatPanelWS({
             if (file) {
               // Validate size (10MB)
               if (file.size > 10 * 1024 * 1024) {
-                alert("File quá lớn. Giới hạn: 10MB");
+                alert("File too large. Limit: 10MB");
                 e.target.value = "";
                 return;
               }
@@ -1285,7 +1285,7 @@ export function ChatPanelWS({
               const allowedExtensions = ['.docx', '.txt'];
               const hasValidExt = allowedExtensions.some(ext => fileName.endsWith(ext));
               if (!hasValidExt) {
-                alert("Chỉ hỗ trợ file .docx và .txt");
+                alert("Only .docx and .txt files are supported");
                 e.target.value = "";
                 return;
               }
@@ -1304,7 +1304,7 @@ export function ChatPanelWS({
               <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
             )}
             <span className="text-sm truncate flex-1">
-              {isUploading ? "Đang upload..." : selectedFile.name}
+              {isUploading ? "Uploading..." : selectedFile.name}
             </span>
             {!isUploading && (
               <>
@@ -1332,7 +1332,7 @@ export function ChatPanelWS({
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder={selectedFile ? "Thêm mô tả cho file..." : "Type your message..."}
+            placeholder={selectedFile ? "Add description for file..." : "Type your message..."}
           />
           <PromptInputToolbar>
             <PromptInputTools>

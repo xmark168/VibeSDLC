@@ -107,7 +107,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
         },
       })
     } catch (error: any) {
-      toast.error(error?.body?.detail || 'Không thể hủy subscription', {
+      toast.error(error?.body?.detail || 'Failed to cancel subscription', {
         style: {
           background: '#1e293b',
           color: '#fff',
@@ -394,7 +394,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                           className="flex-1 h-12 text-base border-destructive/50 text-destructive hover:bg-destructive/10"
                         >
                           <AlertTriangle className="h-4 w-4 mr-2" />
-                          {isCanceling ? "Đang hủy..." : "Cancel Subscription"}
+                          {isCanceling ? "Canceling..." : "Cancel Subscription"}
                         </Button>
 
                         {/* Upgrade button on the right */}
@@ -495,7 +495,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Bạn có chắc muốn hủy subscription? Gói dịch vụ sẽ vẫn hoạt động đến hết thời hạn hiện tại.
+              Are you sure you want to cancel your subscription? The plan will remain active until the end of the current period.
             </p>
             <div className="flex gap-3 justify-end">
               <Button
@@ -503,14 +503,14 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                 onClick={() => setShowCancelDialog(false)}
                 disabled={isCanceling}
               >
-                Hủy bỏ
+                Cancel
               </Button>
               <Button
                 variant="destructive"
                 onClick={handleCancelSubscription}
                 disabled={isCanceling}
               >
-                {isCanceling ? "Đang hủy..." : "Xác nhận"}
+                {isCanceling ? "Canceling..." : "Confirm"}
               </Button>
             </div>
           </div>
