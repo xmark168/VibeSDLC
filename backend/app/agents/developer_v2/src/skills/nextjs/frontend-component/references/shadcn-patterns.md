@@ -213,10 +213,17 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
     <SelectValue placeholder="Select option" />
   </SelectTrigger>
   <SelectContent>
+    {/* ⚠️ NEVER use value="" - causes runtime error! */}
+    <SelectItem value="all">All Options</SelectItem>  {/* Use "all" not "" */}
     <SelectItem value="option1">Option 1</SelectItem>
     <SelectItem value="option2">Option 2</SelectItem>
   </SelectContent>
 </Select>
+
+// Handle "all" in filter logic:
+if (selected && selected !== 'all') {
+  // apply filter
+}
 ```
 
 ### Carousel

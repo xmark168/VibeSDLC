@@ -22,6 +22,7 @@ __pycache__/
 open-swe/
 .idea/
 frontend/src/routeTree.gen.ts
+uv.lock
 C:\o_d\fpt\do_an\VibeSDLC\services\ai-agent-service\.env
 .env
 .env.*
@@ -140,3 +141,4 @@ backend/app/projects/.bun-cache
 **/.bun-cache/**
 VibeSDLC/backend/app/projects
 backend/app/projects/.llm-cache
+backend/app/agents/developer_v2/tests/test_output

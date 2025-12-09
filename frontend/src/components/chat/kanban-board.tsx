@@ -1030,6 +1030,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         open={!!currentSelectedCard}
         onOpenChange={() => setSelectedCard(null)}
         onDownloadResult={handleDownloadResult}
+        //allStories={columns.flatMap(col => col.cards)}
+        projectId={projectId}
         allStories={cards}
       />
 

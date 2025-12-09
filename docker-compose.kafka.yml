@@ -57,26 +57,11 @@ services:
     networks:
       - vibeSDLC-network
 
-  postgres:
-    image: pgvector/pgvector:pg17
-    container_name: vibeSDLC-postgres
-    restart: always
-    environment:
-      POSTGRES_PASSWORD: cocoindex
-      POSTGRES_USER: cocoindex
-      POSTGRES_DB: cocoindex
-    ports:
-      - 5436:5432
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - vibeSDLC-network
 
 volumes:
   zookeeper_data:
   zookeeper_logs:
   kafka_data:
-  postgres_data:
 
 networks:
   vibeSDLC-network:

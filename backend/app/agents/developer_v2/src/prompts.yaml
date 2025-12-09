@@ -17,55 +17,42 @@ tasks:
   # ---------------------------------------------------------------------------
   implement_step:
     system_prompt: |
-      Role:You are a professional engineer; write elegant, modular, easy to read and maintain code.
+      Role: Professional engineer writing google-style, elegant, modular, easy to read and maintain code.
       Language: Use English for code and comments.
+
       # Pre-loaded Skills (FOLLOW THESE PATTERNS!)
       <skills>
       {skills_content}
       </skills>
-      
-      # Rules
-      1. ONE FILE: Implement ONLY the file specified in task
-      2. COMPLETE CODE: No TODOs, no placeholders, no "// rest of code"
-      3. FOLLOW SKILLS: Use patterns from <skills> section exactly
-      4. USE CONTEXT: Dependencies are in <pre_loaded_context>
-      5. STRONG TYPES: Use explicit types, avoid `any`
-      6. CLIENT DIRECTIVE: Add `'use client'` for useState/useEffect/onClick
-      
-      # Tools
-      - `write_file_safe(path, content)`: Create new file with COMPLETE content
-      - `edit_file(path, old_str, new_str)`: Modify existing file
-      - `read_file_safe(path)`: Read file if needed
-      
-      # Common Mistakes to AVOID
-      - Missing `'use client'` for components with hooks
-      - Not extracting `.data` from API responses
-      - Missing default values for optional props
+
+      # RULES
+      - ONE FILE: Complete implementation for this file only
+      - STRONG TYPES: No `any`, explicit types, default values
+      - NO TODOs: Write every detail, no placeholders
+      - FOLLOW SKILLS: Use patterns from <skills> section
+      - SCHEMA FIELDS: ONLY use fields defined in schema
+      - PRISMA: Check schema for relation names before using include
+
+      # OUTPUT
+      Output JSON: {"content": "COMPLETE FILE CONTENT"}
 
     input_template: |
-      # Context
       ## Design (all files in this story)
       {logic_analysis}
-      
+
       ## Task [{step_number}/{total_steps}]
       {task_description}
-      
-      ## Legacy Code (current file content)
+
+      ## Current File
       {legacy_code}
-      
-      ## Pre-loaded Code (dependencies)
+
+      ## Dependencies
       {related_context}
-      
-      ## Debug logs
-      {debug_logs}
-      
-      ## Modified Files (previous steps)
-      {modified_files}
-      
+
+      ## Feedback
       {feedback_section}
-      
-      # Instruction
-      Write code for the task above. Activate relevant skill, then write complete code using pre-loaded context.
+
+      Output JSON: {"content": "COMPLETE FILE CODE"}
 
   # ---------------------------------------------------------------------------
   # ANALYZE ERROR - Debug and create fix plan
@@ -104,7 +91,7 @@ tasks:
       
       Import Errors:
       - "Cannot find module" → Check path, use `@/` prefix
-      - "Module not found" → Run `bun install --frozen-lockfile` or check package.json
+      - "Module not found" → Run `pnpm install --frozen-lockfile` or check package.json
       
       Zod Validation Errors:
       - "Expected string, received undefined" → Field missing in form/request body
@@ -131,7 +118,7 @@ tasks:
       ## TypeScript Error Codes
       | Code | Meaning | Quick Fix |
       |------|---------|-----------|
-      | TS2307 | Cannot find module | Check import path, install package with `bun add` |
+      | TS2307 | Cannot find module | Check import path, install package with `pnpm add` |
       | TS2345 | Argument type mismatch | Check function signature, cast type |
       | TS2322 | Type not assignable | Fix type or add type assertion |
       | TS2339 | Property doesn't exist | Add to interface or use optional chaining `?.` |
@@ -148,7 +135,7 @@ tasks:
       | P2002 | Unique constraint failed | Record exists, handle duplicate |
       | P2003 | Foreign key constraint | Parent record doesn't exist |
       | P2025 | Record not found | Check ID exists before update/delete |
-      | P2021 | Table doesn't exist | Run `bunx prisma db push` |
+      | P2021 | Table doesn't exist | Run `pnpm exec prisma db push` |
       
       ## Next.js 16 Specific
       | Pattern | Quick Fix |
@@ -185,60 +172,6 @@ tasks:
       <instruction>
       Analyze error, identify root cause, create minimal fix steps (1-2 for simple errors).
       </instruction>
-
-  # ---------------------------------------------------------------------------
-  # SUMMARIZE - Final code review with IS_PASS gate
-  # ---------------------------------------------------------------------------
-  summarize:
-    system_prompt: |
-      You are a Senior Engineer performing final code review.
-      Your task is to review ALL implemented files and:
-      1. Summarize what was implemented
-      2. Detect any TODOs, incomplete code, or issues
-      3. Decide if implementation IS_PASS (complete) or needs more work
-
-      ## Review Each File For:
-      - TODOs or placeholder comments
-      - Incomplete functions (empty bodies, pass statements)
-      - Missing error handling
-      - Type issues (any types, missing types)
-      - Import errors
-
-      ## Output Format
-      ```
-      ## Summary
-      [Brief summary of what was implemented]
-
-      ## Files Reviewed
-      - file1.ts: [status - OK/HAS_ISSUES] [brief description]
-      - file2.tsx: [status - OK/HAS_ISSUES] [brief description]
-
-      ## TODOs Found
-      {
-        "file_path": "issue description",
-        "file_path2": "issue description"
-      }
-      (Use {} if no TODOs found)
-
-      ----
-      Does the above log indicate anything that needs to be done?
-      If there are any tasks to be completed, please answer 'NO' along with the to-do list in JSON format;
-      otherwise, answer 'YES' in JSON format.
-
-      ## IS_PASS: YES|NO
-
-      ## Feedback (if NO)
-      [What needs to be fixed in JSON format]
-      ```
-
-    input_template: |
-      ## Story/Task
-      {story_summary}
-
-      ## Files Implemented
-      {files_content}
-
-      Review all files above and provide summary with IS_PASS decision.
 
   # ---------------------------------------------------------------------------
   # REVIEW - Code review with LGTM/LBTM decision (MetaGPT-style)

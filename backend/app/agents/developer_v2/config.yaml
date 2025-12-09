@@ -1,0 +1,16 @@
+# Developer V2 Configuration
+
+# LLM Settings
+llm:
+  max_retries: 3
+  retry_wait_min: 1
+  retry_wait_max: 10
+
+# Parallel Execution
+parallel:
+  max_concurrent: 5
+
+# Debug Settings  
+debug:
+  max_attempts: 3
+  max_reviews: 3

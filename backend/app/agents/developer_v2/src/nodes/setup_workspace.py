@@ -1,8 +1,11 @@
 """Setup workspace node - Setup git workspace/branch for code modification."""
+import asyncio
+import hashlib
 import logging
 import os
 import subprocess
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools import (
@@ -19,8 +22,176 @@ from app.agents.developer_v2.src.utils.db_container import (
 
 logger = logging.getLogger(__name__)
 
+# Thread pool for running blocking operations in parallel
+_executor = ThreadPoolExecutor(max_workers=4)
 
 
+def _should_skip_pnpm_install(workspace_path: str) -> bool:
+    """Check if pnpm install can be skipped (lockfile unchanged)."""
+    lockfile = Path(workspace_path) / "pnpm-lock.yaml"
+    node_modules = Path(workspace_path) / "node_modules"
+    cache_file = Path(workspace_path) / ".pnpm_install_cache"
+    
+    if not node_modules.exists() or not lockfile.exists():
+        return False
+    
+    try:
+        current_hash = hashlib.md5(lockfile.read_bytes()).hexdigest()
+        if cache_file.exists():
+            cached_hash = cache_file.read_text().strip()
+            if cached_hash == current_hash:
+                return True
+    except Exception:
+        pass
+    
+    return False
+
+
+def _update_pnpm_install_cache(workspace_path: str) -> None:
+    """Update pnpm install cache after successful install."""
+    lockfile = Path(workspace_path) / "pnpm-lock.yaml"
+    cache_file = Path(workspace_path) / ".pnpm_install_cache"
+    
+    try:
+        if lockfile.exists():
+            current_hash = hashlib.md5(lockfile.read_bytes()).hexdigest()
+            cache_file.write_text(current_hash)
+    except Exception:
+        pass
+
+
+def _should_skip_prisma_generate(workspace_path: str) -> bool:
+    """Check if prisma generate can be skipped (schema unchanged)."""
+    schema_path = Path(workspace_path) / "prisma" / "schema.prisma"
+    cache_file = Path(workspace_path) / ".prisma_generate_cache"
+    generated_dir = Path(workspace_path) / "node_modules" / ".prisma"
+    
+    if not schema_path.exists() or not generated_dir.exists():
+        return False
+    
+    try:
+        current_hash = hashlib.md5(schema_path.read_bytes()).hexdigest()
+        if cache_file.exists():
+            cached_hash = cache_file.read_text().strip()
+            if cached_hash == current_hash:
+                return True
+    except Exception:
+        pass
+    
+    return False
+
+
+def _update_prisma_generate_cache(workspace_path: str) -> None:
+    """Update prisma generate cache after successful generate."""
+    schema_path = Path(workspace_path) / "prisma" / "schema.prisma"
+    cache_file = Path(workspace_path) / ".prisma_generate_cache"
+    
+    try:
+        if schema_path.exists():
+            current_hash = hashlib.md5(schema_path.read_bytes()).hexdigest()
+            cache_file.write_text(current_hash)
+    except Exception:
+        pass
+
+
+def _run_pnpm_install(workspace_path: str) -> bool:
+    """Run pnpm install (blocking). Returns True if successful."""
+    if _should_skip_pnpm_install(workspace_path):
+        logger.info("[setup_workspace] Skipping pnpm install (cached)")
+        return True
+    
+    try:
+        logger.info("[setup_workspace] Running pnpm install --frozen-lockfile --prefer-offline...")
+        result = subprocess.run(
+            "pnpm install --frozen-lockfile --prefer-offline",
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=120,
+            shell=True,
+        )
+        if result.returncode == 0:
+            logger.info("[setup_workspace] pnpm install successful")
+            _update_pnpm_install_cache(workspace_path)
+            return True
+        else:
+            # Retry without --prefer-offline if it fails
+            logger.info("[setup_workspace] Retrying pnpm install without --prefer-offline...")
+            result = subprocess.run(
+                "pnpm install --frozen-lockfile",
+                cwd=workspace_path,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=120,
+                shell=True,
+            )
+            if result.returncode == 0:
+                logger.info("[setup_workspace] pnpm install successful (retry)")
+                _update_pnpm_install_cache(workspace_path)
+                return True
+            logger.warning(f"[setup_workspace] pnpm install failed: {result.stderr[:200]}")
+            return False
+    except subprocess.TimeoutExpired:
+        logger.warning("[setup_workspace] pnpm install timed out")
+        return False
+    except Exception as e:
+        logger.warning(f"[setup_workspace] pnpm install error: {e}")
+        return False
+
+
+def _run_prisma_generate(workspace_path: str) -> bool:
+    """Run prisma generate (blocking). Returns True if successful."""
+    schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
+    if not os.path.exists(schema_path):
+        return True  # No schema, nothing to generate
+    
+    if _should_skip_prisma_generate(workspace_path):
+        logger.info("[setup_workspace] Skipping prisma generate (cached)")
+        return True
+    
+    try:
+        logger.info("[setup_workspace] Running prisma generate...")
+        result = subprocess.run(
+            "pnpm exec prisma generate",
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=60,
+            shell=True,
+        )
+        if result.returncode == 0:
+            logger.info("[setup_workspace] prisma generate successful")
+            _update_prisma_generate_cache(workspace_path)
+            return True
+        else:
+            logger.warning(f"[setup_workspace] prisma generate failed: {result.stderr[:200]}")
+            return False
+    except subprocess.TimeoutExpired:
+        logger.warning("[setup_workspace] prisma generate timed out")
+        return False
+    except Exception as e:
+        logger.warning(f"[setup_workspace] prisma generate error: {e}")
+        return False
+
+
+def _start_database(workspace_path: str) -> dict:
+    """Start postgres container (blocking). Returns db_info dict."""
+    try:
+        db_info = start_postgres_container()
+        if db_info:
+            update_env_file(workspace_path)
+            database_url = get_database_url()
+            logger.info(f"[setup_workspace] Database ready at port {db_info.get('port')}")
+            return {"ready": True, "url": database_url, "info": db_info}
+    except Exception as db_err:
+        logger.warning(f"[setup_workspace] Database setup failed: {db_err}")
+    return {"ready": False, "url": "", "info": None}
 
 
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
@@ -30,8 +201,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
         
         if state.get("workspace_ready"):
-            logger.info("[setup_workspace] Workspace already ready, skipping")
-            return state
+            logger.info("[setup_workspace] Workspace ready, checking dependencies...")
         
         short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
         branch_name = f"story_{short_id}"
@@ -66,6 +236,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         index_ready = False
         workspace_path = workspace_info.get("workspace_path", "")
         
+        # Load context (fast, sync)
         project_context = ""
         agents_md = ""
         if workspace_path:
@@ -77,73 +248,34 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             except Exception as ctx_err:
                 logger.warning(f"[setup_workspace] Failed to load project context: {ctx_err}")
         
-        # Load skill registry based on tech stack
-        tech_stack = state.get("tech_stack", "nextjs")  # Default to nextjs
+        # Load skill registry (fast, sync)
+        tech_stack = state.get("tech_stack", "nextjs")
         skill_registry = SkillRegistry.load(tech_stack)
         logger.info(f"[setup_workspace] Loaded SkillRegistry for '{tech_stack}' with {len(skill_registry.skills)} skills")
         
-        # Start postgres container for database operations
-        # Note: testcontainers auto-assigns random available port for each container
+        # Run postgres + pnpm install in PARALLEL
         database_ready = False
         database_url = ""
-        if workspace_path:
-            try:
-                db_info = start_postgres_container()
-                if db_info:
-                    update_env_file(workspace_path)
-                    database_url = get_database_url()
-                    database_ready = True
-                    logger.info(f"[setup_workspace] Database ready at port {db_info.get('port')}")
-            except Exception as db_err:
-                logger.warning(f"[setup_workspace] Database setup failed: {db_err}")
+        pnpm_success = True
         
-        # Run bun install if package.json exists
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
-        if pkg_json and os.path.exists(pkg_json):
-            try:
-                logger.info("[setup_workspace] Running bun install...")
-                result = subprocess.run(
-                    "bun install --ignore-scripts",
-                    cwd=workspace_path,
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8',
-                    errors='replace',
-                    timeout=120,
-                    shell=True,
-                )
-                if result.returncode == 0:
-                    logger.info("[setup_workspace] bun install successful")
-                else:
-                    logger.warning(f"[setup_workspace] bun install failed: {result.stderr[:200]}")
-            except subprocess.TimeoutExpired:
-                logger.warning("[setup_workspace] bun install timed out")
-            except Exception as e:
-                logger.warning(f"[setup_workspace] bun install error: {e}")
-        
-        # Run prisma generate if schema exists
-        schema_path = os.path.join(workspace_path, "prisma", "schema.prisma") if workspace_path else ""
-        if schema_path and os.path.exists(schema_path):
-            try:
-                logger.info("[setup_workspace] Running prisma generate...")
-                result = subprocess.run(
-                    "bunx prisma generate",
-                    cwd=workspace_path,
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8',
-                    errors='replace',
-                    timeout=60,
-                    shell=True,
-                )
-                if result.returncode == 0:
-                    logger.info("[setup_workspace] prisma generate successful")
-                else:
-                    logger.warning(f"[setup_workspace] prisma generate failed: {result.stderr[:200]}")
-            except subprocess.TimeoutExpired:
-                logger.warning("[setup_workspace] prisma generate timed out")
-            except Exception as e:
-                logger.warning(f"[setup_workspace] prisma generate error: {e}")
+        if workspace_path and pkg_json and os.path.exists(pkg_json):
+            loop = asyncio.get_event_loop()
+            
+            # Run both in parallel using thread pool
+            logger.info("[setup_workspace] Starting parallel setup (postgres + pnpm)...")
+            db_future = loop.run_in_executor(_executor, _start_database, workspace_path)
+            pnpm_future = loop.run_in_executor(_executor, _run_pnpm_install, workspace_path)
+            
+            # Wait for both
+            db_result, pnpm_success = await asyncio.gather(db_future, pnpm_future)
+            
+            database_ready = db_result.get("ready", False)
+            database_url = db_result.get("url", "")
+            
+            # Run prisma generate AFTER pnpm install completes
+            if pnpm_success:
+                await loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
         
         return {
             **state,
@@ -154,7 +286,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             "index_ready": index_ready,
             "agents_md": agents_md,
             "project_context": project_context,
-            # Skill registry
             "tech_stack": tech_stack,
             "skill_registry": skill_registry,
             "available_skills": skill_registry.get_skill_ids(),

@@ -1,4 +1,4 @@
-"""Story, Epic, Comment and related models."""
+"""Story, Epic, StoryMessage and related models."""
 
 from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING
@@ -98,7 +98,7 @@ class Story(BaseModel, table=True):
         sa_relationship_kwargs={"remote_side": "Story.id"},
     )
     children: list["Story"] = Relationship(back_populates="parent")
-    comments: list["Comment"] = Relationship(
+    messages: list["StoryMessage"] = Relationship(
         back_populates="story",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
@@ -137,19 +137,26 @@ class Story(BaseModel, table=True):
         return (current_time - status_start_time).total_seconds() / 3600
 
 
-class Comment(BaseModel, table=True):
-    __tablename__ = "comments"
+class StoryMessage(BaseModel, table=True):
+    """Messages in story channel from agents, users, or system."""
+    __tablename__ = "story_messages"
 
-    backlog_item_id: UUID = Field(
-        foreign_key="stories.id", nullable=False, ondelete="CASCADE"
+    story_id: UUID = Field(
+        foreign_key="stories.id", nullable=False, ondelete="CASCADE", index=True
     )
-    commenter_id: UUID = Field(
-        foreign_key="users.id", nullable=False, ondelete="CASCADE"
-    )
-    content: str
+    
+    # Author info
+    author_type: str  # "agent" | "user" | "system"
+    author_name: str
+    agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="SET NULL")
+    user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
+    
+    # Content
+    content: str = Field(sa_column=Column(Text))
+    message_type: str = Field(default="update")  # "update" | "test_result" | "progress" | "error"
+    structured_data: dict | None = Field(default=None, sa_column=Column(JSON))
 
-    story: Story = Relationship(back_populates="comments")
-    commenter: "User" = Relationship(back_populates="comments")
+    story: Story = Relationship(back_populates="messages")
 
 
 class IssueActivity(BaseModel, table=True):
