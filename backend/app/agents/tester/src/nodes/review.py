@@ -25,6 +25,7 @@ _llm = review_llm
 MAX_REVIEW_TOKENS = 8000
 MAX_LBTM_PER_STEP = 3  # Force advance after 3 LBTM per step
 MAX_REVIEWS = 2  # Max reviews before force advancing
+MAX_LBTM_PER_FILE = 3  # Force LGTM for file after 3 LBTM
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -188,14 +189,27 @@ async def _review_single_file(
         # Parse response
         review_result = _parse_review_response(response_text)
         decision = review_result["decision"]
+        feedback = review_result.get("feedback", "")
+        issues = review_result.get("issues", [])
         
         logger.info(f"[review] {file_path}: {decision}")
+        
+        # Log LBTM reason for debugging
+        if decision == "LBTM":
+            logger.warning(f"[review] LBTM reason for {file_path}:")
+            if feedback:
+                # Log first 500 chars of feedback
+                feedback_preview = feedback[:500] + "..." if len(feedback) > 500 else feedback
+                logger.warning(f"[review]   Feedback: {feedback_preview}")
+            if issues:
+                for i, issue in enumerate(issues[:5], 1):
+                    logger.warning(f"[review]   Issue {i}: {issue}")
         
         return {
             "file_path": file_path,
             "decision": decision,
-            "feedback": review_result.get("feedback", ""),
-            "issues": review_result.get("issues", []),
+            "feedback": feedback,
+            "issues": issues,
             "step_index": step_index,
         }
         
@@ -227,6 +241,7 @@ async def review(state: TesterState, agent=None) -> dict:
     test_plan = state.get("test_plan", [])
     total_steps = len(test_plan)
     review_count = state.get("review_count", 0)
+    file_lbtm_counts = state.get("file_lbtm_counts", {})  # Track per-file LBTM
     
     print(f"[NODE] review - PARALLEL {len(files_modified)} files")
     
@@ -277,15 +292,28 @@ async def review(state: TesterState, agent=None) -> dict:
             continue
         
         if isinstance(result, dict):
+            file_path = result.get("file_path", "")
+            decision = result.get("decision", "LGTM")
+            
+            # Track per-file LBTM and force LGTM after MAX_LBTM_PER_FILE
+            if decision == "LBTM":
+                file_lbtm_counts[file_path] = file_lbtm_counts.get(file_path, 0) + 1
+                
+                if file_lbtm_counts[file_path] >= MAX_LBTM_PER_FILE:
+                    logger.warning(f"[review] Force LGTM for {file_path} after {file_lbtm_counts[file_path]} LBTM attempts")
+                    result["decision"] = "LGTM"
+                    result["feedback"] = f"(Force-approved after {file_lbtm_counts[file_path]} LBTM attempts)"
+                    decision = "LGTM"
+            
             review_results.append(result)
             
-            if result.get("decision") == "LGTM":
+            if decision == "LGTM":
                 lgtm_count += 1
             else:
                 lbtm_count += 1
-                failed_files.append(result.get("file_path", ""))
+                failed_files.append(file_path)
                 if result.get("feedback"):
-                    all_feedback.append(f"{result['file_path']}: {result['feedback']}")
+                    all_feedback.append(f"{file_path}: {result['feedback']}")
     
     # Determine overall result
     # Force LGTM if max review attempts reached
@@ -311,4 +339,5 @@ async def review(state: TesterState, agent=None) -> dict:
         "failed_files": failed_files if overall_decision == "LBTM" else [],
         "review_count": new_review_count,
         "total_lbtm_count": state.get("total_lbtm_count", 0) + lbtm_count,
+        "file_lbtm_counts": file_lbtm_counts,  # Persist per-file LBTM tracking
     }

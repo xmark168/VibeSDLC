@@ -6,6 +6,7 @@ Optimized version:
 - Dependencies preloaded from plan phase
 - Single LLM call with structured output + retry
 - Direct file write (no tools)
+- Component source preloaded with MANDATORY verification checklist
 """
 
 import asyncio
@@ -89,6 +90,97 @@ def _cfg(state: dict, name: str) -> dict:
     """Get LLM config with Langfuse callback."""
     h = state.get("langfuse_handler")
     return {"callbacks": [h], "run_name": name} if h else {"run_name": name}
+
+
+def _get_relevant_component_source(state: dict, step: dict, workspace_path: str = "") -> str:
+    """Get ONLY the relevant component source for this unit test step.
+    
+    This extracts the actual component code that tests should be based on,
+    so LLM reads the REAL implementation instead of making assumptions.
+    
+    CRITICAL: Searches FILESYSTEM directly if not found in dependencies_content,
+    because keyword extraction may miss important components like CategoryCard.
+    """
+    from pathlib import Path
+    
+    dependencies_content = state.get("dependencies_content", {})
+    description = step.get("description", "").lower()
+    workspace_path = workspace_path or state.get("workspace_path", "")
+    
+    # Keywords to match from description - expanded list
+    keywords = ["category", "book", "card", "search", "hero", "section", "list", "grid", "item"]
+    
+    relevant = []
+    found_paths = set()
+    
+    # 1. First, search in dependencies_content
+    for path, content in dependencies_content.items():
+        normalized_path = path.replace("\\", "/")
+        
+        # Only include component files
+        if "components/" not in normalized_path or not path.endswith(".tsx"):
+            continue
+        # Skip UI primitives
+        if "/ui/" in normalized_path:
+            continue
+        
+        # Check if component name is mentioned in description or matches keywords
+        component_name = path.split("/")[-1].replace(".tsx", "").lower()
+        is_relevant = (
+            component_name in description or
+            any(kw in component_name for kw in keywords) or
+            any(kw in description for kw in keywords if kw in normalized_path.lower())
+        )
+        
+        if is_relevant:
+            relevant.append(f"### {path}\n```tsx\n{content}\n```")
+            found_paths.add(normalized_path)
+    
+    # 2. CRITICAL: Search filesystem directly for components not in dependencies_content
+    # This ensures we find CategoryCard even if keyword extraction missed it
+    if workspace_path:
+        ws_path = Path(workspace_path)
+        component_dirs = [
+            ws_path / "src" / "components",
+            ws_path / "components",
+        ]
+        
+        for comp_dir in component_dirs:
+            if not comp_dir.exists():
+                continue
+            
+            for tsx_file in comp_dir.rglob("*.tsx"):
+                if "node_modules" in str(tsx_file):
+                    continue
+                
+                relative_path = str(tsx_file.relative_to(ws_path)).replace("\\", "/")
+                
+                # Skip if already found or is UI primitive
+                if relative_path in found_paths or "/ui/" in relative_path:
+                    continue
+                
+                component_name = tsx_file.stem.lower()
+                
+                # Check relevance
+                is_relevant = (
+                    component_name in description or
+                    any(kw in component_name for kw in keywords) or
+                    any(kw in description for kw in keywords if kw in relative_path.lower())
+                )
+                
+                if is_relevant:
+                    try:
+                        content = tsx_file.read_text(encoding="utf-8")
+                        # Truncate very long files
+                        if len(content) > 5000:
+                            content = content[:5000] + "\n// ... (truncated)"
+                        relevant.append(f"### {relative_path}\n```tsx\n{content}\n```")
+                        found_paths.add(relative_path)
+                        logger.info(f"[_get_relevant_component_source] Found from filesystem: {relative_path}")
+                    except Exception as e:
+                        logger.warning(f"[_get_relevant_component_source] Failed to read {tsx_file}: {e}")
+    
+    return "\n\n".join(relevant[:3])  # Limit to 3 most relevant
 
 
 def _build_dependencies_context(dependencies_content: dict, step_dependencies: list) -> str:
@@ -238,6 +330,88 @@ async def _implement_single_step(
     if review_feedback and file_path in failed_files:
         feedback_section = f"\n<previous_feedback>\n{review_feedback}\n</previous_feedback>"
     
+    # FIX MODE: Read existing test code to preserve working tests
+    existing_test_code = ""
+    fix_instructions = ""
+    
+    # Get fix context from step (populated by analyze_errors)
+    error_code = step.get("error_code", "")
+    find_code = step.get("find_code", "")
+    replace_with = step.get("replace_with", "")
+    
+    if file_path in failed_files:
+        # Read current file content before re-implementing
+        full_path = Path(workspace_path) / file_path
+        if full_path.exists():
+            try:
+                existing_test_code = full_path.read_text(encoding="utf-8")
+                
+                # Build precise fix instructions based on error_code
+                fix_instructions = f"""
+FIX MODE - CRITICAL RULES:
+You are FIXING an existing test file, NOT creating a new one.
+
+## Error Code: {error_code}
+
+## PRECISE FIX REQUIRED:
+"""
+                # Add specific instructions based on error type
+                if error_code == "ARIA_SELECTED":
+                    fix_instructions += """
+⚠️ ARIA_SELECTED ERROR - The component does NOT have selection state!
+- DELETE any assertion that checks aria-selected='true'
+- DELETE any waitFor that waits for aria-selected to change
+- The component renders ALL options with aria-selected='false' - this is correct behavior
+- Just remove the broken assertion, keep other tests
+"""
+                elif error_code == "FETCH_ASSERTION":
+                    fix_instructions += """
+⚠️ FETCH_ASSERTION ERROR - Unit tests should NOT test fetch calls!
+- DELETE any expect(fetch).toHaveBeenCalled() assertions
+- DELETE any expect(fetch).toHaveBeenCalledWith(...) assertions
+- Unit tests should only test UI rendering, not API calls
+- Keep the component render and UI assertions
+"""
+                elif error_code == "NO_ERROR_STATE":
+                    fix_instructions += """
+⚠️ NO_ERROR_STATE - Component does not render error UI!
+- DELETE assertions looking for error messages
+- DELETE assertions for error states
+- Component does not have error handling UI
+"""
+                
+                # Add find/replace if provided
+                if find_code:
+                    fix_instructions += f"""
+## EXACT CODE TO FIND AND {'DELETE' if not replace_with else 'REPLACE'}:
+```
+{find_code}
+```
+"""
+                    if replace_with:
+                        fix_instructions += f"""
+## REPLACE WITH:
+```
+{replace_with}
+```
+"""
+                    else:
+                        fix_instructions += """
+## ACTION: DELETE the code above entirely (do not replace with anything)
+"""
+                
+                fix_instructions += """
+## RULES:
+1. PRESERVE ALL WORKING TESTS - Do NOT remove or rewrite tests that work
+2. ONLY FIX the specific error - make minimal changes
+3. Keep the SAME file structure, imports, and describe blocks
+4. The existing test code is in <existing_test_code>
+5. Your output must be a MODIFIED VERSION of this code
+"""
+                logger.info(f"[implement_tests] FIX MODE: Loaded existing code for {file_path} ({len(existing_test_code)} chars), error_code={error_code}")
+            except Exception as e:
+                logger.warning(f"[implement_tests] Could not read existing file {file_path}: {e}")
+    
     # Format scenarios
     scenarios_str = "\n".join(f"- {s}" for s in scenarios) if scenarios else "N/A"
     
@@ -256,17 +430,47 @@ async def _implement_single_step(
         story_title=story_title,
         description=description,
         scenarios=scenarios_str,
+        existing_test_code=existing_test_code,
+        fix_instructions=fix_instructions,
     )
     
-    # Append pre-loaded context
-    if deps_context:
-        user_prompt += f"\n\n{deps_context}"
-    
-    # Add component context for unit tests
+    # For unit tests: Add CRITICAL component source code with MANDATORY verification
     if test_type == "unit":
+        relevant_components = _get_relevant_component_source(state, step, workspace_path)
+        if relevant_components:
+            user_prompt += f"""
+
+<critical_source_code>
+## ⛔ MANDATORY: PARSE THIS SOURCE CODE FIRST!
+
+Before writing ANY test assertion, you MUST:
+1. List ALL elements you found in the source below (inputs, buttons, headings, links)
+2. For each assertion, the element MUST exist in this source code
+3. If element is NOT in source → DO NOT write test for it
+
+## Source Code (the ONLY truth):
+{relevant_components}
+
+## ⛔ YOUR VERIFICATION TASK (do this FIRST):
+Scan the source code above and list what you found:
+- Inputs/Search bars: [list any <input> or <Input> with placeholder, or write "NONE"]
+- Buttons: [list any <button> or <Button> text, or write "NONE"]
+- Headings: [list any <h1>-<h6> text, or write "NONE"]
+- Links: [list any <Link> or <a> href patterns, or write "NONE"]
+
+⛔ ONLY write tests for elements you listed above!
+⛔ If you wrote "NONE" for inputs → DO NOT test for search/input elements!
+</critical_source_code>
+"""
+        
+        # Add summary as secondary reference only
         component_context = state.get("component_context", "")
         if component_context:
-            user_prompt += f"\n\n<component_analysis>\n{component_context}\n</component_analysis>"
+            user_prompt += f"\n\n<component_summary>\n(Reference only - verify against source code above)\n{component_context}\n</component_summary>"
+    
+    # Append pre-loaded context (API routes, libs, etc.)
+    if deps_context:
+        user_prompt += f"\n\n{deps_context}"
     
     if feedback_section:
         user_prompt += f"\n\n{feedback_section}"

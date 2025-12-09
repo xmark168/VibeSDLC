@@ -56,6 +56,61 @@ def _slugify(text: str) -> str:
     return text[:50] if text else "unnamed"
 
 
+def _extract_feature_name(story_title: str) -> str:
+    """Extract feature name from story title for test file naming.
+    
+    Examples:
+    - "As a user, I want to see featured books" -> "featured-books"
+    - "Homepage with categories and search" -> "homepage"
+    - "User can add items to cart" -> "cart"
+    
+    This creates cleaner, feature-based test file names instead of long slugs.
+    """
+    title_lower = story_title.lower()
+    
+    # Common feature keywords to extract (priority order)
+    feature_keywords = [
+        # E-commerce
+        "cart", "checkout", "payment", "order", "product", "catalog",
+        # Content
+        "book", "category", "categories", "search", "featured", "bestseller",
+        "new-arrival", "recommendation",
+        # User
+        "auth", "login", "register", "profile", "account", "user",
+        # Navigation
+        "homepage", "home", "navigation", "menu", "header", "footer",
+        # Other
+        "dashboard", "admin", "settings", "notification",
+    ]
+    
+    # Try to find a matching keyword
+    for keyword in feature_keywords:
+        if keyword in title_lower:
+            # Check for compound keywords
+            if keyword == "book" and "featured" in title_lower:
+                return "featured-books"
+            if keyword == "book" and "bestseller" in title_lower:
+                return "bestsellers"
+            if keyword == "book" and "new" in title_lower:
+                return "new-arrivals"
+            if keyword == "category" or keyword == "categories":
+                return "categories"
+            return keyword.replace("_", "-")
+    
+    # Fallback: extract first meaningful noun from title
+    # Remove common prefixes like "As a user, I want to..."
+    cleaned = re.sub(r'^(as a \w+,?\s*)?(i want to\s*)?(be able to\s*)?(see|view|browse|display|show)?\s*', '', title_lower)
+    
+    # Get first few words
+    words = re.findall(r'\b[a-z]{3,}\b', cleaned)
+    if words:
+        # Take first 2 meaningful words
+        return '-'.join(words[:2])
+    
+    # Final fallback
+    return _slugify(story_title)[:20] or "feature"
+
+
 # =============================================================================
 # VALIDATION
 # =============================================================================
@@ -700,6 +755,15 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         api_source_code = _load_api_source_code(workspace_path, existing_routes)
         logger.info(f"[plan_tests] Loaded {len(api_source_code)} chars of API source code")
     
+    # Find and analyze components for unit tests BEFORE LLM call
+    # This ensures LLM sees component info when creating scenarios
+    keywords = _extract_keywords_from_stories(stories) if stories else []
+    logger.info(f"[plan_tests] Extracted keywords: {keywords}")
+    
+    unit_test_components = _find_components_for_unit_test(workspace_path, keywords)
+    component_context = _format_component_context(unit_test_components)
+    logger.info(f"[plan_tests] Analyzed {len(unit_test_components)} components for unit tests")
+    
     try:
         # Call LLM to create test plan
         response = await _llm.ainvoke(
@@ -713,6 +777,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
                     test_structure=json.dumps(test_structure, indent=2),
                     existing_routes=existing_routes_text,
                     api_source_code=api_source_code,
+                    component_context=component_context,
                 )),
             ],
             config=_cfg(state, "plan_tests"),
@@ -725,34 +790,74 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         integration_folder = "src/__tests__/integration"
         unit_folder = "src/__tests__/unit"
         
-        # Validate and fix each step
+        # Validate and CONSOLIDATE steps - enforce MAX 2 files per story (1 IT + 1 UT)
+        # Group steps by story_id and test type, then merge
+        from collections import defaultdict
+        
+        steps_by_story_type = defaultdict(list)
+        
+        for step in test_plan:
+            story_id = step.get("story_id", "default")
+            test_type = step.get("type", "integration")
+            key = (story_id, test_type)
+            steps_by_story_type[key].append(step)
+        
         validated_plan = []
-        for i, step in enumerate(test_plan):
-            step["order"] = step.get("order", i + 1)
-            # Keep LLM's test type decision, default to integration
-            step["type"] = step.get("type", "integration")
+        
+        for (story_id, test_type), steps in steps_by_story_type.items():
+            # Take first step as base, merge scenarios from others
+            base_step = steps[0].copy()
             
-            story_title = step.get("story_title", "unknown")
-            slug = _slugify(story_title)
+            # Merge scenarios from all steps of same type
+            all_scenarios = []
+            all_dependencies = []
+            descriptions = []
+            
+            for s in steps:
+                scenarios = s.get("scenarios", [])
+                if isinstance(scenarios, list):
+                    all_scenarios.extend(scenarios)
+                deps = s.get("dependencies", [])
+                if isinstance(deps, list):
+                    all_dependencies.extend(deps)
+                desc = s.get("description", "")
+                if desc:
+                    descriptions.append(desc)
+            
+            # Deduplicate - limit scenarios by test type
+            # Integration: 3 scenarios (branch coverage)
+            # Unit: 2 scenarios (render correctness)
+            max_scenarios = 2 if test_type == "unit" else 3
+            all_scenarios = list(dict.fromkeys(all_scenarios))[:max_scenarios]
+            all_dependencies = list(dict.fromkeys(all_dependencies))
+            
+            story_title = base_step.get("story_title", "unknown")
+            feature_name = _extract_feature_name(story_title)
             
             # Skip invalid steps (config/setup related)
             if not _is_valid_story_for_testing({"title": story_title}):
                 logger.warning(f"[plan_tests] Skipping invalid step: {story_title}")
                 continue
             
-            # ALWAYS regenerate file path based on test type
-            if step["type"] == "unit":
-                step["file_path"] = f"{unit_folder}/story-{slug}.test.tsx"
-                step["skills"] = ["unit-test"]
+            # Set consolidated values
+            base_step["scenarios"] = all_scenarios
+            base_step["dependencies"] = all_dependencies
+            base_step["description"] = descriptions[0] if descriptions else f"Test {test_type} for {story_title}"
+            
+            # Set file path - feature-based naming (e.g., "featured-books.test.ts")
+            if test_type == "unit":
+                base_step["file_path"] = f"{unit_folder}/{feature_name}.test.tsx"
+                base_step["skills"] = ["unit-test"]
             else:
-                step["file_path"] = f"{integration_folder}/story-{slug}.test.ts"
-                step["skills"] = ["integration-test"]
+                base_step["file_path"] = f"{integration_folder}/{feature_name}.test.ts"
+                base_step["skills"] = ["integration-test"]
             
-            # Dependencies will be auto-discovered from source files
-            if "dependencies" not in step:
-                step["dependencies"] = []
+            logger.info(f"[plan_tests] Feature name: '{feature_name}' from story: '{story_title[:40]}...'")
             
-            validated_plan.append(step)
+            validated_plan.append(base_step)
+            
+            if len(steps) > 1:
+                logger.info(f"[plan_tests] Consolidated {len(steps)} {test_type} steps into 1 file for story: {story_title[:30]}")
         
         # Use validated plan
         test_plan = validated_plan
@@ -765,40 +870,38 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         if test_plan and (not has_integration or not has_unit):
             first_story = stories[0] if stories else {}
             story_title = first_story.get("title", "Unknown Story")
-            slug = _slugify(story_title)
+            feature_name = _extract_feature_name(story_title)
             
             if not has_integration:
-                # Add integration test
+                # Add integration test with branch coverage scenarios
                 logger.info(f"[plan_tests] Auto-adding integration test for coverage")
                 test_plan.append({
                     "type": "integration",
                     "story_id": first_story.get("id", ""),
                     "story_title": story_title,
-                    "file_path": f"{integration_folder}/story-{slug}.test.ts",
-                    "description": f"Test API endpoints related to: {story_title[:50]}",
+                    "file_path": f"{integration_folder}/{feature_name}.test.ts",
+                    "description": f"Test API with branch coverage: {story_title[:40]}",
                     "scenarios": [
-                        "returns success response with valid data",
-                        "returns empty array when no data found",
-                        "handles error gracefully"
+                        "returns data on success (happy path)",
+                        "returns empty array when no data (empty case)",
+                        "handles error gracefully (error case)"
                     ],
                     "skills": ["integration-test"],
                     "dependencies": [],
                 })
             
             if not has_unit:
-                # Add unit test
+                # Add unit test - focus on render correctness (not branch coverage)
                 logger.info(f"[plan_tests] Auto-adding unit test for coverage")
                 test_plan.append({
                     "type": "unit",
                     "story_id": first_story.get("id", ""),
                     "story_title": story_title,
-                    "file_path": f"{unit_folder}/story-{slug}.test.tsx",
-                    "description": f"Test UI component related to: {story_title[:50]}",
+                    "file_path": f"{unit_folder}/{feature_name}.test.tsx",
+                    "description": f"Test component renders correctly: {story_title[:40]}",
                     "scenarios": [
-                        "renders correctly with props",
-                        "displays data from API",
-                        "handles loading state",
-                        "handles empty state"
+                        "renders correctly with valid props",
+                        "handles user interaction"
                     ],
                     "skills": ["unit-test"],
                     "dependencies": [],
@@ -816,11 +919,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         dependencies_content = _preload_test_dependencies(workspace_path, test_plan, stories)
         logger.info(f"[plan_tests] Pre-loaded {len(dependencies_content)} dependency files")
         
-        # Find and analyze components for unit tests (targeted discovery)
-        keywords = _extract_keywords_from_stories(stories) if stories else []
-        unit_test_components = _find_components_for_unit_test(workspace_path, keywords)
-        component_context = _format_component_context(unit_test_components)
-        logger.info(f"[plan_tests] Analyzed {len(unit_test_components)} components for unit tests")
+        # component_context already created before LLM call (used for scenario planning)
         
         # Build message
         msg = f"📋 **Test Plan** ({total_steps} bước)\n"

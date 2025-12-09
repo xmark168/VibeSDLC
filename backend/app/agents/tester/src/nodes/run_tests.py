@@ -51,21 +51,17 @@ def _detect_package_manager(project_path: Path) -> tuple[str, str]:
 def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dict]:
     """Detect test commands based on test files.
     
-    Always runs tests for specific files only (story's test files).
-    Does NOT run entire test suite.
-    Supports both integration tests (.test.ts) and unit tests (.test.tsx).
+    Returns SINGLE command with ALL test files - Jest handles parallelism internally.
+    This is faster than running separate commands for integration/unit tests.
     
     Args:
         project_path: Path to workspace
         test_files: List of test file paths to run
     
-    Returns list of {type, command, files} dicts.
+    Returns list with single {type, command, files} dict.
     """
-    commands = []
-    
-    # Filter valid test files - both integration (.test.ts) and unit (.test.tsx)
-    integration_files = []
-    unit_files = []
+    # Filter valid test files that exist
+    valid_files = []
     
     for file_path in test_files:
         if not file_path:
@@ -76,39 +72,24 @@ def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dic
             logger.warning(f"[_detect_test_commands] File not found: {file_path}")
             continue
         
-        # Categorize by extension
-        if file_path.endswith('.test.ts'):
-            integration_files.append(file_path)
-        elif file_path.endswith('.test.tsx'):
-            unit_files.append(file_path)
+        # Accept both .test.ts (integration) and .test.tsx (unit)
+        if file_path.endswith('.test.ts') or file_path.endswith('.test.tsx'):
+            valid_files.append(file_path)
     
-    pm, run_cmd = _detect_package_manager(project_path)
+    if not valid_files:
+        return []
     
-    # Integration tests command
-    if integration_files:
-        files_arg = " ".join(f'"{f}"' for f in integration_files)
-        cmd = f"pnpm exec jest {files_arg} --passWithNoTests"
-        
-        commands.append({
-            "type": "integration",
-            "command": cmd,
-            "files": integration_files,
-        })
-        logger.info(f"[_detect_test_commands] Integration: {cmd}")
+    # SINGLE command with ALL test files - Jest runs them in parallel
+    files_arg = " ".join(f'"{f}"' for f in valid_files)
+    cmd = f"pnpm exec jest {files_arg} --passWithNoTests"
     
-    # Unit tests command
-    if unit_files:
-        files_arg = " ".join(f'"{f}"' for f in unit_files)
-        cmd = f"pnpm exec jest {files_arg} --passWithNoTests"
-        
-        commands.append({
-            "type": "unit",
-            "command": cmd,
-            "files": unit_files,
-        })
-        logger.info(f"[_detect_test_commands] Unit: {cmd}")
+    logger.info(f"[_detect_test_commands] Running {len(valid_files)} test files in parallel: {cmd[:100]}...")
     
-    return commands
+    return [{
+        "type": "all",
+        "command": cmd,
+        "files": valid_files,
+    }]
 
 
 def _parse_test_output(stdout: str, stderr: str, test_type: str) -> dict:

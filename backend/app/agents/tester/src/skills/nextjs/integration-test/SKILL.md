@@ -5,6 +5,148 @@ description: Write integration tests with Jest for API routes and database opera
 
 # Integration Test (Jest)
 
+## Standard Structure
+
+```
+src/__tests__/integration/
+├── books.test.ts         # All book-related API tests
+├── categories.test.ts    # All category API tests
+├── auth.test.ts          # Authentication API tests
+└── cart.test.ts          # Cart/checkout API tests
+```
+
+### Naming Convention
+- **File**: `{feature}.test.ts` (e.g., `featured-books.test.ts`, `categories.test.ts`)
+- **Describe**: `{Feature} API` (e.g., `Books API`, `Categories API`)
+- **Nested describe**: `{HTTP_METHOD} /api/{route}` (e.g., `GET /api/books/featured`)
+
+### One File Per Feature
+Consolidate ALL related API tests into ONE file:
+```typescript
+// ✅ CORRECT: One file for all book APIs
+// src/__tests__/integration/books.test.ts
+describe('Books API', () => {
+  describe('GET /api/books/featured', () => {...});
+  describe('GET /api/books/bestsellers', () => {...});
+});
+
+// ❌ WRONG: Multiple files for same feature
+// featured-books.test.ts
+// bestsellers.test.ts
+```
+
+---
+
+## ⭐ Branch Coverage Strategy (3-4 tests per API)
+
+Focus on **BRANCH COVERAGE**, not quantity! Each API needs only 3 tests:
+
+| Branch | Test Case | Priority |
+|--------|-----------|----------|
+| Happy path | Valid request → success data | ⭐⭐⭐ MUST |
+| Empty case | No data → empty array | ⭐⭐⭐ MUST |
+| Error case | DB error → error response | ⭐⭐ SHOULD |
+
+### Example: 3 Tests = 100% Branch Coverage
+```typescript
+describe('GET /api/books/featured', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  // ✅ Branch 1: Happy path
+  it('returns books when data exists', async () => {
+    (prisma.book.findMany as jest.Mock).mockResolvedValue([
+      { id: '1', title: 'Book 1' }
+    ]);
+    const response = await GET();
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.data).toHaveLength(1);
+  });
+
+  // ✅ Branch 2: Empty case
+  it('returns empty array when no books', async () => {
+    (prisma.book.findMany as jest.Mock).mockResolvedValue([]);
+    const response = await GET();
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.data).toEqual([]);
+  });
+
+  // ✅ Branch 3: Error case
+  it('handles database error', async () => {
+    (prisma.book.findMany as jest.Mock).mockRejectedValue(new Error('DB Error'));
+    const response = await GET();
+    const data = await response.json();
+    expect(data.success).toBe(false);
+  });
+});
+// Total: 3 tests covering ALL branches!
+```
+
+### ❌ Anti-pattern: Redundant Tests
+```typescript
+// ❌ WRONG: Multiple tests for same branch (happy path)
+it('returns featured books', async () => {...});     // Happy path
+it('returns books with correct fields', async () => {...}); // Same branch!
+it('returns books sorted by date', async () => {...});      // Same branch!
+it('returns max 10 books', async () => {...});              // Same branch!
+// 4 tests but only 1 branch covered!
+```
+
+---
+
+## ⭐ FLEXIBLE ASSERTIONS (Avoid Hardcoded Values)
+
+**NEVER hardcode calculated values** - they cause mock-assertion mismatch!
+
+```typescript
+// ❌ WRONG - Hardcoded value causes failures
+const mockReviews = [{ rating: 5 }, { rating: 4 }];  // avg = 4.5
+expect(data.averageRating).toBe(5);  // FAILS! Mock gives 4.5, not 5
+
+// ❌ WRONG - Hardcoded specific values
+expect(data.data[0].price).toBe(29.99);
+expect(data.data[0].totalSold).toBe(100);
+expect(data.data[0].averageRating).toBe(4.5);
+```
+
+### ✅ Use Flexible Matchers Instead:
+
+```typescript
+// ✅ Check structure exists (RECOMMENDED)
+expect(data.data[0]).toMatchObject({
+  id: expect.any(String),
+  title: expect.any(String),
+  price: expect.any(Number),
+  averageRating: expect.any(Number),
+});
+
+// ✅ Check array has items
+expect(data.data).toHaveLength(1);  // or toBeGreaterThan(0)
+
+// ✅ Check value ranges (not exact)
+expect(data.data[0].averageRating).toBeGreaterThanOrEqual(0);
+expect(data.data[0].averageRating).toBeLessThanOrEqual(5);
+
+// ✅ Check field exists
+expect(data.data[0].totalSold).toBeDefined();
+expect(data.data[0].category).toBeDefined();
+
+// ✅ Check boolean/success flags (OK to be exact)
+expect(data.success).toBe(true);
+```
+
+### Quick Reference:
+
+| Instead of | Use |
+|------------|-----|
+| `.toBe(4.5)` | `.toBeGreaterThanOrEqual(0)` |
+| `.toBe(100)` | `.toBeDefined()` or `expect.any(Number)` |
+| `.toBe('exact string')` | `.toContain('substring')` or `expect.any(String)` |
+| `.toEqual({...exact...})` | `.toMatchObject({...partial...})` |
+
+---
+
 ## ⛔ CRITICAL: NEVER CHECK response.status
 
 **NextResponse.status is ALWAYS undefined in Jest environment.** This is a known limitation.
@@ -58,6 +200,69 @@ expect(data.data).toEqual(expected); // Check actual data
 ```
 
 **BEST PRACTICE:** For integration tests, mock at the database layer (Prisma) and check `data.success` or `data.error` instead of `response.status`.
+
+## ⚠️ API Response Wrapper - UNDERSTAND THE FLOW
+
+This project uses `successResponse()` helper that wraps data. Understand this flow:
+
+```typescript
+// 1. Prisma mock returns RAW data (what database would return)
+mockFindMany.mockResolvedValue([
+  { id: '1', title: 'Book 1', author: 'Author 1' },
+  { id: '2', title: 'Book 2', author: 'Author 2' },
+]);
+
+// 2. Route handler calls Prisma, gets raw data, wraps using successResponse()
+// Inside route.ts: return successResponse(books);
+// This returns: { success: true, data: [{id: '1'...}, {id: '2'...}] }
+
+// 3. Test asserts on WRAPPED response structure
+const response = await GET(request);
+const data = await response.json();
+
+// ✅ CORRECT - Check wrapped response
+expect(data.success).toBe(true);           // Check success flag
+expect(data.data).toHaveLength(2);         // Check data array length
+expect(data.data[0].title).toBe('Book 1'); // Check data content
+
+// ⛔ WRONG - Checking as if raw array (COMMON MISTAKE!)
+expect(data).toHaveLength(2);              // FAILS! data is object, not array
+expect(data[0].title).toBe('Book 1');      // FAILS! data[0] is undefined
+expect(data.length).toBe(2);               // FAILS! data.length is undefined
+```
+
+**REMEMBER:** `data` is always `{ success: boolean, data: T }`, never raw array!
+
+## ⚠️ GET Routes with Query Parameters (searchParams)
+
+Many Next.js routes use `request.nextUrl.searchParams`. You MUST use `NextRequest`:
+
+```typescript
+import { NextRequest } from 'next/server';
+import { GET } from '@/app/api/books/search/route';
+
+it('searches books by query', async () => {
+  // ✅ CORRECT - Create NextRequest with URL containing query params
+  const request = new NextRequest('http://localhost/api/books/search?q=math&page=1');
+  
+  const response = await GET(request);
+  const data = await response.json();
+  
+  expect(data.success).toBe(true);
+  expect(data.data).toBeDefined();
+});
+
+// ❌ WRONG - Basic Request doesn't have nextUrl property
+const request = new Request('http://localhost/api/search');
+// In route.ts: request.nextUrl.searchParams.get('q')
+// ERROR: Cannot read property 'searchParams' of undefined!
+
+// ❌ WRONG - Missing query params in URL
+const request = new NextRequest('http://localhost/api/search');
+// route expects ?q=... but URL has no params → validation error or empty results
+```
+
+**RULE:** If route uses `request.nextUrl.searchParams`, you MUST use `NextRequest` with query params in URL.
 
 ## ⚠️ TYPESCRIPT STRICT RULES
 ```typescript

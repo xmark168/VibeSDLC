@@ -90,6 +90,7 @@ class TesterState(TypedDict, total=False):
     step_lbtm_counts: Dict[str, int]  # Per-step LBTM tracking {"0": 2, "1": 1}
     review_results: List[Dict]        # Individual results [{file_path, decision, feedback}]
     failed_files: List[str]           # Files that got LBTM (for re-implementation)
+    file_lbtm_counts: Dict[str, int]  # Per-file LBTM tracking {"path/file.test.ts": 2}
     implementation_results: List[Dict]  # Results from parallel implement
     
     # ==========================================================================

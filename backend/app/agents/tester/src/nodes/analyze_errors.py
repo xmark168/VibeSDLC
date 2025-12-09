@@ -20,6 +20,82 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# COMPONENT SOURCE LOADING FOR UNIT TESTS
+# =============================================================================
+
+def _extract_component_imports(test_content: str) -> List[str]:
+    """Extract component import paths from test file.
+    
+    Returns list of component paths like:
+    - src/components/home/HeroSection.tsx
+    - src/components/search/SearchBar.tsx
+    """
+    components = []
+    
+    # Pattern: import { X } from '@/components/...'
+    import_pattern = r"import\s+\{[^}]+\}\s+from\s+['\"]@/components/([^'\"]+)['\"]"
+    for match in re.finditer(import_pattern, test_content):
+        component_path = f"src/components/{match.group(1)}"
+        if not component_path.endswith('.tsx') and not component_path.endswith('.ts'):
+            component_path += '.tsx'
+        components.append(component_path)
+    
+    # Pattern: import X from '@/components/...'
+    default_import_pattern = r"import\s+\w+\s+from\s+['\"]@/components/([^'\"]+)['\"]"
+    for match in re.finditer(default_import_pattern, test_content):
+        component_path = f"src/components/{match.group(1)}"
+        if not component_path.endswith('.tsx') and not component_path.endswith('.ts'):
+            component_path += '.tsx'
+        if component_path not in components:
+            components.append(component_path)
+    
+    return components
+
+
+def _load_component_sources(workspace_path: str, component_paths: List[str]) -> str:
+    """Load component source code for comparison with test assertions.
+    
+    Returns formatted string with component sources.
+    """
+    if not workspace_path or not component_paths:
+        return ""
+    
+    sources = []
+    for comp_path in component_paths[:3]:  # Limit to 3 components
+        full_path = os.path.join(workspace_path, comp_path)
+        if os.path.exists(full_path):
+            try:
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                # Truncate to 2000 chars per component
+                if len(content) > 2000:
+                    content = content[:2000] + "\n... (truncated)"
+                sources.append(f"### {comp_path}\n```tsx\n{content}\n```")
+                logger.info(f"[_load_component_sources] Loaded: {comp_path} ({len(content)} chars)")
+            except Exception as e:
+                logger.warning(f"[_load_component_sources] Failed to load {comp_path}: {e}")
+    
+    if sources:
+        return "\n\n## COMPONENT SOURCE CODE (compare with test assertions!):\n" + "\n\n".join(sources)
+    return ""
+
+
+def _load_test_file_content(workspace_path: str, test_file: str) -> str:
+    """Load test file content for analysis."""
+    if not workspace_path or not test_file:
+        return ""
+    
+    full_path = os.path.join(workspace_path, test_file)
+    if os.path.exists(full_path):
+        try:
+            with open(full_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            logger.warning(f"[_load_test_file_content] Failed to load {test_file}: {e}")
+    return ""
+
+
+# =============================================================================
 # STRUCTURED ERROR PARSING (MetaGPT-style)
 # =============================================================================
 
@@ -104,6 +180,67 @@ def _parse_test_errors_structured(logs: str) -> List[ParsedTestError]:
             message=f"Property '{match.group(1)}' does not exist on type '{match.group(2)}'",
             raw_line=match.group(0)
         ))
+    
+    # 6. ARIA-SELECTED errors: Expected "true" but got "false"
+    aria_pattern = r'(?:aria-selected|toHaveAttribute\([\'"]aria-selected[\'"])'
+    if re.search(aria_pattern, logs, re.IGNORECASE):
+        errors.append(ParsedTestError(
+            file_path="unknown",
+            line=None,
+            column=None,
+            error_code="ARIA_SELECTED",
+            error_type="Unit-Test",
+            message="aria-selected assertion failed - component has no selection state",
+            raw_line="aria-selected test failure"
+        ))
+    
+    # 7. FETCH assertion errors: expect(fetch).toHaveBeenCalled
+    fetch_pattern = r'expect\(fetch\)\.toHaveBeenCalled'
+    if re.search(fetch_pattern, logs):
+        errors.append(ParsedTestError(
+            file_path="unknown",
+            line=None,
+            column=None,
+            error_code="FETCH_ASSERTION",
+            error_type="Unit-Test",
+            message="fetch assertion in unit test - should test UI rendering instead",
+            raw_line="fetch assertion failure"
+        ))
+    
+    # 8. Error message not found (no error state)
+    error_ui_pattern = r"Unable to find.*(?:error|Error|failed|Failed)"
+    if re.search(error_ui_pattern, logs):
+        errors.append(ParsedTestError(
+            file_path="unknown",
+            line=None,
+            column=None,
+            error_code="NO_ERROR_STATE",
+            error_type="Unit-Test",
+            message="Error UI assertion failed - component does not render error state",
+            raw_line="error UI not found"
+        ))
+    
+    # 9. COMPONENT_MISMATCH: Unable to find element (placeholder, text, role)
+    mismatch_patterns = [
+        (r"Unable to find an element with the placeholder text[:\s]*['\"]?([^'\"]+)", "placeholder"),
+        (r"Unable to find an element with the text[:\s]*['\"]?([^'\"]+)", "text"),
+        (r"Unable to find role=\"(\w+)\"", "role"),
+        (r"TestingLibraryElementError: Unable to find", "element"),
+    ]
+    for pattern, elem_type in mismatch_patterns:
+        match = re.search(pattern, logs, re.IGNORECASE)
+        if match:
+            elem_value = match.group(1) if match.lastindex else "unknown"
+            errors.append(ParsedTestError(
+                file_path="unknown",
+                line=None,
+                column=None,
+                error_code="COMPONENT_MISMATCH",
+                error_type="Unit-Test",
+                message=f"Component does not have {elem_type}='{elem_value}'. Compare test with component source!",
+                raw_line=match.group(0)[:100]
+            ))
+            break  # Only add one mismatch error
     
     return errors
 
@@ -290,6 +427,21 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     raw_logs = f"STDOUT:\n{run_stdout}\n\nSTDERR:\n{run_stderr}"
     
     # ==============================================
+    # PRIORITY 1: TYPESCRIPT ERRORS (from typecheck)
+    # ==============================================
+    typescript_errors = run_result.get("typecheck_errors", [])
+    typescript_context = ""
+    if typescript_errors:
+        typescript_context = "## ⚠️ TYPESCRIPT ERRORS (fix these FIRST!):\n"
+        typescript_context += "These are COMPILATION errors - tests cannot run until fixed.\n\n"
+        for i, err in enumerate(typescript_errors[:10], 1):
+            typescript_context += f"{i}. {err}\n"
+        typescript_context += "\n---\n\n"
+        logger.info(f"[analyze_errors] Found {len(typescript_errors)} TypeScript errors (priority)")
+        for err in typescript_errors[:3]:
+            logger.info(f"[analyze_errors]   TS: {err[:100]}")
+    
+    # ==============================================
     # STRUCTURED ERROR PARSING (MetaGPT-style)
     # ==============================================
     parsed_errors = _parse_test_errors_structured(raw_logs)
@@ -303,8 +455,8 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     # Truncate logs intelligently (keep more from end where errors usually are)
     truncated_logs = truncate_error_logs(raw_logs, max_tokens=3000)
     
-    # Inject parsed errors at the top of the prompt for better LLM understanding
-    error_logs = parsed_context + "\n\n" + truncated_logs if parsed_context else truncated_logs
+    # Combine: TypeScript first (priority), then parsed errors, then truncated logs
+    error_logs = typescript_context + parsed_context + "\n\n" + truncated_logs if parsed_context else typescript_context + truncated_logs
     
     # Format debug history
     history_str = ""
@@ -317,6 +469,33 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     if workspace_path:
         existing_routes = _get_existing_routes(workspace_path)
     existing_routes_text = "\n".join(f"- {r}" for r in existing_routes) if existing_routes else "No API routes found."
+    
+    # ==============================================
+    # COMPONENT SOURCE LOADING FOR UNIT TESTS
+    # ==============================================
+    component_source_context = ""
+    failing_unit_tests = [
+        err.file_path for err in parsed_errors 
+        if err.file_path and "unit" in err.file_path.lower() and err.file_path.endswith('.tsx')
+    ]
+    
+    if failing_unit_tests and workspace_path:
+        for test_file in failing_unit_tests[:2]:  # Limit to 2 test files
+            test_content = _load_test_file_content(workspace_path, test_file)
+            if test_content:
+                # Extract component imports from test
+                component_paths = _extract_component_imports(test_content)
+                if component_paths:
+                    logger.info(f"[analyze_errors] Found {len(component_paths)} components in {test_file}: {component_paths}")
+                    component_source_context += _load_component_sources(workspace_path, component_paths)
+                    
+                    # Also include the test file content for comparison
+                    component_source_context += f"\n\n## FAILING TEST FILE:\n### {test_file}\n```tsx\n{test_content[:3000]}\n```"
+    
+    # Add component source to error_logs
+    if component_source_context:
+        error_logs = error_logs + "\n\n" + component_source_context
+        logger.info(f"[analyze_errors] Added component source context ({len(component_source_context)} chars)")
     
     try:
         # Call LLM to analyze errors
@@ -344,6 +523,9 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
         new_test_plan = []
         skipped_source_files = []
         
+        # Extract error_code for better fix context
+        error_code = result.get("error_code", "UNKNOWN")
+        
         for i, step in enumerate(fix_steps):
             raw_file_path = step.get("file_path", "")
             sanitized_path = _sanitize_file_path(raw_file_path, workspace_path)
@@ -358,15 +540,25 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
                 logger.warning(f"[analyze_errors] REJECTED source file (tester cannot modify): {sanitized_path}")
                 skipped_source_files.append(sanitized_path)
                 continue
-                
+            
+            # Include find_code and replace_with for precise fixing
+            find_code = step.get("find_code", "")
+            replace_with = step.get("replace_with", "")
+            
             new_test_plan.append({
                 "order": len(new_test_plan) + 1,
                 "type": "fix",
                 "file_path": sanitized_path,
                 "description": step.get("description", "Fix error"),
                 "action": step.get("action", "modify"),
+                "error_code": error_code,
+                "find_code": find_code,
+                "replace_with": replace_with,
                 "scenarios": [],
             })
+            
+            if find_code:
+                logger.info(f"[analyze_errors] Fix step {i+1}: find '{find_code[:50]}...' -> replace with '{replace_with[:30] if replace_with else 'DELETE'}'")
         
         # Log if any source files were rejected
         if skipped_source_files:
@@ -387,6 +579,10 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
         
         # Determine next action
         if fix_steps:
+            # Extract file paths that need fixing - this triggers re-implementation mode
+            # in implement_tests, which preserves existing files_modified (like integration tests)
+            failed_files = [step.get("file_path") for step in new_test_plan if step.get("file_path")]
+            
             return {
                 "error_analysis": root_cause,
                 "test_plan": new_test_plan,
@@ -394,6 +590,7 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
                 "current_step": 0,
                 "debug_count": debug_count + 1,
                 "debug_history": new_history,
+                "failed_files": failed_files,  # Triggers re-implementation mode
                 "message": msg,
                 "action": "IMPLEMENT",
             }
