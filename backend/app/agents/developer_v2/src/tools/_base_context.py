@@ -1,13 +1,8 @@
-"""Unified Context for Developer V2 Tools.
-
-Thread-safe context using contextvars to support multi-agent scenarios.
-"""
+"""Unified Context for Developer V2 Tools."""
 
 import os
 from contextvars import ContextVar
-from typing import Optional
 
-# Thread-safe context variable
 _tool_context: ContextVar[dict] = ContextVar('tool_context', default={
     "root_dir": None,
     "project_id": None,
@@ -15,12 +10,8 @@ _tool_context: ContextVar[dict] = ContextVar('tool_context', default={
 })
 
 
-def set_tool_context(
-    root_dir: str = None,
-    project_id: str = None,
-    task_id: str = None
-):
-    """Set unified context for all tools. Thread-safe."""
+def set_tool_context(root_dir: str = None, project_id: str = None, task_id: str = None):
+    """Set unified context for all tools."""
     ctx = _tool_context.get().copy()
     if root_dir:
         ctx["root_dir"] = root_dir
@@ -36,28 +27,7 @@ def get_root_dir() -> str:
     return _tool_context.get().get("root_dir") or os.getcwd()
 
 
-def get_project_id() -> Optional[str]:
-    """Get project ID from context."""
-    return _tool_context.get().get("project_id")
-
-
-def get_task_id() -> Optional[str]:
-    """Get task ID from context."""
-    return _tool_context.get().get("task_id")
-
-
 def is_safe_path(path: str, root_dir: str = None) -> bool:
-    """Check if path is within root directory (security sandbox)."""
+    """Check if path is within root directory."""
     root = root_dir or get_root_dir()
-    real_path = os.path.realpath(path)
-    real_root = os.path.realpath(root)
-    return real_path.startswith(real_root)
-
-
-def reset_context():
-    """Reset context to defaults. Useful for testing."""
-    _tool_context.set({
-        "root_dir": None,
-        "project_id": None,
-        "task_id": None,
-    })
+    return os.path.realpath(path).startswith(os.path.realpath(root))

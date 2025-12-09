@@ -9,18 +9,15 @@ from pathlib import Path
 from typing import Tuple, Optional, List
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.tools.shell_tools import run_shell
+from app.agents.developer_v2.src.utils.shell_utils import run_shell
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context, get_langfuse_span
 
 logger = logging.getLogger(__name__)
 
 
 def _clear_next_types_cache(workspace_path: str) -> None:
-    """Clear .next/types to force Next.js to regenerate route types.
-    
-    Fixes stale type errors when new routes/pages are added:
-    - Type '"/search"' does not satisfy the constraint 'AppRoutes'
-    - Type '"/api/books/search"' does not satisfy the constraint 'AppRouteHandlerRoutes'
+    """
+    Clear .next/types cache
     """
     next_types = Path(workspace_path) / ".next" / "types"
     if next_types.exists():
