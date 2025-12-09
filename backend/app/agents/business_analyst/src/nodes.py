@@ -257,12 +257,33 @@ async def analyze_intent(state: BAState, agent=None) -> dict:
         HumanMessage(content=user_prompt)
     ]
     
+    # Smart fallback based on keywords in user message
+    user_msg_lower = state["user_message"].lower()
+    if any(kw in user_msg_lower for kw in ["phê duyệt story", "phê duyệt stories", "approve story", "approve stories", "duyệt story"]):
+        fallback_intent = "stories_approve"
+        fallback_reason = "Keyword-based: approve stories"
+    elif any(kw in user_msg_lower for kw in ["phê duyệt prd", "prd ok", "tạo story", "tạo stories", "extract story"]):
+        fallback_intent = "extract_stories"
+        fallback_reason = "Keyword-based: extract stories from PRD"
+    elif any(kw in user_msg_lower for kw in ["sửa story", "update story", "chỉnh story", "thay đổi story"]):
+        fallback_intent = "stories_update"
+        fallback_reason = "Keyword-based: update stories"
+    elif any(kw in user_msg_lower for kw in ["sửa prd", "update prd", "chỉnh prd", "thêm feature"]):
+        fallback_intent = "prd_update"
+        fallback_reason = "Keyword-based: update PRD"
+    elif state.get("existing_prd") and not state.get("collected_info"):
+        fallback_intent = "extract_stories"
+        fallback_reason = "Has PRD, no collected info - likely wants stories"
+    else:
+        fallback_intent = "interview"
+        fallback_reason = "Default fallback to interview"
+    
     result = await _invoke_structured(
         llm=_fast_llm,
         schema=IntentOutput,
         messages=messages,
         config=_cfg(state, "analyze_intent"),
-        fallback_data={"intent": "interview", "reasoning": "Fallback to interview"}
+        fallback_data={"intent": fallback_intent, "reasoning": fallback_reason}
     )
     
     logger.info(f"[BA] Intent classified: {result['intent']}")
@@ -775,17 +796,41 @@ async def generate_prd(state: BAState, agent=None) -> dict:
         HumanMessage(content=user_prompt)
     ]
     
+    # Build smart fallback from collected info (used when LLM fails)
+    collected_info = state.get("collected_info", {})
+    answers = collected_info.get("interview_answers", [])
+    
+    # Extract info from answers
+    fallback_users = []
+    fallback_features = []
+    for ans in answers:
+        cat = ans.get("category", "")
+        answer_text = ans.get("answer", "")
+        if cat == "target_users" and answer_text:
+            fallback_users = [u.strip() for u in answer_text.split(",")]
+        elif cat == "main_features" and answer_text:
+            # Create basic features from answer
+            for feat in answer_text.split(","):
+                feat = feat.strip()
+                if feat:
+                    fallback_features.append({
+                        "name": feat[:50],
+                        "description": feat,
+                        "priority": "medium",
+                        "requirements": []
+                    })
+    
     fallback = {
-        "project_name": "Generated PRD",
+        "project_name": state["user_message"][:50] if state.get("user_message") else "New Project",
         "version": "1.0",
-        "overview": state["user_message"][:200],
-        "objectives": [],
-        "target_users": [],
-        "features": [],
+        "overview": state.get("user_message", "")[:200],
+        "objectives": ["Xây dựng sản phẩm theo yêu cầu của khách hàng"],
+        "target_users": fallback_users[:5] if fallback_users else ["Người dùng chung"],
+        "features": fallback_features[:7] if fallback_features else [{"name": "Core Feature", "description": "Main functionality", "priority": "high", "requirements": []}],
         "constraints": [],
         "success_metrics": [],
         "risks": [],
-        "message": "PRD đã được tạo 📝"
+        "message": "⚠️ PRD được tạo từ thông tin cơ bản (LLM không phản hồi). Vui lòng kiểm tra và bổ sung thêm chi tiết."
     }
     
     result = await _invoke_structured(
@@ -1063,29 +1108,11 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             logger.warning(f"[BA] Batch mode generated 0 stories for {total_epics} epics, falling back to single call")
             return await _extract_stories_single_call(state, agent, prd)
         
-        # Fill message templates with actual counts
-        # Templates use {epic_count} and {story_count} placeholders
-        default_message_template = "Xong rồi! 🚀 Mình đã tạo {story_count} User Stories từ {epic_count} Epics. Bạn xem qua và phê duyệt nhé!"
-        default_approval_template = "Tuyệt vời! 🎊 Đã thêm {epic_count} Epics và {story_count} Stories vào backlog rồi!"
+        # Use hardcoded messages (LLM-generated templates were unreliable - often mentioned "Phase 2" incorrectly)
+        message = f"🎉 Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé! 📋"
+        approval_message = f"✅ Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
         
-        # Use LLM template if available, otherwise use default
-        final_message_template = message_template if message_template else default_message_template
-        final_approval_template = approval_template if approval_template else default_approval_template
-        
-        # Fill placeholders with actual values
-        try:
-            message = final_message_template.format(epic_count=total_epics, story_count=total_stories)
-            logger.info(f"[BA] Filled message template: {message[:50]}...")
-        except KeyError as e:
-            logger.warning(f"[BA] Template format error: {e}, using default")
-            message = default_message_template.format(epic_count=total_epics, story_count=total_stories)
-        
-        try:
-            approval_message = final_approval_template.format(epic_count=total_epics, story_count=total_stories)
-            logger.info(f"[BA] Filled approval template: {approval_message[:50]}...")
-        except KeyError as e:
-            logger.warning(f"[BA] Approval template format error: {e}, using default")
-            approval_message = default_approval_template.format(epic_count=total_epics, story_count=total_stories)
+        logger.info(f"[BA] Stories message: {message[:50]}...")
         
         return {
             "epics": epics,
@@ -1150,22 +1177,9 @@ async def _extract_stories_single_call(state: BAState, agent, prd: dict) -> dict
     total_stories = len(all_stories)
     logger.info(f"[BA] Single-call extraction: {total_epics} epics, {total_stories} stories")
     
-    # Fill message templates with actual counts
-    default_message_template = "Xong rồi! 🚀 Mình đã tạo {story_count} User Stories từ {epic_count} Epics. Bạn xem qua và phê duyệt nhé!"
-    default_approval_template = "Tuyệt vời! 🎊 Đã thêm {epic_count} Epics và {story_count} Stories vào backlog rồi!"
-    
-    final_message_template = message_template if message_template else default_message_template
-    final_approval_template = approval_template if approval_template else default_approval_template
-    
-    try:
-        message = final_message_template.format(epic_count=total_epics, story_count=total_stories)
-    except KeyError:
-        message = default_message_template.format(epic_count=total_epics, story_count=total_stories)
-    
-    try:
-        approval_message = final_approval_template.format(epic_count=total_epics, story_count=total_stories)
-    except KeyError:
-        approval_message = default_approval_template.format(epic_count=total_epics, story_count=total_stories)
+    # Use hardcoded messages (LLM templates unreliable)
+    message = f"🎉 Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé! 📋"
+    approval_message = f"✅ Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
     
     return {
         "epics": epics,
@@ -1240,22 +1254,9 @@ async def update_stories(state: BAState, agent=None) -> dict:
     total_stories = len(all_stories)
     logger.info(f"[BA] Updated {total_epics} epics with {total_stories} stories")
     
-    # Fill message templates with actual counts
-    default_message_template = "Đã cập nhật xong! ✏️ Hiện có {story_count} Stories trong {epic_count} Epics. Bạn review lại nhé!"
-    default_approval_template = "OK luôn! 🎊 {epic_count} Epics với {story_count} Stories đã được cập nhật vào backlog!"
-    
-    final_message_template = message_template if message_template else default_message_template
-    final_approval_template = approval_template if approval_template else default_approval_template
-    
-    try:
-        message = final_message_template.format(epic_count=total_epics, story_count=total_stories)
-    except KeyError:
-        message = default_message_template.format(epic_count=total_epics, story_count=total_stories)
-    
-    try:
-        approval_message = final_approval_template.format(epic_count=total_epics, story_count=total_stories)
-    except KeyError:
-        approval_message = default_approval_template.format(epic_count=total_epics, story_count=total_stories)
+    # Use hardcoded messages (LLM templates unreliable)
+    message = f"✏️ Đã cập nhật xong! Hiện có {total_stories} Stories trong {total_epics} Epics. Bạn xem qua và bấm 'Phê duyệt Stories' nhé! 📋"
+    approval_message = f"✅ Đã cập nhật và lưu {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
     
     return {
         "epics": updated_epics,
@@ -1272,6 +1273,23 @@ async def approve_stories(state: BAState, agent=None) -> dict:
     
     epics_data = state.get("epics", [])
     stories_data = state.get("stories", [])
+    
+    # If no epics in state, try to load from artifact (fix for approval flow)
+    if not epics_data and agent:
+        logger.info("[BA] No epics in state, trying to load from artifact...")
+        try:
+            with Session(engine) as session:
+                service = ArtifactService(session)
+                artifact = service.get_latest_version(
+                    project_id=agent.project_id,
+                    artifact_type=ArtifactType.USER_STORIES
+                )
+                if artifact and artifact.content:
+                    epics_data = artifact.content.get("epics", [])
+                    stories_data = artifact.content.get("stories", [])
+                    logger.info(f"[BA] Loaded from artifact: {len(epics_data)} epics, {len(stories_data)} stories")
+        except Exception as e:
+            logger.warning(f"[BA] Failed to load from artifact: {e}")
     
     if not epics_data and not stories_data:
         return {"error": "No stories to approve"}
@@ -1386,11 +1404,13 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         
         logger.info(f"[BA] Saved {len(created_epics)} epics and {len(created_stories)} stories to database")
         
+        approval_msg = f"✅ Đã phê duyệt và thêm {len(created_epics)} Epics, {len(created_stories)} Stories vào backlog! 🎉"
         return {
             "stories_approved": True,
             "created_epics": created_epics,
             "created_stories": created_stories,
-            "approval_message": f"Đã phê duyệt và thêm {len(created_epics)} Epics, {len(created_stories)} Stories vào backlog."
+            "approval_message": approval_msg,
+            "stories_approval_message": approval_msg  # For save_artifacts to use
         }
         
     except Exception as e:
@@ -1536,7 +1556,7 @@ async def analyze_domain(state: BAState, agent=None) -> dict:
         "research_loop_count": new_loop_count,
         "research_done": True,
         "domain_research": domain_research,
-        "analysis_text": f"Researched: {missing_info}",
+        "analysis_text": f"Researched: {missing_categories}",
     }
 
 
@@ -1740,19 +1760,12 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         result["summary"] = f"Sent {questions_count} clarification questions to user"
         result["next_steps"].append("Wait for user answers to continue")
     
-    # Domain analysis
+    # Domain analysis - internal process, don't send message to user
+    # The analysis helps generate better PRD/stories, but users don't need to see it
     if state.get("analysis_text") and not state.get("error"):
         result["summary"] = "Domain analysis completed"
         result["analysis"] = state["analysis_text"]
-        result["next_steps"].append("Review analysis insights")
-        
-        # Send analysis to user
-        if agent:
-            await agent.message_user(
-                event_type="response",
-                content=f"Mình đã phân tích xong domain rồi! 📊\n\n{state['analysis_text'][:2000]}",
-                details={"analysis": state["analysis_text"]}
-            )
+        # Don't send "Mình đã phân tích xong domain" message - it's confusing for users
     
     # PRD update - show updated PRD card (same as create, no extra text message)
     if state.get("change_summary"):
