@@ -1,32 +1,45 @@
-"""LangGraph Node Functions for Business Analyst
-
-Uses shared prompt_utils from core (same pattern as Team Leader).
-"""
-
 import json
 import logging
+import os
 from pathlib import Path
 
-from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.language_models import BaseChatModel
 from sqlmodel import Session, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from .state import BAState
-from .prompts import (
-    PROMPTS,
-    BA_DEFAULTS,
-    parse_intent_response,
-    parse_questions_response,
-    parse_prd_response,
-    parse_prd_update_response,
-    parse_stories_response,
-    parse_document_analysis_response,
+from .schemas import (
+    IntentOutput,
+    QuestionsOutput,
+    PRDOutput,
+    PRDUpdateOutput,
+    DocumentAnalysisOutput,
+    EpicsOnlyOutput,
+    StoriesForEpicOutput,
+    FullStoriesOutput,
+    VerifyStoryOutput,
+    DocumentFeedbackOutput,
 )
 from app.agents.core.prompt_utils import (
+    load_prompts_yaml,
     build_system_prompt as _build_system_prompt,
     build_user_prompt as _build_user_prompt,
 )
+
+# Load prompts from YAML (same pattern as Developer V2)
+PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
+
+# Default values for BA agent persona
+BA_DEFAULTS = {
+    "name": "Business Analyst",
+    "role": "Business Analyst / Requirements Specialist",
+    "goal": "Phân tích requirements, tạo PRD và user stories",
+    "description": "Chuyên gia phân tích yêu cầu phần mềm",
+    "personality": "Thân thiện, kiên nhẫn, giỏi lắng nghe",
+    "communication_style": "Đơn giản, dễ hiểu, tránh thuật ngữ kỹ thuật",
+}
 from app.core.db import engine
 from app.models import AgentQuestion, Epic, Story, StoryStatus, StoryType, EpicStatus, ArtifactType
 from app.services.artifact_service import ArtifactService
@@ -35,11 +48,83 @@ from app.kafka.event_schemas import AgentEvent
 
 logger = logging.getLogger(__name__)
 
-# LLM instances (shared, like Team Leader)
-# Using same model naming as team_leader (claude-haiku/sonnet without prefix)
-_fast_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.1, timeout=30)
-_default_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.3, timeout=90)
-_story_llm = ChatOpenAI(model="claude-sonnet-4-5-20250929", temperature=0.3, timeout=180)
+# =============================================================================
+# LLM CONFIGURATION (Following Developer V2 pattern)
+# =============================================================================
+
+# API configuration
+ANTHROPIC_API_BASE = os.getenv("ANTHROPIC_API_BASE", "https://ai.megallm.io")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
+
+# Model tiers (like Dev V2)
+MODELS = {
+    "fast": "claude-sonnet-4-5-20250929",      # Intent, simple tasks
+    "default": "claude-sonnet-4-5-20250929",   # PRD, questions
+    "complex": "claude-sonnet-4-5-20250929",   # Stories (can upgrade to opus if needed)
+}
+
+
+def _get_llm(tier: str = "default", temperature: float = 0.2, timeout: int = 60) -> BaseChatModel:
+    """Get LLM instance by tier. Uses ChatAnthropic for Claude models."""
+    model = MODELS.get(tier, MODELS["default"])
+    
+    kwargs = {
+        "model": model,
+        "temperature": temperature,
+        "max_tokens": 16384,
+        "timeout": timeout,
+        "max_retries": 3,
+    }
+    if ANTHROPIC_API_BASE:
+        kwargs["base_url"] = ANTHROPIC_API_BASE
+    if ANTHROPIC_API_KEY:
+        kwargs["api_key"] = ANTHROPIC_API_KEY
+    
+    return ChatAnthropic(**kwargs)
+
+
+# Pre-configured LLM instances
+_fast_llm = _get_llm("fast", temperature=0.1, timeout=30)
+_default_llm = _get_llm("default", temperature=0.2, timeout=90)
+_story_llm = _get_llm("complex", temperature=0.2, timeout=180)
+
+
+async def _invoke_structured(
+    llm: BaseChatModel,
+    schema,
+    messages: list,
+    config: dict = None,
+    fallback_data: dict = None
+) -> dict:
+    """Invoke LLM with structured output, with fallback chain.
+    
+    Pattern from Developer V2:
+    1. PRIMARY: with_structured_output() - 99% reliable
+    2. FALLBACK: Return fallback_data if provided
+    
+    Args:
+        llm: LLM instance
+        schema: Pydantic schema class
+        messages: List of messages
+        config: Optional config dict for Langfuse
+        fallback_data: Data to return if structured output fails
+    
+    Returns:
+        Parsed dict from schema
+    """
+    try:
+        structured_llm = llm.with_structured_output(schema)
+        if config:
+            result = await structured_llm.ainvoke(messages, config=config)
+        else:
+            result = await structured_llm.ainvoke(messages)
+        return result.model_dump()
+    except Exception as e:
+        logger.warning(f"[BA] Structured output failed: {e}")
+        if fallback_data:
+            logger.info("[BA] Using fallback data")
+            return fallback_data
+        raise
 
 # Categories for clarity check (used in check_clarity and analyze_domain)
 REQUIRED_CATEGORIES = {
@@ -123,7 +208,10 @@ def _save_interview_state_to_question(
 
 
 async def analyze_intent(state: BAState, agent=None) -> dict:
-    """Node: Analyze user intent and classify task."""
+    """Node: Analyze user intent and classify task.
+    
+    Uses structured output for reliable parsing (Developer V2 pattern).
+    """
     logger.info(f"[BA] Analyzing intent: {state['user_message'][:80]}...")
     
     system_prompt = _sys_prompt(agent, "analyze_intent")
@@ -134,33 +222,27 @@ async def analyze_intent(state: BAState, agent=None) -> dict:
         has_info="Yes" if state.get("collected_info") else "No"
     )
     
-    try:
-        response = await _fast_llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config=_cfg(state, "analyze_intent")
-        )
-        
-        result = parse_intent_response(response.content)
-        logger.info(f"[BA] Intent classified: {result['intent']}")
-        
-        return result
-        
-    except Exception as e:
-        logger.warning(f"[BA] Could not parse intent: {e}")
-        return {
-            "intent": "interview",
-            "reasoning": f"Error parsing intent: {str(e)}"
-        }
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    result = await _invoke_structured(
+        llm=_fast_llm,
+        schema=IntentOutput,
+        messages=messages,
+        config=_cfg(state, "analyze_intent"),
+        fallback_data={"intent": "interview", "reasoning": "Fallback to interview"}
+    )
+    
+    logger.info(f"[BA] Intent classified: {result['intent']}")
+    return result
 
 
 async def analyze_document_content(document_text: str, agent=None) -> dict:
     """Analyze uploaded document to extract requirements information.
     
-    This function is called BEFORE the graph runs to pre-populate collected_info
-    if the document contains comprehensive requirements.
+    Uses structured output for reliable parsing (Developer V2 pattern).
     
     Args:
         document_text: Extracted text from uploaded document
@@ -183,53 +265,56 @@ async def analyze_document_content(document_text: str, agent=None) -> dict:
         document_text=document_text
     )
     
-    try:
-        response = await _default_llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config={"run_name": "analyze_document"}
-        )
-        
-        result = parse_document_analysis_response(response.content)
-        
-        # Filter out None values from collected_info
-        collected_info = {
-            k: v for k, v in result.get("collected_info", {}).items() 
-            if v is not None and v != "null" and v != ""
-        }
-        
-        logger.info(
-            f"[BA] Document analysis: type={result['document_type']}, "
-            f"score={result['completeness_score']:.0%}, "
-            f"comprehensive={result['is_comprehensive']}, "
-            f"collected_categories={list(collected_info.keys())}"
-        )
-        
-        return {
-            "document_type": result["document_type"],
-            "detected_doc_kind": result.get("detected_doc_kind", ""),
-            "collected_info": collected_info,
-            "is_comprehensive": result["is_comprehensive"],
-            "completeness_score": result["completeness_score"],
-            "summary": result["summary"],
-            "extracted_items": result.get("extracted_items", []),
-            "missing_info": result["missing_info"]
-        }
-        
-    except Exception as e:
-        logger.warning(f"[BA] Document analysis failed: {e}")
-        return {
-            "document_type": "partial_requirements",
-            "detected_doc_kind": "",
-            "collected_info": {},
-            "is_comprehensive": False,
-            "completeness_score": 0.0,
-            "summary": "",
-            "extracted_items": [],
-            "missing_info": []
-        }
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    fallback = {
+        "document_type": "partial_requirements",
+        "detected_doc_kind": "",
+        "collected_info": {},
+        "is_comprehensive": False,
+        "completeness_score": 0.0,
+        "summary": "",
+        "extracted_items": [],
+        "missing_info": []
+    }
+    
+    result = await _invoke_structured(
+        llm=_default_llm,
+        schema=DocumentAnalysisOutput,
+        messages=messages,
+        config={"run_name": "analyze_document"},
+        fallback_data=fallback
+    )
+    
+    # Convert collected_info from Pydantic model to dict, filter None values
+    collected_info_raw = result.get("collected_info", {})
+    if hasattr(collected_info_raw, "model_dump"):
+        collected_info_raw = collected_info_raw.model_dump()
+    collected_info = {
+        k: v for k, v in collected_info_raw.items() 
+        if v is not None and v != "null" and v != ""
+    }
+    
+    logger.info(
+        f"[BA] Document analysis: type={result['document_type']}, "
+        f"score={result['completeness_score']:.0%}, "
+        f"comprehensive={result['is_comprehensive']}, "
+        f"collected_categories={list(collected_info.keys())}"
+    )
+    
+    return {
+        "document_type": result["document_type"],
+        "detected_doc_kind": result.get("detected_doc_kind", ""),
+        "collected_info": collected_info,
+        "is_comprehensive": result["is_comprehensive"],
+        "completeness_score": result["completeness_score"],
+        "summary": result["summary"],
+        "extracted_items": result.get("extracted_items", []),
+        "missing_info": result["missing_info"]
+    }
 
 
 # Fallback messages for document analysis feedback
@@ -275,16 +360,24 @@ async def generate_document_feedback(
             completeness_score=f"{completeness_score * 100:.0f}"
         )
         
-        response = await _default_llm.ainvoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        result = await _invoke_structured(
+            llm=_default_llm,
+            schema=DocumentFeedbackOutput,
+            messages=messages,
+            fallback_data={"message": _DOC_FALLBACK_MESSAGES.get(document_type, _DOC_FALLBACK_MESSAGES["partial_requirements"])}
         )
         
-        message = response.content.strip()
+        message = result.get("message", "")
         logger.info(f"[BA] Generated document feedback: {message[:100]}...")
         return message
         
     except Exception as e:
-        logger.warning(f"[BA] generate_document_feedback LLM failed: {e}, using fallback")
+        logger.warning(f"[BA] generate_document_feedback failed: {e}, using fallback")
         return _DOC_FALLBACK_MESSAGES.get(document_type, _DOC_FALLBACK_MESSAGES["partial_requirements"])
 
 
@@ -327,7 +420,10 @@ async def respond_conversational(state: BAState, agent=None) -> dict:
 
 
 async def interview_requirements(state: BAState, agent=None) -> dict:
-    """Node: Generate clarification questions."""
+    """Node: Generate clarification questions.
+    
+    Uses structured output for reliable parsing (Developer V2 pattern).
+    """
     logger.info(f"[BA] Generating interview questions...")
     
     system_prompt = _sys_prompt(agent, "interview_requirements")
@@ -338,40 +434,41 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
         has_prd="Yes" if state.get("existing_prd") else "No"
     )
     
-    try:
-        response = await _default_llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config=_cfg(state, "interview_requirements")
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    result = await _invoke_structured(
+        llm=_default_llm,
+        schema=QuestionsOutput,
+        messages=messages,
+        config=_cfg(state, "interview_requirements"),
+        fallback_data={"questions": []}
+    )
+    
+    # Convert Pydantic Question objects to dicts
+    questions = []
+    for q in result.get("questions", []):
+        if hasattr(q, "model_dump"):
+            questions.append(q.model_dump())
+        elif isinstance(q, dict):
+            questions.append(q)
+    
+    logger.info(f"[BA] Generated {len(questions)} questions")
+    
+    # If no questions generated, send fallback message to user
+    if not questions and agent:
+        logger.warning("[BA] No questions generated, sending fallback message")
+        await agent.message_user(
+            "response",
+            "Để mình giúp bạn tạo PRD, bạn có thể cho mình biết thêm:\n"
+            "- Sản phẩm/dự án bạn muốn làm là gì?\n"
+            "- Đối tượng người dùng là ai?\n"
+            "- Những tính năng chính cần có?"
         )
-        
-        questions = parse_questions_response(response.content)
-        logger.info(f"[BA] Generated {len(questions)} questions")
-        
-        # If no questions generated, send fallback message to user
-        if not questions and agent:
-            logger.warning("[BA] No questions generated, sending fallback message")
-            await agent.message_user(
-                "response",
-                "Để mình giúp bạn tạo PRD, bạn có thể cho mình biết thêm:\n"
-                "- Sản phẩm/dự án bạn muốn làm là gì?\n"
-                "- Đối tượng người dùng là ai?\n"
-                "- Những tính năng chính cần có?"
-            )
-        
-        return {"questions": questions}
-        
-    except Exception as e:
-        logger.error(f"[BA] Failed to generate questions: {e}")
-        # Send fallback message on error
-        if agent:
-            await agent.message_user(
-                "response",
-                "Mình cần thêm thông tin để hỗ trợ bạn. Bạn có thể mô tả sản phẩm/dự án cần làm không?"
-            )
-        return {"questions": [], "error": f"Failed to generate questions: {str(e)}"}
+    
+    return {"questions": questions}
 
 
 async def ask_one_question(state: BAState, agent=None) -> dict:
@@ -630,7 +727,10 @@ async def process_answer(state: BAState, agent=None) -> dict:
 
 
 async def generate_prd(state: BAState, agent=None) -> dict:
-    """Node: Generate PRD document."""
+    """Node: Generate PRD document.
+    
+    Uses structured output for reliable parsing (Developer V2 pattern).
+    """
     logger.info(f"[BA] Generating PRD...")
     
     system_prompt = _sys_prompt(agent, "generate_prd")
@@ -640,35 +740,46 @@ async def generate_prd(state: BAState, agent=None) -> dict:
         collected_info=json.dumps(state.get("collected_info", {}), ensure_ascii=False)
     )
     
-    try:
-        response = await _default_llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config=_cfg(state, "generate_prd")
-        )
-        
-        prd, message = parse_prd_response(response.content)
-        logger.info(f"[BA] PRD generated: {prd.get('project_name', 'Untitled')}")
-        
-        return {"prd_draft": prd, "prd_message": message}
-        
-    except Exception as e:
-        logger.error(f"[BA] Failed to generate PRD: {e}")
-        return {
-            "prd_draft": {
-                "project_name": "Generated PRD",
-                "overview": state["user_message"][:200],
-                "error": str(e)
-            },
-            "prd_message": "",
-            "error": f"Could not generate PRD: {str(e)}"
-        }
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    fallback = {
+        "project_name": "Generated PRD",
+        "version": "1.0",
+        "overview": state["user_message"][:200],
+        "objectives": [],
+        "target_users": [],
+        "features": [],
+        "constraints": [],
+        "success_metrics": [],
+        "risks": [],
+        "message": "PRD đã được tạo 📝"
+    }
+    
+    result = await _invoke_structured(
+        llm=_default_llm,
+        schema=PRDOutput,
+        messages=messages,
+        config=_cfg(state, "generate_prd"),
+        fallback_data=fallback
+    )
+    
+    # Extract message and create PRD dict (message is separate from PRD content)
+    message = result.pop("message", "")
+    prd = result
+    
+    logger.info(f"[BA] PRD generated: {prd.get('project_name', 'Untitled')}")
+    
+    return {"prd_draft": prd, "prd_message": message}
 
 
 async def update_prd(state: BAState, agent=None) -> dict:
-    """Node: Update existing PRD."""
+    """Node: Update existing PRD.
+    
+    Uses structured output for reliable parsing (Developer V2 pattern).
+    """
     logger.info(f"[BA] Updating existing PRD...")
     
     existing_prd = state.get("existing_prd", {})
@@ -690,38 +801,39 @@ async def update_prd(state: BAState, agent=None) -> dict:
         conversation_context=conversation_context
     )
     
-    try:
-        response = await _default_llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config=_cfg(state, "update_prd")
-        )
-        
-        result = parse_prd_update_response(response.content)
-        logger.info(f"[BA] PRD updated: {result.get('change_summary', 'Changes applied')[:100]}")
-        
-        if result["updated_prd"]:
-            return {
-                "prd_draft": result["updated_prd"],
-                "change_summary": result["change_summary"],
-                "prd_message": result.get("message", "")
-            }
-        else:
-            return {
-                "error": "Failed to parse updated PRD",
-                "prd_draft": existing_prd,
-                "prd_message": ""
-            }
-        
-    except Exception as e:
-        logger.error(f"[BA] Failed to update PRD: {e}")
-        return {
-            "error": f"Failed to update PRD: {str(e)}",
-            "prd_draft": existing_prd,
-            "prd_message": ""
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    result = await _invoke_structured(
+        llm=_default_llm,
+        schema=PRDUpdateOutput,
+        messages=messages,
+        config=_cfg(state, "update_prd"),
+        fallback_data={
+            "updated_prd": existing_prd,
+            "change_summary": "Không thể cập nhật PRD",
+            "message": ""
         }
+    )
+    
+    logger.info(f"[BA] PRD updated: {result.get('change_summary', 'Changes applied')[:100]}")
+    
+    # Extract updated_prd (which is a PRDOutput object or dict)
+    updated_prd = result.get("updated_prd", {})
+    if hasattr(updated_prd, "model_dump"):
+        updated_prd = updated_prd.model_dump()
+    
+    # Remove message from PRD dict if it exists (it's a separate field)
+    if isinstance(updated_prd, dict):
+        updated_prd.pop("message", None)
+    
+    return {
+        "prd_draft": updated_prd,
+        "change_summary": result.get("change_summary", ""),
+        "prd_message": result.get("message", "")
+    }
 
 
 async def _generate_stories_for_epic(
@@ -731,7 +843,10 @@ async def _generate_stories_for_epic(
     state: BAState, 
     agent=None
 ) -> dict:
-    """Generate stories for a single Epic (used in parallel batch processing)."""
+    """Generate stories for a single Epic (used in parallel batch processing).
+    
+    Uses structured output for reliable parsing (Developer V2 pattern).
+    """
     epic_id = epic.get("id", "EPIC-???")
     epic_title = epic.get("title", "Unknown")
     
@@ -741,7 +856,8 @@ async def _generate_stories_for_epic(
     feature_refs = epic.get("feature_refs", [])
     prd_features = []
     for feature in prd.get("features", []):
-        if feature.get("name") in feature_refs:
+        feature_name = feature.get("name") if isinstance(feature, dict) else str(feature)
+        if feature_name in feature_refs:
             prd_features.append(feature)
     
     # If no feature_refs matched, include all features for this epic
@@ -759,49 +875,37 @@ async def _generate_stories_for_epic(
         all_epic_ids=", ".join(all_epic_ids)
     )
     
-    try:
-        logger.info(f"[BA] Calling LLM for Epic '{epic_title}' with {len(prd_features)} features")
-        
-        response = await _story_llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config=_cfg(state, f"generate_stories_{epic_id}")
-        )
-        
-        logger.info(f"[BA] LLM response for Epic '{epic_title}': {len(response.content)} chars")
-        logger.debug(f"[BA] Response preview: {response.content[:500]}...")
-        
-        result = parse_stories_response(response.content)
-        logger.info(f"[BA] Parsed result keys for Epic '{epic_title}': {list(result.keys())}")
-        
-        # parse_stories_response returns {"epics": [...]} format
-        # For single epic generation, stories are inside the first epic
-        stories = []
-        if "epics" in result and result["epics"]:
-            # Get stories from the first (and only) epic in the response
-            first_epic = result["epics"][0]
-            stories = first_epic.get("stories", [])
-            logger.info(f"[BA] Found {len(stories)} stories in epics[0] for Epic '{epic_title}'")
-        elif "stories" in result:
-            # Direct stories format (fallback)
-            stories = result.get("stories", [])
-            logger.info(f"[BA] Found {len(stories)} stories directly for Epic '{epic_title}'")
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    logger.info(f"[BA] Calling LLM for Epic '{epic_title}' with {len(prd_features)} features")
+    
+    result = await _invoke_structured(
+        llm=_story_llm,
+        schema=StoriesForEpicOutput,
+        messages=messages,
+        config=_cfg(state, f"generate_stories_{epic_id}"),
+        fallback_data={"stories": []}
+    )
+    
+    # Convert Pydantic UserStory objects to dicts
+    stories = []
+    for s in result.get("stories", []):
+        if hasattr(s, "model_dump"):
+            story_dict = s.model_dump()
+        elif isinstance(s, dict):
+            story_dict = s
         else:
-            logger.warning(f"[BA] No stories found in result for Epic '{epic_title}': {result}")
-        
+            continue
         # Add epic info to each story
-        for story in stories:
-            story["epic_id"] = epic_id
-            story["epic_title"] = epic_title
-        
-        logger.info(f"[BA] Generated {len(stories)} stories for Epic '{epic_title}'")
-        return {"epic_id": epic_id, "stories": stories}
-        
-    except Exception as e:
-        logger.error(f"[BA] Failed to generate stories for Epic '{epic_title}': {e}")
-        return {"epic_id": epic_id, "stories": [], "error": str(e)}
+        story_dict["epic_id"] = epic_id
+        story_dict["epic_title"] = epic_title
+        stories.append(story_dict)
+    
+    logger.info(f"[BA] Generated {len(stories)} stories for Epic '{epic_title}'")
+    return {"epic_id": epic_id, "stories": stories}
 
 
 async def extract_stories(state: BAState, agent=None) -> dict:
@@ -839,6 +943,7 @@ async def extract_stories(state: BAState, agent=None) -> dict:
     try:
         # =============================================
         # PHASE 1: Extract Epics only (fast call ~5s)
+        # Uses structured output for reliable parsing
         # =============================================
         logger.info("[BA] Phase 1: Extracting Epics structure...")
         
@@ -848,18 +953,29 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             prd=json.dumps(prd, ensure_ascii=False, indent=2)
         )
         
-        response = await _fast_llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config=_cfg(state, "extract_epics_only")
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        epics_result = await _invoke_structured(
+            llm=_fast_llm,
+            schema=EpicsOnlyOutput,
+            messages=messages,
+            config=_cfg(state, "extract_epics_only"),
+            fallback_data={"epics": [], "message_template": "", "approval_template": ""}
         )
         
-        epics_result = parse_stories_response(response.content)
-        epics = epics_result.get("epics", [])
-        message_template = epics_result.get("message_template", "")  # Get message template from Phase 1
-        approval_template = epics_result.get("approval_template", "")  # Get approval template from Phase 1
+        # Convert Pydantic Epic objects to dicts
+        epics = []
+        for e in epics_result.get("epics", []):
+            if hasattr(e, "model_dump"):
+                epics.append(e.model_dump())
+            elif isinstance(e, dict):
+                epics.append(e)
+        
+        message_template = epics_result.get("message_template", "")
+        approval_template = epics_result.get("approval_template", "")
         
         if not epics:
             logger.warning("[BA] No epics extracted, falling back to single call")
@@ -953,78 +1069,86 @@ async def extract_stories(state: BAState, agent=None) -> dict:
 
 
 async def _extract_stories_single_call(state: BAState, agent, prd: dict) -> dict:
-    """Original single-call story extraction (fallback for simple PRDs)."""
+    """Original single-call story extraction (fallback for simple PRDs).
+    
+    Uses structured output for reliable parsing (Developer V2 pattern).
+    """
     system_prompt = _sys_prompt(agent, "extract_stories")
     user_prompt = _user_prompt(
         "extract_stories",
         prd=json.dumps(prd, ensure_ascii=False, indent=2)
     )
     
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    result = await _invoke_structured(
+        llm=_story_llm,
+        schema=FullStoriesOutput,
+        messages=messages,
+        config=_cfg(state, "extract_stories"),
+        fallback_data={"epics": [], "message_template": "", "approval_template": "", "change_summary": ""}
+    )
+    
+    # Convert Pydantic Epic objects to dicts
+    epics = []
+    for e in result.get("epics", []):
+        if hasattr(e, "model_dump"):
+            epics.append(e.model_dump())
+        elif isinstance(e, dict):
+            epics.append(e)
+    
+    message_template = result.get("message_template", "")
+    approval_template = result.get("approval_template", "")
+    
+    # Flatten stories for backward compatibility
+    all_stories = []
+    for epic in epics:
+        stories_in_epic = epic.get("stories", [])
+        epic_title = epic.get("title", epic.get("name", "Unknown"))
+        for story in stories_in_epic:
+            if hasattr(story, "model_dump"):
+                story = story.model_dump()
+            story["epic_id"] = epic.get("id")
+            story["epic_title"] = epic_title
+            all_stories.append(story)
+    
+    total_epics = len(epics)
+    total_stories = len(all_stories)
+    logger.info(f"[BA] Single-call extraction: {total_epics} epics, {total_stories} stories")
+    
+    # Fill message templates with actual counts
+    default_message_template = "Xong rồi! 🚀 Mình đã tạo {story_count} User Stories từ {epic_count} Epics. Bạn xem qua và phê duyệt nhé!"
+    default_approval_template = "Tuyệt vời! 🎊 Đã thêm {epic_count} Epics và {story_count} Stories vào backlog rồi!"
+    
+    final_message_template = message_template if message_template else default_message_template
+    final_approval_template = approval_template if approval_template else default_approval_template
+    
     try:
-        response = await _story_llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config=_cfg(state, "extract_stories")
-        )
-        
-        result = parse_stories_response(response.content)
-        epics = result.get("epics", [])
-        message_template = result.get("message_template", "")
-        approval_template = result.get("approval_template", "")
-        
-        # Flatten stories for backward compatibility
-        all_stories = []
-        for epic in epics:
-            stories_in_epic = epic.get("stories", [])
-            epic_title = epic.get("title", epic.get("name", "Unknown"))
-            for story in stories_in_epic:
-                story["epic_id"] = epic.get("id")
-                story["epic_title"] = epic_title
-                all_stories.append(story)
-        
-        total_epics = len(epics)
-        total_stories = len(all_stories)
-        logger.info(f"[BA] Single-call extraction: {total_epics} epics, {total_stories} stories")
-        
-        # Fill message templates with actual counts
-        default_message_template = "Xong rồi! 🚀 Mình đã tạo {story_count} User Stories từ {epic_count} Epics. Bạn xem qua và phê duyệt nhé!"
-        default_approval_template = "Tuyệt vời! 🎊 Đã thêm {epic_count} Epics và {story_count} Stories vào backlog rồi!"
-        
-        final_message_template = message_template if message_template else default_message_template
-        final_approval_template = approval_template if approval_template else default_approval_template
-        
-        try:
-            message = final_message_template.format(epic_count=total_epics, story_count=total_stories)
-        except KeyError:
-            message = default_message_template.format(epic_count=total_epics, story_count=total_stories)
-        
-        try:
-            approval_message = final_approval_template.format(epic_count=total_epics, story_count=total_stories)
-        except KeyError:
-            approval_message = default_approval_template.format(epic_count=total_epics, story_count=total_stories)
-        
-        return {
-            "epics": epics,
-            "stories": all_stories,
-            "stories_message": message,
-            "stories_approval_message": approval_message
-        }
-        
-    except Exception as e:
-        logger.error(f"[BA] Failed to extract stories: {e}")
-        return {
-            "epics": [],
-            "stories": [],
-            "stories_message": "",
-            "stories_approval_message": "",
-            "error": f"Failed to extract stories: {str(e)}"
-        }
+        message = final_message_template.format(epic_count=total_epics, story_count=total_stories)
+    except KeyError:
+        message = default_message_template.format(epic_count=total_epics, story_count=total_stories)
+    
+    try:
+        approval_message = final_approval_template.format(epic_count=total_epics, story_count=total_stories)
+    except KeyError:
+        approval_message = default_approval_template.format(epic_count=total_epics, story_count=total_stories)
+    
+    return {
+        "epics": epics,
+        "stories": all_stories,
+        "stories_message": message,
+        "stories_approval_message": approval_message
+    }
 
 
 async def update_stories(state: BAState, agent=None) -> dict:
-    """Node: Update existing Epics and Stories based on user feedback."""
+    """Node: Update existing Epics and Stories based on user feedback.
+    
+    Uses structured output for reliable parsing (Developer V2 pattern).
+    """
     logger.info(f"[BA] Updating stories based on user feedback...")
     
     epics = state.get("epics", [])
@@ -1044,63 +1168,71 @@ async def update_stories(state: BAState, agent=None) -> dict:
         conversation_context=conversation_context
     )
     
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    result = await _invoke_structured(
+        llm=_story_llm,
+        schema=FullStoriesOutput,
+        messages=messages,
+        config=_cfg(state, "update_stories"),
+        fallback_data={"epics": epics, "message_template": "", "approval_template": "", "change_summary": "Không thể cập nhật"}
+    )
+    
+    # Convert Pydantic Epic objects to dicts
+    updated_epics = []
+    for e in result.get("epics", []):
+        if hasattr(e, "model_dump"):
+            updated_epics.append(e.model_dump())
+        elif isinstance(e, dict):
+            updated_epics.append(e)
+    
+    change_summary = result.get("change_summary", "Đã cập nhật stories")
+    message_template = result.get("message_template", "")
+    approval_template = result.get("approval_template", "")
+    
+    # Flatten stories for backward compatibility (use get, NOT pop - to keep stories in epics)
+    all_stories = []
+    for epic in updated_epics:
+        stories_in_epic = epic.get("stories", [])
+        epic_title = epic.get("title", epic.get("name", "Unknown"))
+        for story in stories_in_epic:
+            if hasattr(story, "model_dump"):
+                story = story.model_dump()
+            story["epic_id"] = epic.get("id")
+            story["epic_title"] = epic_title
+            all_stories.append(story)
+    
+    total_epics = len(updated_epics)
+    total_stories = len(all_stories)
+    logger.info(f"[BA] Updated {total_epics} epics with {total_stories} stories")
+    
+    # Fill message templates with actual counts
+    default_message_template = "Đã cập nhật xong! ✏️ Hiện có {story_count} Stories trong {epic_count} Epics. Bạn review lại nhé!"
+    default_approval_template = "OK luôn! 🎊 {epic_count} Epics với {story_count} Stories đã được cập nhật vào backlog!"
+    
+    final_message_template = message_template if message_template else default_message_template
+    final_approval_template = approval_template if approval_template else default_approval_template
+    
     try:
-        response = await _story_llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config=_cfg(state, "update_stories")
-        )
-        
-        result = parse_stories_response(response.content)
-        updated_epics = result.get("epics", [])
-        change_summary = result.get("change_summary", "Đã cập nhật stories")
-        message_template = result.get("message_template", "")
-        approval_template = result.get("approval_template", "")
-        
-        # Flatten stories for backward compatibility (use get, NOT pop - to keep stories in epics)
-        all_stories = []
-        for epic in updated_epics:
-            stories_in_epic = epic.get("stories", [])  # IMPORTANT: use get() not pop() to keep stories in epic
-            epic_title = epic.get("title", epic.get("name", "Unknown"))
-            for story in stories_in_epic:
-                story["epic_id"] = epic.get("id")
-                story["epic_title"] = epic_title
-                all_stories.append(story)
-        
-        total_epics = len(updated_epics)
-        total_stories = len(all_stories)
-        logger.info(f"[BA] Updated {total_epics} epics with {total_stories} stories")
-        
-        # Fill message templates with actual counts
-        default_message_template = "Đã cập nhật xong! ✏️ Hiện có {story_count} Stories trong {epic_count} Epics. Bạn review lại nhé!"
-        default_approval_template = "OK luôn! 🎊 {epic_count} Epics với {story_count} Stories đã được cập nhật vào backlog!"
-        
-        final_message_template = message_template if message_template else default_message_template
-        final_approval_template = approval_template if approval_template else default_approval_template
-        
-        try:
-            message = final_message_template.format(epic_count=total_epics, story_count=total_stories)
-        except KeyError:
-            message = default_message_template.format(epic_count=total_epics, story_count=total_stories)
-        
-        try:
-            approval_message = final_approval_template.format(epic_count=total_epics, story_count=total_stories)
-        except KeyError:
-            approval_message = default_approval_template.format(epic_count=total_epics, story_count=total_stories)
-        
-        return {
-            "epics": updated_epics,
-            "stories": all_stories,
-            "change_summary": change_summary,
-            "stories_message": message,
-            "stories_approval_message": approval_message
-        }
-        
-    except Exception as e:
-        logger.error(f"[BA] Failed to update stories: {e}")
-        return {"error": f"Failed to update stories: {str(e)}", "stories_message": "", "stories_approval_message": ""}
+        message = final_message_template.format(epic_count=total_epics, story_count=total_stories)
+    except KeyError:
+        message = default_message_template.format(epic_count=total_epics, story_count=total_stories)
+    
+    try:
+        approval_message = final_approval_template.format(epic_count=total_epics, story_count=total_stories)
+    except KeyError:
+        approval_message = default_approval_template.format(epic_count=total_epics, story_count=total_stories)
+    
+    return {
+        "epics": updated_epics,
+        "stories": all_stories,
+        "change_summary": change_summary,
+        "stories_message": message,
+        "stories_approval_message": approval_message
+    }
 
 
 async def approve_stories(state: BAState, agent=None) -> dict:
@@ -1328,10 +1460,6 @@ async def analyze_domain(state: BAState, agent=None) -> dict:
         "risks": "rủi ro, thách thức, lo ngại khi xây dựng",
     }
     
-    missing_info = ", ".join([category_prompts.get(cat, cat) for cat in missing_categories])
-    
-    system_prompt = _sys_prompt(agent, "interview_requirements")
-    
     # Build category info for prompt
     categories_to_ask = []
     for cat in missing_categories:
@@ -1339,73 +1467,46 @@ async def analyze_domain(state: BAState, agent=None) -> dict:
         categories_to_ask.append(f'- category: "{cat}", về: {cat_name}')
     categories_str = "\n".join(categories_to_ask)
     
-    user_prompt = f"""Dựa trên cuộc trò chuyện trước, user muốn: "{user_message}"
-
-Thông tin đã thu thập: {json.dumps(collected_info, ensure_ascii=False)}
-
-Kết quả tìm hiểu thêm từ web: {json.dumps(domain_research, ensure_ascii=False)[:1500]}
-
-**QUAN TRỌNG - KIỂM TRA KỸ TRƯỚC KHI HỎI:**
-Xem kỹ "Thông tin đã thu thập" ở trên. NẾU user đã trả lời về:
-- Đối tượng sử dụng (ví dụ: "cá nhân", "chỉ mình tôi", "cho bản thân") → KHÔNG hỏi lại về target_users
-- Tính năng (ví dụ: đã liệt kê các features) → KHÔNG hỏi lại về main_features  
-- Rủi ro/lo ngại (ví dụ: "bảo mật", "an toàn") → KHÔNG hỏi lại về risks
-
-CẦN HỎI THÊM VỀ CÁC CATEGORY SAU (NẾU CHƯA CÓ trong collected_info):
-{categories_str}
-
-Hãy tạo 1-2 câu hỏi CHO MỖI CATEGORY thực sự còn thiếu.
-QUAN TRỌNG: 
-- Mỗi question PHẢI có field "category" để tracking
-- KHÔNG hỏi lại những gì user đã trả lời
-- Nếu tất cả categories đã có thông tin, trả về questions: []
-
-**LUÔN DÙNG MULTICHOICE** để user dễ trả lời nhanh:
-- Tất cả câu hỏi PHẢI là "type": "multichoice" với options
-- Luôn thêm option cuối: "Khác (vui lòng mô tả)"
-
-Return JSON format:
-```json
-{{
-  "questions": [
-    {{
-      "text": "Câu hỏi về rủi ro/lo ngại?",
-      "type": "multichoice",
-      "options": ["Lo ngại 1", "Lo ngại 2", "Khác (vui lòng mô tả)"],
-      "allow_multiple": true,
-      "category": "risks"
-    }}
-  ]
-}}
-```"""
+    # Use prompts from YAML (no hardcoded prompts)
+    system_prompt = _sys_prompt(agent, "domain_research")
+    user_prompt = _user_prompt(
+        "domain_research",
+        user_message=user_message,
+        collected_info=json.dumps(collected_info, ensure_ascii=False),
+        domain_research=json.dumps(domain_research, ensure_ascii=False)[:1500],
+        categories_str=categories_str
+    )
     
-    try:
-        response = await _default_llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config=_cfg(state, "domain_research")
-        )
-        
-        questions = parse_questions_response(response.content)
-        logger.info(f"[BA] Generated {len(questions)} additional questions from research")
-        
-        return {
-            "questions": questions,
-            "research_loop_count": new_loop_count,
-            "research_done": True,
-            "domain_research": domain_research,
-            "analysis_text": f"Researched: {missing_info}",
-        }
-        
-    except Exception as e:
-        logger.error(f"[BA] Domain analysis failed: {e}")
-        return {
-            "research_loop_count": new_loop_count,
-            "research_done": True,
-            "error": str(e)
-        }
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    result = await _invoke_structured(
+        llm=_default_llm,
+        schema=QuestionsOutput,
+        messages=messages,
+        config=_cfg(state, "domain_research"),
+        fallback_data={"questions": []}
+    )
+    
+    # Convert Pydantic Question objects to dicts
+    questions = []
+    for q in result.get("questions", []):
+        if hasattr(q, "model_dump"):
+            questions.append(q.model_dump())
+        elif isinstance(q, dict):
+            questions.append(q)
+    
+    logger.info(f"[BA] Generated {len(questions)} additional questions from research")
+    
+    return {
+        "questions": questions,
+        "research_loop_count": new_loop_count,
+        "research_done": True,
+        "domain_research": domain_research,
+        "analysis_text": f"Researched: {missing_info}",
+    }
 
 
 async def _save_prd_artifact(state: BAState, agent, project_files) -> dict:
@@ -1759,44 +1860,34 @@ async def verify_story_simple(state: dict, agent=None) -> dict:
         story_type=story_info['type']
     )
 
-    try:
-        response = await _default_llm.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ],
-            config=_cfg(state, "verify_story_simple")
-        )
-        
-        # Parse JSON response
-        content = response.content.strip()
-        
-        # Extract JSON from markdown code block if present
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        
-        result = json.loads(content)
-        
-        logger.info(f"[BA] Story verification complete: invest_score={result.get('invest_score')}, "
-                    f"is_duplicate={result.get('is_duplicate')}")
-        
-        # Send suggestions to user (always send, even without agent)
-        await _send_verify_message(agent, new_story, result, project_id=project_id)
-        
-        return {
-            "verification_result": result,
-            "is_complete": True
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    result = await _invoke_structured(
+        llm=_default_llm,
+        schema=VerifyStoryOutput,
+        messages=messages,
+        config=_cfg(state, "verify_story_simple"),
+        fallback_data={
+            "is_duplicate": False,
+            "invest_score": 4,
+            "invest_issues": [],
+            "summary": "Không thể xác minh story"
         }
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"[BA] Failed to parse LLM response: {e}")
-        return {"error": str(e), "is_complete": True}
-        
-    except Exception as e:
-        logger.error(f"[BA] Story verification failed: {e}", exc_info=True)
-        return {"error": str(e), "is_complete": True}
+    )
+    
+    logger.info(f"[BA] Story verification complete: invest_score={result.get('invest_score')}, "
+                f"is_duplicate={result.get('is_duplicate')}")
+    
+    # Send suggestions to user (always send, even without agent)
+    await _send_verify_message(agent, new_story, result, project_id=project_id)
+    
+    return {
+        "verification_result": result,
+        "is_complete": True
+    }
 
 
 async def _send_verify_message(agent, story, result: dict, project_id=None) -> None:
