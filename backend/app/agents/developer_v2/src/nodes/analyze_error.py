@@ -9,6 +9,7 @@ from typing import Literal, List, Optional
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import PlanStep
+from app.agents.developer_v2.src.config import MAX_DEBUG_ATTEMPTS
 from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, glob
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
@@ -297,8 +298,6 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         project_id = state.get("project_id", "default")
         task_id = state.get("task_id") or state.get("story_id", "")
         
-        # Limit debug attempts to prevent infinite loops
-        MAX_DEBUG_ATTEMPTS = 3
         if debug_count >= MAX_DEBUG_ATTEMPTS:
             logger.warning(f"[analyze_error] Max debug attempts ({MAX_DEBUG_ATTEMPTS}) reached, giving up")
             return {**state, "action": "RESPOND", "error": f"Max debug attempts ({MAX_DEBUG_ATTEMPTS}) reached"}

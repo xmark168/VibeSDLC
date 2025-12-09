@@ -26,6 +26,7 @@ from app.agents.developer_v2.src.utils.prompt_utils import (
 from app.agents.developer_v2.src.utils.token_utils import truncate_to_tokens
 from app.agents.developer_v2.src.nodes._llm import code_llm, get_llm_for_skills
 from app.agents.developer_v2.src.skills import SkillRegistry, get_project_structure
+from app.agents.developer_v2.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
 
 logger = logging.getLogger(__name__)
 
@@ -222,8 +223,6 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     else:
         review_count = 0 if current_step != previous_step else state.get("review_count", 0)
     
-    # Max debug reviews limit to prevent infinite loops
-    MAX_DEBUG_REVIEWS = 3
     if is_debug_mode and review_count >= MAX_DEBUG_REVIEWS:
         logger.warning(f"[implement] Max debug reviews ({MAX_DEBUG_REVIEWS}) reached, skipping to validate")
         return {**state, "review_count": review_count, "action": "VALIDATE"}

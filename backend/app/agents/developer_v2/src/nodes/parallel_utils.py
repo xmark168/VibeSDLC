@@ -4,9 +4,9 @@ import logging
 from collections import defaultdict
 from typing import Dict, List, Any
 
-logger = logging.getLogger(__name__)
+from app.agents.developer_v2.src.config import MAX_CONCURRENT
 
-MAX_CONCURRENT = 5
+logger = logging.getLogger(__name__)
 
 LAYER_PRIORITY = {
     "prisma/schema": 1,

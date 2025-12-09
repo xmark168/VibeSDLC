@@ -2,45 +2,34 @@
 import os
 import logging
 from functools import wraps
-from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-logger = logging.getLogger(__name__)
+from app.agents.developer_v2.src.config import MAX_RETRIES, RETRY_WAIT_MIN, RETRY_WAIT_MAX
 
-# Retry config
-MAX_RETRIES = 3
-RETRY_WAIT_MIN = 1  
-RETRY_WAIT_MAX = 10  
+logger = logging.getLogger(__name__)  
 
-# Model tiers
+
 MODELS = {
-    "fast": "claude-haiku-4-5-20251001",      # Simple/fast tasks
-    "medium": "claude-sonnet-4-5-20250929",   # Standard tasks (API, DB)
-    "complex": "claude-opus-4-5-20251101",    # Complex tasks (UI design, debug)
+    "fast": "claude-haiku-4-5-20251001",     
+    "medium": "claude-sonnet-4-5-20250929",   
+    "complex": "claude-opus-4-5-20251101",    
 }
 
 # Default model configs per step
 LLM_CONFIG = {
-    # Fast tasks - use haiku
     "router": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     "clarify": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     "respond": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
-    "exploration": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 60},  # Sonnet for smarter exploration
     
-    # Planning - use medium (sonnet)
     "analyze": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 40},
     "plan": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 60},
     
-    # Implementation - default medium, can be overridden by skill type
     "implement": {"model": MODELS["medium"], "temperature": 0, "timeout": 60},
     "debug": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 40},
     
-    # Structured output tasks
-    "structured": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 35},
     "review": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
-    "summarize": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
 }
 
 # Model selection by skill type (for implement step)
@@ -93,11 +82,9 @@ def get_llm(step: str) -> BaseChatModel:
     model = config["model"]
     timeout = config.get("timeout", 40)
     
-    # API keys and base URLs
-    openai_base_url = os.getenv("OPENAI_API_BASE")
-    openai_api_key = os.getenv("OPENAI_API_KEY")
+  
     anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://ai.megallm.io")
-    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or openai_api_key
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or ''
     
     # Use ChatAnthropic for Claude models
     if "claude" in model.lower():
