@@ -31,17 +31,21 @@ def list_messages(
     project_id: UUID = Query(...),
     skip: int = 0,
     limit: int = 500,  # Increased default from 100 to handle more messages
+    order: str = Query("asc", regex="^(asc|desc)$"),  # Order by created_at: asc (oldest first) or desc (newest first)
 ) -> Any:
     # Validate project
     project = session.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # Determine order direction
+    order_by = MessageModel.created_at.desc() if order == "desc" else MessageModel.created_at.asc()
+
     stmt = (
         select(MessageModel)
         .where(MessageModel.project_id == project_id)
         .where(MessageModel.visibility == MessageVisibility.USER_MESSAGE)  # Only return user-facing messages
-        .order_by(MessageModel.created_at.asc())
+        .order_by(order_by)
     )
     count_stmt = (
         select(func.count())
@@ -52,6 +56,8 @@ def list_messages(
 
     count = session.exec(count_stmt).one()
     rows = session.exec(stmt.offset(skip).limit(limit)).all()
+    
+    logger.info(f"[list_messages] project_id={project_id}, found {len(rows)} messages (total={count}, skip={skip}, limit={limit}, order={order})")
     
     # Populate agent_name for each message
     result = []
@@ -177,6 +183,15 @@ async def create_message_with_file(
         # Validate file size (read file first)
         file_bytes = await file.read()
         
+        # Debug: verify bytes immediately after reading
+        logger.info(f"=== FILE UPLOAD DEBUG ===")
+        logger.info(f"  - Filename: {file.filename}")
+        logger.info(f"  - Content-Type: {file.content_type}")
+        logger.info(f"  - Size: {len(file_bytes)} bytes")
+        logger.info(f"  - First 20 bytes (hex): {file_bytes[:20].hex() if len(file_bytes) >= 20 else file_bytes.hex()}")
+        logger.info(f"  - Is valid ZIP/DOCX (starts with PK): {file_bytes[:2] == b'PK'}")
+        logger.info(f"=== END FILE UPLOAD DEBUG ===")
+        
         if len(file_bytes) > DOCUMENT_UPLOAD_LIMITS["max_file_size"]:
             max_mb = DOCUMENT_UPLOAD_LIMITS["max_file_size"] // 1024 // 1024
             raise HTTPException(
@@ -222,7 +237,13 @@ async def create_message_with_file(
         file_path = upload_dir / safe_filename
         file_path.write_bytes(file_bytes)
         
-        logger.info(f"Saved uploaded file: {file_path} ({len(file_bytes)} bytes)")
+        # Debug: verify file was saved correctly
+        saved_bytes = file_path.read_bytes()
+        logger.info(f"Saved uploaded file: {file_path}")
+        logger.info(f"  - Original size: {len(file_bytes)} bytes")
+        logger.info(f"  - Saved size: {len(saved_bytes)} bytes")
+        logger.info(f"  - First 20 bytes (hex): {file_bytes[:20].hex()}")
+        logger.info(f"  - Match: {file_bytes == saved_bytes}")
         
         # Log extracted text for debugging
         logger.info(f"=== EXTRACTED TEXT FROM {file.filename} ({len(extracted_text)} chars) ===")
@@ -385,6 +406,16 @@ async def download_attachment(
     if not file_path.exists():
         logger.error(f"Attachment file not found: {file_path}")
         raise HTTPException(status_code=404, detail="File not found on server")
+    
+    # Debug: log file info before download
+    file_size = file_path.stat().st_size
+    file_bytes = file_path.read_bytes()
+    logger.info(f"Download attachment: {file_path}")
+    logger.info(f"  - File size: {file_size} bytes")
+    logger.info(f"  - First 20 bytes (hex): {file_bytes[:20].hex()}")
+    logger.info(f"  - Is valid ZIP/DOCX (starts with PK): {file_bytes[:2] == b'PK'}")
+    logger.info(f"  - Original filename: {attachment.get('filename')}")
+    logger.info(f"  - MIME type: {attachment.get('mime_type')}")
     
     # Return file for download
     return FileResponse(
