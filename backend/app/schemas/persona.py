@@ -10,6 +10,7 @@ class PersonaBase(BaseModel):
     """Base persona template schema"""
     name: str = Field(..., min_length=1, max_length=100)
     role_type: str = Field(..., min_length=1, max_length=50)
+    avatar: Optional[str] = Field(default=None)
     personality_traits: list[str] = Field(default_factory=list)
     communication_style: str = Field(..., min_length=1, max_length=500)
     persona_metadata: dict = Field(default_factory=dict)
@@ -46,6 +47,7 @@ class PersonaUpdate(BaseModel):
     """Schema for updating a persona template"""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     role_type: Optional[str] = Field(None, min_length=1, max_length=50)
+    avatar: Optional[str] = Field(None)
     personality_traits: Optional[list[str]] = None
     communication_style: Optional[str] = Field(None, min_length=1, max_length=500)
     persona_metadata: Optional[dict] = None

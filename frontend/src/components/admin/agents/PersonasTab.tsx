@@ -317,21 +317,17 @@ export function PersonasTab() {
       <PersonaDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
-        onSuccess={() => {
-          refetch()
-          setCreateDialogOpen(false)
-        }}
+        onSuccess={() => refetch()}
       />
 
       <PersonaDialog
         open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
-        persona={personaToEdit || undefined}
-        onSuccess={() => {
-          refetch()
-          setEditDialogOpen(false)
-          setPersonaToEdit(null)
+        onOpenChange={(open) => {
+          setEditDialogOpen(open)
+          if (!open) setPersonaToEdit(null)
         }}
+        persona={personaToEdit || undefined}
+        onSuccess={() => refetch()}
       />
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
