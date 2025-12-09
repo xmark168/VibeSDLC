@@ -261,16 +261,28 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
                 except Exception as e:
                     logger.warning(f"[analyze_error] Prisma auto-fix failed: {e}")
             
-            # Module errors
+            # Module errors - distinguish local files (@/) from npm packages
             module_errors = ["Cannot find module", "Module not found", "Can't resolve"]
             if any(err in error_logs for err in module_errors):
-                logger.info("[analyze_error] Module error detected, running pnpm install...")
-                try:
-                    subprocess.run("pnpm install --frozen-lockfile", cwd=workspace_path, 
-                                   shell=True, capture_output=True, timeout=120, encoding='utf-8', errors='replace')
-                    auto_fixed = True
-                except Exception as e:
-                    logger.warning(f"[analyze_error] pnpm install auto-fix failed: {e}")
+                # Check if it's a local file import (starts with @/ or ./)
+                import re
+                local_import_pattern = r"(?:Cannot find module|Can't resolve) ['\"](@/[^'\"]+|\.{1,2}/[^'\"]+)['\"]"
+                local_matches = re.findall(local_import_pattern, error_logs)
+                
+                if local_matches:
+                    # Local file missing - pnpm install won't help!
+                    logger.warning(f"[analyze_error] Local file(s) missing: {local_matches[:3]}")
+                    logger.warning("[analyze_error] This is a plan/implement issue, not npm module issue")
+                    # Don't set auto_fixed - let it go to LLM for proper fix
+                else:
+                    # NPM package missing - run pnpm install
+                    logger.info("[analyze_error] NPM module error detected, running pnpm install...")
+                    try:
+                        subprocess.run("pnpm install --frozen-lockfile", cwd=workspace_path, 
+                                       shell=True, capture_output=True, timeout=120, encoding='utf-8', errors='replace')
+                        auto_fixed = True
+                    except Exception as e:
+                        logger.warning(f"[analyze_error] pnpm install auto-fix failed: {e}")
             
             if auto_fixed:
                 logger.info("[analyze_error] Auto-fix applied, retrying run_code...")

@@ -61,16 +61,37 @@ def get_layer_priority(file_path: str) -> int:
 
 
 def group_steps_by_layer(steps: List[Dict]) -> Dict[float, List[Dict]]:
-    """Group steps by layer priority.
+    """Group steps by layer priority, respecting dependencies.
     
     Returns dict mapping layer_priority -> list of steps
     """
     layers = defaultdict(list)
     
+    # Build dependency map: file_path -> set of dependent file paths
+    component_paths = set()
+    for step in steps:
+        fp = step.get("file_path", "")
+        if "/components/" in fp and fp.endswith(".tsx"):
+            component_paths.add(fp)
+    
     for step in steps:
         file_path = step.get("file_path", "")
-        layer = get_layer_priority(file_path)
-        layers[layer].append(step)
+        base_layer = get_layer_priority(file_path)
+        
+        # Check if this component depends on other components in this plan
+        step_deps = step.get("dependencies", [])
+        has_component_dep = any(dep in component_paths for dep in step_deps)
+        
+        # If a component depends on another component, push it to later sub-layer
+        if has_component_dep and base_layer >= 7 and base_layer < 8:
+            # Find max layer of dependencies
+            dep_layers = [get_layer_priority(d) for d in step_deps if d in component_paths]
+            if dep_layers:
+                # Place after highest dependency layer + 0.1
+                max_dep_layer = max(dep_layers)
+                base_layer = max(base_layer, max_dep_layer + 0.1)
+        
+        layers[base_layer].append(step)
     
     return dict(layers)
 

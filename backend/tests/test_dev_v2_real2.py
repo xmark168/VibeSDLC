@@ -423,13 +423,13 @@ async def test_story(story: dict, workspace_name: str = None) -> dict:
 async def test_two_stories_sequential():
     """Test running 2 stories sequentially in same workspace."""
     print("\n" + "=" * 70)
-    print("Developer V2 - Two Stories Sequential Test")
+    print("Developer V2 - Two Stories Sequential Test (Zero-Shot + Parallel)")
     print("=" * 70)
     
-    workspace_name = "test_two_stories"
+    workspace_name = _timestamp_workspace("two_stories")
     workspace_path = PROJECTS_DIR / workspace_name
     
-    # Cleanup
+    # Cleanup if exists
     if workspace_path.exists():
         shutil.rmtree(workspace_path, ignore_errors=True)
     
@@ -440,41 +440,95 @@ async def test_two_stories_sequential():
     results = []
     total_start = datetime.now()
     
-    # Story 1
-    print(f"\n[STORY 1] {STORY_1['story_title']}")
-    start = datetime.now()
+    # ========== STORY 1 ==========
+    print(f"\n{'=' * 70}")
+    print(f"STORY 1: {STORY_1['story_title'][:60]}...")
+    print(f"{'=' * 70}")
+    
+    s1_start = datetime.now()
     try:
         result1 = await runner.run_story(STORY_1)
-        elapsed = (datetime.now() - start).total_seconds()
-        results.append({"story_id": STORY_1["story_id"], "success": True, "elapsed": elapsed})
-        print(f"[DONE] Story 1 in {elapsed:.1f}s - Status: {result1.get('run_status')}")
+        s1_elapsed = (datetime.now() - s1_start).total_seconds()
+        
+        # Detailed timing from result
+        s1_steps = result1.get('total_steps', 0)
+        s1_files = len(result1.get('files_modified', []))
+        s1_status = result1.get('run_status', 'N/A')
+        s1_debug = result1.get('debug_count', 0)
+        
+        print(f"\n[STORY 1 RESULT]")
+        print(f"  Time: {s1_elapsed:.1f}s")
+        print(f"  Steps: {s1_steps}")
+        print(f"  Files: {s1_files}")
+        print(f"  Status: {s1_status}")
+        print(f"  Debug: {s1_debug}")
+        
+        results.append({
+            "story_id": STORY_1["story_id"],
+            "success": s1_status == "PASS",
+            "elapsed": s1_elapsed,
+            "steps": s1_steps,
+            "files": s1_files,
+            "status": s1_status,
+            "debug": s1_debug,
+        })
     except Exception as e:
-        results.append({"story_id": STORY_1["story_id"], "success": False, "error": str(e)})
-        print(f"[FAIL] Story 1: {e}")
+        s1_elapsed = (datetime.now() - s1_start).total_seconds()
+        print(f"\n[STORY 1 FAILED] {e}")
+        results.append({"story_id": STORY_1["story_id"], "success": False, "elapsed": s1_elapsed, "error": str(e)})
     
-    # Story 2
-    print(f"\n[STORY 2] {STORY_2['story_title']}")
-    start = datetime.now()
+    # ========== STORY 2 ==========
+    print(f"\n{'=' * 70}")
+    print(f"STORY 2: {STORY_2['story_title'][:60]}...")
+    print(f"{'=' * 70}")
+    
+    s2_start = datetime.now()
     try:
         result2 = await runner.run_story(STORY_2)
-        elapsed = (datetime.now() - start).total_seconds()
-        results.append({"story_id": STORY_2["story_id"], "success": True, "elapsed": elapsed})
-        print(f"[DONE] Story 2 in {elapsed:.1f}s - Status: {result2.get('run_status')}")
+        s2_elapsed = (datetime.now() - s2_start).total_seconds()
+        
+        s2_steps = result2.get('total_steps', 0)
+        s2_files = len(result2.get('files_modified', []))
+        s2_status = result2.get('run_status', 'N/A')
+        s2_debug = result2.get('debug_count', 0)
+        
+        print(f"\n[STORY 2 RESULT]")
+        print(f"  Time: {s2_elapsed:.1f}s")
+        print(f"  Steps: {s2_steps}")
+        print(f"  Files: {s2_files}")
+        print(f"  Status: {s2_status}")
+        print(f"  Debug: {s2_debug}")
+        
+        results.append({
+            "story_id": STORY_2["story_id"],
+            "success": s2_status == "PASS",
+            "elapsed": s2_elapsed,
+            "steps": s2_steps,
+            "files": s2_files,
+            "status": s2_status,
+            "debug": s2_debug,
+        })
     except Exception as e:
-        results.append({"story_id": STORY_2["story_id"], "success": False, "error": str(e)})
-        print(f"[FAIL] Story 2: {e}")
+        s2_elapsed = (datetime.now() - s2_start).total_seconds()
+        print(f"\n[STORY 2 FAILED] {e}")
+        results.append({"story_id": STORY_2["story_id"], "success": False, "elapsed": s2_elapsed, "error": str(e)})
     
     total_elapsed = (datetime.now() - total_start).total_seconds()
     
-    # Summary
+    # ========== SUMMARY ==========
     print("\n" + "=" * 70)
-    print("SUMMARY")
+    print("FINAL SUMMARY")
     print("=" * 70)
+    print(f"{'Story':<20} {'Time':>8} {'Steps':>6} {'Files':>6} {'Status':>8} {'Debug':>6}")
+    print("-" * 70)
     for r in results:
-        status = "PASS" if r["success"] else "FAIL"
-        print(f"[{status}] {r['story_id']} - {r.get('elapsed', 0):.1f}s")
-    print(f"\nTotal: {total_elapsed:.1f}s")
-    print(f"Workspace: {workspace_path}")
+        sid = r['story_id'].split('-')[-1] if '-' in r.get('story_id', '') else r.get('story_id', '')
+        status = r.get('status', 'FAIL' if not r['success'] else 'N/A')
+        print(f"{sid:<20} {r.get('elapsed', 0):>7.1f}s {r.get('steps', 0):>6} {r.get('files', 0):>6} {status:>8} {r.get('debug', 0):>6}")
+    print("-" * 70)
+    print(f"{'TOTAL':<20} {total_elapsed:>7.1f}s")
+    print(f"\nWorkspace: {workspace_path}")
+    print(f"All Pass: {all(r['success'] for r in results)}")
     
     return results
 
@@ -489,13 +543,55 @@ async def test_story_1_only():
     return await test_story(STORY_1, workspace_name=_timestamp_workspace("story1"))
 
 
+async def test_story_on_existing(story: dict, existing_workspace: str) -> dict:
+    """Run story on an existing workspace (for sequential story testing)."""
+    workspace_path = PROJECTS_DIR / existing_workspace
+    
+    if not workspace_path.exists():
+        print(f"ERROR: Workspace not found: {workspace_path}")
+        return {"story_id": story["story_id"], "success": False, "error": "Workspace not found"}
+    
+    print(f"\n{'=' * 60}")
+    print(f"Testing: {story['story_title']}")
+    print(f"Workspace (existing): {workspace_path}")
+    print(f"{'=' * 60}\n")
+    
+    runner = SimpleDeveloperRunner(str(workspace_path), template="nextjs")
+    
+    start_time = datetime.now()
+    
+    try:
+        result = await runner.run_story(story)
+        elapsed = (datetime.now() - start_time).total_seconds()
+        
+        print_result(result, workspace_path)
+        print(f"Time: {elapsed:.1f}s")
+        
+        return {
+            "story_id": story["story_id"],
+            "success": result.get("error") is None,
+            "elapsed": elapsed,
+            "result": result,
+        }
+    except Exception as e:
+        elapsed = (datetime.now() - start_time).total_seconds()
+        logger.error(f"Test failed: {e}", exc_info=True)
+        return {
+            "story_id": story["story_id"],
+            "success": False,
+            "elapsed": elapsed,
+            "error": str(e),
+        }
+
+
 def main():
     """Main entry point."""
     import argparse
     
     parser = argparse.ArgumentParser(description="Test Developer V2")
     parser.add_argument("--story1", action="store_true", help="Run only Story 1")
-    parser.add_argument("--story2", action="store_true", help="Run only Story 2")
+    parser.add_argument("--story2", action="store_true", help="Run only Story 2 (new workspace)")
+    parser.add_argument("--story2-on", type=str, metavar="WORKSPACE", help="Run Story 2 on existing workspace (e.g. story1_20251208_232145)")
     parser.add_argument("--both", action="store_true", help="Run both stories (default)")
     args = parser.parse_args()
     
@@ -504,6 +600,9 @@ def main():
         success = result.get("success", False)
     elif args.story2:
         result = asyncio.run(test_story(STORY_2, workspace_name=_timestamp_workspace("story2")))
+        success = result.get("success", False)
+    elif args.story2_on:
+        result = asyncio.run(test_story_on_existing(STORY_2, args.story2_on))
         success = result.get("success", False)
     else:
         results = asyncio.run(test_two_stories_sequential())

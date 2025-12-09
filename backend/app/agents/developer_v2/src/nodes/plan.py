@@ -24,6 +24,133 @@ from app.agents.developer_v2.src.tools.filesystem_tools import (
 
 logger = logging.getLogger(__name__)
 
+# Boilerplate files that should never be created (already exist in template)
+BOILERPLATE_FILES = {
+    "src/lib/prisma.ts",
+    "src/lib/utils.ts",
+    "src/auth.ts",
+}
+
+
+# =============================================================================
+# MetaGPT-Style FileRepository for Zero-Shot Planning
+# =============================================================================
+
+class FileRepository:
+    """MetaGPT-style file repository for pre-computed context.
+    
+    Scans workspace once and caches:
+    - File tree (all source files)
+    - Important file contents (schema, types, etc.)
+    - Component import map
+    - Existing API routes
+    """
+    
+    def __init__(self, workspace_path: str):
+        self.workspace_path = workspace_path
+        self.files = {}
+        self.file_tree = []
+        self.components = {}
+        self.api_routes = []
+        self._scan()
+    
+    def _scan(self):
+        """Scan workspace once, cache everything."""
+        if not self.workspace_path or not os.path.exists(self.workspace_path):
+            return
+        
+        exclude_dirs = {'node_modules', '.next', '.git', '__pycache__', '.prisma'}
+        
+        for root, dirs, files in os.walk(self.workspace_path):
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
+            
+            for f in files:
+                if f.endswith(('.ts', '.tsx', '.prisma', '.json', '.md')):
+                    full_path = os.path.join(root, f)
+                    rel_path = os.path.relpath(full_path, self.workspace_path).replace('\\', '/')
+                    
+                    self.file_tree.append(rel_path)
+                    
+                    # Cache important files
+                    if self._is_important(rel_path):
+                        self.files[rel_path] = self._read_file(full_path)
+                    
+                    # Track components (exclude shadcn/ui)
+                    if '/components/' in rel_path and rel_path.endswith('.tsx'):
+                        if '/ui/' not in rel_path:  # Custom components only
+                            name = os.path.basename(rel_path).replace('.tsx', '')
+                            import_path = '@/' + rel_path.replace('.tsx', '')
+                            self.components[name] = import_path
+                    
+                    # Track API routes
+                    if '/api/' in rel_path and rel_path.endswith('route.ts'):
+                        self.api_routes.append(rel_path)
+    
+    def _is_important(self, path: str) -> bool:
+        """Files that should be pre-loaded for context."""
+        important_patterns = [
+            'prisma/schema.prisma',
+            'src/types/index.ts',
+            'package.json',
+            'src/app/layout.tsx',
+            'src/lib/prisma.ts',
+        ]
+        return any(path.endswith(p) for p in important_patterns)
+    
+    def _read_file(self, full_path: str) -> str:
+        """Read file with error handling."""
+        try:
+            with open(full_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception:
+            return ""
+    
+    def to_context(self) -> str:
+        """Generate complete context string for LLM."""
+        parts = []
+        
+        # 1. File tree (critical for LLM to know what exists)
+        parts.append("## Project Files (COMPLETE - DO NOT EXPLORE)")
+        parts.append("```")
+        parts.append("\n".join(sorted(self.file_tree)))
+        parts.append("```")
+        
+        # 2. Schema (most important for planning)
+        schema_content = self.files.get('prisma/schema.prisma', '')
+        parts.append("\n## prisma/schema.prisma (CURRENT STATE)")
+        parts.append("```prisma")
+        if len(schema_content) > 100:
+            parts.append(schema_content)
+        else:
+            parts.append("// Empty schema - needs models")
+        parts.append("```")
+        
+        # 3. Types (if exists and has content)
+        types_content = self.files.get('src/types/index.ts', '')
+        if len(types_content) > 100:
+            parts.append("\n## src/types/index.ts")
+            parts.append("```typescript")
+            parts.append(types_content[:2500])
+            parts.append("```")
+        
+        # 4. Component import map (critical for correct imports)
+        if self.components:
+            parts.append("\n## Component Imports (USE THESE EXACT PATHS)")
+            for name, path in sorted(self.components.items()):
+                parts.append(f"- {name} → `import {{ {name} }} from '{path}'`")
+        
+        # 5. Existing API routes
+        if self.api_routes:
+            parts.append("\n## Existing API Routes")
+            for route in sorted(self.api_routes):
+                parts.append(f"- {route}")
+        
+        return "\n".join(parts)
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
 
 def _extract_keywords(text: str) -> list:
     """Extract meaningful keywords from story text."""
@@ -408,9 +535,177 @@ Steps in same layer CAN run in parallel if they don't depend on each other.
     }
 
 
+# =============================================================================
+# Main Plan Function - MetaGPT-Style Zero-Shot
+# =============================================================================
+
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
-    """Combined analyze + plan with tool exploration phase."""
-    logger.info("[NODE] analyze_and_plan")
+    """MetaGPT-style planning - zero-shot with pre-computed context.
+    
+    Flow:
+    1. Build FileRepository (instant, no LLM)
+    2. Single LLM call with structured output
+    3. Fallback to exploration if zero-shot fails
+    """
+    logger.info("[NODE] plan (zero-shot)")
+    
+    workspace_path = state.get("workspace_path", "")
+    tech_stack = state.get("tech_stack", "nextjs")
+    project_id = state.get("project_id", "default")
+    task_id = state.get("task_id") or state.get("story_id", "")
+    
+    setup_tool_context(workspace_path, project_id, task_id)
+    
+    try:
+        # 1. Build FileRepository (instant, no LLM)
+        repo = FileRepository(workspace_path)
+        context = repo.to_context()
+        logger.info(f"[plan] FileRepository: {len(repo.file_tree)} files, {len(context)} chars")
+        
+        # 2. Load prompts
+        plan_prompts = get_plan_prompts(tech_stack)
+        
+        # Check if zero_shot_system exists, otherwise use system_prompt
+        system_prompt = plan_prompts.get('zero_shot_system', plan_prompts.get('system_prompt', ''))
+        
+        # 3. Build input with complete context
+        requirements = state.get("story_requirements", [])
+        req_text = chr(10).join(f"- {r}" for r in requirements)
+        
+        acceptance = state.get("acceptance_criteria", [])
+        ac_text = chr(10).join(f"- {ac}" for ac in acceptance)
+        
+        input_text = f"""## COMPLETE Project Context (NO EXPLORATION NEEDED)
+{context}
+
+## Story to Implement
+**ID**: {state.get('story_id', '')}
+**Title**: {state.get('story_title', 'Untitled')}
+**Description**: {state.get('story_description', '')[:800]}
+
+**Requirements**:
+{req_text}
+
+**Acceptance Criteria**:
+{ac_text}
+
+## Instructions
+Create implementation plan. ALL context is provided above.
+DO NOT request any files - everything you need is here.
+Output JSON steps directly.
+"""
+        
+        # 4. SINGLE LLM call with structured output (no tools!)
+        structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
+        
+        result = await structured_llm.ainvoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=input_text)
+        ], config=_cfg(state, "plan_zero_shot"))
+        
+        flush_langfuse(state)
+        
+        data = result.model_dump()
+        steps = data.get("steps", [])
+        
+        logger.info(f"[plan] Zero-shot got {len(steps)} steps")
+        
+        # If zero-shot produced no steps, fallback
+        if not steps:
+            logger.warning("[plan] Zero-shot produced 0 steps, falling back to exploration")
+            return await _plan_with_exploration(state, agent)
+        
+        # 5. Post-process steps
+        # Filter boilerplate files
+        original_count = len(steps)
+        steps = [s for s in steps if s.get("file_path", "") not in BOILERPLATE_FILES]
+        if len(steps) < original_count:
+            logger.info(f"[plan] Filtered out {original_count - len(steps)} boilerplate file(s)")
+        
+        # Add order, skills, and merge dependencies
+        for i, step in enumerate(steps):
+            step["order"] = i + 1
+            step["description"] = step.get("task", "")
+            step["skills"] = _auto_assign_skills(step.get("file_path", ""))
+            
+            if not isinstance(step.get("dependencies"), list):
+                step["dependencies"] = []
+            
+            llm_deps = step.get("dependencies", [])
+            auto_deps = _auto_detect_dependencies(step.get("file_path", ""), steps)
+            step["dependencies"] = list(set(llm_deps + auto_deps))
+        
+        # Auto-add seed step if schema modified but no seed
+        has_schema_step = any(s.get("file_path", "").endswith("schema.prisma") for s in steps)
+        has_seed_step = any("seed.ts" in s.get("file_path", "").lower() for s in steps)
+        
+        if has_schema_step and not has_seed_step:
+            seed_file = Path(workspace_path) / "prisma" / "seed.ts" if workspace_path else None
+            seed_exists = seed_file and seed_file.exists()
+            
+            schema_idx = next((i for i, s in enumerate(steps) if s.get("file_path", "").endswith("schema.prisma")), 0)
+            seed_step = {
+                "order": schema_idx + 2,
+                "task": "Create seed data for database models",
+                "description": "Seed database with sample data",
+                "file_path": "prisma/seed.ts",
+                "action": "modify" if seed_exists else "create",
+                "skills": ["database-seed"],
+                "dependencies": ["prisma/schema.prisma"]
+            }
+            steps.insert(schema_idx + 1, seed_step)
+            logger.info("[plan] Auto-added seed step after schema")
+        
+        # Re-number after modifications
+        for i, s in enumerate(steps):
+            s["order"] = i + 1
+        
+        # Load skill registry
+        skill_registry = SkillRegistry.load(tech_stack)
+        
+        # Pre-load dependency files
+        dependencies_content = _preload_dependencies(workspace_path, steps)
+        logger.info(f"[plan] Pre-loaded {len(dependencies_content)} files")
+        
+        # Calculate parallel layers
+        from app.agents.developer_v2.src.nodes.parallel_utils import (
+            group_steps_by_layer,
+            should_use_parallel,
+        )
+        
+        layers = group_steps_by_layer(steps)
+        can_parallel = should_use_parallel(steps)
+        
+        story_summary = state.get("story_title", "Implementation task")
+        msg = f"Plan: {len(steps)} steps ({len(layers)} layers)"
+        if can_parallel:
+            msg += " [PARALLEL]"
+        
+        logger.info(f"[plan] {msg}")
+        
+        return {
+            **state,
+            "implementation_plan": steps,
+            "plan_summary": story_summary,
+            "logic_analysis": [],
+            "total_steps": len(steps),
+            "dependencies_content": dependencies_content,
+            "current_step": 0,
+            "message": msg,
+            "skill_registry": skill_registry,
+            "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()},
+            "can_parallel": can_parallel,
+            "action": "IMPLEMENT",
+        }
+        
+    except Exception as e:
+        logger.warning(f"[plan] Zero-shot failed: {e}, falling back to exploration")
+        return await _plan_with_exploration(state, agent)
+
+
+async def _plan_with_exploration(state: DeveloperState, agent=None) -> DeveloperState:
+    """Fallback: Combined analyze + plan with tool exploration phase."""
+    logger.info("[NODE] plan_with_exploration (fallback)")
     
     try:
         workspace_path = state.get("workspace_path", "")
@@ -510,11 +805,6 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
                  and "migration" not in s.get("file_path", "").lower()]
         
         # Filter out existing boilerplate files (LLM sometimes ignores NEVER rules)
-        BOILERPLATE_FILES = {
-            "src/lib/prisma.ts",
-            "src/lib/utils.ts",
-            "src/auth.ts",
-        }
         original_count = len(steps)
         steps = [s for s in steps if s.get("file_path", "").replace("\\", "/") not in BOILERPLATE_FILES]
         if len(steps) < original_count:

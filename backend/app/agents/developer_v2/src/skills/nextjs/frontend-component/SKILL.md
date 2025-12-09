@@ -3,6 +3,24 @@ name: frontend-component
 description: Create React/Next.js 16 components. Use when building pages, client/server components, forms with useActionState, or UI with shadcn/ui. ALWAYS activate with frontend-design together.
 ---
 
+## ⚠️ IMPORT PATHS - USE EXACT PATHS
+
+**Component imports MUST match exact file location:**
+
+```tsx
+// File at: src/components/search/SearchBar.tsx
+// ✅ CORRECT
+import { SearchBar } from '@/components/search/SearchBar';
+
+// ❌ WRONG - path doesn't match file location
+import { SearchBar } from '@/components/SearchBar';
+```
+
+**Rules:**
+- Check "Component Imports" section in context for exact paths
+- Path must match file location: `src/components/[folder]/[Name].tsx` → `@/components/[folder]/[Name]`
+- Never guess import paths - use paths from context
+
 ## ⚠️ PROPS MATCHING - MOST CRITICAL
 
 **Before using ANY component, you MUST:**
@@ -104,25 +122,72 @@ Root `layout.tsx` has `<Navigation />`. Pages only have content:
 ```tsx
 // ✅ CORRECT
 export default function Page() {
-  return <main className="container py-8">...</main>;
+  return <main className="container mx-auto px-4 py-8">...</main>;
 }
 ```
 
-### 3. Null Safety
+### 2.1 Container & Text Centering
 ```tsx
-// ❌ CRASHES
-parts.map(p => ...)
+// ❌ WRONG - container not centered
+<div className="container">
 
-// ✅ SAFE
-(parts ?? []).map(p => ...)
+// ✅ CORRECT - always add mx-auto + px-4
+<div className="container mx-auto px-4">
+
+// ❌ WRONG - text not centered  
+<div>
+  <span className="inline-block">Title</span>
+</div>
+
+// ✅ CORRECT - parent text-center + child block
+<div className="text-center">
+  <span className="block">Title</span>
+  <h2>Heading</h2>
+  <p className="mx-auto max-w-2xl">Description</p>
+</div>
+```
+
+**RULES:**
+- `container` MUST have `mx-auto px-4`
+- Centered text sections: parent `text-center`, children `block` (not inline-block)
+- Long text: add `mx-auto max-w-2xl` to constrain width
+
+### 3. Null Safety - CRITICAL ⚠️
+API responses may have undefined nested arrays/objects!
+
+```tsx
+// ❌ CRASHES at runtime (category.books could be undefined)
+category.books.filter(b => b.coverImage)
+data.items.map(item => ...)
+
+// ✅ ALWAYS defensive - use ?? [] or ?.
+(category.books ?? []).filter(b => b.coverImage)
+(data?.items ?? []).map(item => ...)
 data?.items?.length ?? 0
 
 // Props default
 function List({ items = [] }: Props) { ... }
+```
 
-// State init
+**RULE:** Any `.map()`, `.filter()`, `.slice()` on API/fetched data MUST have `?? []` or optional chaining
+
+```tsx
+// State init - always default to empty array
 const [items, setItems] = useState<Item[]>([]);
 ```
+
+### 4. Route Navigation - USE EXACT PATHS
+Check the plan/context for existing page routes before using `router.push()` or `<Link>`:
+
+```tsx
+// ❌ WRONG - guessing route that doesn't exist
+router.push(`/books?search=${query}`);  // 404 if /books/page.tsx doesn't exist!
+
+// ✅ CORRECT - use route from plan
+router.push(`/search?q=${query}`);  // /search/page.tsx exists in plan
+```
+
+**RULE:** Always check Dependencies section for existing page paths before navigation.
 
 ## Page with Dynamic Params
 

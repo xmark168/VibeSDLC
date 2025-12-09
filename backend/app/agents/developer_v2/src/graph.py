@@ -97,6 +97,11 @@ def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__
     return "__end__"
 
 
+def route_after_debug_implement(state: DeveloperState) -> Literal["run_code"]:
+    """After debug implement, always go back to run_code to verify fix."""
+    return "run_code"
+
+
 class DeveloperGraph:
     """LangGraph state machine for story-driven code generation.
 
@@ -140,6 +145,8 @@ class DeveloperGraph:
             # Parallel mode: plan -> implement_parallel -> run_code
             g.add_edge("plan", "implement_parallel")
             g.add_edge("implement_parallel", "run_code")
+            # Debug path: implement (fix) -> run_code (verify)
+            g.add_edge("implement", "run_code")
         else:
             # Sequential mode: plan -> implement <-> review
             g.add_edge("plan", "implement")

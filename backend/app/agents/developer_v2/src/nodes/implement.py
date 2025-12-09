@@ -508,6 +508,7 @@ async def _implement_single_step(
     skill_registry: SkillRegistry,
     workspace_path: str,
     dependencies_content: Dict,
+    created_components: Dict[str, str] = None,
 ) -> Dict:
     """Implement a single step (for parallel execution)."""
     file_path = step.get("file_path", "")
@@ -530,6 +531,13 @@ async def _implement_single_step(
         )
         if deps_context:
             context_parts.append(deps_context)
+        
+        # Add created component import paths (critical for correct imports)
+        if created_components:
+            import_hints = ["## Created Component Imports (USE EXACT PATHS)"]
+            for comp_name, import_path in sorted(created_components.items()):
+                import_hints.append(f"- {comp_name}: `import {{ {comp_name} }} from '{import_path}'`")
+            context_parts.append("\n".join(import_hints))
         
         legacy_code = ""
         if action == "modify" and file_path:
@@ -612,6 +620,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         all_modified = []
         all_errors = []
         step_count = 0
+        created_components = {}  # Track created component import paths
         
         for layer_num in sorted_layers:
             layer_steps = layers[layer_num]
@@ -622,9 +631,9 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             
             if is_parallel:
                 # Parallel execution for API routes and components
-                async def impl_step(step):
+                async def impl_step(step, comps=created_components):
                     return await _implement_single_step(
-                        step, state, skill_registry, workspace_path, dependencies_content
+                        step, state, skill_registry, workspace_path, dependencies_content, comps
                     )
                 
                 results = await run_layer_parallel(layer_steps, impl_step, state, MAX_CONCURRENT)
@@ -633,7 +642,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                 results = []
                 for step in layer_steps:
                     result = await _implement_single_step(
-                        step, state, skill_registry, workspace_path, dependencies_content
+                        step, state, skill_registry, workspace_path, dependencies_content, created_components
                     )
                     results.append(result)
                     step_count += 1
@@ -703,6 +712,30 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                 if os.path.exists(types_path):
                     with open(types_path, 'r', encoding='utf-8') as f:
                         dependencies_content["src/types/index.ts"] = f.read()
+            
+            elif layer_num >= 5:  # After API routes and component layers
+                # Refresh ALL created component files into dependencies_content
+                # So later steps (e.g., pages) can see their content for correct imports
+                refreshed = 0
+                for result in results:
+                    file_path = result.get("file_path", "")
+                    if file_path and file_path.endswith(".tsx"):
+                        full_path = os.path.join(workspace_path, file_path)
+                        if os.path.exists(full_path):
+                            try:
+                                with open(full_path, 'r', encoding='utf-8') as f:
+                                    dependencies_content[file_path] = f.read()
+                                refreshed += 1
+                                
+                                # Track component import path for subsequent steps
+                                if "/components/" in file_path:
+                                    comp_name = os.path.basename(file_path).replace(".tsx", "")
+                                    import_path = "@/" + file_path.replace(".tsx", "")
+                                    created_components[comp_name] = import_path
+                            except Exception:
+                                pass
+                if refreshed:
+                    logger.info(f"[parallel] Refreshed {refreshed} component files for context")
         
         success_count = len([r for r in all_modified])
         logger.info(f"[parallel] Completed: {success_count} files, {len(all_errors)} errors")

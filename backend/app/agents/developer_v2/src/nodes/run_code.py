@@ -4,6 +4,7 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import shutil
 from pathlib import Path
 from typing import Tuple, Optional, List
 
@@ -12,6 +13,49 @@ from app.agents.developer_v2.src.tools.shell_tools import run_shell
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context, get_langfuse_span
 
 logger = logging.getLogger(__name__)
+
+
+def _clear_next_types_cache(workspace_path: str) -> None:
+    """Clear .next/types to force Next.js to regenerate route types.
+    
+    Fixes stale type errors when new routes/pages are added:
+    - Type '"/search"' does not satisfy the constraint 'AppRoutes'
+    - Type '"/api/books/search"' does not satisfy the constraint 'AppRouteHandlerRoutes'
+    """
+    next_types = Path(workspace_path) / ".next" / "types"
+    if next_types.exists():
+        try:
+            shutil.rmtree(next_types, ignore_errors=True)
+            logger.info("[run_code] Cleared .next/types cache")
+        except Exception as e:
+            logger.warning(f"[run_code] Failed to clear .next/types: {e}")
+
+
+def _validate_null_safety(workspace_path: str) -> List[str]:
+    """Quick scan for unsafe array operations on API data.
+    
+    Detects patterns like `data.items.map()` without null safety.
+    """
+    import re
+    warnings = []
+    
+    components_dir = Path(workspace_path) / "src" / "components"
+    if not components_dir.exists():
+        return warnings
+    
+    for tsx_file in components_dir.rglob("*.tsx"):
+        try:
+            content = tsx_file.read_text(encoding="utf-8")
+            for i, line in enumerate(content.split('\n')):
+                # Pattern: obj.prop.filter/map/slice without ?? or ?.
+                if re.search(r'\w+\.\w+\.(filter|map|slice|reduce)\(', line):
+                    if '??' not in line and '|| []' not in line and '?.' not in line:
+                        rel_path = tsx_file.relative_to(workspace_path)
+                        warnings.append(f"{rel_path}:{i+1}")
+        except Exception:
+            pass
+    
+    return warnings
 
 
 def _has_script(workspace_path: str, script_name: str) -> bool:
@@ -192,6 +236,14 @@ async def _run_service_build(
     all_stderr = ""
     
     try:
+        # Clear stale Next.js types cache before typecheck/build
+        _clear_next_types_cache(workspace_path)
+        
+        # Quick null safety validation
+        null_warnings = _validate_null_safety(workspace_path)
+        if null_warnings:
+            logger.warning(f"[run_code] Null safety warnings ({len(null_warnings)}): {null_warnings[:5]}")
+        
         loop = asyncio.get_event_loop()
         tasks = []
         task_names = []
