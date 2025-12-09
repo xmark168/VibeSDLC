@@ -9,7 +9,7 @@ from sqlmodel import Session
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.core.project_context import ProjectContext
 from app.models import Agent as AgentModel, ArtifactType, Epic, Story, Project
-from app.agents.team_leader.src import TeamLeaderGraph, generate_response_message
+from app.agents.team_leader.src import TeamLeaderGraph, generate_response_message, check_cancel_intent
 from app.kafka.event_schemas import AgentTaskType
 from app.core.db import engine
 from app.services.artifact_service import ArtifactService
@@ -217,6 +217,15 @@ class TeamLeader(BaseAgent):
             if "question_answer" not in routing_reason:
                 logger.warning(f"[{self.name}] Unknown resume task: {routing_reason}")
                 return TaskResult(success=False, output="", error_message="Unknown resume task type")
+            
+            # Check if this is an answer to "ASK_NEW_FEATURE" question
+            original_context = task.context.get("original_context", {})
+            question_context = original_context.get("question_context", {})
+            question_type = question_context.get("question_type", "")
+            
+            if question_type == "ASK_NEW_FEATURE":
+                # User is answering what feature to add - pass the answer
+                return await self._handle_new_feature_answer(task, answer)
             
             # Parse user's choice
             answer_lower = answer.lower().strip()
@@ -444,27 +453,107 @@ class TeamLeader(BaseAgent):
             return TaskResult(success=False, output=msg, error_message=str(e))
 
     async def _handle_update_existing(self, task: TaskContext) -> TaskResult:
-        """Handle user request to update/add features to existing project."""
+        """Handle user request to update/add features to existing project.
+        
+        This asks user WHAT feature they want to add, then waits for their answer.
+        """
         try:
             # Get original context
             original_context = task.context.get("original_context", {})
             question_context = original_context.get("question_context", {})
-            original_message = (
-                question_context.get("original_user_message") or
-                original_context.get("original_message") or
-                task.content or
-                "Cập nhật project"
+            existing_title = question_context.get("existing_prd_title", "project hiện tại")
+            
+            # Get attachments if any
+            attachments = (
+                question_context.get("attachments") or
+                original_context.get("attachments") or
+                []
             )
             
-            msg = await generate_response_message(
-                action="update",
-                context="User muốn cập nhật/thêm features vào project hiện tại",
-                extra_info=f"Sẽ chuyển cho BA xử lý. Request: {original_message[:50]}...",
-                agent=self
+            # Ask user what feature they want to add
+            question = f"Bạn muốn thêm/cập nhật feature gì cho dự án \"{existing_title}\"?\n\nMô tả chi tiết feature bạn muốn thêm nhé! 📝"
+            
+            # Save context for when user answers
+            new_question_context = {
+                "question_type": "ASK_NEW_FEATURE",
+                "existing_prd_title": existing_title,
+                "attachments": attachments
+            }
+            
+            await self.message_user(
+                "question",
+                question,
+                question_config={
+                    "type": "text",
+                    "context": new_question_context
+                }
             )
+            
+            logger.info(f"[{self.name}] Asked user what feature to add to '{existing_title}'")
+            
+            return TaskResult(
+                success=True,
+                output=question,
+                structured_data={"action": "ASK_NEW_FEATURE", "waiting_for_answer": True}
+            )
+            
+        except Exception as e:
+            logger.error(f"[{self.name}] Error handling update: {e}", exc_info=True)
+            msg = "Có lỗi xảy ra. Vui lòng thử lại! 😅"
+            await self.message_user("response", msg)
+            return TaskResult(success=False, output=msg, error_message=str(e))
+    
+    async def _handle_new_feature_answer(self, task: TaskContext, answer: str) -> TaskResult:
+        """Handle user's answer about what feature to add."""
+        try:
+            # Get the feature description from user's answer (passed from _handle_resume_task)
+            feature_description = (answer or task.content or "").strip()
+            
+            if not feature_description:
+                await self.message_user(
+                    "response",
+                    "Bạn chưa mô tả feature muốn thêm. Hãy cho mình biết bạn muốn thêm feature gì nhé! 📝"
+                )
+                return TaskResult(success=False, output="Empty feature description")
+            
+            # Check for cancel/no-change intent using LLM
+            is_cancel = await check_cancel_intent(feature_description, agent=self)
+            
+            if is_cancel:
+                logger.info(f"[{self.name}] User cancelled feature update: {feature_description}")
+                await self.message_user(
+                    "response",
+                    "OK! Mình sẽ giữ nguyên PRD hiện tại. Nếu cần thêm feature sau, cứ nói với mình nhé! 👍"
+                )
+                return TaskResult(
+                    success=True,
+                    output="User cancelled feature update",
+                    structured_data={"action": "cancelled"}
+                )
+            
+            logger.info(f"[{self.name}] User wants to add feature: {feature_description[:100]}...")
+            
+            # Get context
+            original_context = task.context.get("original_context", {})
+            question_context = original_context.get("question_context", {})
+            existing_title = question_context.get("existing_prd_title", "project hiện tại")
+            attachments = question_context.get("attachments", [])
+            
+            # Generate response
+            feature_preview = feature_description[:50] + "..." if len(feature_description) > 50 else feature_description
+            msg = f"Đã ghi nhận! 📝 Mình sẽ chuyển cho BA để cập nhật PRD với feature mới: \"{feature_preview}\" nhé!"
             await self.message_user("response", msg)
             
-            # Delegate to BA with update mode
+            # Build context with metadata for update mode
+            new_task_context = {
+                "is_update_mode": True,
+                "existing_prd_title": existing_title,
+                "feature_to_add": feature_description,
+            }
+            if attachments:
+                new_task_context["attachments"] = attachments
+            
+            # Delegate to BA with update context
             new_task = TaskContext(
                 task_id=task.task_id,
                 task_type=AgentTaskType.MESSAGE,
@@ -472,13 +561,17 @@ class TeamLeader(BaseAgent):
                 routing_reason="update_existing_project",
                 user_id=task.user_id,
                 project_id=self.project_id,
-                content=f"[UPDATE MODE] {original_message}",
+                content=feature_description,  # Clean content without prefix
+                context=new_task_context
             )
+            
             await self.delegate_to_role(
                 task=new_task,
                 target_role="business_analyst",
                 delegation_message=msg
             )
+            
+            logger.info(f"[{self.name}] Delegated feature update to BA: {feature_description[:50]}...")
             
             return TaskResult(
                 success=True,
@@ -487,8 +580,8 @@ class TeamLeader(BaseAgent):
             )
             
         except Exception as e:
-            logger.error(f"[{self.name}] Error handling update: {e}", exc_info=True)
+            logger.error(f"[{self.name}] Error handling new feature: {e}", exc_info=True)
             msg = "Có lỗi xảy ra. Vui lòng thử lại! 😅"
             await self.message_user("response", msg)
             return TaskResult(success=False, output=msg, error_message=str(e))
-
+    

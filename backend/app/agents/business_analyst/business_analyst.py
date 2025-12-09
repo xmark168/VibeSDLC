@@ -19,7 +19,7 @@ from app.agents.business_analyst.src import BusinessAnalystGraph
 from app.agents.business_analyst.src.nodes import (
     process_answer, ask_one_question, 
     process_batch_answers,
-    generate_prd, extract_stories, save_artifacts,
+    generate_prd, update_prd, extract_stories, save_artifacts,
     check_clarity, analyze_domain, ask_batch_questions,
     analyze_document_content, generate_document_feedback,
 )
@@ -129,7 +129,13 @@ class BusinessAnalyst(BaseAgent):
         logger.info(f"[{self.name}] Processing task with LangGraph: {task.content[:50] if task.content else 'empty'}")
         
         try:
-            # Validate user message (only for non-resume tasks)
+            # Check for UPDATE MODE first (feature is in context, not content)
+            is_update_mode = task.context.get("is_update_mode", False) if task.context else False
+            if is_update_mode:
+                logger.info(f"[{self.name}] Detected UPDATE MODE from context")
+                return await self._handle_update_mode(task)
+            
+            # Validate user message (only for non-resume, non-update tasks)
             if not task.content or not task.content.strip():
                 logger.error(f"[{self.name}] Empty task content received")
                 return TaskResult(
@@ -353,6 +359,8 @@ class BusinessAnalyst(BaseAgent):
         
         # Load shared context (cached, parallel loading) - same as Team Leader
         await self.context.ensure_loaded()
+        
+        # Note: UPDATE MODE is already checked in handle_task() before calling this method
         
         # Check for file attachments and combine with user message
         user_message = task.content
@@ -647,3 +655,104 @@ class BusinessAnalyst(BaseAgent):
             logger.info(f"[{self.name}] Interview state saved (question index: {state.get('current_question_index', 0)})")
         except Exception as e:
             logger.error(f"[{self.name}] Failed to save interview state: {e}")
+    
+    async def _handle_update_mode(self, task: TaskContext) -> TaskResult:
+        """Handle UPDATE MODE - add features to existing PRD.
+        
+        When user wants to add/update features:
+        1. Load existing PRD
+        2. Get feature description from context
+        3. Generate updated PRD with new features
+        4. Extract new stories for the feature
+        """
+        try:
+            # Get feature info from context (set by Team Leader)
+            ctx = task.context or {}
+            feature_description = ctx.get("feature_to_add") or task.content or ""
+            existing_title = ctx.get("existing_prd_title", "project hiện tại")
+            
+            logger.info(f"[{self.name}] UPDATE MODE: Adding feature to '{existing_title}': {feature_description[:100]}...")
+            
+            # Load existing PRD
+            existing_prd = self._load_existing_prd()
+            
+            if not existing_prd:
+                # No existing PRD - tell user to create one first
+                logger.warning(f"[{self.name}] No existing PRD found for update")
+                await self.message_user(
+                    "response",
+                    "Chưa có PRD nào để cập nhật. Bạn cần tạo PRD trước khi thêm feature mới nhé! 📝\n\nHãy mô tả dự án bạn muốn làm để mình tạo PRD."
+                )
+                return TaskResult(
+                    success=True,
+                    output="No PRD to update",
+                    structured_data={"action": "need_create_prd_first"}
+                )
+            
+            # Send acknowledgment
+            await self.message_user(
+                "response",
+                f"📝 Đang cập nhật PRD \"{existing_title}\" với feature mới: {feature_description[:50]}..."
+            )
+            await self.message_user("thinking", "Đang cập nhật PRD...")
+            
+            # Load existing epics/stories
+            existing_epics, existing_stories = self._load_existing_epics_and_stories()
+            
+            # Build state for update
+            initial_state = {
+                **self._build_base_state(task),
+                "user_message": feature_description,  # The feature to add
+                "collected_info": {},
+                "existing_prd": existing_prd,
+                "conversation_context": self.context.format_memory(),
+                "intent": "prd_update",  # Special intent for update flow
+                "questions": [],
+                "current_question_index": 0,
+                "collected_answers": [],
+                "waiting_for_answer": False,
+                "all_questions_answered": True,  # Skip interview
+                "prd_draft": None,
+                "prd_final": None,
+                "prd_saved": False,
+                "change_summary": "",
+                "epics": existing_epics,
+                "stories": existing_stories,
+                "stories_saved": False,
+                "analysis_text": "",
+                "error": None,
+                "retry_count": 0,
+                "result": {},
+                "is_complete": False,
+                "is_update_mode": True,  # Flag for update mode
+                "feature_to_add": feature_description,
+            }
+            
+            # Update existing PRD with new feature (use update_prd, not generate_prd)
+            logger.info(f"[{self.name}] Updating PRD with new feature...")
+            initial_state = {**initial_state, **(await update_prd(initial_state, agent=self))}
+            
+            # Extract new stories
+            logger.info(f"[{self.name}] Extracting stories for new feature...")
+            initial_state = {**initial_state, **(await extract_stories(initial_state, agent=self))}
+            
+            # Save artifacts
+            initial_state = {**initial_state, **(await save_artifacts(initial_state, agent=self))}
+            
+            return TaskResult(
+                success=True,
+                output="PRD updated with new feature",
+                structured_data=initial_state.get("result", {})
+            )
+            
+        except Exception as e:
+            logger.error(f"[{self.name}] Error in UPDATE MODE: {e}", exc_info=True)
+            await self.message_user(
+                "response",
+                "Có lỗi xảy ra khi cập nhật PRD. Vui lòng thử lại! 😅"
+            )
+            return TaskResult(
+                success=False,
+                output="",
+                error_message=str(e)
+            )

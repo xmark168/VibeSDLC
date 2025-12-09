@@ -561,6 +561,41 @@ async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState
         return {**state, "action": "RESPOND"}
 
 
+async def check_cancel_intent(user_message: str, agent=None) -> bool:
+    """Check if user wants to cancel an action using LLM.
+    
+    Args:
+        user_message: The user's response
+        agent: Optional agent for logging
+        
+    Returns:
+        True if user wants to cancel, False if they want to proceed
+    """
+    try:
+        system_prompt, user_prompt = _get_task_prompts(
+            _PROMPTS, "cancel_intent_check",
+            agent_info=_DEFAULTS,
+            user_message=user_message
+        )
+        
+        response = await _fast_llm.ainvoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ])
+        
+        result = response.content.strip().upper()
+        is_cancel = "CANCEL" in result
+        
+        agent_name = agent.name if agent else "TeamLeader"
+        logger.info(f"[{agent_name}] Cancel intent check: '{user_message[:50]}...' -> {result} (is_cancel={is_cancel})")
+        
+        return is_cancel
+        
+    except Exception as e:
+        logger.error(f"[check_cancel_intent] Error: {e}")
+        return False
+
+
 async def confirm_existing(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Ask user what to do when project with same domain already exists."""
     try:
