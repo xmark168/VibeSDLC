@@ -1,7 +1,5 @@
-"""Kafka producer singleton for publishing events.
-
-This module provides a thread-safe Kafka producer singleton that handles
-event serialization and reliable message delivery.
+"""
+Kafka producer singleton for publishing events.
 """
 
 import asyncio
@@ -22,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 class UUIDEncoder(json.JSONEncoder):
     """JSON encoder that handles UUID serialization."""
-
     def default(self, obj):
         if isinstance(obj, UUID):
             return str(obj)

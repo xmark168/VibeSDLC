@@ -1,15 +1,12 @@
-"""Kafka consumer registry for managing multiple consumers.
-
-This module provides a centralized registry for all Kafka consumers
-in the application, handling their lifecycle and coordination.
+"""
+Kafka consumer registry for managing multiple consumers.
 """
 
 import asyncio
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-from app.kafka.consumer import BaseKafkaConsumer, EventHandlerConsumer
-from app.kafka.event_schemas import KafkaTopics
+from app.kafka.consumer import BaseKafkaConsumer
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +20,8 @@ class ConsumerRegistry:
         self._started = False
 
     def register(self, name: str, consumer: BaseKafkaConsumer):
-        """Register a consumer.
-
-        Args:
-            name: Unique name for the consumer
-            consumer: Consumer instance
+        """
+        Register a consumer.
         """
         if name in self.consumers:
             logger.warning(f"Consumer {name} already registered, replacing...")
@@ -110,11 +104,6 @@ def get_consumer_registry() -> ConsumerRegistry:
 def setup_consumers(registry: ConsumerRegistry):
     """Setup all application consumers.
 
-    This function is called during application startup to register
-    all consumers needed by the application.
-
-    Args:
-        registry: ConsumerRegistry instance
     """
     # Story events are handled by StoryEventRouter in router.py
     # No additional consumers needed here
@@ -125,7 +114,6 @@ def setup_consumers(registry: ConsumerRegistry):
 async def start_all_consumers():
     """Start all registered consumers.
 
-    This is called during application startup.
     """
     registry = get_consumer_registry()
     setup_consumers(registry)
@@ -135,7 +123,6 @@ async def start_all_consumers():
 async def shutdown_all_consumers():
     """Shutdown all registered consumers.
 
-    This is called during application shutdown.
     """
     registry = get_consumer_registry()
     await registry.stop_all()
