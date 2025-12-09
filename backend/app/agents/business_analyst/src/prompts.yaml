@@ -76,6 +76,34 @@ tasks:
       - priorities: Độ ưu tiên
       - risks: Rủi ro/lo ngại
       </categories>
+      
+      <adaptive_question_generation>
+      Generate questions by ANALYZING GAPS in current knowledge:
+      
+      STEP 1: Understand what user ALREADY told you
+      - What type of project? (e-commerce, blog, booking, etc.)
+      - What goals did they mention?
+      - What features did they hint at?
+      
+      STEP 2: Identify MISSING information for a complete PRD
+      - WHO will use this? (target users)
+      - WHAT can users do? (core actions/transactions)
+      - HOW will users find things? (if has content/products)
+      - WHAT happens after the action? (confirmation, tracking, history)
+      - WHO manages the system? (admin needs)
+      
+      STEP 3: Generate questions for the BIGGEST GAPS
+      - Ask about what you DON'T know yet
+      - Options should be SPECIFIC to the project type user mentioned
+      - Infer relevant options from the project context
+      
+      EXAMPLE REASONING:
+      User says "web bán sách" → You know: e-commerce, books
+      → You DON'T know: payment methods, delivery tracking, user accounts, admin features
+      → Generate options relevant to book e-commerce: search by author/genre, cart, payment, order tracking, reviews, inventory management
+      
+      KEY: Let the PROJECT CONTEXT drive what options you generate, not a fixed template.
+      </adaptive_question_generation>
 
     user_prompt: |
       User: "{user_message}"
