@@ -81,7 +81,7 @@ export function TwoFactorSettings() {
       await setup2FA.mutateAsync()
       setSetupDialogOpen(true)
     } catch (error) {
-      toast.error("Không thể khởi tạo 2FA. Vui lòng thử lại.")
+      toast.error("Failed to setup 2FA. Please try again.")
     }
   }
 
@@ -92,9 +92,9 @@ export function TwoFactorSettings() {
       setSetupDialogOpen(false)
       setBackupCodesDialogOpen(true)
       setVerifyCode("")
-      toast.success("Đã bật xác thực hai bước!")
+      toast.success("Two-factor authentication enabled!")
     } catch (error) {
-      toast.error("Mã xác thực không đúng. Vui lòng thử lại.")
+      toast.error("Invalid verification code. Please try again.")
     }
   }
 
@@ -107,9 +107,9 @@ export function TwoFactorSettings() {
           password: requiresPassword ? disablePassword : undefined 
         }),
         {
-          loading: "Đang gửi mã xác thực...",
-          success: "Mã xác thực đã được gửi đến email của bạn!",
-          error: "Không thể gửi mã xác thực. Vui lòng thử lại.",
+          loading: "Sending verification code...",
+          success: "Verification code sent to your email!",
+          error: "Failed to send verification code. Please try again.",
         }
       )
       setMaskedEmail(result.masked_email)
@@ -118,7 +118,7 @@ export function TwoFactorSettings() {
       setDisableConfirmDialogOpen(false)
       setDisableCodeDialogOpen(true)
     } catch (error: any) {
-      const errorMessage = error?.body?.detail || "Không thể gửi mã xác thực. Kiểm tra mật khẩu."
+      const errorMessage = error?.body?.detail || "Failed to send verification code. Check your password."
       toast.error(errorMessage)
     }
   }
@@ -130,9 +130,9 @@ export function TwoFactorSettings() {
           password: requiresPassword ? disablePassword : undefined 
         }),
         {
-          loading: "Đang gửi lại mã xác thực...",
-          success: "Mã xác thực mới đã được gửi!",
-          error: "Không thể gửi lại mã. Vui lòng thử lại.",
+          loading: "Resending verification code...",
+          success: "New verification code sent!",
+          error: "Failed to resend code. Please try again.",
         }
       )
       setMaskedEmail(result.masked_email)
@@ -140,7 +140,7 @@ export function TwoFactorSettings() {
       setResendCooldown(30)
       setDisableCode("") // Clear old code
     } catch (error: any) {
-      const errorMessage = error?.body?.detail || "Không thể gửi lại mã xác thực."
+      const errorMessage = error?.body?.detail || "Failed to resend verification code."
       toast.error(errorMessage)
     }
   }
@@ -157,9 +157,9 @@ export function TwoFactorSettings() {
       setMaskedEmail("")
       setCodeExpiry(0)
       setResendCooldown(0)
-      toast.success("Đã tắt xác thực hai bước")
+      toast.success("Two-factor authentication disabled")
     } catch (error: any) {
-      const errorMessage = error?.body?.detail || "Mã xác thực không đúng hoặc đã hết hạn."
+      const errorMessage = error?.body?.detail || "Invalid or expired verification code."
       toast.error(errorMessage)
     }
   }
@@ -172,7 +172,7 @@ export function TwoFactorSettings() {
 
   const copyAllBackupCodes = () => {
     navigator.clipboard.writeText(backupCodes.join("\n"))
-    toast.success("Đã sao chép tất cả mã backup!")
+    toast.success("All backup codes copied!")
   }
 
   if (statusLoading) {
@@ -191,10 +191,10 @@ export function TwoFactorSettings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5" />
-            Xác thực hai bước (2FA)
+            Two-Factor Authentication (2FA)
           </CardTitle>
           <CardDescription>
-            Tăng cường bảo mật tài khoản bằng ứng dụng xác thực như Google Authenticator hoặc Authy
+            Enhance account security with authenticator apps like Google Authenticator or Authy
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -211,12 +211,12 @@ export function TwoFactorSettings() {
               )}
               <div>
                 <p className="font-medium">
-                  {status?.enabled ? "Đã bật" : "Chưa bật"}
+                  {status?.enabled ? "Enabled" : "Disabled"}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {status?.enabled
-                    ? "Tài khoản của bạn được bảo vệ bởi 2FA"
-                    : "Bật 2FA để bảo vệ tài khoản tốt hơn"}
+                    ? "Your account is protected by 2FA"
+                    : "Enable 2FA for better account protection"}
                 </p>
               </div>
             </div>
@@ -226,14 +226,14 @@ export function TwoFactorSettings() {
                 size="sm"
                 onClick={() => setDisableConfirmDialogOpen(true)}
               >
-                Tắt 2FA
+                Disable 2FA
               </Button>
             ) : (
               <Button onClick={handleSetup} disabled={setup2FA.isPending}>
                 {setup2FA.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-1" />
                 ) : null}
-                Bật 2FA
+                Enable 2FA
               </Button>
             )}
           </div>
@@ -244,9 +244,9 @@ export function TwoFactorSettings() {
       <Dialog open={setupDialogOpen} onOpenChange={setSetupDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Thiết lập xác thực hai bước</DialogTitle>
+            <DialogTitle>Setup Two-Factor Authentication</DialogTitle>
             <DialogDescription>
-              Quét mã QR bằng ứng dụng xác thực, sau đó nhập mã 6 chữ số để xác nhận
+              Scan the QR code with your authenticator app, then enter the 6-digit code to confirm
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -262,7 +262,7 @@ export function TwoFactorSettings() {
             {setup2FA.data?.secret && (
               <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">
-                  Hoặc nhập mã thủ công:
+                  Or enter code manually:
                 </Label>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 p-2 bg-muted rounded text-sm font-mono break-all">
@@ -273,7 +273,7 @@ export function TwoFactorSettings() {
                     size="icon"
                     onClick={() => {
                       navigator.clipboard.writeText(setup2FA.data?.secret || "")
-                      toast.success("Đã sao chép mã!")
+                      toast.success("Code copied!")
                     }}
                   >
                     <Copy className="w-4 h-4" />
@@ -282,7 +282,7 @@ export function TwoFactorSettings() {
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="verify-code">Mã xác thực</Label>
+              <Label htmlFor="verify-code">Verification code</Label>
               <Input
                 id="verify-code"
                 type="text"
@@ -297,7 +297,7 @@ export function TwoFactorSettings() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSetupDialogOpen(false)}>
-              Hủy
+              Cancel
             </Button>
             <Button
               onClick={handleVerifySetup}
@@ -306,7 +306,7 @@ export function TwoFactorSettings() {
               {verifySetup.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-1" />
               ) : null}
-              Xác nhận
+              Confirm
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -321,29 +321,29 @@ export function TwoFactorSettings() {
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Tắt xác thực hai bước</DialogTitle>
+            <DialogTitle>Disable Two-Factor Authentication</DialogTitle>
             <DialogDescription>
               {requiresPassword 
-                ? "Bạn có chắc chắn muốn tắt xác thực hai bước? Nhập mật khẩu để xác nhận."
-                : "Bạn có chắc chắn muốn tắt xác thực hai bước? Mã xác thực sẽ được gửi đến email của bạn."}
+                ? "Are you sure you want to disable 2FA? Enter your password to confirm."
+                : "Are you sure you want to disable 2FA? A verification code will be sent to your email."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Tắt 2FA sẽ làm giảm bảo mật tài khoản của bạn. Mã xác thực sẽ được gửi đến email của bạn.
+                Disabling 2FA will reduce your account security. A verification code will be sent to your email.
               </AlertDescription>
             </Alert>
             {requiresPassword && (
               <div className="space-y-2">
-                <Label htmlFor="disable-password">Mật khẩu</Label>
+                <Label htmlFor="disable-password">Password</Label>
                 <Input
                   id="disable-password"
                   type="password"
                   value={disablePassword}
                   onChange={(e) => setDisablePassword(e.target.value)}
-                  placeholder="Nhập mật khẩu của bạn"
+                  placeholder="Enter your password"
                 />
               </div>
             )}
@@ -353,7 +353,7 @@ export function TwoFactorSettings() {
               setDisableConfirmDialogOpen(false)
               setDisablePassword("")
             }}>
-              Hủy
+              Cancel
             </Button>
             <Button
               variant="destructive"
@@ -365,7 +365,7 @@ export function TwoFactorSettings() {
               ) : (
                 <Mail className="w-4 h-4 mr-1" />
               )}
-              Gửi mã xác thực
+              Send verification code
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -382,9 +382,9 @@ export function TwoFactorSettings() {
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Nhập mã xác thực</DialogTitle>
+            <DialogTitle>Enter Verification Code</DialogTitle>
             <DialogDescription>
-              Mã xác thực đã được gửi đến email <span className="font-medium">{maskedEmail}</span>. Vui lòng nhập mã để hoàn tất.
+              Verification code sent to <span className="font-medium">{maskedEmail}</span>. Please enter the code to complete.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -392,14 +392,14 @@ export function TwoFactorSettings() {
               <Mail className="h-4 w-4" />
               <AlertDescription>
                 {codeExpiry > 0 ? (
-                  <>Mã xác thực hết hạn sau <span className="font-semibold">{formatTime(codeExpiry)}</span>. Kiểm tra hộp thư đến hoặc thư rác.</>
+                  <>Code expires in <span className="font-semibold">{formatTime(codeExpiry)}</span>. Check your inbox or spam folder.</>
                 ) : (
-                  <>Mã xác thực đã hết hạn. Vui lòng gửi lại mã mới.</>
+                  <>Verification code expired. Please resend a new code.</>
                 )}
               </AlertDescription>
             </Alert>
             <div className="space-y-2">
-              <Label htmlFor="disable-code">Mã xác thực</Label>
+              <Label htmlFor="disable-code">Verification code</Label>
               <Input
                 id="disable-code"
                 type="text"
@@ -425,8 +425,8 @@ export function TwoFactorSettings() {
                   <Loader2 className="w-4 h-4 animate-spin mr-1" />
                 ) : null}
                 {resendCooldown > 0 
-                  ? `Gửi lại mã sau ${resendCooldown}s` 
-                  : "Gửi lại mã xác thực"}
+                  ? `Resend code in ${resendCooldown}s` 
+                  : "Resend verification code"}
               </Button>
             </div>
           </div>
@@ -437,7 +437,7 @@ export function TwoFactorSettings() {
               setCodeExpiry(0)
               setResendCooldown(0)
             }}>
-              Hủy
+              Cancel
             </Button>
             <Button
               variant="destructive"
@@ -447,7 +447,7 @@ export function TwoFactorSettings() {
               {disable2FA.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-1" />
               ) : null}
-              Tắt 2FA
+              Disable 2FA
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -457,16 +457,16 @@ export function TwoFactorSettings() {
       <Dialog open={backupCodesDialogOpen} onOpenChange={setBackupCodesDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Mã backup của bạn</DialogTitle>
+            <DialogTitle>Your Backup Codes</DialogTitle>
             <DialogDescription>
-              Lưu các mã này ở nơi an toàn. Mỗi mã chỉ sử dụng được một lần.
+              Save these codes in a secure place. Each code can only be used once.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <Alert>
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Đây là lần duy nhất bạn có thể xem các mã này. Hãy lưu lại ngay!
+                This is the only time you can view these codes. Save them now!
               </AlertDescription>
             </Alert>
             <div className="grid grid-cols-2 gap-2">
@@ -495,10 +495,10 @@ export function TwoFactorSettings() {
           <DialogFooter>
             <Button variant="outline" onClick={copyAllBackupCodes}>
               <Copy className="w-4 h-4 mr-1" />
-              Sao chép tất cả
+              Copy all
             </Button>
             <Button onClick={() => setBackupCodesDialogOpen(false)}>
-              Đã lưu
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -8,11 +8,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.tools import (
-    setup_git_worktree,
-    get_agents_md,
-    get_project_context,
-)
+
 from app.agents.developer_v2.src.skills import SkillRegistry
 from app.agents.developer_v2.src.utils.db_container import (
     start_postgres_container,

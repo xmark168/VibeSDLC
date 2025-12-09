@@ -57,7 +57,7 @@ export function PrdCreatedCard({
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-medium text-green-700 dark:text-green-400">
-              ✅ PRD đã được phê duyệt
+              ✅ PRD has been approved
             </h4>
             <p className="text-xs text-muted-foreground">{title}</p>
           </div>
@@ -80,7 +80,7 @@ export function PrdCreatedCard({
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-medium text-blue-700 dark:text-blue-400">
-              📋 PRD đã được tạo {!hasSubmitted && '- Chờ phê duyệt'}
+              📋 PRD created {!hasSubmitted && '- Awaiting approval'}
             </h4>
             <p className="text-xs text-muted-foreground">{title}</p>
           </div>
@@ -93,7 +93,7 @@ export function PrdCreatedCard({
         {/* Old version - no actions */}
         {!showActions && (
           <div className="text-xs text-muted-foreground italic">
-            Phiên bản cũ
+            Old version
           </div>
         )}
 
@@ -101,7 +101,7 @@ export function PrdCreatedCard({
         {showActions && hasSubmitted && (
           <div className="flex items-center gap-2 text-sm">
             <Check className="w-4 h-4" />
-            <span>Đã gửi yêu cầu</span>
+            <span>Request submitted</span>
           </div>
         )}
 
@@ -109,7 +109,7 @@ export function PrdCreatedCard({
         {showActions && isEditing && !hasSubmitted && (
           <div className="space-y-2">
             <Textarea
-              placeholder="Nhập yêu cầu chỉnh sửa PRD..."
+              placeholder="Enter PRD edit request..."
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
               className="min-h-[80px] text-sm"
@@ -121,7 +121,7 @@ export function PrdCreatedCard({
                 disabled={!feedback.trim()}
               >
                 <Check className="w-3.5 h-3.5 mr-1" />
-                Gửi yêu cầu
+                Submit
               </Button>
               <Button 
                 size="sm" 
@@ -132,7 +132,7 @@ export function PrdCreatedCard({
                 }}
               >
                 <X className="w-3.5 h-3.5 mr-1" />
-                Hủy
+                Cancel
               </Button>
             </div>
           </div>
@@ -147,7 +147,7 @@ export function PrdCreatedCard({
               onClick={handleApprove}
             >
               <Check className="w-3.5 h-3.5 mr-1" />
-              Phê duyệt
+              Approve
             </Button>
             <Button 
               size="sm" 
@@ -155,7 +155,7 @@ export function PrdCreatedCard({
               onClick={() => setIsEditing(true)}
             >
               <Pencil className="w-3.5 h-3.5 mr-1" />
-              Yêu cầu chỉnh sửa
+              Request edit
             </Button>
           </div>
         )}

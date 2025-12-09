@@ -53,6 +53,7 @@ class AgentsPublic(SQLModel):
 
 class PoolConfigSchema(BaseModel):
     max_agents: int = Field(default=10, ge=1)
+    health_check_interval: int = Field(default=60, ge=10)
 
 
 class CreatePoolRequest(BaseModel):
@@ -63,9 +64,11 @@ class CreatePoolRequest(BaseModel):
 
 class SpawnAgentRequest(BaseModel):
     project_id: UUID
-    pool_name: str
+    pool_name: str = "universal_pool"
     role_type: str
     human_name: Optional[str] = None
+    heartbeat_interval: int = Field(default=30, ge=10)
+    max_idle_time: int = Field(default=300, ge=60)
 
 
 class TerminateAgentRequest(BaseModel):
@@ -76,18 +79,31 @@ class TerminateAgentRequest(BaseModel):
 class PoolResponse(BaseModel):
     pool_name: str
     role_type: str
-    active_agents: int
-    max_agents: int
-    total_spawned: int
-    total_terminated: int
-    is_running: bool
-    agents: list[dict]
+    total_agents: int = 0
+    active_agents: int = 0
+    busy_agents: int = 0
+    idle_agents: int = 0
+    max_agents: int = 100
+    is_running: bool = True
+    total_spawned: int = 0
+    total_terminated: int = 0
+    total_executions: int = 0
+    successful_executions: int = 0
+    failed_executions: int = 0
+    success_rate: float = 0.0
+    load: float = 0.0
+    agents: list[dict] = []
 
 
 class SystemStatsResponse(BaseModel):
     uptime_seconds: float
     total_pools: int
     total_agents: int
+    total_executions: int = 0
+    successful_executions: int = 0
+    failed_executions: int = 0
+    success_rate: float = 0.0
+    recent_alerts: int = 0
     pools: list[PoolResponse]
 
 

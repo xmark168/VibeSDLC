@@ -51,9 +51,9 @@ export function TwoFactorVerifyForm({ tempToken }: TwoFactorVerifyFormProps) {
         )
       }),
       {
-        loading: "Đang xác thực...",
-        success: <b>Xác thực thành công!</b>,
-        error: <b>Mã xác thực không đúng. Vui lòng thử lại.</b>,
+        loading: "Verifying...",
+        success: <b>Verification successful!</b>,
+        error: <b>Invalid verification code. Please try again.</b>,
       }
     )
   }
@@ -75,10 +75,10 @@ export function TwoFactorVerifyForm({ tempToken }: TwoFactorVerifyFormProps) {
           transition={{ delay: 0.4 }}
           className="text-2xl font-bold text-foreground"
         >
-          Xác thực hai bước
+          Two-factor authentication
         </motion.h2>
         <p className="text-muted-foreground mt-2">
-          Nhập mã 6 chữ số từ ứng dụng xác thực của bạn
+          Enter the 6-digit code from your authenticator app
         </p>
       </div>
 
@@ -90,7 +90,7 @@ export function TwoFactorVerifyForm({ tempToken }: TwoFactorVerifyFormProps) {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="code" className="sr-only">
-              Mã xác thực
+              Verification code
             </Label>
             <Input
               id="code"
@@ -105,7 +105,7 @@ export function TwoFactorVerifyForm({ tempToken }: TwoFactorVerifyFormProps) {
               required
             />
             <p className="text-xs text-muted-foreground text-center">
-              Bạn cũng có thể sử dụng mã backup (XXXX-XXXX)
+              You can also use a backup code (XXXX-XXXX)
             </p>
           </div>
 
@@ -114,7 +114,7 @@ export function TwoFactorVerifyForm({ tempToken }: TwoFactorVerifyFormProps) {
             disabled={verify2FAMutation.isPending || code.replace(/[-\s]/g, "").length < 6}
             className="w-full h-12 text-base font-semibold"
           >
-            {verify2FAMutation.isPending ? "Đang xác thực..." : "Xác nhận"}
+            {verify2FAMutation.isPending ? "Verifying..." : "Confirm"}
           </Button>
 
           <div className="text-center">
@@ -123,7 +123,7 @@ export function TwoFactorVerifyForm({ tempToken }: TwoFactorVerifyFormProps) {
               className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
             >
               <ArrowLeft className="w-4 h-4" />
-              Quay lại đăng nhập
+              Back to login
             </Link>
           </div>
         </form>

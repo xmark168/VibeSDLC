@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { personasApi } from "@/apis/personas"
 import type { PersonaCreate, PersonaUpdate } from "@/types/persona"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 export const personaQueryKeys = {
   all: ["personas"] as const,
