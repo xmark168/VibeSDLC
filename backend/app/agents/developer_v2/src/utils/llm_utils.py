@@ -56,6 +56,17 @@ def flush_langfuse(state: dict) -> None:
             pass
 
 
+def get_langfuse_span(state: dict, name: str, input_data: dict = None):
+    """Get Langfuse span if handler available."""
+    if not state.get("langfuse_handler"):
+        return None
+    try:
+        from langfuse import get_client
+        return get_client().span(name=name, input=input_data or {})
+    except Exception:
+        return None
+
+
 async def execute_llm_with_tools(
     llm: ChatOpenAI,
     tools: list,

@@ -10,7 +10,8 @@ from typing import Tuple, Optional, List
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.utils.shell_utils import run_shell
-from app.agents.developer_v2.src.nodes._helpers import setup_tool_context, get_langfuse_span
+from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_span
+from app.agents.developer_v2.src.tools import set_tool_context
 
 logger = logging.getLogger(__name__)
 
@@ -325,7 +326,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
                 run_code_span.end(output={"status": "PASS", "reason": "No workspace"})
             return {**state, "run_status": "PASS", "run_result": {"status": "PASS", "summary": "No workspace"}}
         
-        setup_tool_context(workspace_path, project_id, task_id)
+        set_tool_context(root_dir=workspace_path, project_id=project_id, task_id=task_id)
         
         project_config = state.get("project_config", {})
         tech_stack = project_config.get("tech_stack", {})

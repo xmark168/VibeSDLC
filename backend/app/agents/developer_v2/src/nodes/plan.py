@@ -1,4 +1,4 @@
-"""Analyze and Plan node - Combined analysis and planning with tool exploration."""
+"""Analyze and Plan node - Zero-shot planning with FileRepository."""
 import os
 import re
 import logging
@@ -9,27 +9,18 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
 from app.agents.developer_v2.src.utils.llm_utils import (
-    get_langfuse_config as _cfg,
-    flush_langfuse,
-    execute_llm_with_tools as _llm_with_tools,
+    get_langfuse_config as _cfg, flush_langfuse, execute_llm_with_tools as _llm_with_tools,
 )
 from app.agents.developer_v2.src.nodes._llm import code_llm, exploration_llm, fast_llm
-from app.agents.developer_v2.src.nodes._helpers import setup_tool_context
-from app.agents.developer_v2.src.nodes.schemas import SimplePlanOutput
+from app.agents.developer_v2.src.tools import set_tool_context
+from app.agents.developer_v2.src.schemas import SimplePlanOutput
 from app.agents.developer_v2.src.skills.registry import SkillRegistry
 from app.agents.developer_v2.src.skills import get_project_structure, get_plan_prompts
-from app.agents.developer_v2.src.tools.filesystem_tools import (
-    read_file_safe, list_directory_safe, glob, grep_files
-)
+from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, glob, grep_files
 
 logger = logging.getLogger(__name__)
 
-# Boilerplate files that should never be created (already exist in template)
-BOILERPLATE_FILES = {
-    "src/lib/prisma.ts",
-    "src/lib/utils.ts",
-    "src/auth.ts",
-}
+BOILERPLATE_FILES = {"src/lib/prisma.ts", "src/lib/utils.ts", "src/auth.ts"}
 
 
 class FileRepository:
@@ -46,899 +37,339 @@ class FileRepository:
     def _scan(self):
         if not self.workspace_path or not os.path.exists(self.workspace_path):
             return
-        
         exclude_dirs = {'node_modules', '.next', '.git', '__pycache__', '.prisma'}
-        
         for root, dirs, files in os.walk(self.workspace_path):
             dirs[:] = [d for d in dirs if d not in exclude_dirs]
-            
             for f in files:
                 if f.endswith(('.ts', '.tsx', '.prisma', '.json', '.md')):
                     full_path = os.path.join(root, f)
                     rel_path = os.path.relpath(full_path, self.workspace_path).replace('\\', '/')
-                    
                     self.file_tree.append(rel_path)
-                    
                     if self._is_important(rel_path):
                         self.files[rel_path] = self._read_file(full_path)
-                    
                     if '/components/' in rel_path and rel_path.endswith('.tsx') and '/ui/' not in rel_path:
                         name = os.path.basename(rel_path).replace('.tsx', '')
                         self.components[name] = '@/' + rel_path.replace('.tsx', '')
-                    
                     if '/api/' in rel_path and rel_path.endswith('route.ts'):
                         self.api_routes.append(rel_path)
     
     def _is_important(self, path: str) -> bool:
-        important_patterns = [
-            'prisma/schema.prisma',
-            'src/types/index.ts',
-            'package.json',
-            'src/app/layout.tsx',
-            'src/lib/prisma.ts',
-        ]
-        return any(path.endswith(p) for p in important_patterns)
+        return any(path.endswith(p) for p in ['prisma/schema.prisma', 'src/types/index.ts', 'package.json', 'src/app/layout.tsx', 'src/lib/prisma.ts'])
     
     def _read_file(self, full_path: str) -> str:
         try:
             with open(full_path, 'r', encoding='utf-8') as f:
                 return f.read()
-        except Exception:
+        except:
             return ""
     
     def to_context(self) -> str:
-        parts = []
-        parts.append("## Project Files (COMPLETE - DO NOT EXPLORE)")
-        parts.append("```")
-        parts.append("\n".join(sorted(self.file_tree)))
-        parts.append("```")
-        
-        schema_content = self.files.get('prisma/schema.prisma', '')
-        parts.append("\n## prisma/schema.prisma (CURRENT STATE)")
-        parts.append("```prisma")
-        if len(schema_content) > 100:
-            parts.append(schema_content)
-        else:
-            parts.append("// Empty schema - needs models")
-        parts.append("```")
-        
-        types_content = self.files.get('src/types/index.ts', '')
-        if len(types_content) > 100:
-            parts.append("\n## src/types/index.ts")
-            parts.append("```typescript")
-            parts.append(types_content[:2500])
-            parts.append("```")
-        
+        parts = ["## Project Files (COMPLETE)", "```", "\n".join(sorted(self.file_tree)), "```"]
+        schema = self.files.get('prisma/schema.prisma', '')
+        parts.extend(["\n## prisma/schema.prisma", "```prisma", schema if len(schema) > 100 else "// Empty", "```"])
+        types = self.files.get('src/types/index.ts', '')
+        if len(types) > 100:
+            parts.extend(["\n## src/types/index.ts", "```typescript", types[:2500], "```"])
         if self.components:
-            parts.append("\n## Component Imports (USE THESE EXACT PATHS)")
+            parts.append("\n## Component Imports")
             for name, path in sorted(self.components.items()):
                 parts.append(f"- {name} → `import {{ {name} }} from '{path}'`")
-        
         if self.api_routes:
-            parts.append("\n## Existing API Routes")
-            for route in sorted(self.api_routes):
-                parts.append(f"- {route}")
-        
+            parts.append("\n## API Routes")
+            parts.extend(f"- {r}" for r in sorted(self.api_routes))
         return "\n".join(parts)
 
 
 def _extract_keywords(text: str) -> list:
-    stopwords = {'the', 'a', 'an', 'is', 'are', 'can', 'will', 'should', 'must',
-                 'user', 'users', 'when', 'then', 'given', 'and', 'or', 'to', 'from',
-                 'with', 'for', 'on', 'in', 'at', 'by', 'of', 'that', 'this', 'be',
-                 'want', 'see', 'click', 'display', 'show', 'create', 'update', 'delete'}
-    
+    stopwords = {'the', 'a', 'an', 'is', 'are', 'can', 'will', 'should', 'must', 'user', 'users', 'when', 'then', 'given', 'and', 'or', 'to', 'from', 'with', 'for', 'on', 'in', 'at', 'by', 'of', 'that', 'this', 'be', 'want', 'see', 'click', 'display', 'show', 'create', 'update', 'delete'}
     words = re.findall(r'[a-z]+', text.lower())
-    
-    keywords = []
     seen = set()
-    for word in words:
-        if len(word) > 3 and word not in stopwords and word not in seen:
-            keywords.append(word)
-            seen.add(word)
-    
-    return keywords[:10]
+    return [w for w in words if len(w) > 3 and w not in stopwords and not (w in seen or seen.add(w))][:10]
 
 
 def _smart_prefetch(workspace_path: str, story_title: str, requirements: list) -> str:
-    """Prefetch relevant files based on story content."""
     if not workspace_path or not os.path.exists(workspace_path):
         return ""
-    
-    context_parts = []
-    
-    # Always read core files (expanded for better context)
-    core_files = [
-        ("package.json", 500),
-        ("prisma/schema.prisma", 3000),
-        ("src/app/layout.tsx", 2000),
-        ("src/lib/prisma.ts", 1000),
-        ("src/types/index.ts", 1500),
-        ("src/app/actions/index.ts", 1000),
-        ("tsconfig.json", 300),
-    ]
-    
+    parts = []
+    core_files = [("package.json", 500), ("prisma/schema.prisma", 3000), ("src/app/layout.tsx", 2000), ("src/lib/prisma.ts", 1000), ("src/types/index.ts", 1500), ("src/app/actions/index.ts", 1000), ("tsconfig.json", 300)]
     for file_path, max_len in core_files:
         full_path = os.path.join(workspace_path, file_path)
         if os.path.exists(full_path):
             try:
                 with open(full_path, 'r', encoding='utf-8') as f:
-                    content = f.read()[:max_len]
-                context_parts.append(f"### {file_path}\n```\n{content}\n```")
-            except Exception:
+                    parts.append(f"### {file_path}\n```\n{f.read()[:max_len]}\n```")
+            except:
                 pass
-    
-    # Extract keywords from story
-    req_text = ' '.join(requirements) if requirements else ''
-    text = f"{story_title} {req_text}".lower()
-    keywords = _extract_keywords(text)
-    
-    # Find related files based on keywords (expanded)
-    for keyword in keywords[:8]:
-        pattern = os.path.join(workspace_path, "src", "**", f"*{keyword}*")
+    text = f"{story_title} {' '.join(requirements or [])}".lower()
+    for kw in _extract_keywords(text)[:8]:
         try:
-            matches = glob_module.glob(pattern, recursive=True)
-            for match in matches[:3]:
+            for match in glob_module.glob(os.path.join(workspace_path, "src", "**", f"*{kw}*"), recursive=True)[:3]:
                 if os.path.isfile(match):
-                    rel_path = os.path.relpath(match, workspace_path)
                     with open(match, 'r', encoding='utf-8') as f:
-                        content = f.read()[:1500]
-                    context_parts.append(f"### {rel_path}\n```\n{content}\n```")
-        except Exception:
+                        parts.append(f"### {os.path.relpath(match, workspace_path)}\n```\n{f.read()[:1500]}\n```")
+        except:
             pass
-    
-    # List key directories
-    for dir_name in ["src/app/api", "src/components", "src/lib", "src/app"]:
-        dir_path = os.path.join(workspace_path, dir_name)
-        if os.path.exists(dir_path):
+    for d in ["src/app/api", "src/components", "src/lib", "src/app"]:
+        dp = os.path.join(workspace_path, d)
+        if os.path.exists(dp):
             try:
-                items = os.listdir(dir_path)[:15]
-                context_parts.append(f"### {dir_name}/\n{', '.join(items)}")
-            except Exception:
+                parts.append(f"### {d}/\n{', '.join(os.listdir(dp)[:15])}")
+            except:
                 pass
-    
-    return "\n\n".join(context_parts)
+    return "\n\n".join(parts)
 
 
 def _preload_dependencies(workspace_path: str, steps: list) -> dict:
-    """Pre-load dependency file contents (MetaGPT-style)."""
-    dependencies_content = {}
-    
+    deps_content = {}
     if not workspace_path or not os.path.exists(workspace_path):
-        return dependencies_content
-    
-    # Collect all unique dependencies from steps
+        return deps_content
     all_deps = set()
     for step in steps:
-        deps = step.get("dependencies", [])
-        if isinstance(deps, list):
-            for dep in deps:
-                # Only add string paths, skip integers (step numbers)
-                if isinstance(dep, str) and dep:
-                    all_deps.add(dep)
-                elif isinstance(dep, int):
-                    # LLM sometimes outputs step numbers instead of file paths
-                    # Try to resolve: find file_path from step with that order
-                    for s in steps:
-                        if s.get("order") == dep and s.get("file_path"):
-                            all_deps.add(s["file_path"])
-                            break
-    
-    # Also add common files that are often needed
-    common_files = [
-        "prisma/schema.prisma",
-        "src/app/layout.tsx",  # See what components are already rendered
-        "src/types/index.ts",
-        "src/lib/prisma.ts",
-    ]
-    all_deps.update(common_files)
-    
-    # Pre-load each dependency
-    for dep_path in all_deps:
-        if not isinstance(dep_path, str):
+        for dep in step.get("dependencies", []):
+            if isinstance(dep, str) and dep:
+                all_deps.add(dep)
+            elif isinstance(dep, int):
+                for s in steps:
+                    if s.get("order") == dep and s.get("file_path"):
+                        all_deps.add(s["file_path"])
+                        break
+    all_deps.update(["prisma/schema.prisma", "src/app/layout.tsx", "src/types/index.ts", "src/lib/prisma.ts"])
+    for dep in all_deps:
+        if not isinstance(dep, str):
             continue
-        full_path = os.path.join(workspace_path, dep_path)
-        if os.path.exists(full_path) and os.path.isfile(full_path):
+        fp = os.path.join(workspace_path, dep)
+        if os.path.exists(fp) and os.path.isfile(fp):
             try:
-                with open(full_path, 'r', encoding='utf-8') as f:
+                with open(fp, 'r', encoding='utf-8') as f:
                     content = f.read()
-                # Limit content size to avoid token overflow
-                if len(content) > 8000:
-                    content = content[:8000] + "\n... (truncated)"
-                dependencies_content[dep_path] = content
-                logger.info(f"[analyze_and_plan] Pre-loaded: {dep_path}")
-            except Exception as e:
-                logger.warning(f"[analyze_and_plan] Failed to pre-load {dep_path}: {e}")
-    
-    return dependencies_content
+                deps_content[dep] = content[:8000] + "\n... (truncated)" if len(content) > 8000 else content
+            except:
+                pass
+    return deps_content
 
 
 def _auto_assign_skills(file_path: str) -> list:
-    """Auto-assign skills based on file path."""
     if not file_path:
         return []
-    
     fp = file_path.lower()
-    skills = []
-    
-    # Database
     if "schema.prisma" in fp:
-        skills.append("database-model")
-    elif "seed.ts" in fp:
-        skills.append("database-seed")
-    # API routes
-    elif "/api/" in fp or "route.ts" in fp:
-        skills.append("api-route")
-    # Server actions
-    elif "/actions/" in fp or "action.ts" in fp:
-        skills.append("server-action")
-    # Auth
-    elif "auth" in fp:
-        skills.append("authentication")
-    # Frontend
-    elif fp.endswith(".tsx"):
+        return ["database-model"]
+    if "seed.ts" in fp:
+        return ["database-seed"]
+    if "/api/" in fp or "route.ts" in fp:
+        return ["api-route"]
+    if "/actions/" in fp:
+        return ["server-action"]
+    if "auth" in fp:
+        return ["authentication"]
+    if fp.endswith(".tsx"):
         if "/components/" in fp:
-            skills.extend(["frontend-component", "frontend-design"])
-        elif "/app/" in fp:
-            skills.append("frontend-design")  # Pages
-    # Types
-    elif "/types/" in fp or fp.endswith(".d.ts"):
-        skills.append("typescript-types")
-    
-    return skills
+            return ["frontend-component", "frontend-design"]
+        if "/app/" in fp:
+            return ["frontend-design"]
+    return []
 
 
 def _auto_detect_dependencies(file_path: str, all_steps: list = None) -> list:
-    """Auto-detect dependencies based on file path and other steps in plan.
-    
-    Key patterns:
-    - Section components depend on Card/Item components
-    - Pages depend on components in same domain
-    - API routes depend on schema and lib
-    """
     if not file_path:
         return []
-    
     fp = file_path.lower()
     deps = []
-    
-    # All files might need schema
     if "/api/" in fp or "/actions/" in fp or "seed.ts" in fp:
         deps.append("prisma/schema.prisma")
-    
-    # Components/pages might need types
     if fp.endswith(".tsx"):
         deps.append("src/types/index.ts")
-    
-    # API routes might need lib
     if "/api/" in fp:
         deps.append("src/lib/prisma.ts")
-    
-    # === NEW: Component cross-dependencies ===
     if all_steps and fp.endswith(".tsx"):
         filename = file_path.split("/")[-1].replace(".tsx", "").lower()
-        
-        # Section components depend on Card/Item components
-        # e.g., CategoriesSection.tsx depends on CategoryCard.tsx
         if "section" in filename:
-            # Extract domain: "categoriessection" -> "categor" (prefix)
             domain = filename.replace("section", "").replace("s", "")[:6]
-            
             for step in all_steps:
-                other_fp = step.get("file_path", "").lower()
-                other_name = other_fp.split("/")[-1].replace(".tsx", "")
-                
-                # Find related Card/Item components
-                if other_fp != fp.lower() and other_fp.endswith(".tsx"):
-                    if ("card" in other_name or "item" in other_name) and domain in other_name:
-                        deps.append(step.get("file_path", ""))
-        
-        # Pages depend on Section components
+                other = step.get("file_path", "").lower()
+                other_name = other.split("/")[-1].replace(".tsx", "")
+                if other != fp and other.endswith(".tsx") and ("card" in other_name or "item" in other_name) and domain in other_name:
+                    deps.append(step.get("file_path", ""))
         if "page.tsx" in fp:
-            folder = "/".join(file_path.split("/")[:-1]).lower()
-            
             for step in all_steps:
-                other_fp = step.get("file_path", "").lower()
-                
-                # Section components in same domain
-                if other_fp != fp.lower() and "section" in other_fp and other_fp.endswith(".tsx"):
+                other = step.get("file_path", "").lower()
+                if other != fp and other.endswith(".tsx") and ("section" in other or "card" in other):
                     deps.append(step.get("file_path", ""))
-                
-                # Card components (for pages that directly use cards)
-                if other_fp != fp.lower() and "card" in other_fp and other_fp.endswith(".tsx"):
-                    deps.append(step.get("file_path", ""))
-    
-    return list(set(deps))  # Remove duplicates
+    return list(set(deps))
 
 
 def _auto_fix_dependencies(steps: list) -> list:
-    """Auto-fix missing dependencies in plan steps (post-processing).
-    
-    Guarantees:
-    1. Pages include ALL components created in this plan
-    2. Section/List/Grid components include related API routes
-    
-    This ensures 100% plan quality even with LLM variance.
-    """
-    # Get all components and API routes from this plan
-    component_paths = [s["file_path"] for s in steps 
-                       if "/components/" in s.get("file_path", "")]
-    api_routes = [s["file_path"] for s in steps 
-                  if "/api/" in s.get("file_path", "")]
-    
+    comp_paths = [s["file_path"] for s in steps if "/components/" in s.get("file_path", "")]
+    api_routes = [s["file_path"] for s in steps if "/api/" in s.get("file_path", "")]
     for step in steps:
         fp = step.get("file_path", "")
-        deps = step.get("dependencies", [])
-        if not isinstance(deps, list):
-            deps = []
-        
-        # 1. Auto-add component deps to pages
+        deps = step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []
         if "page.tsx" in fp:
-            for comp_path in component_paths:
-                if comp_path not in deps:
-                    deps.append(comp_path)
-        
-        # 2. Auto-add API deps to Section/List/Grid components
+            deps.extend(c for c in comp_paths if c not in deps)
         if "/components/" in fp:
-            comp_name = fp.split("/")[-1].replace(".tsx", "")
-            fetch_keywords = ["Section", "List", "Grid", "Carousel"]
-            exclude_keywords = ["Form", "Input", "Button", "Dialog", "Modal", "Card", "Item"]
-            
-            is_fetch_comp = any(kw in comp_name for kw in fetch_keywords)
-            is_excluded = any(kw in comp_name for kw in exclude_keywords)
-            
-            if is_fetch_comp and not is_excluded:
-                # Check if already has API dep
-                has_api_dep = any("/api/" in d for d in deps)
-                if not has_api_dep and api_routes:
-                    # Add first relevant API route
+            name = fp.split("/")[-1].replace(".tsx", "")
+            if any(kw in name for kw in ["Section", "List", "Grid", "Carousel"]) and not any(kw in name for kw in ["Form", "Input", "Button", "Dialog", "Modal", "Card", "Item"]):
+                if not any("/api/" in d for d in deps) and api_routes:
                     deps.append(api_routes[0])
-        
         step["dependencies"] = list(set(deps))
-    
     return steps
 
 
-async def _summarize_if_needed(exploration: str, state: dict) -> str:
-    """Summarize exploration if too long, otherwise return as-is."""
-    MAX_CHARS = 8000
-    
-    if len(exploration) <= MAX_CHARS:
-        return exploration
-    
-    logger.info(f"[analyze_and_plan] Summarizing exploration ({len(exploration)} chars)")
-    
-    summary_prompt = f"""Summarize this codebase exploration concisely:
-
-{exploration[:15000]}
-
-Output a bullet-point summary focusing on:
-- Existing database models
-- Relevant components/files found  
-- Patterns to follow
-- Key insights for implementation"""
-
-    response = await fast_llm.ainvoke([
-        SystemMessage(content="You are a technical summarizer. Be concise."),
-        HumanMessage(content=summary_prompt)
-    ], config=_cfg(state, "summarize_exploration"))
-    flush_langfuse(state)  # Real-time update
-    
-    return f"## Exploration Summary\n{response.content}"
-
-
-# JSON generation prompt for retry mechanism
-JSON_GENERATION_PROMPT = """You are a technical planner. Convert the exploration summary into a JSON implementation plan.
-
-## Exploration Summary
-{exploration}
-
-## Story
-Title: {story_title}
-Description: {story_description}
-
-## Required Output Format
-Output ONLY valid JSON in <result> tags. No explanations before or after.
-
-<result>
-{{
-  "story_summary": "Brief 1-sentence summary of what to implement",
-  "logic_analysis": [
-    ["file_path.ts", "'use client' if needed, component/function names, key logic"],
-    ["another_file.ts", "description of what this file does"]
-  ],
-  "steps": [
-    {{
-      "order": 1,
-      "description": "What to implement in this file",
-      "file_path": "src/path/to/file.ts",
-      "action": "create",
-      "dependencies": ["path/to/dependency.ts"]
-    }}
-  ]
-}}
-</result>
-
-RULES:
-- Order: database (prisma) → API routes → components → pages
-- Each step = 1 file with exact path
-- action: "create" for new files, "modify" for existing
-- dependencies: files that must be read as context
-- For React components with hooks/events: include "'use client'" in logic_analysis
-
-OUTPUT ONLY THE JSON. NO OTHER TEXT."""
-
-
-async def _extract_json_with_retry(
-    response: str,
-    state: dict,
-    story_title: str,
-    story_description: str,
-    max_retries: int = 2
-) -> dict:
-    """Extract plan using simplified structured output (~250 tokens vs ~1000).
-    
-    Optimized: Only outputs steps (file_path, action, task).
-    Post-process adds: order, skills, dependencies.
-    """
+async def _extract_json_with_retry(response: str, state: dict, story_title: str, story_description: str, max_retries: int = 2) -> dict:
     try:
-        logger.info("[analyze_and_plan] Using optimized structured output")
-        
         structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
-        
-        structured_prompt = f"""Convert this exploration into an implementation plan.
+        prompt = f"""Convert exploration into implementation plan.
 
 ## Story
 Title: {story_title}
-Description: {story_description[:500] if story_description else "No description"}
+Description: {story_description[:500] if story_description else ""}
 
-## Exploration Summary
+## Exploration
 {response[:6000]}
 
-## Instructions
-Create steps: Ordered list (database → API → components → pages)
-- Each step: file_path, action (create/modify), task, dependencies
-- task: WHAT to implement (1-2 sentences)
-- dependencies: Files this step needs as context (e.g., schema.prisma, types/index.ts, parent components)
+Create steps (database → API → components → pages).
+Each step: file_path, action, task, dependencies."""
 
-## Dependency Rules (IMPORTANT)
-- API routes need: prisma/schema.prisma, src/lib/prisma.ts
-- Components need: src/types/index.ts
-- Section components need: related Card/Item components (e.g., BooksSection needs BookCard.tsx)
-- Pages need: components they will import
-
-## Order (for parallel execution)
-Layer 1: prisma/schema.prisma (database)
-Layer 2: prisma/seed.ts
-Layer 3: src/types/*.ts
-Layer 4: src/lib/*.ts
-Layer 5: src/app/api/**/route.ts (can run parallel)
-Layer 6: src/app/actions/*.ts
-Layer 7: src/components/*Card.tsx, *Item.tsx (can run parallel)
-Layer 8: src/components/*Section.tsx (can run parallel)
-Layer 9: src/app/**/page.tsx
-
-Steps in same layer CAN run in parallel if they don't depend on each other.
-"""
-        
         result = await structured_llm.ainvoke([
-            SystemMessage(content="You are a technical planner. Create structured implementation plans."),
-            HumanMessage(content=structured_prompt)
-        ], config=_cfg(state, "analyze_and_plan_structured"))
-        flush_langfuse(state)  # Real-time update
-        
+            SystemMessage(content="Create structured implementation plans."),
+            HumanMessage(content=prompt)
+        ], config=_cfg(state, "plan_structured"))
+        flush_langfuse(state)
         data = result.model_dump()
         if data and data.get("steps"):
-            logger.info(f"[analyze_and_plan] Got {len(data['steps'])} steps")
             return data
-            
     except Exception as e:
-        logger.warning(f"[analyze_and_plan] Structured output failed: {e}")
-    
-    # FALLBACK: Minimal plan (never fails)
-    logger.error("[analyze_and_plan] Fallback plan")
-    return {
-        "story_summary": story_title or "Implementation task",
-        "logic_analysis": [],
-        "steps": [
-            {
-                "order": 1,
-                "description": f"Implement: {story_title}",
-                "file_path": "src/app/page.tsx",
-                "action": "modify",
-                "dependencies": []
-            }
-        ]
-    }
+        logger.warning(f"[plan] Structured output failed: {e}")
+    return {"story_summary": story_title or "Task", "steps": [{"order": 1, "description": f"Implement: {story_title}", "file_path": "src/app/page.tsx", "action": "modify", "dependencies": []}]}
 
-
-# =============================================================================
-# Main Plan Function - MetaGPT-Style Zero-Shot
-# =============================================================================
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
-    """MetaGPT-style planning - zero-shot with pre-computed context.
-    
-    Flow:
-    1. Build FileRepository (instant, no LLM)
-    2. Single LLM call with structured output
-    3. Fallback to exploration if zero-shot fails
-    """
-    logger.info("[NODE] plan (zero-shot)")
-    
+    """Zero-shot planning with FileRepository."""
+    logger.info("[NODE] plan")
     workspace_path = state.get("workspace_path", "")
     tech_stack = state.get("tech_stack", "nextjs")
-    project_id = state.get("project_id", "default")
-    task_id = state.get("task_id") or state.get("story_id", "")
-    
-    setup_tool_context(workspace_path, project_id, task_id)
+    set_tool_context(root_dir=workspace_path, project_id=state.get("project_id", ""), task_id=state.get("task_id") or state.get("story_id", ""))
     
     try:
-        # 1. Build FileRepository (instant, no LLM)
         repo = FileRepository(workspace_path)
         context = repo.to_context()
-        logger.info(f"[plan] FileRepository: {len(repo.file_tree)} files, {len(context)} chars")
+        logger.info(f"[plan] FileRepository: {len(repo.file_tree)} files")
         
-        # 2. Load prompts
         plan_prompts = get_plan_prompts(tech_stack)
-        
-        # Check if zero_shot_system exists, otherwise use system_prompt
         system_prompt = plan_prompts.get('zero_shot_system', plan_prompts.get('system_prompt', ''))
         
-        # 3. Build input with complete context
-        requirements = state.get("story_requirements", [])
-        req_text = chr(10).join(f"- {r}" for r in requirements)
+        req_text = chr(10).join(f"- {r}" for r in state.get("story_requirements", []))
+        ac_text = chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
         
-        acceptance = state.get("acceptance_criteria", [])
-        ac_text = chr(10).join(f"- {ac}" for ac in acceptance)
-        
-        input_text = f"""## COMPLETE Project Context (NO EXPLORATION NEEDED)
+        input_text = f"""## Project Context
 {context}
 
-## Story to Implement
-**ID**: {state.get('story_id', '')}
-**Title**: {state.get('story_title', 'Untitled')}
+## Story
+**Title**: {state.get('story_title', '')}
 **Description**: {state.get('story_description', '')[:800]}
+**Requirements**: {req_text}
+**Acceptance**: {ac_text}
 
-**Requirements**:
-{req_text}
+Create implementation plan. Output JSON steps directly."""
 
-**Acceptance Criteria**:
-{ac_text}
-
-## Instructions
-Create implementation plan. ALL context is provided above.
-DO NOT request any files - everything you need is here.
-Output JSON steps directly.
-"""
-        
-        # 4. SINGLE LLM call with structured output (no tools!)
         structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
-        
-        result = await structured_llm.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=input_text)
-        ], config=_cfg(state, "plan_zero_shot"))
-        
+        result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "plan_zero_shot"))
         flush_langfuse(state)
         
-        data = result.model_dump()
-        steps = data.get("steps", [])
+        steps = result.model_dump().get("steps", [])
+        logger.info(f"[plan] Got {len(steps)} steps")
         
-        logger.info(f"[plan] Zero-shot got {len(steps)} steps")
-        
-        # If zero-shot produced no steps, fallback
         if not steps:
-            logger.warning("[plan] Zero-shot produced 0 steps, falling back to exploration")
             return await _plan_with_exploration(state, agent)
         
-        # 5. Post-process steps
-        # Filter boilerplate files
-        original_count = len(steps)
+        # Post-process
         steps = [s for s in steps if s.get("file_path", "") not in BOILERPLATE_FILES]
-        if len(steps) < original_count:
-            logger.info(f"[plan] Filtered out {original_count - len(steps)} boilerplate file(s)")
-        
-        # Auto-fix missing dependencies (guarantees 100% plan quality)
         steps = _auto_fix_dependencies(steps)
         
-        # Add order, skills, and merge dependencies
         for i, step in enumerate(steps):
             step["order"] = i + 1
             step["description"] = step.get("task", "")
             step["skills"] = _auto_assign_skills(step.get("file_path", ""))
-            
-            if not isinstance(step.get("dependencies"), list):
-                step["dependencies"] = []
-            
-            llm_deps = step.get("dependencies", [])
-            auto_deps = _auto_detect_dependencies(step.get("file_path", ""), steps)
-            step["dependencies"] = list(set(llm_deps + auto_deps))
+            llm_deps = step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []
+            step["dependencies"] = list(set(llm_deps + _auto_detect_dependencies(step.get("file_path", ""), steps)))
         
-        # Auto-add seed step if schema modified but no seed
-        has_schema_step = any(s.get("file_path", "").endswith("schema.prisma") for s in steps)
-        has_seed_step = any("seed.ts" in s.get("file_path", "").lower() for s in steps)
+        # Auto-add seed
+        has_schema = any(s.get("file_path", "").endswith("schema.prisma") for s in steps)
+        has_seed = any("seed.ts" in s.get("file_path", "").lower() for s in steps)
+        if has_schema and not has_seed:
+            seed_exists = workspace_path and (Path(workspace_path) / "prisma" / "seed.ts").exists()
+            idx = next((i for i, s in enumerate(steps) if s.get("file_path", "").endswith("schema.prisma")), 0)
+            steps.insert(idx + 1, {"order": idx + 2, "task": "Seed data", "description": "Seed database", "file_path": "prisma/seed.ts", "action": "modify" if seed_exists else "create", "skills": ["database-seed"], "dependencies": ["prisma/schema.prisma"]})
         
-        if has_schema_step and not has_seed_step:
-            seed_file = Path(workspace_path) / "prisma" / "seed.ts" if workspace_path else None
-            seed_exists = seed_file and seed_file.exists()
-            
-            schema_idx = next((i for i, s in enumerate(steps) if s.get("file_path", "").endswith("schema.prisma")), 0)
-            seed_step = {
-                "order": schema_idx + 2,
-                "task": "Create seed data for database models",
-                "description": "Seed database with sample data",
-                "file_path": "prisma/seed.ts",
-                "action": "modify" if seed_exists else "create",
-                "skills": ["database-seed"],
-                "dependencies": ["prisma/schema.prisma"]
-            }
-            steps.insert(schema_idx + 1, seed_step)
-            logger.info("[plan] Auto-added seed step after schema")
-        
-        # Re-number after modifications
         for i, s in enumerate(steps):
             s["order"] = i + 1
         
-        # Load skill registry
         skill_registry = SkillRegistry.load(tech_stack)
+        deps_content = _preload_dependencies(workspace_path, steps)
         
-        # Pre-load dependency files
-        dependencies_content = _preload_dependencies(workspace_path, steps)
-        logger.info(f"[plan] Pre-loaded {len(dependencies_content)} files")
-        
-        # Calculate parallel layers
-        from app.agents.developer_v2.src.nodes.parallel_utils import (
-            group_steps_by_layer,
-            should_use_parallel,
-        )
-        
+        from app.agents.developer_v2.src.nodes.parallel_utils import group_steps_by_layer, should_use_parallel
         layers = group_steps_by_layer(steps)
         can_parallel = should_use_parallel(steps)
         
-        story_summary = state.get("story_title", "Implementation task")
-        msg = f"Plan: {len(steps)} steps ({len(layers)} layers)"
-        if can_parallel:
-            msg += " [PARALLEL]"
-        
-        logger.info(f"[plan] {msg}")
-        
-        return {
-            **state,
-            "implementation_plan": steps,
-            "plan_summary": story_summary,
-            "logic_analysis": [],
-            "total_steps": len(steps),
-            "dependencies_content": dependencies_content,
-            "current_step": 0,
-            "message": msg,
-            "skill_registry": skill_registry,
-            "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()},
-            "can_parallel": can_parallel,
-            "action": "IMPLEMENT",
-        }
-        
+        return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "skill_registry": skill_registry, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
     except Exception as e:
-        logger.warning(f"[plan] Zero-shot failed: {e}, falling back to exploration")
+        logger.warning(f"[plan] Zero-shot failed: {e}")
         return await _plan_with_exploration(state, agent)
 
 
 async def _plan_with_exploration(state: DeveloperState, agent=None) -> DeveloperState:
-    """Fallback: Combined analyze + plan with tool exploration phase."""
-    logger.info("[NODE] plan_with_exploration (fallback)")
-    
+    """Fallback with tool exploration."""
+    logger.info("[NODE] plan_with_exploration")
     try:
         workspace_path = state.get("workspace_path", "")
-        project_id = state.get("project_id", "default")
-        task_id = state.get("task_id") or state.get("story_id", "")
         tech_stack = state.get("tech_stack", "nextjs")
+        set_tool_context(root_dir=workspace_path, project_id=state.get("project_id", ""), task_id=state.get("task_id") or state.get("story_id", ""))
         
-        setup_tool_context(workspace_path, project_id, task_id)
-        
-        # Smart prefetch based on story content
-        project_context = _smart_prefetch(
-            workspace_path,
-            state.get("story_title", ""),
-            state.get("story_requirements", [])
-        )
-        project_structure = get_project_structure(tech_stack)
-        
-        # Load skill registry (for later use in implement)
+        project_context = _smart_prefetch(workspace_path, state.get("story_title", ""), state.get("story_requirements", []))
+        plan_prompts = get_plan_prompts(tech_stack)
         skill_registry = SkillRegistry.load(tech_stack)
         
-        # Load prompts from plan_prompts.yaml
-        plan_prompts = get_plan_prompts(tech_stack)
-        
-        # Single-phase system prompt with clear workflow
         system_prompt = f"""{plan_prompts['system_prompt']}
-
 <workflow>
-1. EXPLORE: Use tools to understand codebase (3-5 tool calls max)
-2. ANALYZE: Summarize what you found
-3. OUTPUT: JSON in <result> tags
-
-CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at exploration.
+1. EXPLORE: Use tools (3-5 calls max)
+2. OUTPUT: JSON in <result> tags
 </workflow>
+<project_structure>{get_project_structure(tech_stack)}</project_structure>"""
 
-<project_structure>
-{project_structure}
-</project_structure>"""
+        req_text = chr(10).join(f"- {r}" for r in state.get("story_requirements", []))
+        ac_text = chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
+        input_text = plan_prompts["input_template"].format(story_id=state.get("story_id", ""), epic=state.get("epic", ""), story_title=state.get("story_title", ""), story_description=state.get("story_description", ""), story_requirements=req_text, acceptance_criteria=ac_text, project_context=project_context)
         
-        # Format input from template
-        requirements = state.get("story_requirements", [])
-        req_text = chr(10).join(f"- {r}" for r in requirements)
+        response = await _llm_with_tools(llm=exploration_llm, tools=[read_file_safe, list_directory_safe, glob, grep_files], messages=[SystemMessage(content=system_prompt), HumanMessage(content=input_text)], state=state, name="plan_exploration", max_iterations=5)
         
-        acceptance_criteria = state.get("acceptance_criteria", [])
-        ac_text = chr(10).join(f"- {ac}" for ac in acceptance_criteria)
-        
-        input_text = plan_prompts["input_template"].format(
-            story_id=state.get("story_id", ""),
-            epic=state.get("epic", ""),
-            story_title=state.get("story_title", "Untitled"),
-            story_description=state.get("story_description", ""),
-            story_requirements=req_text,
-            acceptance_criteria=ac_text,
-            project_context=project_context,
-        )
-        
-        # Tools for exploration
-        tools = [
-            read_file_safe,
-            list_directory_safe,
-            glob,        # glob pattern search
-            grep_files,  # text search in files
-        ]
-        
-        # Single-phase: explore + analyze + plan in one call
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=input_text)
-        ]
-        
-        response = await _llm_with_tools(
-            llm=exploration_llm,  # Fast model (Haiku) for exploration
-            tools=tools,
-            messages=messages,
-            state=state,
-            name="analyze_and_plan",
-            max_iterations=5  # Sonnet needs fewer iterations with better prefetch
-        )
-        
-        # Truncate if too long (no summarize LLM call needed)
-        if len(response) > 6000:
-            response = response[:6000]
-        
-        # Extract plan using optimized structured output
-        data = await _extract_json_with_retry(
-            response=response,
-            state=state,
-            story_title=state.get("story_title", ""),
-            story_description=state.get("story_description", ""),
-        )
-        
-        # Get steps from simplified output
+        data = await _extract_json_with_retry(response[:6000], state, state.get("story_title", ""), state.get("story_description", ""))
         steps = data.get("steps", [])
-        story_summary = state.get("story_title", "Implementation task")
         
-        # Filter out migration steps
-        steps = [s for s in steps if "migration" not in s.get("task", "").lower() 
-                 and "migration" not in s.get("file_path", "").lower()]
-        
-        # Filter out existing boilerplate files (LLM sometimes ignores NEVER rules)
-        original_count = len(steps)
-        steps = [s for s in steps if s.get("file_path", "").replace("\\", "/") not in BOILERPLATE_FILES]
-        if len(steps) < original_count:
-            removed = original_count - len(steps)
-            logger.info(f"[analyze_and_plan] Filtered out {removed} boilerplate file(s)")
-        
-        # Auto-fix missing dependencies (guarantees 100% plan quality)
+        steps = [s for s in steps if "migration" not in s.get("task", "").lower() and s.get("file_path", "") not in BOILERPLATE_FILES]
         steps = _auto_fix_dependencies(steps)
         
-        # Post-process: add order, skills, description, auto-detect dependencies
         for i, step in enumerate(steps):
             step["order"] = i + 1
-            step["description"] = step.get("task", "")  # For backward compatibility
+            step["description"] = step.get("task", "")
             step["skills"] = _auto_assign_skills(step.get("file_path", ""))
-            
-            # Ensure dependencies is a list (from LLM output)
-            if not isinstance(step.get("dependencies"), list):
-                step["dependencies"] = []
-            
-            # Auto-detect dependencies and merge with LLM-provided deps
-            llm_deps = step.get("dependencies", [])
-            auto_deps = _auto_detect_dependencies(step.get("file_path", ""), steps)
-            step["dependencies"] = list(set(llm_deps + auto_deps))
+            llm_deps = step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []
+            step["dependencies"] = list(set(llm_deps + _auto_detect_dependencies(step.get("file_path", ""), steps)))
         
-        # Auto-add seed step when database models are created (if LLM didn't already add one)
-        has_schema_step = any(
-            s.get("file_path", "").endswith("schema.prisma")
-            for s in steps
-        )
-        has_seed_step = any(
-            "seed.ts" in s.get("file_path", "").lower()
-            for s in steps
-        )
+        has_schema = any(s.get("file_path", "").endswith("schema.prisma") for s in steps)
+        has_seed = any("seed.ts" in s.get("file_path", "").lower() for s in steps)
+        if has_schema and not has_seed:
+            seed_exists = workspace_path and (Path(workspace_path) / "prisma" / "seed.ts").exists()
+            idx = next((i for i, s in enumerate(steps) if s.get("file_path", "").endswith("schema.prisma")), 0)
+            steps.insert(idx + 1, {"order": idx + 2, "task": "Seed data", "file_path": "prisma/seed.ts", "action": "modify" if seed_exists else "create", "skills": ["database-seed"], "dependencies": ["prisma/schema.prisma"]})
         
-        if has_schema_step and not has_seed_step:
-            seed_file = Path(workspace_path) / "prisma" / "seed.ts" if workspace_path else None
-            seed_exists = seed_file and seed_file.exists()
-            
-            schema_idx = next(
-                (i for i, s in enumerate(steps) if s.get("file_path", "").endswith("schema.prisma")),
-                0
-            )
-            seed_step = {
-                "order": schema_idx + 2,
-                "task": "Create seed data for new database models",
-                "description": "Seed database with sample data for testing and development",
-                "file_path": "prisma/seed.ts",
-                "action": "modify" if seed_exists else "create",
-                "skills": ["database-seed"],
-                "dependencies": ["prisma/schema.prisma"]
-            }
-            # Insert after schema step (schema_idx + 1)
-            steps.insert(schema_idx + 1, seed_step)
-            logger.info("[analyze_and_plan] Auto-added seed step after schema")
-        
-        # Re-number after modifications
         for i, s in enumerate(steps):
             s["order"] = i + 1
         
-        # Build analysis from summary
-        analysis = {
-            "task_type": "feature",
-            "complexity": "medium" if len(steps) <= 5 else "high",
-            "summary": story_summary,
-        }
-        
-        logger.info(f"[analyze_and_plan] {len(steps)} steps")
-        
-        # Pre-load dependency files
-        dependencies_content = _preload_dependencies(workspace_path, steps)
-        logger.info(f"[analyze_and_plan] Pre-loaded {len(dependencies_content)} files")
-        
-        # Calculate parallel layers
-        from app.agents.developer_v2.src.nodes.parallel_utils import (
-            group_steps_by_layer,
-            should_use_parallel,
-        )
-        
+        deps_content = _preload_dependencies(workspace_path, steps)
+        from app.agents.developer_v2.src.nodes.parallel_utils import group_steps_by_layer, should_use_parallel
         layers = group_steps_by_layer(steps)
-        can_parallel = should_use_parallel(steps)
         
-        # Format message with parallel info
-        steps_text = []
-        for layer_num in sorted(layers.keys()):
-            layer_steps = layers[layer_num]
-            mode = "PARALLEL" if len(layer_steps) > 1 else ""
-            for s in layer_steps:
-                order = s.get('order', '?')
-                action = s.get('action', '')
-                file_path = s.get('file_path', '')
-                parallel_tag = f" [{mode}]" if mode else ""
-                steps_text.append(f"  {order}. [{action}] {file_path}{parallel_tag}")
-        
-        msg = f"📋 **{story_summary}**\n\n" + "\n".join(steps_text)
-        if can_parallel:
-            msg += f"\n\n🔀 Parallel execution: {len(layers)} layers"
-        
-        return {
-            **state,
-            "analysis_result": analysis,
-            "task_type": "feature",
-            "complexity": analysis["complexity"],
-            "affected_files": [s.get("file_path") for s in steps if s.get("file_path")],
-            "implementation_plan": steps,
-            "dependencies_content": dependencies_content,
-            "total_steps": len(steps),
-            "current_step": 0,
-            "message": msg,
-            "skill_registry": skill_registry,
-            "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()},
-            "can_parallel": can_parallel,
-            "action": "IMPLEMENT",
-        }
-        
+        return {**state, "task_type": "feature", "complexity": "medium" if len(steps) <= 5 else "high", "implementation_plan": steps, "dependencies_content": deps_content, "total_steps": len(steps), "current_step": 0, "skill_registry": skill_registry, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": should_use_parallel(steps), "action": "IMPLEMENT"}
     except Exception as e:
-        logger.error(f"[analyze_and_plan] Error: {e}", exc_info=True)
+        logger.error(f"[plan] Error: {e}", exc_info=True)
         return {**state, "error": str(e), "action": "RESPOND"}
