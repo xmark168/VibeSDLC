@@ -22,6 +22,8 @@ export interface FileContentResponse {
   content: string
   size: number
   encoding: string
+  modified?: string
+  is_binary?: boolean
 }
 
 export interface GitStatusResponse {

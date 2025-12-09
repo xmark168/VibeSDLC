@@ -27,6 +27,7 @@ export const messagesApi = {
         project_id: params.project_id,
         skip: params.skip ?? 0,
         limit: params.limit ?? 100,
+        order: params.order ?? 'asc',
       },
     })
   },
