@@ -1,4 +1,4 @@
-"""Parallel implementation utilities - Layer-based parallelism for implement steps."""
+"""Parallel implementation utilities."""
 import asyncio
 import logging
 from collections import defaultdict
@@ -6,10 +6,8 @@ from typing import Dict, List, Any
 
 logger = logging.getLogger(__name__)
 
-# Max concurrent LLM calls - increased for better parallelism
 MAX_CONCURRENT = 5
 
-# Layer priority mapping
 LAYER_PRIORITY = {
     "prisma/schema": 1,
     "prisma/seed": 2,
@@ -23,13 +21,11 @@ LAYER_PRIORITY = {
 
 
 def get_layer_priority(file_path: str) -> int:
-    """Get layer priority for a file path. Lower = earlier."""
     if not file_path:
         return 99
     
     fp = file_path.lower().replace("\\", "/")
     
-    # Exact matches first
     if "prisma/schema" in fp:
         return 1
     if "seed.ts" in fp:
@@ -42,8 +38,6 @@ def get_layer_priority(file_path: str) -> int:
         return 5
     if "/actions/" in fp:
         return 6
-    
-    # Components: Cards before Sections before others
     if "/components/" in fp:
         name = fp.split("/")[-1].lower()
         if "card" in name or "item" in name:
@@ -51,23 +45,14 @@ def get_layer_priority(file_path: str) -> int:
         if "section" in name:
             return 7.2
         return 7.3
-    
-    # Pages always last
     if "page.tsx" in fp or "page.ts" in fp:
         return 8
-    
-    # Default
     return 6
 
 
 def group_steps_by_layer(steps: List[Dict]) -> Dict[float, List[Dict]]:
-    """Group steps by layer priority, respecting dependencies.
-    
-    Returns dict mapping layer_priority -> list of steps
-    """
+    """Group steps by layer priority, respecting dependencies."""
     layers = defaultdict(list)
-    
-    # Build dependency map: file_path -> set of dependent file paths
     component_paths = set()
     for step in steps:
         fp = step.get("file_path", "")
@@ -77,19 +62,13 @@ def group_steps_by_layer(steps: List[Dict]) -> Dict[float, List[Dict]]:
     for step in steps:
         file_path = step.get("file_path", "")
         base_layer = get_layer_priority(file_path)
-        
-        # Check if this component depends on other components in this plan
         step_deps = step.get("dependencies", [])
         has_component_dep = any(dep in component_paths for dep in step_deps)
         
-        # If a component depends on another component, push it to later sub-layer
-        if has_component_dep and base_layer >= 7 and base_layer < 8:
-            # Find max layer of dependencies
+        if has_component_dep and 7 <= base_layer < 8:
             dep_layers = [get_layer_priority(d) for d in step_deps if d in component_paths]
             if dep_layers:
-                # Place after highest dependency layer + 0.1
-                max_dep_layer = max(dep_layers)
-                base_layer = max(base_layer, max_dep_layer + 0.1)
+                base_layer = max(base_layer, max(dep_layers) + 0.1)
         
         layers[base_layer].append(step)
     
@@ -97,10 +76,7 @@ def group_steps_by_layer(steps: List[Dict]) -> Dict[float, List[Dict]]:
 
 
 def detect_file_conflicts(steps: List[Dict]) -> List[str]:
-    """Detect if multiple steps modify the same file.
-    
-    Returns list of conflicting file paths.
-    """
+    """Detect if multiple steps modify the same file."""
     file_counts = defaultdict(int)
     
     for step in steps:
@@ -113,7 +89,6 @@ def detect_file_conflicts(steps: List[Dict]) -> List[str]:
 
 
 async def run_with_semaphore(semaphore: asyncio.Semaphore, coro):
-    """Run coroutine with semaphore for rate limiting."""
     async with semaphore:
         return await coro
 

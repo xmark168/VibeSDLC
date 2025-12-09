@@ -32,19 +32,8 @@ BOILERPLATE_FILES = {
 }
 
 
-# =============================================================================
-# MetaGPT-Style FileRepository for Zero-Shot Planning
-# =============================================================================
-
 class FileRepository:
-    """MetaGPT-style file repository for pre-computed context.
-    
-    Scans workspace once and caches:
-    - File tree (all source files)
-    - Important file contents (schema, types, etc.)
-    - Component import map
-    - Existing API routes
-    """
+    """Pre-computed workspace context for zero-shot planning."""
     
     def __init__(self, workspace_path: str):
         self.workspace_path = workspace_path
@@ -55,7 +44,6 @@ class FileRepository:
         self._scan()
     
     def _scan(self):
-        """Scan workspace once, cache everything."""
         if not self.workspace_path or not os.path.exists(self.workspace_path):
             return
         
@@ -71,23 +59,17 @@ class FileRepository:
                     
                     self.file_tree.append(rel_path)
                     
-                    # Cache important files
                     if self._is_important(rel_path):
                         self.files[rel_path] = self._read_file(full_path)
                     
-                    # Track components (exclude shadcn/ui)
-                    if '/components/' in rel_path and rel_path.endswith('.tsx'):
-                        if '/ui/' not in rel_path:  # Custom components only
-                            name = os.path.basename(rel_path).replace('.tsx', '')
-                            import_path = '@/' + rel_path.replace('.tsx', '')
-                            self.components[name] = import_path
+                    if '/components/' in rel_path and rel_path.endswith('.tsx') and '/ui/' not in rel_path:
+                        name = os.path.basename(rel_path).replace('.tsx', '')
+                        self.components[name] = '@/' + rel_path.replace('.tsx', '')
                     
-                    # Track API routes
                     if '/api/' in rel_path and rel_path.endswith('route.ts'):
                         self.api_routes.append(rel_path)
     
     def _is_important(self, path: str) -> bool:
-        """Files that should be pre-loaded for context."""
         important_patterns = [
             'prisma/schema.prisma',
             'src/types/index.ts',
@@ -98,7 +80,6 @@ class FileRepository:
         return any(path.endswith(p) for p in important_patterns)
     
     def _read_file(self, full_path: str) -> str:
-        """Read file with error handling."""
         try:
             with open(full_path, 'r', encoding='utf-8') as f:
                 return f.read()
@@ -106,16 +87,12 @@ class FileRepository:
             return ""
     
     def to_context(self) -> str:
-        """Generate complete context string for LLM."""
         parts = []
-        
-        # 1. File tree (critical for LLM to know what exists)
         parts.append("## Project Files (COMPLETE - DO NOT EXPLORE)")
         parts.append("```")
         parts.append("\n".join(sorted(self.file_tree)))
         parts.append("```")
         
-        # 2. Schema (most important for planning)
         schema_content = self.files.get('prisma/schema.prisma', '')
         parts.append("\n## prisma/schema.prisma (CURRENT STATE)")
         parts.append("```prisma")
@@ -125,7 +102,6 @@ class FileRepository:
             parts.append("// Empty schema - needs models")
         parts.append("```")
         
-        # 3. Types (if exists and has content)
         types_content = self.files.get('src/types/index.ts', '')
         if len(types_content) > 100:
             parts.append("\n## src/types/index.ts")
@@ -133,13 +109,11 @@ class FileRepository:
             parts.append(types_content[:2500])
             parts.append("```")
         
-        # 4. Component import map (critical for correct imports)
         if self.components:
             parts.append("\n## Component Imports (USE THESE EXACT PATHS)")
             for name, path in sorted(self.components.items()):
                 parts.append(f"- {name} → `import {{ {name} }} from '{path}'`")
         
-        # 5. Existing API routes
         if self.api_routes:
             parts.append("\n## Existing API Routes")
             for route in sorted(self.api_routes):
@@ -148,12 +122,7 @@ class FileRepository:
         return "\n".join(parts)
 
 
-# =============================================================================
-# Helper Functions
-# =============================================================================
-
 def _extract_keywords(text: str) -> list:
-    """Extract meaningful keywords from story text."""
     stopwords = {'the', 'a', 'an', 'is', 'are', 'can', 'will', 'should', 'must',
                  'user', 'users', 'when', 'then', 'given', 'and', 'or', 'to', 'from',
                  'with', 'for', 'on', 'in', 'at', 'by', 'of', 'that', 'this', 'be',

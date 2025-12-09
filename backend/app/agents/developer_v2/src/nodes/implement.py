@@ -1,4 +1,4 @@
-"""Implement node - Direct file output (MetaGPT-style, no tools)."""
+"""Implement node - Direct file output without tools."""
 import json
 import logging
 import os
@@ -15,8 +15,7 @@ from app.agents.developer_v2.src.state import DeveloperState
 
 
 class ImplementOutput(BaseModel):
-    """Structured output for implementation step - content only."""
-    content: str = Field(description="COMPLETE file content")
+    content: str = Field(description="Complete file content")
 
 from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_files, reset_modified_files, _modified_files
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
@@ -43,18 +42,10 @@ def _build_dependencies_context(
     workspace_path: str = "",
     exclude_file: str = ""
 ) -> str:
-    """Build context from dependencies, auto-loading from disk if not in cache (MetaGPT-style).
-    
-    Args:
-        dependencies_content: Cached file contents
-        step_dependencies: List of dependency file paths for this step
-        workspace_path: Workspace root path for auto-loading
-        exclude_file: Current file being implemented (exclude from context)
-    """
+    """Build context from dependencies, auto-loading from disk if not in cache."""
     parts = []
     loaded_files = set()
     
-    # Load step dependencies (from cache or disk)
     if step_dependencies:
         for dep_path in step_dependencies:
             if not isinstance(dep_path, str):
@@ -62,12 +53,8 @@ def _build_dependencies_context(
             if dep_path == exclude_file:
                 continue
             
-            content = None
-            # Try cache first
-            if dep_path in dependencies_content:
-                content = dependencies_content[dep_path]
-            # Auto-load from disk if not in cache (MetaGPT-style)
-            elif workspace_path:
+            content = dependencies_content.get(dep_path)
+            if not content and workspace_path:
                 full_path = os.path.join(workspace_path, dep_path)
                 if os.path.exists(full_path):
                     try:
@@ -81,12 +68,10 @@ def _build_dependencies_context(
                 parts.append(f"### {dep_path}\n```\n{content[:5000]}\n```")
                 loaded_files.add(dep_path)
     
-    # Add common files - ALWAYS read fresh from disk (fix stale cache issue)
     common_files = ["prisma/schema.prisma"]
     for dep_path in common_files:
         if dep_path in loaded_files or dep_path == exclude_file:
             continue
-        # Always read fresh from disk for schema (may have been modified in previous step)
         if workspace_path:
             full_path = os.path.join(workspace_path, dep_path)
             if os.path.exists(full_path):
@@ -97,7 +82,6 @@ def _build_dependencies_context(
                     continue
                 except Exception:
                     pass
-        # Fallback to cache
         if dep_path in dependencies_content:
             parts.append(f"### {dep_path}\n```\n{dependencies_content[dep_path]}\n```")
     
@@ -107,10 +91,7 @@ def _build_dependencies_context(
 
 
 def _build_debug_summary(state: dict) -> str:
-    """Build summary log for debug iterations (MetaGPT-style).
-    
-    Shows previous attempts and what was tried to help LLM avoid repeating mistakes.
-    """
+    """Build summary of previous debug attempts."""
     debug_count = state.get("debug_count", 0)
     review_count = state.get("review_count", 0)
     react_loop_count = state.get("react_loop_count", 0)
@@ -589,16 +570,7 @@ async def _implement_single_step(
 
 
 async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperState:
-    """Execute implementation steps in parallel by layer.
-    
-    Layer execution order:
-    1. Schema (sequential) → prisma generate + db push
-    2. Seed (sequential) → run seed
-    3. Types (sequential)
-    4-5. API routes (parallel)
-    6-7. Components (parallel, max 3 concurrent)
-    8. Pages (sequential)
-    """
+    """Execute implementation steps in parallel by layer (1-8)."""
     logger.info("[NODE] implement_parallel")
     
     try:
@@ -621,9 +593,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         all_errors = []
         step_count = 0
         
-        # Pre-populate ALL component import paths from plan (critical for parallel execution)
-        # So components in same layer know each other's paths
-        created_components = {}
+        created_components = {}  # Pre-populate component paths for parallel execution
         for step in plan_steps:
             file_path = step.get("file_path", "")
             if "/components/" in file_path and file_path.endswith(".tsx"):
@@ -642,7 +612,6 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             logger.info(f"[parallel] Layer {layer_num}: {len(layer_steps)} steps {'(PARALLEL)' if is_parallel else '(SEQ)'}")
             
             if is_parallel:
-                # Parallel execution for API routes and components
                 async def impl_step(step, comps=created_components):
                     return await _implement_single_step(
                         step, state, skill_registry, workspace_path, dependencies_content, comps
@@ -650,7 +619,6 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                 
                 results = await run_layer_parallel(layer_steps, impl_step, state, MAX_CONCURRENT)
             else:
-                # Sequential execution for schema, seed, types, pages
                 results = []
                 for step in layer_steps:
                     result = await _implement_single_step(
@@ -660,15 +628,13 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                     step_count += 1
                     logger.info(f"[parallel] Step {step_count}/{len(plan_steps)}: {step.get('file_path', '')}")
             
-            # Collect results
             for result in results:
                 if result.get("success"):
                     all_modified.extend(result.get("modified_files", []))
                 elif result.get("error"):
                     all_errors.append(f"{result.get('file_path')}: {result.get('error')}")
             
-            # Post-layer actions
-            if layer_num == 1:  # After schema
+            if layer_num == 1:
                 schema_modified = any("schema.prisma" in str(r.get("file_path", "")) for r in results)
                 if schema_modified:
                     logger.info("[parallel] Running prisma generate + db push...")
@@ -684,8 +650,6 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                             encoding='utf-8', errors='replace'
                         )
                         logger.info("[parallel] Prisma commands completed")
-                        
-                        # Refresh schema in dependencies_content
                         schema_path = os.path.join(workspace_path, "prisma/schema.prisma")
                         if os.path.exists(schema_path):
                             with open(schema_path, 'r', encoding='utf-8') as f:
@@ -693,7 +657,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                     except Exception as e:
                         logger.warning(f"[parallel] Prisma failed: {e}")
             
-            elif layer_num == 2:  # After seed
+            elif layer_num == 2:
                 seed_created = any("seed.ts" in str(r.get("file_path", "")) for r in results)
                 if seed_created:
                     seed_path = os.path.join(workspace_path, "prisma/seed.ts")
@@ -708,7 +672,6 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                             )
                             if result.returncode == 0:
                                 logger.info("[parallel] Database seeded successfully")
-                                # Update seed cache so run_code skips duplicate seed
                                 import hashlib
                                 cache_file = Path(workspace_path) / ".seed_cache"
                                 seed_hash = hashlib.md5(Path(seed_path).read_bytes()).hexdigest()
@@ -718,16 +681,13 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                         except Exception as e:
                             logger.warning(f"[parallel] Seed failed: {e}")
             
-            elif layer_num == 3:  # After types
-                # Refresh types in dependencies_content
+            elif layer_num == 3:
                 types_path = os.path.join(workspace_path, "src/types/index.ts")
                 if os.path.exists(types_path):
                     with open(types_path, 'r', encoding='utf-8') as f:
                         dependencies_content["src/types/index.ts"] = f.read()
             
-            elif layer_num >= 5:  # After API routes and component layers
-                # Refresh ALL created component files into dependencies_content
-                # So later steps (e.g., pages) can see their content for correct imports
+            elif layer_num >= 5:
                 refreshed = 0
                 for result in results:
                     file_path = result.get("file_path", "")
@@ -738,8 +698,6 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                                 with open(full_path, 'r', encoding='utf-8') as f:
                                     dependencies_content[file_path] = f.read()
                                 refreshed += 1
-                                
-                                # Track component import path for subsequent steps
                                 if "/components/" in file_path:
                                     comp_name = os.path.basename(file_path).replace(".tsx", "")
                                     import_path = "@/" + file_path.replace(".tsx", "")
