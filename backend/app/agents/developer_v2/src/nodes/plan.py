@@ -192,8 +192,14 @@ def _auto_assign_skills(file_path: str) -> list:
     return skills
 
 
-def _auto_detect_dependencies(file_path: str) -> list:
-    """Auto-detect dependencies based on file path."""
+def _auto_detect_dependencies(file_path: str, all_steps: list = None) -> list:
+    """Auto-detect dependencies based on file path and other steps in plan.
+    
+    Key patterns:
+    - Section components depend on Card/Item components
+    - Pages depend on components in same domain
+    - API routes depend on schema and lib
+    """
     if not file_path:
         return []
     
@@ -212,7 +218,41 @@ def _auto_detect_dependencies(file_path: str) -> list:
     if "/api/" in fp:
         deps.append("src/lib/prisma.ts")
     
-    return deps
+    # === NEW: Component cross-dependencies ===
+    if all_steps and fp.endswith(".tsx"):
+        filename = file_path.split("/")[-1].replace(".tsx", "").lower()
+        
+        # Section components depend on Card/Item components
+        # e.g., CategoriesSection.tsx depends on CategoryCard.tsx
+        if "section" in filename:
+            # Extract domain: "categoriessection" -> "categor" (prefix)
+            domain = filename.replace("section", "").replace("s", "")[:6]
+            
+            for step in all_steps:
+                other_fp = step.get("file_path", "").lower()
+                other_name = other_fp.split("/")[-1].replace(".tsx", "")
+                
+                # Find related Card/Item components
+                if other_fp != fp.lower() and other_fp.endswith(".tsx"):
+                    if ("card" in other_name or "item" in other_name) and domain in other_name:
+                        deps.append(step.get("file_path", ""))
+        
+        # Pages depend on Section components
+        if "page.tsx" in fp:
+            folder = "/".join(file_path.split("/")[:-1]).lower()
+            
+            for step in all_steps:
+                other_fp = step.get("file_path", "").lower()
+                
+                # Section components in same domain
+                if other_fp != fp.lower() and "section" in other_fp and other_fp.endswith(".tsx"):
+                    deps.append(step.get("file_path", ""))
+                
+                # Card components (for pages that directly use cards)
+                if other_fp != fp.lower() and "card" in other_fp and other_fp.endswith(".tsx"):
+                    deps.append(step.get("file_path", ""))
+    
+    return list(set(deps))  # Remove duplicates
 
 
 async def _summarize_if_needed(exploration: str, state: dict) -> str:
@@ -312,21 +352,29 @@ Description: {story_description[:500] if story_description else "No description"
 {response[:6000]}
 
 ## Instructions
-Create an implementation plan with:
-1. story_summary: Brief 1-sentence summary
-2. logic_analysis: [[file_path, description], ...] - HIGH-LEVEL descriptions only
-3. steps: Ordered list (database → API → components → pages)
-   - Each step: order, description, file_path, action (create/modify), dependencies
-   - description should include:
-     - WHAT: Purpose, user-facing behavior, inputs/outputs
-     - DESIGN INTENT: Visual style, feel, memorable aspects (for UI components)
-   - DO NOT include: specific imports, interface definitions, implementation patterns
-   - Let skills handle HOW to implement
+Create steps: Ordered list (database → API → components → pages)
+- Each step: file_path, action (create/modify), task, dependencies
+- task: WHAT to implement (1-2 sentences)
+- dependencies: Files this step needs as context (e.g., schema.prisma, types/index.ts, parent components)
 
-## Quality Requirements
-- Focus on INTENT, not implementation details
-- Describe desired user experience and visual design
-- Leave technical decisions (imports, patterns, hooks) to implementation phase + skills
+## Dependency Rules (IMPORTANT)
+- API routes need: prisma/schema.prisma, src/lib/prisma.ts
+- Components need: src/types/index.ts
+- Section components need: related Card/Item components (e.g., BooksSection needs BookCard.tsx)
+- Pages need: components they will import
+
+## Order (for parallel execution)
+Layer 1: prisma/schema.prisma (database)
+Layer 2: prisma/seed.ts
+Layer 3: src/types/*.ts
+Layer 4: src/lib/*.ts
+Layer 5: src/app/api/**/route.ts (can run parallel)
+Layer 6: src/app/actions/*.ts
+Layer 7: src/components/*Card.tsx, *Item.tsx (can run parallel)
+Layer 8: src/components/*Section.tsx (can run parallel)
+Layer 9: src/app/**/page.tsx
+
+Steps in same layer CAN run in parallel if they don't depend on each other.
 """
         
         result = await structured_llm.ainvoke([
@@ -461,19 +509,44 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
         steps = [s for s in steps if "migration" not in s.get("task", "").lower() 
                  and "migration" not in s.get("file_path", "").lower()]
         
-        # Post-process: add order, skills, dependencies, description
+        # Filter out existing boilerplate files (LLM sometimes ignores NEVER rules)
+        BOILERPLATE_FILES = {
+            "src/lib/prisma.ts",
+            "src/lib/utils.ts",
+            "src/auth.ts",
+        }
+        original_count = len(steps)
+        steps = [s for s in steps if s.get("file_path", "").replace("\\", "/") not in BOILERPLATE_FILES]
+        if len(steps) < original_count:
+            removed = original_count - len(steps)
+            logger.info(f"[analyze_and_plan] Filtered out {removed} boilerplate file(s)")
+        
+        # Post-process: add order, skills, description, auto-detect dependencies
         for i, step in enumerate(steps):
             step["order"] = i + 1
             step["description"] = step.get("task", "")  # For backward compatibility
             step["skills"] = _auto_assign_skills(step.get("file_path", ""))
-            step["dependencies"] = _auto_detect_dependencies(step.get("file_path", ""))
+            
+            # Ensure dependencies is a list (from LLM output)
+            if not isinstance(step.get("dependencies"), list):
+                step["dependencies"] = []
+            
+            # Auto-detect dependencies and merge with LLM-provided deps
+            llm_deps = step.get("dependencies", [])
+            auto_deps = _auto_detect_dependencies(step.get("file_path", ""), steps)
+            step["dependencies"] = list(set(llm_deps + auto_deps))
         
-        # Auto-add seed step when database models are created
+        # Auto-add seed step when database models are created (if LLM didn't already add one)
         has_schema_step = any(
             s.get("file_path", "").endswith("schema.prisma")
             for s in steps
         )
-        if has_schema_step:
+        has_seed_step = any(
+            "seed.ts" in s.get("file_path", "").lower()
+            for s in steps
+        )
+        
+        if has_schema_step and not has_seed_step:
             seed_file = Path(workspace_path) / "prisma" / "seed.ts" if workspace_path else None
             seed_exists = seed_file and seed_file.exists()
             
@@ -511,12 +584,30 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
         dependencies_content = _preload_dependencies(workspace_path, steps)
         logger.info(f"[analyze_and_plan] Pre-loaded {len(dependencies_content)} files")
         
-        # Format message
-        steps_text = [
-            f"  {s.get('order', i+1)}. [{s.get('action', '')}] {s.get('file_path', '')}"
-            for i, s in enumerate(steps)
-        ]
+        # Calculate parallel layers
+        from app.agents.developer_v2.src.nodes.parallel_utils import (
+            group_steps_by_layer,
+            should_use_parallel,
+        )
+        
+        layers = group_steps_by_layer(steps)
+        can_parallel = should_use_parallel(steps)
+        
+        # Format message with parallel info
+        steps_text = []
+        for layer_num in sorted(layers.keys()):
+            layer_steps = layers[layer_num]
+            mode = "PARALLEL" if len(layer_steps) > 1 else ""
+            for s in layer_steps:
+                order = s.get('order', '?')
+                action = s.get('action', '')
+                file_path = s.get('file_path', '')
+                parallel_tag = f" [{mode}]" if mode else ""
+                steps_text.append(f"  {order}. [{action}] {file_path}{parallel_tag}")
+        
         msg = f"📋 **{story_summary}**\n\n" + "\n".join(steps_text)
+        if can_parallel:
+            msg += f"\n\n🔀 Parallel execution: {len(layers)} layers"
         
         return {
             **state,
@@ -530,6 +621,8 @@ CRITICAL: After exploration, you MUST output <result> JSON. Do not stop at explo
             "current_step": 0,
             "message": msg,
             "skill_registry": skill_registry,
+            "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()},
+            "can_parallel": can_parallel,
             "action": "IMPLEMENT",
         }
         

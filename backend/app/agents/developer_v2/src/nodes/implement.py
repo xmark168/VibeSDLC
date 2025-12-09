@@ -208,13 +208,15 @@ def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundl
         # Optionally include bundled reference files
         if include_bundled:
             bundled = skill.list_bundled_files()
+            logger.debug(f"[implement] Skill {skill_id} bundled files: {bundled}")
             for bf in bundled:  # Load all bundled files
                 bf_content = skill.load_bundled_file(bf)
                 if bf_content:
                     content += f"\n\n### Reference: {bf}\n{bf_content}"
+                    logger.debug(f"[implement] Loaded reference {bf}: {len(bf_content)} chars")
         
         parts.append(f"## Skill: {skill_id}\n{content}")
-        logger.info(f"[implement] Preloaded skill: {skill_id} ({len(content)} chars)")
+        logger.info(f"[implement] Preloaded skill: {skill_id} ({len(content)} chars, bundled: {len(bundled) if include_bundled else 0})")
     
     return "\n\n---\n\n".join(parts) if parts else ""
 
@@ -280,11 +282,8 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         # Preload skills specified in plan step
         skills_content = _preload_skills(skill_registry, step_skills)
         
+        # Context: only dependencies (project_structure removed - skills have patterns)
         context_parts = []
-        project_structure = get_project_structure(tech_stack)
-        if project_structure:
-            context_parts.append(f"<project_structure>\n{project_structure}\n</project_structure>")
-        
         dependencies_content = state.get("dependencies_content", {})
         # Auto-load dependencies from disk if not in cache (MetaGPT-style)
         deps_context = _build_dependencies_context(
@@ -435,7 +434,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                     if seed_file.exists():
                         logger.info("[implement] Running database seed...")
                         result = subprocess.run(
-                            "pnpm exec tsx prisma/seed.ts", cwd=workspace, shell=True,
+                            "pnpm exec ts-node prisma/seed.ts", cwd=workspace, shell=True,
                             capture_output=True, text=True, timeout=60,
                             encoding='utf-8', errors='replace'
                         )
@@ -487,6 +486,239 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         
     except Exception as e:
         logger.error(f"[implement] Error: {e}", exc_info=True)
+        return {**state, "error": str(e), "action": "RESPOND"}
+
+
+# =============================================================================
+# PARALLEL IMPLEMENTATION
+# =============================================================================
+
+from app.agents.developer_v2.src.nodes.parallel_utils import (
+    group_steps_by_layer,
+    run_layer_parallel,
+    merge_parallel_results,
+    should_use_parallel,
+    MAX_CONCURRENT,
+)
+
+
+async def _implement_single_step(
+    step: Dict,
+    state: DeveloperState,
+    skill_registry: SkillRegistry,
+    workspace_path: str,
+    dependencies_content: Dict,
+) -> Dict:
+    """Implement a single step (for parallel execution)."""
+    file_path = step.get("file_path", "")
+    task_description = step.get("task", step.get("description", ""))
+    action = step.get("action", "")
+    step_dependencies = step.get("dependencies", [])
+    step_skills = step.get("skills", [])
+    
+    try:
+        if "frontend-design" in step_skills and "frontend-component" not in step_skills:
+            step_skills = step_skills + ["frontend-component"]
+        
+        skills_content = _preload_skills(skill_registry, step_skills)
+        
+        # Context: only dependencies (project_structure removed - skills have patterns)
+        context_parts = []
+        deps_context = _build_dependencies_context(
+            dependencies_content, step_dependencies,
+            workspace_path=workspace_path, exclude_file=file_path
+        )
+        if deps_context:
+            context_parts.append(deps_context)
+        
+        legacy_code = ""
+        if action == "modify" and file_path:
+            full_path = os.path.join(workspace_path, file_path)
+            if os.path.exists(full_path):
+                try:
+                    with open(full_path, 'r', encoding='utf-8') as f:
+                        legacy_code = f.read()
+                except Exception:
+                    pass
+        
+        enhanced_task = f"[{action.upper()}] {file_path}\n{task_description}" if file_path else task_description
+        
+        input_text = _format_input_template(
+            "implement_step",
+            step_number=step.get("order", 1),
+            total_steps=state.get("total_steps", 1),
+            task_description=enhanced_task,
+            modified_files="",
+            related_context="\n\n".join(context_parts),
+            feedback_section="",
+            logic_analysis="",
+            legacy_code=legacy_code,
+            debug_logs="",
+        )
+        
+        system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=input_text)
+        ]
+        
+        step_llm = get_llm_for_skills(step_skills)
+        response = await step_llm.ainvoke(messages, config=_cfg(state, f"impl_{file_path}"))
+        output = _parse_implement_output(response.content or "")
+        
+        if output and file_path:
+            full_path = os.path.join(workspace_path, file_path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.write(output.content)
+            logger.info(f"[parallel] {action.upper()} {file_path}")
+            return {"file_path": file_path, "success": True, "modified_files": [file_path]}
+        
+        return {"file_path": file_path, "success": False, "error": "No output"}
+    except Exception as e:
+        logger.error(f"[parallel] Step failed ({file_path}): {e}")
+        return {"file_path": file_path, "success": False, "error": str(e)}
+
+
+async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperState:
+    """Execute implementation steps in parallel by layer.
+    
+    Layer execution order:
+    1. Schema (sequential) → prisma generate + db push
+    2. Seed (sequential) → run seed
+    3. Types (sequential)
+    4-5. API routes (parallel)
+    6-7. Components (parallel, max 3 concurrent)
+    8. Pages (sequential)
+    """
+    logger.info("[NODE] implement_parallel")
+    
+    try:
+        plan_steps = state.get("implementation_plan", [])
+        workspace_path = state.get("workspace_path", "")
+        tech_stack = state.get("tech_stack", "nextjs")
+        
+        if not plan_steps:
+            return {**state, "error": "No implementation plan", "action": "RESPOND"}
+        
+        skill_registry = state.get("skill_registry") or SkillRegistry.load(tech_stack)
+        dependencies_content = dict(state.get("dependencies_content", {}))
+        
+        layers = group_steps_by_layer(plan_steps)
+        sorted_layers = sorted(layers.keys())
+        
+        logger.info(f"[parallel] {len(plan_steps)} steps in {len(layers)} layers: {sorted_layers}")
+        
+        all_modified = []
+        all_errors = []
+        step_count = 0
+        
+        for layer_num in sorted_layers:
+            layer_steps = layers[layer_num]
+            layer_files = [s.get("file_path", "") for s in layer_steps]
+            is_parallel = len(layer_steps) > 1 and layer_num >= 5
+            
+            logger.info(f"[parallel] Layer {layer_num}: {len(layer_steps)} steps {'(PARALLEL)' if is_parallel else '(SEQ)'}")
+            
+            if is_parallel:
+                # Parallel execution for API routes and components
+                async def impl_step(step):
+                    return await _implement_single_step(
+                        step, state, skill_registry, workspace_path, dependencies_content
+                    )
+                
+                results = await run_layer_parallel(layer_steps, impl_step, state, MAX_CONCURRENT)
+            else:
+                # Sequential execution for schema, seed, types, pages
+                results = []
+                for step in layer_steps:
+                    result = await _implement_single_step(
+                        step, state, skill_registry, workspace_path, dependencies_content
+                    )
+                    results.append(result)
+                    step_count += 1
+                    logger.info(f"[parallel] Step {step_count}/{len(plan_steps)}: {step.get('file_path', '')}")
+            
+            # Collect results
+            for result in results:
+                if result.get("success"):
+                    all_modified.extend(result.get("modified_files", []))
+                elif result.get("error"):
+                    all_errors.append(f"{result.get('file_path')}: {result.get('error')}")
+            
+            # Post-layer actions
+            if layer_num == 1:  # After schema
+                schema_modified = any("schema.prisma" in str(r.get("file_path", "")) for r in results)
+                if schema_modified:
+                    logger.info("[parallel] Running prisma generate + db push...")
+                    try:
+                        subprocess.run(
+                            "pnpm exec prisma generate", 
+                            cwd=workspace_path, shell=True, capture_output=True, timeout=60,
+                            encoding='utf-8', errors='replace'
+                        )
+                        subprocess.run(
+                            "pnpm exec prisma db push --accept-data-loss", 
+                            cwd=workspace_path, shell=True, capture_output=True, timeout=60,
+                            encoding='utf-8', errors='replace'
+                        )
+                        logger.info("[parallel] Prisma commands completed")
+                        
+                        # Refresh schema in dependencies_content
+                        schema_path = os.path.join(workspace_path, "prisma/schema.prisma")
+                        if os.path.exists(schema_path):
+                            with open(schema_path, 'r', encoding='utf-8') as f:
+                                dependencies_content["prisma/schema.prisma"] = f.read()
+                    except Exception as e:
+                        logger.warning(f"[parallel] Prisma failed: {e}")
+            
+            elif layer_num == 2:  # After seed
+                seed_created = any("seed.ts" in str(r.get("file_path", "")) for r in results)
+                if seed_created:
+                    seed_path = os.path.join(workspace_path, "prisma/seed.ts")
+                    if os.path.exists(seed_path):
+                        logger.info("[parallel] Running database seed...")
+                        try:
+                            result = subprocess.run(
+                                "pnpm exec ts-node prisma/seed.ts",
+                                cwd=workspace_path, shell=True, capture_output=True, 
+                                text=True, timeout=60,
+                                encoding='utf-8', errors='replace'
+                            )
+                            if result.returncode == 0:
+                                logger.info("[parallel] Database seeded successfully")
+                                # Update seed cache so run_code skips duplicate seed
+                                import hashlib
+                                cache_file = Path(workspace_path) / ".seed_cache"
+                                seed_hash = hashlib.md5(Path(seed_path).read_bytes()).hexdigest()
+                                cache_file.write_text(seed_hash)
+                            else:
+                                logger.warning(f"[parallel] Seed failed: {result.stderr[:200]}")
+                        except Exception as e:
+                            logger.warning(f"[parallel] Seed failed: {e}")
+            
+            elif layer_num == 3:  # After types
+                # Refresh types in dependencies_content
+                types_path = os.path.join(workspace_path, "src/types/index.ts")
+                if os.path.exists(types_path):
+                    with open(types_path, 'r', encoding='utf-8') as f:
+                        dependencies_content["src/types/index.ts"] = f.read()
+        
+        success_count = len([r for r in all_modified])
+        logger.info(f"[parallel] Completed: {success_count} files, {len(all_errors)} errors")
+        
+        return {
+            **state,
+            "current_step": len(plan_steps),
+            "total_steps": len(plan_steps),
+            "files_modified": list(set(all_modified)),
+            "dependencies_content": dependencies_content,
+            "parallel_errors": all_errors if all_errors else None,
+            "message": f"Implemented {success_count} files ({len(layers)} layers)",
+            "action": "VALIDATE",
+        }
+    except Exception as e:
+        logger.error(f"[implement_parallel] Error: {e}", exc_info=True)
         return {**state, "error": str(e), "action": "RESPOND"}
 
 

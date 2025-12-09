@@ -3,7 +3,84 @@ name: frontend-component
 description: Create React/Next.js 16 components. Use when building pages, client/server components, forms with useActionState, or UI with shadcn/ui. ALWAYS activate with frontend-design together.
 ---
 
-## ⚠️ CRITICAL RULES
+## ⚠️ PROPS MATCHING - MOST CRITICAL
+
+**Before using ANY component, you MUST:**
+1. READ the component file first
+2. Find `interface XxxProps { ... }`
+3. Pass props EXACTLY as defined
+
+```tsx
+// Component file defines:
+interface BookCardProps {
+  book: Book;  // Expects OBJECT, not individual fields!
+}
+
+// ❌ WRONG - passing individual fields
+<BookCard id={book.id} title={book.title} author={book.author} />
+
+// ✅ CORRECT - pass the object
+<BookCard book={book} />
+```
+
+**Common mistakes:**
+- Passing `{ name, slug, count }` when component expects `{ category: Category }`
+- Passing individual fields when component expects an object prop
+- Not reading the Props interface before using component
+- Missing required props: `<Banner />` instead of `<Banner title="Sale" />`
+
+**TypeScript error patterns:**
+- `TS2741: Property 'X' is missing` → Add the required prop
+- `TS2353: 'X' does not exist` → Remove invented prop, check interface
+- `TS2322: Type 'X' is not assignable` → Check if server action includes relations
+
+## ⚠️ Data Fetching - Self-Fetch Pattern
+
+Components that need data should SELF-FETCH from API routes:
+
+```tsx
+'use client';
+import { useEffect, useState } from 'react';
+
+interface Book {
+  id: string;
+  title: string;
+  price: number;
+}
+
+export function FeaturedBooks() {
+  const [books, setBooks] = useState<Book[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/books/featured')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) setBooks(data.data ?? []);
+        else setError(data.error);
+      })
+      .catch(() => setError('Failed to load'))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  if (isLoading) return <Skeleton />;
+  if (error) return <Alert>{error}</Alert>;
+  return <BookGrid books={books} />;
+}
+```
+
+**Rules:**
+- Define interface locally with ONLY fields you need for display
+- Use `useState` for data, loading, error states
+- Fetch from API route in `useEffect`
+- Handle loading/error states properly
+
+**NEVER** receive fetched data as props from parent page - always self-fetch!
+
+---
+
+## More Rules
 
 ### 1. 'use client' - ADD when using hooks/events
 ```tsx
@@ -22,17 +99,7 @@ export function BookCard() {
 }
 ```
 
-### 2. Props Check - ALWAYS read component file first
-```tsx
-// ❌ ERROR
-<BookCard id={book.id} title={book.title} />
-
-// Component expects: interface BookCardProps { book: Book; }
-// ✅ CORRECT
-<BookCard book={book} />
-```
-
-### 3. Layout - NO header in pages
+### 2. Layout - NO header in pages
 Root `layout.tsx` has `<Navigation />`. Pages only have content:
 ```tsx
 // ✅ CORRECT
@@ -41,7 +108,7 @@ export default function Page() {
 }
 ```
 
-### 4. Null Safety
+### 3. Null Safety
 ```tsx
 // ❌ CRASHES
 parts.map(p => ...)

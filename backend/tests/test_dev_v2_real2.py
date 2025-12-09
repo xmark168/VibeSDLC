@@ -84,11 +84,11 @@ class SimpleDeveloperRunner:
         # Apply boilerplate
         self.template_applied = copy_boilerplate(template, self.workspace_path)
         
-        # Import and init graph
+        # Import and init graph with parallel execution
         from app.agents.developer_v2.src.graph import DeveloperGraph
-        self.graph = DeveloperGraph(agent=self)
+        self.graph = DeveloperGraph(agent=self, parallel=True)
         
-        logger.info(f"[{self.name}] Workspace: {self.workspace_path}")
+        logger.info(f"[{self.name}] Workspace: {self.workspace_path} (parallel=True)")
     
     def _setup_workspace(self, story_id: str) -> dict:
         """Setup git workspace and branch - called by graph's setup_workspace node."""
@@ -141,27 +141,33 @@ class SimpleDeveloperRunner:
     
     def _get_project_config(self) -> dict:
         """Get project config for run_code node."""
-        return {
-            "tech_stack": {
-                "name": "nextjs-app",
-                "service": [{
-                    "name": "app",
-                    "path": ".",
-                    "runtime": "bun",
-                    "framework": "nextjs",
-                    "orm": "prisma",
-                    "install_cmd": "bun install",
-                    "build_cmd": "bun run build",
-                    "typecheck_cmd": "bun run typecheck",
-                    "test_cmd": "bun run test",
-                    "lint_cmd": "bun run lint",
-                    "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
-                    "format_cmd": "bunx prettier --write .",
-                    "needs_db": True,
-                    "db_cmds": ["bunx prisma generate", "bunx prisma db push --accept-data-loss"],
-                }]
-            }
+        return { "tech_stack": {
+                    "name": "nextjs-app",
+                    "service": [
+                        {
+                            "name": "app",
+                            "path": ".",
+                            "runtime": "bun",
+                            "framework": "nextjs",
+                            "orm": "prisma",
+                            "db_type": "postgresql",
+                            "validation": "zod",
+                            "auth": "next-auth",
+                            "install_cmd": "pnpm install --ignore-scripts ",
+                            "test_cmd": "pnpm run test",
+                            "run_cmd": "pnpm dev",
+                            "build_cmd": "pnpm run build",
+                            "lint_cmd": "pnpm run lint",
+                            "lint_fix_cmd": "pnpm eslint --fix . --ext .ts,.tsx,.js,.jsx",
+                            "format_cmd": "pnpm prettier --write .",
+                            "needs_db": True,
+                            "db_cmds": ["pnpm prisma generate", "pnpm prisma db push --accept-data-loss"],
+                        }
+                    ]
+                }
+        
         }
+        
     
     async def run_story(self, story: dict) -> dict:
         """Run a story through the graph."""
@@ -473,9 +479,14 @@ async def test_two_stories_sequential():
     return results
 
 
+def _timestamp_workspace(prefix: str = "test") -> str:
+    """Generate timestamp-based workspace name."""
+    return f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+
 async def test_story_1_only():
     """Quick test with Story 1 only."""
-    return await test_story(STORY_1, workspace_name="test_story1")
+    return await test_story(STORY_1, workspace_name=_timestamp_workspace("story1"))
 
 
 def main():
@@ -492,7 +503,7 @@ def main():
         result = asyncio.run(test_story_1_only())
         success = result.get("success", False)
     elif args.story2:
-        result = asyncio.run(test_story(STORY_2, workspace_name="test_story2"))
+        result = asyncio.run(test_story(STORY_2, workspace_name=_timestamp_workspace("story2")))
         success = result.get("success", False)
     else:
         results = asyncio.run(test_two_stories_sequential())

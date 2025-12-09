@@ -173,6 +173,20 @@ def _parse_error_structured(logs: str) -> List[ParsedError]:
             raw_line=match.group(0)
         ))
     
+    # Props mismatch: Type '{ name, slug }' is not assignable to type 'XxxProps'
+    # This is a CRITICAL error - LLM passes wrong props to components
+    props_pattern = r"([^\s(]+\.tsx?)\((\d+),(\d+)\):\s*error\s*(TS2322|TS2739):\s*Type '\{[^}]*\}' is not assignable to type '([^']+)'"
+    for match in re.finditer(props_pattern, logs):
+        errors.append(ParsedError(
+            file_path=match.group(1),
+            line=int(match.group(2)),
+            column=int(match.group(3)),
+            error_code=match.group(4),
+            error_type="PropsMatch",
+            message=f"Props mismatch - check {match.group(5)} interface before passing props",
+            raw_line=match.group(0)
+        ))
+    
     return errors
 
 
@@ -181,11 +195,27 @@ def _format_parsed_errors(errors: List[ParsedError]) -> str:
     if not errors:
         return ""
     
+    # Prioritize PropsMatch errors - they're most common and critical
+    props_errors = [e for e in errors if e.error_type == "PropsMatch"]
+    other_errors = [e for e in errors if e.error_type != "PropsMatch"]
+    sorted_errors = props_errors + other_errors
+    
     lines = ["## PARSED ERRORS (fix these files!):\n"]
-    for i, err in enumerate(errors[:5], 1):
-        loc = f":{err.line}" if err.line else ""
+    
+    # Show PropsMatch errors with extra emphasis
+    if props_errors:
+        lines.append("### ⚠️ PROPS MISMATCH ERRORS (READ component Props interface!):\n")
+    
+    for i, err in enumerate(sorted_errors[:10], 1):  # Increased from 5 to 10
+        loc = f":{err.line}:{err.column}" if err.line else ""
         code = f" [{err.error_code}]" if err.error_code else ""
-        lines.append(f"{i}. **{err.file_path}{loc}**{code}: {err.message}")
+        
+        if err.error_type == "PropsMatch":
+            lines.append(f"{i}. **{err.file_path}{loc}**{code}")
+            lines.append(f"   → {err.message}")
+            lines.append(f"   → FIX: Read the component file to see its Props interface!")
+        else:
+            lines.append(f"{i}. **{err.file_path}{loc}**{code}: {err.message}")
     
     return "\n".join(lines)
 
@@ -224,9 +254,9 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
                 logger.info("[analyze_error] Prisma error detected, running generate + db:push...")
                 try:
                     subprocess.run("pnpm exec prisma generate", cwd=workspace_path, shell=True, 
-                                   capture_output=True, timeout=60)
+                                   capture_output=True, timeout=60, encoding='utf-8', errors='replace')
                     subprocess.run("pnpm exec prisma db push --accept-data-loss", cwd=workspace_path, 
-                                   shell=True, capture_output=True, timeout=60)
+                                   shell=True, capture_output=True, timeout=60, encoding='utf-8', errors='replace')
                     auto_fixed = True
                 except Exception as e:
                     logger.warning(f"[analyze_error] Prisma auto-fix failed: {e}")
@@ -237,7 +267,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
                 logger.info("[analyze_error] Module error detected, running pnpm install...")
                 try:
                     subprocess.run("pnpm install --frozen-lockfile", cwd=workspace_path, 
-                                   shell=True, capture_output=True, timeout=120)
+                                   shell=True, capture_output=True, timeout=120, encoding='utf-8', errors='replace')
                     auto_fixed = True
                 except Exception as e:
                     logger.warning(f"[analyze_error] pnpm install auto-fix failed: {e}")

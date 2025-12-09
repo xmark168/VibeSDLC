@@ -8,6 +8,7 @@ class SimpleStep(BaseModel):
     file_path: str = Field(description="Target file path")
     action: str = Field(description="'create' or 'modify'")
     task: str = Field(description="What to implement (1-2 sentences)")
+    dependencies: List[str] = Field(default=[], description="Files this step needs as context")
 
 
 class SimplePlanOutput(BaseModel):

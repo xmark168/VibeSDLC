@@ -31,7 +31,7 @@ from langgraph.graph import StateGraph, END
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
-    setup_workspace, plan, implement,
+    setup_workspace, plan, implement, implement_parallel,
     run_code, analyze_error,
     review, route_after_review,
 )
@@ -100,39 +100,53 @@ def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__
 class DeveloperGraph:
     """LangGraph state machine for story-driven code generation.
 
-    Sequential flow with per-step review:
+    Parallel flow (default):
+    setup_workspace -> plan -> implement_parallel -> run_code -> END
+                                                        |
+                                                      FAIL
+                                                        v
+                                                  analyze_error -> implement -> run_code
+
+    Sequential flow (fallback for debug):
     setup_workspace -> plan -> implement <-> review (LBTM loop)
                                                |
                                              LGTM (all steps done)
                                                v
                                END <- run_code
-                                        |
-                                      FAIL
-                                        v
-                                  analyze_error -> implement
 
     Attrs: agent (DeveloperV2), graph (compiled StateGraph)
-    Limits: max 5 debug iterations, adaptive LBTM per step (low=1, medium=2, high=3)
+    Limits: max 5 debug iterations
     """
     
-    def __init__(self, agent=None):
+    def __init__(self, agent=None, parallel=True):
         self.agent = agent
+        self.parallel = parallel
         g = StateGraph(DeveloperState)
         
-        # All nodes (6 total - no summarize)
+        # All nodes
         g.add_node("setup_workspace", partial(setup_workspace, agent=agent))
         g.add_node("plan", partial(plan, agent=agent))
         g.add_node("implement", partial(implement, agent=agent))
+        g.add_node("implement_parallel", partial(implement_parallel, agent=agent))
         g.add_node("review", partial(review, agent=agent))
         g.add_node("run_code", partial(run_code, agent=agent))
         g.add_node("analyze_error", partial(analyze_error, agent=agent))
         
-        # Sequential edges
+        # Edges
         g.set_entry_point("setup_workspace")
         g.add_edge("setup_workspace", "plan")
-        g.add_edge("plan", "implement")
-        g.add_conditional_edges("implement", route_after_implement)
-        g.add_conditional_edges("review", route_review_result)
+        
+        if parallel:
+            # Parallel mode: plan -> implement_parallel -> run_code
+            g.add_edge("plan", "implement_parallel")
+            g.add_edge("implement_parallel", "run_code")
+        else:
+            # Sequential mode: plan -> implement <-> review
+            g.add_edge("plan", "implement")
+            g.add_conditional_edges("implement", route_after_implement)
+            g.add_conditional_edges("review", route_review_result)
+        
+        # Debug flow (shared)
         g.add_conditional_edges("run_code", route_after_test)
         g.add_conditional_edges("analyze_error", route_after_analyze_error)
         

@@ -19,6 +19,9 @@ system_prompt: |
   - Create migration files (use db push)
   - Split: model + migration, component + styles
   - Create: "setup project", "install deps", "create types file"
+  - Create existing boilerplate files: src/lib/prisma.ts, src/lib/utils.ts, src/auth.ts
+  - action: "create" for files that already exist (use "modify" instead)
+  - Create server actions (src/app/actions/*.ts) - use API routes instead
   </rules>
   
   <step_format>
@@ -36,7 +39,6 @@ system_prompt: |
   | src/app/api/**/route.ts | ["api-route"] |
   | src/components/**/*.tsx | ["frontend-component", "frontend-design"] |
   | src/app/**/*.tsx (pages) | ["frontend-component", "frontend-design"] |
-  | src/app/actions/*.ts | ["server-action"] |
   </step_format>
   
   <example>

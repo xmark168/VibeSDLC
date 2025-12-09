@@ -172,10 +172,10 @@ class SimpleDeveloperRunner:
         else:
             self.workspace_path.mkdir(parents=True, exist_ok=True)
         
-        # Initialize graph (agent=self, setup_workspace node will call _setup_workspace)
-        self.graph = DeveloperGraph(agent=self)
+        # Initialize graph with parallel execution (setup_workspace node will call _setup_workspace)
+        self.graph = DeveloperGraph(agent=self, parallel=True)
         
-        logger.info(f"[{self.name}] Initialized with workspace: {self.workspace_path}")
+        logger.info(f"[{self.name}] Initialized with workspace: {self.workspace_path} (parallel=True)")
         logger.info(f"[{self.name}] Workspace ready: False (will be setup by graph)")
     
     def _setup_workspace(self, story_id: str) -> dict:
@@ -290,49 +290,8 @@ class SimpleDeveloperRunner:
                 }
             }
         
-        if self.template == "fullstack":
-            return {
-                "tech_stack": {
-                    "name": "fullstack-monorepo",
-                    "service": [
-                        {
-                            "name": "frontend",
-                            "path": "frontend",
-                            "runtime": "bun",
-                            "framework": "nextjs",
-                            "validation": "zod",
-                            "auth": "next-auth",
-                            "install_cmd": "bun install --ignore-scripts --linker=isolated",
-                            "test_cmd": "bun run test",
-                            "run_cmd": "bun dev",
-                            "build_cmd": "bun run build",
-                            "lint_cmd": "bun run lint",
-                            "lint_fix_cmd": "bunx eslint --fix . --ext .ts,.tsx,.js,.jsx",
-                            "format_cmd": "bunx prettier --write .",
-                            "needs_db": False,
-                            "db_cmds": [],
-                        },
-                        {
-                            "name": "backend",
-                            "path": "backend",
-                            "runtime": "python",
-                            "framework": "fastapi",
-                            "orm": "sqlalchemy",
-                            "db_type": "postgresql",
-                            "validation": "pydantic",
-                            "install_cmd": "pip install -e .",
-                            "test_cmd": "pytest -v",
-                            "run_cmd": "uvicorn app.main:app --reload",
-                            "build_cmd": "",
-                            "lint_cmd": "ruff check .",
-                            "lint_fix_cmd": "ruff check --fix .",
-                            "format_cmd": "ruff format .",
-                            "needs_db": True,
-                            "db_cmds": ["alembic upgrade head"],
-                        },
-                    ]
-                }
-            }
+       
+            
         
         return {"tech_stack": {"name": "", "service": []}}
     

@@ -85,8 +85,9 @@ class Skill:
         if filepath in self._bundled_files:
             return self._bundled_files[filepath]
         
-        file_path = self.skill_dir / filepath
+        file_path = self.skill_dir.resolve() / filepath
         if not file_path.exists():
+            logger.debug(f"[Skill] Bundled file not found: {file_path}")
             return ""
         
         try:
@@ -99,10 +100,13 @@ class Skill:
     
     def list_references(self) -> List[str]:
         """List files in references/ directory."""
-        refs_dir = self.skill_dir / "references"
+        refs_dir = self.skill_dir.resolve() / "references"
         if not refs_dir.exists():
+            logger.debug(f"[Skill] References dir not found: {refs_dir}")
             return []
-        return [f.name for f in refs_dir.iterdir() if f.is_file()]
+        files = [f.name for f in refs_dir.iterdir() if f.is_file()]
+        logger.debug(f"[Skill] Found references for {self.id}: {files}")
+        return files
     
     def list_scripts(self) -> List[str]:
         """List files in scripts/ directory."""

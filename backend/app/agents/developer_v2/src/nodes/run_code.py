@@ -1,6 +1,7 @@
 """Run code node - Execute format, lint fix, typecheck, build."""
 import asyncio
 import concurrent.futures
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -26,6 +27,65 @@ def _has_script(workspace_path: str, script_name: str) -> bool:
 
 # Thread pool for parallel shell commands
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+
+def _should_skip_seed(workspace_path: str) -> bool:
+    """Check if seed can be skipped (seed.ts unchanged)."""
+    seed_file = Path(workspace_path) / "prisma" / "seed.ts"
+    cache_file = Path(workspace_path) / ".seed_cache"
+    
+    if not seed_file.exists():
+        return True  # No seed file, nothing to run
+    
+    try:
+        current_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
+        if cache_file.exists():
+            cached_hash = cache_file.read_text().strip()
+            if cached_hash == current_hash:
+                return True
+    except Exception:
+        pass
+    
+    return False
+
+
+def _update_seed_cache(workspace_path: str) -> None:
+    """Update seed cache after successful seed."""
+    seed_file = Path(workspace_path) / "prisma" / "seed.ts"
+    cache_file = Path(workspace_path) / ".seed_cache"
+    
+    try:
+        if seed_file.exists():
+            current_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
+            cache_file.write_text(current_hash)
+    except Exception:
+        pass
+
+
+def _run_seed(workspace_path: str) -> Tuple[bool, str, str]:
+    """Run database seed (blocking). Returns (success, stdout, stderr)."""
+    seed_file = Path(workspace_path) / "prisma" / "seed.ts"
+    
+    if not seed_file.exists():
+        return True, "", ""
+    
+    if _should_skip_seed(workspace_path):
+        logger.info("[run_code] Skipping seed (cached)")
+        return True, "", ""
+    
+    logger.info("[run_code] Running database seed...")
+    success, stdout, stderr = _run_step(
+        "DB Seed", "pnpm exec ts-node prisma/seed.ts",
+        workspace_path, "prisma", timeout=60, allow_fail=True
+    )
+    
+    if success:
+        _update_seed_cache(workspace_path)
+        logger.info("[run_code] Database seeded successfully")
+    else:
+        logger.warning(f"[run_code] Seed failed (continuing): {stderr[:200] if stderr else 'unknown'}")
+    
+    return success, stdout, stderr
 
 
 def _run_step(
@@ -56,8 +116,8 @@ def _run_step(
                 return True, stdout, stderr
             else:
                 logger.error(f"[run_code] [{svc_name}] {step_name} FAILED (exit={exit_code})")
-                logger.error(f"[run_code] stdout: {stdout[:500] if stdout else '(empty)'}")
-                logger.error(f"[run_code] stderr: {stderr[:500] if stderr else '(empty)'}")
+                logger.error(f"[run_code] stdout: {stdout[:2000] if stdout else '(empty)'}")
+                logger.error(f"[run_code] stderr: {stderr[:2000] if stderr else '(empty)'}")
                 return False, stdout, stderr
         
         logger.info(f"[run_code] [{svc_name}] {step_name} completed")
@@ -115,7 +175,7 @@ async def _run_service_build(
     """
     Run build for a single service.
     
-    Flow: Typecheck → Build
+    Flow: Typecheck + Build (PARALLEL for speed)
     
     Returns:
         {"status": "PASS|FAIL|SKIP", "stdout": str, "stderr": str}
@@ -132,28 +192,53 @@ async def _run_service_build(
     all_stderr = ""
     
     try:
-        # Run typecheck first (catches type errors with clearer messages, ~5s)
-        # Skip if script doesn't exist in package.json
+        loop = asyncio.get_event_loop()
+        tasks = []
+        task_names = []
+        
+        # Prepare typecheck task
         if typecheck_cmd and _has_script(workspace_path, "typecheck"):
-            success, stdout, stderr = _run_step(
-                "Typecheck", typecheck_cmd, workspace_path, svc_name, timeout=60
-            )
-            all_stdout += f"\n$ {typecheck_cmd}\n{stdout}"
-            if not success:
-                all_stderr += f"\n[TYPECHECK FAILED]\n{stderr or stdout}"
-                if svc_span:
-                    svc_span.end(output={"status": "TYPECHECK_FAIL"})
-                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
+            tasks.append(loop.run_in_executor(
+                _executor, _run_step, "Typecheck", typecheck_cmd, workspace_path, svc_name, 60, False
+            ))
+            task_names.append("typecheck")
         elif typecheck_cmd:
             logger.info(f"[run_code] [{svc_name}] Skipping typecheck (script not found)")
         
+        # Prepare build task
         if build_cmd:
-            success, stdout, stderr = _run_step("Build", build_cmd, workspace_path, svc_name, timeout=180)
-            all_stdout += f"\n$ {build_cmd}\n{stdout}"
-            if not success:
-                all_stderr += f"\n[BUILD FAILED]\n{stderr or stdout}"
+            tasks.append(loop.run_in_executor(
+                _executor, _run_step, "Build", build_cmd, workspace_path, svc_name, 180, False
+            ))
+            task_names.append("build")
+        
+        if not tasks:
+            if svc_span:
+                svc_span.end(output={"status": "PASS"})
+            return {"status": "PASS", "stdout": all_stdout, "stderr": ""}
+        
+        # Run typecheck + build in PARALLEL
+        logger.info(f"[run_code] [{svc_name}] Running {' + '.join(task_names)} in parallel...")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Process results
+        for i, result in enumerate(results):
+            task_name = task_names[i]
+            
+            if isinstance(result, Exception):
+                all_stderr += f"\n[{task_name.upper()} ERROR]\n{str(result)}"
                 if svc_span:
-                    svc_span.end(output={"status": "BUILD_FAIL"})
+                    svc_span.end(output={"status": f"{task_name.upper()}_ERROR"})
+                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
+            
+            success, stdout, stderr = result
+            cmd = typecheck_cmd if task_name == "typecheck" else build_cmd
+            all_stdout += f"\n$ {cmd}\n{stdout}"
+            
+            if not success:
+                all_stderr += f"\n[{task_name.upper()} FAILED]\n{stderr or stdout}"
+                if svc_span:
+                    svc_span.end(output={"status": f"{task_name.upper()}_FAIL"})
                 return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
         
         if svc_span:
@@ -205,23 +290,13 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         logger.info(f"[run_code] Services: {[s.get('name', 'app') for s in services]}")
         
-        # Skip prisma - already run in setup_workspace and implement
+        # Run seed + format/lint in PARALLEL (optimization: saves ~5s)
+        loop = asyncio.get_event_loop()
+        seed_task = loop.run_in_executor(_executor, _run_seed, workspace_path)
+        format_lint_task = _run_format_lint_parallel(services, workspace_path)
         
-        # Run seed if seed file exists
-        seed_file = Path(workspace_path) / "prisma" / "seed.ts"
-        if seed_file.exists():
-            logger.info("[run_code] Running database seed...")
-            success, stdout, stderr = _run_step(
-                "DB Seed", "pnpm exec tsx prisma/seed.ts",
-                workspace_path, "prisma", timeout=60, allow_fail=True
-            )
-            if success:
-                logger.info("[run_code] Database seeded successfully")
-            else:
-                logger.warning(f"[run_code] Seed failed (continuing): {stderr[:200] if stderr else 'unknown'}")
-        
-        # Format and lint all services in parallel (optimization: saves ~20-40s)
-        await _run_format_lint_parallel(services, workspace_path)
+        logger.info("[run_code] Running seed + format/lint in parallel...")
+        await asyncio.gather(seed_task, format_lint_task, return_exceptions=True)
         
         # Build all services
         all_stdout = ""

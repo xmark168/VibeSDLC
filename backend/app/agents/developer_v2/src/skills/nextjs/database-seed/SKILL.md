@@ -1,42 +1,60 @@
 ---
 name: database-seed
-description: Create Prisma seed scripts with sample data. Use when populating database with test data.
+description: Create Prisma seed scripts with faker-generated data. Use when populating database with test data.
 ---
 
-## File: `prisma/seed.ts`
+## ⚠️ CRITICAL - Use faker, NOT manual data
 
 ```typescript
+import { faker } from '@faker-js/faker';
+
+// ✅ CORRECT - generate with faker
+Array.from({ length: 5 }, () => ({
+  name: faker.commerce.productName(),
+  price: faker.number.float({ min: 10, max: 100 }),
+}))
+
+// ❌ WRONG - manual data (wastes tokens!)
+[
+  { name: 'Book 1', price: 10 },
+  { name: 'Book 2', price: 20 },
+]
+```
+
+## Template
+
+```typescript
+// prisma/seed.ts
 import { PrismaClient } from '@prisma/client';
+import { faker } from '@faker-js/faker';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Seeding...');
-  
   // Clear existing (reverse dependency order)
   await prisma.book.deleteMany();
   await prisma.category.deleteMany();
   
-  // Seed categories first
+  // Seed categories
   const categories = await prisma.category.createManyAndReturn({
-    data: [
-      { name: 'Fiction', slug: 'fiction' },
-      { name: 'Science', slug: 'science' },
-    ]
-  });
-  
-  // Seed books with category references
-  await prisma.book.createMany({
-    data: Array.from({ length: 5 }, (_, i) => ({
-      title: `Book ${i + 1}`,
-      author: `Author ${i + 1}`,
-      price: 9.99 + i * 5,
-      coverImage: `https://picsum.photos/seed/book${i}/200/300`,
-      categoryId: categories[i % categories.length].id,
+    data: Array.from({ length: 3 }, () => ({
+      name: faker.commerce.department(),
+      slug: faker.helpers.slugify(faker.commerce.department()).toLowerCase(),
     }))
   });
   
-  console.log('✅ Done!');
+  // Seed books with relations
+  await prisma.book.createMany({
+    data: Array.from({ length: 5 }, () => ({
+      title: faker.commerce.productName(),
+      author: faker.person.fullName(),
+      price: faker.number.float({ min: 9.99, max: 49.99, fractionDigits: 2 }),
+      coverImage: faker.image.urlPicsumPhotos({ width: 200, height: 300 }),
+      categoryId: faker.helpers.arrayElement(categories).id,
+    }))
+  });
+  
+  console.log('✅ Seeded!');
 }
 
 main()
@@ -44,15 +62,54 @@ main()
   .finally(() => prisma.$disconnect());
 ```
 
+## Faker v9+ Cheatsheet (LATEST API)
+
+| Field Type | Faker Method (v9+) |
+|------------|-------------------|
+| Full Name | `faker.person.fullName()` |
+| First Name | `faker.person.firstName()` |
+| Last Name | `faker.person.lastName()` |
+| Username | `faker.internet.username()` |
+| Email | `faker.internet.email()` |
+| Password | `faker.internet.password()` |
+| Title | `faker.commerce.productName()` |
+| Description | `faker.lorem.sentence()` |
+| Paragraph | `faker.lorem.paragraph()` |
+| Price | `faker.number.float({ min: 10, max: 100, fractionDigits: 2 })` |
+| Integer | `faker.number.int({ min: 1, max: 100 })` |
+| Image | `faker.image.urlPicsumPhotos({ width: 200, height: 300 })` |
+| Avatar | `faker.image.avatar()` |
+| Slug | `faker.helpers.slugify(name).toLowerCase()` |
+| UUID | `faker.string.uuid()` |
+| Date Past | `faker.date.past()` |
+| Date Recent | `faker.date.recent()` |
+| Boolean | `faker.datatype.boolean()` |
+| Pick from array | `faker.helpers.arrayElement(array)` |
+| ISBN | `faker.commerce.isbn()` |
+| Phone | `faker.phone.number()` |
+
+## ⚠️ DEPRECATED - Do NOT use
+
+| ❌ Deprecated (v8) | ✅ Use Instead (v9+) |
+|-------------------|---------------------|
+| `faker.internet.userName()` | `faker.internet.username()` |
+| `faker.name.firstName()` | `faker.person.firstName()` |
+| `faker.name.lastName()` | `faker.person.lastName()` |
+| `faker.name.fullName()` | `faker.person.fullName()` |
+| `faker.datatype.uuid()` | `faker.string.uuid()` |
+| `faker.random.alphaNumeric()` | `faker.string.alphanumeric()` |
+| `faker.random.word()` | `faker.lorem.word()` |
+| `faker.image.imageUrl()` | `faker.image.url()` |
+
 ## Rules
 
-1. **Clear first**: `deleteMany()` in reverse dependency order
-2. **Use createMany**: Fastest for bulk inserts
-3. **Simple data**: `Book ${i}`, `Author ${i}` - don't overthink
-4. **Images**: `https://picsum.photos/seed/{unique}/width/height`
-5. **5-10 records**: Enough for testing, not too slow
+1. **MAX 5 records** per model
+2. **Use createMany** for bulk inserts
+3. **Clear first** in reverse dependency order
+4. **faker for ALL text** - no manual strings
 
 ## NEVER
-- Complex nested creates (slow)
-- Realistic book titles/descriptions (wastes tokens)
-- More than 10 records per model
+- Manual data arrays
+- More than 5 records per model
+- Individual create() calls
+- Complex nested creates
