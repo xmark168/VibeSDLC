@@ -1196,7 +1196,7 @@ export function ChatPanelWS({
           type="file"
           ref={fileInputRef}
           className="hidden"
-          accept=".docx"
+          accept=".docx,.txt"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) {
@@ -1207,8 +1207,11 @@ export function ChatPanelWS({
                 return;
               }
               // Validate extension
-              if (!file.name.toLowerCase().endsWith('.docx')) {
-                alert("Chỉ hỗ trợ file .docx");
+              const fileName = file.name.toLowerCase();
+              const allowedExtensions = ['.docx', '.txt'];
+              const hasValidExt = allowedExtensions.some(ext => fileName.endsWith(ext));
+              if (!hasValidExt) {
+                alert("Chỉ hỗ trợ file .docx và .txt");
                 e.target.value = "";
                 return;
               }

@@ -124,6 +124,32 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     return extracted_text
 
 
+def extract_text_from_txt(file_bytes: bytes) -> str:
+    """Extract text from plain text file (.txt).
+    
+    Args:
+        file_bytes: Raw bytes of the .txt file
+        
+    Returns:
+        Text content
+    """
+    # Try UTF-8 first, then fall back to other encodings
+    encodings = ['utf-8', 'utf-8-sig', 'cp1252', 'latin-1']
+    
+    for encoding in encodings:
+        try:
+            text = file_bytes.decode(encoding)
+            logger.info(f"[DocumentParser] Decoded .txt with {encoding} ({len(text)} chars)")
+            return text
+        except UnicodeDecodeError:
+            continue
+    
+    # Last resort: decode with errors ignored
+    text = file_bytes.decode('utf-8', errors='ignore')
+    logger.warning(f"[DocumentParser] Decoded .txt with utf-8 (errors ignored)")
+    return text
+
+
 def extract_text(filename: str, file_bytes: bytes) -> str:
     """Auto-detect file type and extract text.
     
@@ -141,5 +167,7 @@ def extract_text(filename: str, file_bytes: bytes) -> str:
     
     if ext == ".docx":
         return extract_text_from_docx(file_bytes)
+    elif ext == ".txt":
+        return extract_text_from_txt(file_bytes)
     else:
-        raise ValueError(f"Unsupported file type: {ext}. Supported: .docx")
+        raise ValueError(f"Unsupported file type: {ext}. Supported: .docx, .txt")

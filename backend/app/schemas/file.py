@@ -22,9 +22,12 @@ class FileTreeResponse(BaseModel):
 
 class FileContentResponse(BaseModel):
     path: str
+    name: str = ""
     content: str
     encoding: str = "utf-8"
     size: int
+    modified: str = ""
+    is_binary: bool = False
 
 
 class GitStatusResponse(BaseModel):

@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2, ChevronsRight } from "lucide-react"
+import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2, ChevronsRight, Download, FileText } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
@@ -228,6 +228,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   const [fileContent, setFileContent] = useState<string>("")
   const [isLoadingFile, setIsLoadingFile] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
+  const [isFileBinary, setIsFileBinary] = useState(false)
 
   // Artifact state
   const [selectedArtifact, setSelectedArtifact] = useState<any | null>(null)
@@ -267,6 +268,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     } else {
       setFileContent("")
       setFileError(null)
+      setIsFileBinary(false)
     }
   }, [selectedFile, projectId])
 
@@ -275,16 +277,58 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
     setIsLoadingFile(true)
     setFileError(null)
+    setIsFileBinary(false)
 
     try {
       const response = await filesApi.getFileContent(projectId, path)
       setFileContent(response.content)
+      setIsFileBinary(response.is_binary || false)
     } catch (err: any) {
       console.error("Failed to fetch file content:", err)
       setFileError(err.message || "Failed to load file")
       setFileContent("")
     } finally {
       setIsLoadingFile(false)
+    }
+  }
+  
+  // Download file from uploads folder
+  const handleDownloadFile = async () => {
+    if (!projectId || !selectedFile) return
+    
+    try {
+      // Get token for auth
+      const token = localStorage.getItem("access_token")
+      const baseUrl = import.meta.env.VITE_API_URL || ''
+      
+      // Fetch file as blob
+      const response = await fetch(
+        `${baseUrl}/api/v1/projects/${projectId}/files/download?path=${encodeURIComponent(selectedFile)}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      )
+      
+      if (!response.ok) {
+        throw new Error('Download failed')
+      }
+      
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      // Get filename from path
+      const filename = selectedFile.split('/').pop() || 'download'
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('Download failed:', err)
+      alert('Không thể tải file. Vui lòng thử lại.')
     }
   }
 
@@ -374,6 +418,20 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
                 ) : fileError ? (
                   <div className="flex items-center justify-center h-full text-destructive">
                     {fileError}
+                  </div>
+                ) : isFileBinary ? (
+                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
+                    <div className="flex items-center justify-center w-16 h-16 bg-muted rounded-lg">
+                      <FileText className="w-8 h-8" />
+                    </div>
+                    <div className="text-center">
+                      <p className="font-medium text-foreground">{selectedFile.split('/').pop()}</p>
+                      <p className="text-sm mt-1">Binary file - cannot preview</p>
+                    </div>
+                    <Button onClick={handleDownloadFile} className="gap-2">
+                      <Download className="w-4 h-4" />
+                      Download File
+                    </Button>
                   </div>
                 ) : (
                   <CodeViewer filePath={selectedFile} content={fileContent} />
