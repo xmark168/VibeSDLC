@@ -61,6 +61,11 @@ class BAState(TypedDict, total=False):
     created_stories: list[dict]  # Stories created in DB after approval
     approval_message: str  # Message after approval
     
+    # LLM-generated messages (from templates filled with actual counts)
+    prd_message: str  # Message when PRD is created/updated
+    stories_message: str  # Message when stories are created/updated (filled from template)
+    stories_approval_message: str  # Message when stories are approved (filled from template)
+    
     # Domain analysis & Research loop
     analysis_text: str
     research_loop_count: int  # Track how many times we've done research (max 2)

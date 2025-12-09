@@ -134,6 +134,12 @@ async def generate_response_message(action: str, context: str, extra_info: str =
     Returns:
         Generated message string
     """
+    # Skip LLM for simple "keep" action - use static message for instant response
+    # Note: "view" still uses LLM because it has extra_info with PRD title/story count
+    if action == "keep":
+        logger.info(f"[generate_response_message] Using static message for action='keep' (no LLM needed)")
+        return _FALLBACK_MESSAGES["keep"]
+    
     try:
         sys_prompt = _sys_prompt(agent, "response_generation")
         user_prompt = _user_prompt(

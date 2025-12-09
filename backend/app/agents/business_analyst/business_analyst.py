@@ -86,11 +86,11 @@ class BusinessAnalyst(BaseAgent):
             logger.debug(f"[{self.name}] No existing PRD: {e}")
             return None
     
-    def _load_existing_epics_and_stories(self) -> tuple[list, list]:
+    def _load_existing_epics_and_stories(self) -> tuple[list, list, str]:
         """Load existing epics and stories from Artifact table (for approval flow).
         
         Returns:
-            Tuple of (epics_list, stories_list)
+            Tuple of (epics_list, stories_list, approval_message)
         """
         try:
             with Session(engine) as session:
@@ -103,14 +103,15 @@ class BusinessAnalyst(BaseAgent):
                     content = artifact.content
                     epics = content.get("epics", [])
                     stories = content.get("stories", [])
+                    approval_message = content.get("approval_message", "")  # Load saved approval message
                     logger.info(f"[{self.name}] Loaded existing epics/stories from artifact {artifact.id}: {len(epics)} epics, {len(stories)} stories")
-                    return epics, stories
+                    return epics, stories, approval_message
                 else:
                     logger.info(f"[{self.name}] No USER_STORIES artifact found for project {self.project_id}")
-                return [], []
+                return [], [], ""
         except Exception as e:
             logger.warning(f"[{self.name}] Error loading epics/stories: {e}", exc_info=True)
-            return [], []
+            return [], [], ""
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task using LangGraph.
@@ -466,7 +467,7 @@ class BusinessAnalyst(BaseAgent):
         existing_prd = self._load_existing_prd()
         
         # Load existing epics/stories from database (for approval flow)
-        existing_epics, existing_stories = self._load_existing_epics_and_stories()
+        existing_epics, existing_stories, existing_approval_message = self._load_existing_epics_and_stories()
         logger.info(f"[{self.name}] Initial state: existing_epics={len(existing_epics)}, existing_stories={len(existing_stories)}")
         
         # Setup Langfuse tracing (1 trace for entire graph - same as Team Leader)
@@ -517,6 +518,7 @@ class BusinessAnalyst(BaseAgent):
             "change_summary": "",
             "epics": existing_epics,
             "stories": existing_stories,
+            "stories_approval_message": existing_approval_message,  # Pre-load from artifact for approve flow
             "stories_saved": False,
             "analysis_text": "",
             "error": None,
@@ -697,7 +699,7 @@ class BusinessAnalyst(BaseAgent):
             await self.message_user("thinking", "Đang cập nhật PRD...")
             
             # Load existing epics/stories
-            existing_epics, existing_stories = self._load_existing_epics_and_stories()
+            existing_epics, existing_stories, existing_approval_message = self._load_existing_epics_and_stories()
             
             # Build state for update
             initial_state = {
@@ -718,6 +720,7 @@ class BusinessAnalyst(BaseAgent):
                 "change_summary": "",
                 "epics": existing_epics,
                 "stories": existing_stories,
+                "stories_approval_message": existing_approval_message,
                 "stories_saved": False,
                 "analysis_text": "",
                 "error": None,

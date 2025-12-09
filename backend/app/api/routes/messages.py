@@ -31,17 +31,21 @@ def list_messages(
     project_id: UUID = Query(...),
     skip: int = 0,
     limit: int = 500,  # Increased default from 100 to handle more messages
+    order: str = Query("asc", regex="^(asc|desc)$"),  # Order by created_at: asc (oldest first) or desc (newest first)
 ) -> Any:
     # Validate project
     project = session.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # Determine order direction
+    order_by = MessageModel.created_at.desc() if order == "desc" else MessageModel.created_at.asc()
+
     stmt = (
         select(MessageModel)
         .where(MessageModel.project_id == project_id)
         .where(MessageModel.visibility == MessageVisibility.USER_MESSAGE)  # Only return user-facing messages
-        .order_by(MessageModel.created_at.asc())
+        .order_by(order_by)
     )
     count_stmt = (
         select(func.count())
@@ -52,6 +56,8 @@ def list_messages(
 
     count = session.exec(count_stmt).one()
     rows = session.exec(stmt.offset(skip).limit(limit)).all()
+    
+    logger.info(f"[list_messages] project_id={project_id}, found {len(rows)} messages (total={count}, skip={skip}, limit={limit}, order={order})")
     
     # Populate agent_name for each message
     result = []

@@ -170,7 +170,7 @@ def parse_questions_response(response: str) -> list[dict]:
         return []
 
 
-def parse_prd_response(response: str) -> dict:
+def parse_prd_response(response: str) -> tuple[dict, str]:
     """
     Parse PRD from LLM response.
     
@@ -178,17 +178,20 @@ def parse_prd_response(response: str) -> dict:
         response: LLM response string
     
     Returns:
-        PRD dict
+        Tuple of (PRD dict, message string)
     """
     try:
-        return parse_json_response(response)
+        result = parse_json_response(response)
+        # Extract message and remove from PRD dict
+        message = result.pop("message", "")
+        return result, message
     except json.JSONDecodeError as e:
         logger.warning(f"[parse_prd] Parse error: {e}")
         return {
             "project_name": "Generated PRD",
             "overview": "Error parsing PRD",
             "raw_content": response[:1000]
-        }
+        }, ""
 
 
 def parse_prd_update_response(response: str) -> dict:
@@ -199,19 +202,21 @@ def parse_prd_update_response(response: str) -> dict:
         response: LLM response string
     
     Returns:
-        dict with 'updated_prd' and 'change_summary' keys
+        dict with 'updated_prd', 'change_summary', and 'message' keys
     """
     try:
         result = parse_json_response(response)
         return {
             "updated_prd": result.get("updated_prd", {}),
-            "change_summary": result.get("change_summary", "PRD updated")
+            "change_summary": result.get("change_summary", "PRD updated"),
+            "message": result.get("message", "")
         }
     except json.JSONDecodeError as e:
         logger.warning(f"[parse_prd_update] Parse error: {e}")
         return {
             "updated_prd": None,
-            "change_summary": f"Error parsing update: {str(e)}"
+            "change_summary": f"Error parsing update: {str(e)}",
+            "message": ""
         }
 
 
@@ -260,17 +265,29 @@ def parse_stories_response(response: str) -> dict:
         response: LLM response string
     
     Returns:
-        Dict with 'epics' list, each epic containing 'stories' list
+        Dict with 'epics' list, 'message_template', 'approval_template', and optionally 'change_summary'
     """
     try:
         result = parse_json_response(response)
         logger.info(f"[parse_stories] Parsed result keys: {list(result.keys()) if isinstance(result, dict) else 'not a dict'}")
         
+        # Extract message templates (new format with placeholders)
+        message_template = result.get("message_template", "")
+        approval_template = result.get("approval_template", "")
+        
+        # Fallback to old format for backward compatibility
+        if not message_template:
+            message_template = result.get("message", "")
+        if not approval_template:
+            approval_template = result.get("approval_message", "")
+            
+        change_summary = result.get("change_summary", "")
+        
         # New format: epics with stories
         if "epics" in result:
             epics = result.get("epics", [])
             logger.info(f"[parse_stories] Found {len(epics)} epics in response")
-            return {"epics": epics}
+            return {"epics": epics, "message_template": message_template, "approval_template": approval_template, "change_summary": change_summary}
         
         # Legacy format: flat stories list - convert to single epic
         if "stories" in result:
@@ -286,12 +303,15 @@ def parse_stories_response(response: str) -> dict:
                     "total_story_points": sum(
                         s.get("story_points", 0) for s in stories
                     )
-                }]
+                }],
+                "message_template": message_template,
+                "approval_template": approval_template,
+                "change_summary": change_summary
             }
         
         logger.warning(f"[parse_stories] No 'epics' or 'stories' key found. Keys: {list(result.keys()) if isinstance(result, dict) else result}")
-        return {"epics": []}
+        return {"epics": [], "message_template": "", "approval_template": "", "change_summary": ""}
     except json.JSONDecodeError as e:
         logger.warning(f"[parse_stories] Parse error: {e}")
         logger.warning(f"[parse_stories] Raw response: {response[:500]}")
-        return {"epics": []}
+        return {"epics": [], "message_template": "", "approval_template": "", "change_summary": ""}

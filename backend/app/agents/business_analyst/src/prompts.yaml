@@ -368,7 +368,28 @@ tasks:
       - Be concise, avoid long paragraphs
       - Focus on MVP features only
       
+      **MESSAGE FIELD (QUAN TRỌNG):**
+      - Thêm field "message" ở cuối JSON
+      - Message là tin nhắn tự nhiên gửi cho user (tiếng Việt)
+      - Nội dung: thông báo đã tạo xong PRD, tóm tắt ngắn, hỏi user review
+      - Tone: thân thiện, tự nhiên như chat, có 1-2 emoji
+      - Ví dụ: "Mình đã tạo xong PRD cho [tên dự án] với [số] tính năng chính rồi nhé! Bạn xem qua và cho mình biết cần chỉnh gì không?"
+      
       Return valid JSON:
+      ```json
+      {{
+        "project_name": "...",
+        "version": "1.0",
+        "overview": "...",
+        "objectives": ["..."],
+        "target_users": ["..."],
+        "features": [...],
+        "constraints": ["..."],
+        "success_metrics": ["..."],
+        "risks": ["..."],
+        "message": "Tin nhắn tự nhiên cho user (tiếng Việt, có emoji)"
+      }}
+      ```
 
   # ---------------------------------------------------------------------------
   # UPDATE PRD - Modify existing PRD
@@ -411,11 +432,17 @@ tasks:
       - If user mentions "vừa xóa/thêm/sửa" (recently deleted/added/modified), check the conversation context above
       - If user asks to restore a deleted feature, find its details in the conversation history
       
+      **MESSAGE FIELD (QUAN TRỌNG):**
+      - Thêm field "message" - tin nhắn tự nhiên gửi cho user (tiếng Việt)
+      - Nội dung: thông báo đã cập nhật PRD, tóm tắt thay đổi, hỏi user review
+      - Tone: thân thiện, tự nhiên như chat, có 1-2 emoji
+      
       Return ONLY valid JSON:
       ```json
       {{
         "updated_prd": {{ ... full PRD with changes ... }},
-        "change_summary": "Detailed summary of changes made in Vietnamese"
+        "change_summary": "Detailed summary of changes made in Vietnamese",
+        "message": "Tin nhắn tự nhiên cho user về việc cập nhật PRD (tiếng Việt, có emoji)"
       }}
       ```
 
@@ -482,6 +509,23 @@ tasks:
       
       - Use story IDs: ["EPIC-001-US-001", "EPIC-001-US-002"]
       
+      **MESSAGE TEMPLATES (QUAN TRỌNG):**
+      Tạo 2 message TEMPLATE với placeholders để fill số liệu sau:
+      - Dùng placeholders: {{epic_count}}, {{story_count}}
+      - Placeholders sẽ được thay bằng số thực tế sau khi tạo xong
+      
+      1. **"message_template"** - template tin nhắn khi tạo xong stories
+         - Ví dụ: "Xong rồi! 🚀 Mình đã tạo {{story_count}} User Stories từ {{epic_count}} Epics. Bạn xem qua và phê duyệt nhé!"
+         - Hoặc sáng tạo hơn: "Hoàn thành! ✨ {{epic_count}} Epics với {{story_count}} Stories đã sẵn sàng để review nè~"
+      
+      2. **"approval_template"** - template tin nhắn khi user phê duyệt
+         - Ví dụ: "Tuyệt vời! 🎊 Đã thêm {{epic_count}} Epics và {{story_count}} Stories vào backlog rồi!"
+         - Hoặc: "Ngon lành! 🎉 {{story_count}} Stories đã vào backlog, sẵn sàng implement thôi nào~"
+      
+      - Tone: thân thiện, tự nhiên như chat, có 1-2 emoji
+      - PHẢI có placeholders {{epic_count}} và {{story_count}}
+      - Sáng tạo, đa dạng câu chữ (không lặp lại mẫu cũ)
+      
       Return ONLY valid JSON:
       ```json
       {{
@@ -505,7 +549,9 @@ tasks:
               }}
             ]
           }}
-        ]
+        ],
+        "message_template": "Template tin nhắn với {{epic_count}} và {{story_count}} placeholders",
+        "approval_template": "Template phê duyệt với {{epic_count}} và {{story_count}} placeholders"
       }}
       ```
 
@@ -543,6 +589,23 @@ tasks:
       - Admin/Dashboard app → Consider Dashboard as main interface
       - Group related PRD features into logical Epics
       
+      **MESSAGE TEMPLATES (QUAN TRỌNG):**
+      Tạo 2 message TEMPLATE với placeholders để fill số liệu sau:
+      - Dùng placeholders: {{epic_count}}, {{story_count}}
+      - Placeholders sẽ được thay bằng số thực tế sau khi tạo xong stories
+      
+      1. **"message_template"** - template tin nhắn khi tạo xong stories
+         - Ví dụ: "Xong rồi! 🚀 Mình đã tạo {{story_count}} User Stories từ {{epic_count}} Epics. Bạn xem qua và phê duyệt nhé!"
+         - Hoặc: "Done! ✨ {{epic_count}} Epics với {{story_count}} Stories đã sẵn sàng. Review và phê duyệt nha~"
+      
+      2. **"approval_template"** - template tin nhắn khi user phê duyệt
+         - Ví dụ: "Tuyệt vời! 🎊 Đã thêm {{epic_count}} Epics và {{story_count}} Stories vào backlog rồi!"
+         - Hoặc: "Nice! 🎉 {{story_count}} Stories đã lên Kanban board, bắt đầu implement thôi~"
+      
+      - Tone: thân thiện, tự nhiên, có 1-2 emoji
+      - PHẢI có placeholders {{epic_count}} và {{story_count}}
+      - Sáng tạo câu chữ, đừng lặp lại mẫu
+      
       Return ONLY valid JSON:
       ```json
       {{
@@ -554,7 +617,9 @@ tasks:
             "domain": "Inferred from PRD",
             "feature_refs": ["Feature 1 from PRD", "Feature 2"]
           }}
-        ]
+        ],
+        "message_template": "Template với {{epic_count}} và {{story_count}} placeholders",
+        "approval_template": "Template phê duyệt với {{epic_count}} và {{story_count}}"
       }}
       ```
 
@@ -759,6 +824,20 @@ tasks:
       - ALL output content MUST be in ENGLISH
       - Each story MUST have requirements field
       
+      **MESSAGE TEMPLATES (QUAN TRỌNG):**
+      Tạo 2 message TEMPLATE với placeholders:
+      - Dùng placeholders: {{epic_count}}, {{story_count}}
+      - Placeholders sẽ được thay bằng số thực tế
+      
+      1. **"message_template"** - template tin nhắn khi cập nhật xong
+         - Ví dụ: "Đã cập nhật xong! ✏️ Hiện có {{story_count}} Stories trong {{epic_count}} Epics. Bạn review lại nhé!"
+      
+      2. **"approval_template"** - template tin nhắn khi phê duyệt
+         - Ví dụ: "OK luôn! 🎊 {{epic_count}} Epics với {{story_count}} Stories đã được cập nhật vào backlog!"
+      
+      - Tone: thân thiện, tự nhiên, có 1-2 emoji
+      - PHẢI có placeholders {{epic_count}} và {{story_count}}
+      
       Return ONLY valid JSON:
       ```json
       {{
@@ -783,7 +862,9 @@ tasks:
             ]
           }}
         ],
-        "change_summary": "Summary of changes made"
+        "change_summary": "Summary of changes made",
+        "message_template": "Template cập nhật với {{epic_count}} và {{story_count}}",
+        "approval_template": "Template phê duyệt với {{epic_count}} và {{story_count}}"
       }}
       ```
 
@@ -1020,38 +1101,3 @@ tasks:
       ```
       
       **NOTE:** Only provide suggested_requirements/suggested_acceptance_criteria if improvements are needed. Set to null if the story is already good.
-
-  # ---------------------------------------------------------------------------
-  # COMPLETION MESSAGE - Generate natural completion messages with personality
-  # ---------------------------------------------------------------------------
-  completion_message:
-    system_prompt: |
-      {shared_context.agent_identity}
-      
-      ---
-      
-      # COMPLETION MESSAGE GENERATION
-      
-      Bạn vừa hoàn thành một task và cần thông báo cho user.
-      
-      **RULES:**
-      - Viết tin nhắn ngắn gọn (1-2 câu), tự nhiên như chat với bạn
-      - Thể hiện tính cách của bạn qua cách nói
-      - Dùng emoji phù hợp (1-2 emoji)
-      - Đề cập đến kết quả cụ thể (tên project, số lượng stories,...)
-      - Hướng dẫn user bước tiếp theo
-      - KHÔNG dùng cấu trúc cứng nhắc hay template
-      - Mỗi lần trả lời phải khác nhau, có sự sáng tạo
-      
-      **TONE VARIATIONS:**
-      - Có thể excited, proud, helpful, casual
-      - Thay đổi cách mở đầu (Xong rồi/Done/Được rồi/Hoàn thành/Yeah...)
-      - Thay đổi emoji theo mood
-
-    user_prompt: |
-      **Task completed:** {task_type}
-      **Context:** {context}
-      **Next step hint:** {next_step}
-      
-      Generate a natural, personality-driven completion message in Vietnamese.
-      Return ONLY the message text, no JSON or formatting.
