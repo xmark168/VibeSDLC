@@ -1,4 +1,10 @@
-"""Plan Tests node - Analyze stories and create test plan."""
+"""Plan Tests node - Analyze stories and create test plan (aligned with Developer V2).
+
+Uses FileRepository for zero-shot planning (Developer V2 pattern):
+- Pre-computes workspace context (file tree, components, API routes)
+- Single LLM call with full context
+- No tool calls needed for planning
+"""
 
 import json
 import logging
@@ -14,6 +20,8 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.core_nodes import detect_testing_context, send_message
 from app.agents.tester.src._llm import plan_llm
+from app.agents.tester.src.config import MAX_SCENARIOS_UNIT, MAX_SCENARIOS_INTEGRATION
+from app.agents.tester.src.utils.file_repository import FileRepository
 from app.core.db import engine
 from app.models import Project
 
@@ -743,25 +751,36 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
     # Get workspace path (worktree or project path)
     workspace_path = state.get("workspace_path") or project_path
     
-    # Get existing API routes to constrain test planning
-    existing_routes = []
-    if workspace_path:
-        existing_routes = _get_existing_routes(workspace_path)
+    # ==========================================================================
+    # ZERO-SHOT PLANNING with FileRepository (Developer V2 pattern)
+    # ==========================================================================
+    # Build FileRepository ONCE - pre-computes all context instantly (no LLM calls)
+    file_repo = FileRepository(workspace_path) if workspace_path else None
+    
+    if file_repo:
+        logger.info(f"[plan_tests] FileRepository: {len(file_repo.file_tree)} files, "
+                   f"{len(file_repo.components)} components, {len(file_repo.api_routes)} routes")
+    
+    # Get existing API routes from FileRepository
+    existing_routes = file_repo.api_routes if file_repo else []
     existing_routes_text = "\n".join(f"- {r}" for r in existing_routes) if existing_routes else "No API routes found."
     
-    # Load actual API source code for LLM to analyze
-    api_source_code = ""
-    if workspace_path and existing_routes:
-        api_source_code = _load_api_source_code(workspace_path, existing_routes)
+    # Load API source code from FileRepository
+    api_source_code = file_repo.get_api_source_code() if file_repo else ""
+    if api_source_code:
         logger.info(f"[plan_tests] Loaded {len(api_source_code)} chars of API source code")
     
-    # Find and analyze components for unit tests BEFORE LLM call
-    # This ensures LLM sees component info when creating scenarios
+    # Find components for unit tests using FileRepository
     keywords = _extract_keywords_from_stories(stories) if stories else []
     logger.info(f"[plan_tests] Extracted keywords: {keywords}")
     
-    unit_test_components = _find_components_for_unit_test(workspace_path, keywords)
-    component_context = _format_component_context(unit_test_components)
+    if file_repo:
+        unit_test_components = file_repo.get_components_for_keywords(keywords)
+        component_context = file_repo.format_component_context(unit_test_components)
+    else:
+        unit_test_components = _find_components_for_unit_test(workspace_path, keywords)
+        component_context = _format_component_context(unit_test_components)
+    
     logger.info(f"[plan_tests] Analyzed {len(unit_test_components)} components for unit tests")
     
     try:
@@ -824,10 +843,10 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
                 if desc:
                     descriptions.append(desc)
             
-            # Deduplicate - limit scenarios by test type
-            # Integration: 3 scenarios (branch coverage)
-            # Unit: 2 scenarios (render correctness)
-            max_scenarios = 2 if test_type == "unit" else 3
+            # Deduplicate - limit scenarios by test type (from config)
+            # Integration: MAX_SCENARIOS_INTEGRATION (branch coverage)
+            # Unit: MAX_SCENARIOS_UNIT (render correctness)
+            max_scenarios = MAX_SCENARIOS_UNIT if test_type == "unit" else MAX_SCENARIOS_INTEGRATION
             all_scenarios = list(dict.fromkeys(all_scenarios))[:max_scenarios]
             all_dependencies = list(dict.fromkeys(all_dependencies))
             
@@ -913,10 +932,12 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         
         total_steps = len(test_plan)
         
-        # Pre-load dependencies (MetaGPT-style - reduces tool calls in implement)
-        # Pass stories so we can find related source files
-        workspace_path = state.get("workspace_path", "") or project_path
-        dependencies_content = _preload_test_dependencies(workspace_path, test_plan, stories)
+        # Pre-load dependencies using FileRepository (Developer V2 pattern)
+        if file_repo:
+            dependencies_content = file_repo.preload_dependencies(test_plan, stories)
+        else:
+            workspace_path = state.get("workspace_path", "") or project_path
+            dependencies_content = _preload_test_dependencies(workspace_path, test_plan, stories)
         logger.info(f"[plan_tests] Pre-loaded {len(dependencies_content)} dependency files")
         
         # component_context already created before LLM call (used for scenario planning)

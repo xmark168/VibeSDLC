@@ -1,11 +1,11 @@
-"""Analyze Errors node - Debug failing tests and create fix plan."""
+"""Analyze Errors node - Debug failing tests and create fix plan (aligned with Developer V2)."""
 
 import json
 import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -14,9 +14,63 @@ from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.core_nodes import send_message
 from app.agents.tester.src.utils.token_utils import truncate_error_logs
 from app.agents.tester.src._llm import analyze_llm
+from app.agents.tester.src.config import MAX_DEBUG_ATTEMPTS
 from app.agents.tester.src.nodes.plan_tests import _get_existing_routes
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# DEBUG SUMMARY (Developer V2 pattern)
+# =============================================================================
+
+def _build_debug_summary(state: Dict) -> str:
+    """Build summary of previous debug attempts (Developer V2 pattern).
+    
+    This helps LLM understand what was tried before and avoid repeating mistakes.
+    """
+    debug_count = state.get("debug_count", 0)
+    review_count = state.get("review_count", 0)
+    
+    if debug_count == 0 and review_count == 0:
+        return ""
+    
+    parts = ["## Debug Summary (Previous Attempts)"]
+    
+    # Debug iterations info
+    if debug_count > 0:
+        parts.append(f"- Debug iterations: {debug_count}/{MAX_DEBUG_ATTEMPTS}")
+    
+    # Review feedback history
+    if review_count > 0:
+        parts.append(f"- Review attempts: {review_count}")
+        review_feedback = state.get("review_feedback", "")
+        if review_feedback:
+            parts.append(f"- Last review feedback:\n```\n{review_feedback[:500]}\n```")
+    
+    # Previous errors
+    error = state.get("error", "")
+    run_stderr = state.get("run_stderr", "")
+    if error:
+        parts.append(f"- Last error: {error[:300]}")
+    if run_stderr:
+        parts.append(f"- Runtime stderr (truncated):\n```\n{run_stderr[:500]}\n```")
+    
+    # Files already modified
+    files_modified = state.get("files_modified", [])
+    if files_modified:
+        parts.append(f"- Files modified: {', '.join(files_modified[:10])}")
+    
+    # Debug history
+    debug_history = state.get("debug_history", [])
+    if debug_history:
+        parts.append("- Previous fix attempts:")
+        for i, attempt in enumerate(debug_history[-3:], 1):  # Last 3 attempts
+            parts.append(f"  {i}. {attempt[:100]}")
+    
+    parts.append("\n⚠️ IMPORTANT: Learn from previous attempts. Don't repeat the same mistakes!")
+    
+    return "\n".join(parts)
 
 
 # =============================================================================
@@ -241,6 +295,47 @@ def _parse_test_errors_structured(logs: str) -> List[ParsedTestError]:
                 raw_line=match.group(0)[:100]
             ))
             break  # Only add one mismatch error
+    
+    # 10. MULTIPLE_ELEMENTS: Found multiple elements with text/role
+    multiple_pattern = r"Found multiple elements with the (?:text|role)[:\s]*['\"]?([^'\"]+)"
+    match = re.search(multiple_pattern, logs, re.IGNORECASE)
+    if match:
+        elem_value = match.group(1) if match.lastindex else "unknown"
+        errors.append(ParsedTestError(
+            file_path="unknown",
+            line=None,
+            column=None,
+            error_code="MULTIPLE_ELEMENTS",
+            error_type="Unit-Test",
+            message=f"Multiple elements found with '{elem_value}'. Use getAllByText or getByRole with specific name.",
+            raw_line=match.group(0)[:100]
+        ))
+    
+    # 11. TIMEOUT: waitFor timeout or async operation timeout
+    timeout_pattern = r"(?:waitFor|findBy|Timeout).*(?:timed out|exceeded|timeout)"
+    if re.search(timeout_pattern, logs, re.IGNORECASE):
+        errors.append(ParsedTestError(
+            file_path="unknown",
+            line=None,
+            column=None,
+            error_code="TIMEOUT",
+            error_type="Unit-Test",
+            message="Async operation timed out. Use findBy* instead of getBy* for async content, or check if element exists.",
+            raw_line="timeout error"
+        ))
+    
+    # 12. NOT_FOUND: Element/text not in document
+    not_found_pattern = r"Unable to find.*(?:text|element|role).*(?:in|within|document)"
+    if re.search(not_found_pattern, logs, re.IGNORECASE) and not any(e.error_code == "COMPONENT_MISMATCH" for e in errors):
+        errors.append(ParsedTestError(
+            file_path="unknown",
+            line=None,
+            column=None,
+            error_code="NOT_FOUND",
+            error_type="Unit-Test",
+            message="Element not found in document. Check if element exists in component source code.",
+            raw_line="element not found"
+        ))
     
     return errors
 

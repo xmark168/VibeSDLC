@@ -81,34 +81,34 @@ class Tester(BaseAgent):
         """Handle task using LangGraph."""
         logger.info(f"[{self.name}] Task: type={task.task_type.value}, reason={task.routing_reason}")
         
-        # Setup Langfuse tracing
+        # Setup Langfuse tracing - DISABLED TEMPORARILY
         langfuse_handler = None
         langfuse_span = None
         langfuse_ctx = None
-        try:
-            from langfuse import get_client
-            from langfuse.langchain import CallbackHandler
-            
-            langfuse = get_client()
-            # Create parent span for entire graph execution
-            langfuse_ctx = langfuse.start_as_current_observation(
-                as_type="span",
-                name="tester_graph"
-            )
-            # Enter context and get span object
-            langfuse_span = langfuse_ctx.__enter__()
-            # Update trace with metadata
-            langfuse_span.update_trace(
-                user_id=str(task.user_id) if task.user_id else None,
-                session_id=str(self.project_id),
-                input={"message": task.content[:200] if task.content else ""},
-                tags=["tester", self.role_type],
-                metadata={"agent": self.name, "task_id": str(task.task_id)}
-            )
-            # Handler inherits trace context automatically
-            langfuse_handler = CallbackHandler()
-        except Exception as e:
-            logger.debug(f"[{self.name}] Langfuse setup: {e}")
+        # try:
+        #     from langfuse import get_client
+        #     from langfuse.langchain import CallbackHandler
+        #     
+        #     langfuse = get_client()
+        #     # Create parent span for entire graph execution
+        #     langfuse_ctx = langfuse.start_as_current_observation(
+        #         as_type="span",
+        #         name="tester_graph"
+        #     )
+        #     # Enter context and get span object
+        #     langfuse_span = langfuse_ctx.__enter__()
+        #     # Update trace with metadata
+        #     langfuse_span.update_trace(
+        #         user_id=str(task.user_id) if task.user_id else None,
+        #         session_id=str(self.project_id),
+        #         input={"message": task.content[:200] if task.content else ""},
+        #         tags=["tester", self.role_type],
+        #         metadata={"agent": self.name, "task_id": str(task.task_id)}
+        #     )
+        #     # Handler inherits trace context automatically
+        #     langfuse_handler = CallbackHandler()
+        # except Exception as e:
+        #     logger.debug(f"[{self.name}] Langfuse setup: {e}")
         
         try:
             # Determine if auto-triggered and set instance flags for message_user override

@@ -1,4 +1,4 @@
-"""Implement Tests node - Generate tests using structured output (Developer V2 pattern).
+"""Implement Tests node - Generate tests using structured output (aligned with Developer V2).
 
 Optimized version:
 - NO tool calling iterations
@@ -7,11 +7,15 @@ Optimized version:
 - Single LLM call with structured output + retry
 - Direct file write (no tools)
 - Component source preloaded with MANDATORY verification checklist
+- Adaptive LLM selection based on test type
+- Refresh dependencies after implementation
 """
 
 import asyncio
 import logging
+import os
 from pathlib import Path
+from typing import Dict, List
 from pydantic import BaseModel, Field
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -21,15 +25,20 @@ from app.agents.tester.src.skills import SkillRegistry
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.core_nodes import send_message
 from app.agents.tester.src.utils.token_utils import truncate_to_tokens
-from app.agents.tester.src._llm import implement_llm
+from app.agents.tester.src._llm import (
+    implement_llm, 
+    get_llm_for_skills,
+    invoke_structured_with_retry,
+)
+from app.agents.tester.src.config import (
+    MAX_RETRIES,
+    RETRY_WAIT_MIN as RETRY_DELAY,
+    MAX_CONCURRENT,
+)
 
 logger = logging.getLogger(__name__)
 
 _llm = implement_llm
-
-# Config
-MAX_RETRIES = 3
-RETRY_DELAY = 2  # seconds
 
 
 # =============================================================================
@@ -481,9 +490,11 @@ Scan the source code above and list what you found:
             HumanMessage(content=user_prompt),
         ]
         
-        logger.info(f"[implement_tests] Step {step_index + 1}: {description[:50]}...")
+        logger.info(f"[implement_tests] Step {step_index + 1}: {description[:50]}... (skills: {step_skills})")
         
-        structured_llm = _llm.with_structured_output(TestFileOutput)
+        # Adaptive LLM selection based on skills (Developer V2 pattern)
+        step_llm = get_llm_for_skills(step_skills)
+        structured_llm = step_llm.with_structured_output(TestFileOutput)
         result = await _invoke_with_retry(
             structured_llm,
             messages,
@@ -600,6 +611,21 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
                 if file_path and file_path not in files_modified:
                     files_modified.append(file_path)
     
+    # Refresh dependencies_content for modified test files (Developer V2 pattern)
+    # This ensures later steps (like analyze_errors) have fresh context
+    dependencies_content = dict(state.get("dependencies_content", {}))
+    if workspace_path and files_modified:
+        for file_path in files_modified:
+            if file_path.endswith(('.test.ts', '.test.tsx')):
+                full_path = os.path.join(workspace_path, file_path)
+                if os.path.exists(full_path):
+                    try:
+                        with open(full_path, 'r', encoding='utf-8') as f:
+                            dependencies_content[file_path] = f.read()
+                        logger.debug(f"[implement_tests] Refreshed dependency: {file_path}")
+                    except Exception as e:
+                        logger.warning(f"[implement_tests] Failed to refresh {file_path}: {e}")
+    
     # Progress message
     msg = f"✅ Implemented {success_count}/{len(tasks)} test files in parallel"
     for result in implementation_results:
@@ -613,6 +639,7 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
     return {
         "current_step": total_steps,  # All steps done
         "files_modified": files_modified,
+        "dependencies_content": dependencies_content,  # Refreshed dependencies
         "implementation_results": implementation_results,
         "review_count": 0,  # Reset for fresh review
         "failed_files": [],  # Clear failed files after re-implementation

@@ -20,18 +20,20 @@ from app.agents.tester.src.tools.workspace_tools import (
 from app.core.db import engine
 from app.models import Project
 
-# Try to import testcontainers for database setup (optional)
+logger = logging.getLogger(__name__)
+
+# Import database container utilities (local copy to avoid developer_v2 import chain)
 try:
-    from app.agents.developer_v2.src.utils.db_container import (
+    from app.agents.tester.src.utils.db_container import (
         start_postgres_container,
         update_env_file,
         get_database_url,
     )
     DB_CONTAINER_AVAILABLE = True
-except ImportError:
+    logger.info("[setup_workspace] db_container module loaded successfully")
+except ImportError as e:
+    logger.warning(f"[setup_workspace] db_container import failed: {e}")
     DB_CONTAINER_AVAILABLE = False
-
-logger = logging.getLogger(__name__)
 
 
 def _get_project_path(project_id: str) -> Path | None:
