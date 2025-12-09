@@ -35,9 +35,10 @@ def route_by_intent(state: BAState) -> Literal["conversational", "interview", "p
     collected_info = state.get("collected_info", {})
     existing_prd = state.get("existing_prd")
     epics = state.get("epics", [])
+    document_type = state.get("document_type", "")
     
     # Debug logging
-    logger.info(f"[BA Graph] route_by_intent called: intent={intent}, epics_count={len(epics)}, has_prd={bool(existing_prd)}")
+    logger.info(f"[BA Graph] route_by_intent called: intent={intent}, epics_count={len(epics)}, has_prd={bool(existing_prd)}, document_type={document_type}")
     
     # Conversational messages go directly to respond node
     if intent == "conversational":
@@ -48,6 +49,15 @@ def route_by_intent(state: BAState) -> Literal["conversational", "interview", "p
     # Redirect to interview which will do research automatically
     if intent == "domain_analysis":
         logger.info("[BA Graph] Redirecting 'domain_analysis' -> 'interview' (research integrated)")
+        return "interview"
+    
+    # FORCE INTERVIEW for partial_requirements documents
+    # Even if we have some collected_info, we need to ask about missing parts
+    if document_type == "partial_requirements":
+        logger.info(
+            f"[BA Graph] Overriding '{intent}' -> 'interview': "
+            f"Document is partial_requirements, need to ask about missing info"
+        )
         return "interview"
     
     # FORCE INTERVIEW only for prd_create without collected info

@@ -33,7 +33,7 @@ import { useTheme } from "@/components/provider/theme-provider";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { TypingIndicator } from "./TypingIndicator";
 import { useAuth } from "@/hooks/useAuth";
-import { useMessages, useCreateMessageWithFile } from "@/queries/messages";
+import { useInfiniteMessages, useCreateMessageWithFile } from "@/queries/messages";
 import { messagesApi } from "@/apis/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { MessageStatusIndicator } from "./message-status-indicator";
@@ -138,25 +138,77 @@ export function ChatPanelWS({
     };
   });
 
-  // Fetch existing messages
-  const { data: messagesData } = useMessages({
-    project_id: projectId || "",
-    skip: 0,
-    limit: 500,  // Increased from 100 to handle more messages
-  });
+  // Fetch existing messages with infinite scroll
+  const {
+    data: messagesData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: isLoadingMessages,
+  } = useInfiniteMessages(projectId || "");
+
+  // Flatten all pages into single array of messages
+  // API returns messages in DESC order (newest first)
+  // We need to reverse to get chronological order (oldest first for display)
+  const apiMessages = messagesData?.pages
+    ? messagesData.pages.flatMap(page => page.messages).reverse()
+    : [];
+  const totalMessageCount = messagesData?.pages?.[0]?.totalCount || 0;
+
+  // Ref for scroll position preservation when loading older messages
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+  const isLoadingMoreRef = useRef(false);
 
   // Debug log for API messages
   useEffect(() => {
-    if (messagesData) {
-      console.log('[ChatPanel] 📊 API messages loaded:', {
-        count: messagesData.count,
-        actual: messagesData.data.length,
-        projectId,
-        firstMessage: messagesData.data[0]?.id,
-        lastMessage: messagesData.data[messagesData.data.length - 1]?.id
+    if (messagesData && messagesData.pages?.length > 0) {
+      console.log('[ChatPanel] 📊 Messages loaded:', {
+        total: totalMessageCount,
+        loaded: apiMessages.length,
+        pages: messagesData.pages?.length,
+        hasOlder: hasNextPage,
       })
     }
-  }, [messagesData, projectId])
+  }, [messagesData, totalMessageCount, apiMessages.length, hasNextPage])
+
+  // Intersection Observer for infinite scroll - load more when scrolling to top
+  useEffect(() => {
+    const trigger = loadMoreTriggerRef.current;
+    const container = messagesContainerRef.current;
+    if (!trigger || !container) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage && !isLoadingMoreRef.current) {
+          console.log('[ChatPanel] 🔄 Loading more messages...');
+          isLoadingMoreRef.current = true;
+          
+          // Save scroll position before loading
+          const scrollHeightBefore = container.scrollHeight;
+          const scrollTopBefore = container.scrollTop;
+          
+          fetchNextPage().then(() => {
+            // Restore scroll position after loading (to prevent jump)
+            requestAnimationFrame(() => {
+              const scrollHeightAfter = container.scrollHeight;
+              const heightDiff = scrollHeightAfter - scrollHeightBefore;
+              container.scrollTop = scrollTopBefore + heightDiff;
+              isLoadingMoreRef.current = false;
+              console.log('[ChatPanel] ✅ Scroll position restored');
+            });
+          });
+        }
+      },
+      { 
+        root: container,
+        threshold: 0.1,
+        rootMargin: '100px 0px 0px 0px' // Trigger 100px before reaching top
+      }
+    );
+
+    observer.observe(trigger);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // WebSocket connection (simplified with 5 message types)
   const {
@@ -181,7 +233,6 @@ export function ChatPanelWS({
   }, [wsAgentStatuses, onAgentStatusesChange]);
 
   // Combine existing messages with WebSocket messages
-  const apiMessages = messagesData?.data || [];
   const wsMessagesArray = wsMessages || [];
 
   // Combine API messages with WebSocket messages (no temp messages anymore)
@@ -710,7 +761,7 @@ export function ChatPanelWS({
               Connecting...
             </div>
           )}
-          <Button
+          {/* <Button
             variant="ghost"
             size="icon"
             onClick={toggleTheme}
@@ -722,7 +773,7 @@ export function ChatPanelWS({
             ) : (
               <Sun className="w-4 h-4" />
             )}
-          </Button>
+          </Button> */}
           <Button
             variant="ghost"
             size="icon"
@@ -779,6 +830,29 @@ export function ChatPanelWS({
         ref={messagesContainerRef}
         className="flex-1 overflow-y-auto px-6 py-6 space-y-4"
       >
+        {/* Infinite scroll trigger - loads more messages when visible */}
+        <div ref={loadMoreTriggerRef} className="h-1" />
+        
+        {/* Loading indicator for older messages */}
+        {isFetchingNextPage && (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">Loading older messages...</span>
+          </div>
+        )}
+        
+        {/* Show how many messages loaded / total */}
+        {hasNextPage && !isFetchingNextPage && totalMessageCount > 0 && (
+          <div className="flex items-center justify-center py-2">
+            <button 
+              onClick={() => fetchNextPage()}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              ↑ Load older messages ({apiMessages.length} / {totalMessageCount})
+            </button>
+          </div>
+        )}
+
         {uniqueMessages.map((msg) => {
           const isUserMessage = msg.author_type === AuthorType.USER;
 
@@ -1140,7 +1214,7 @@ export function ChatPanelWS({
           );
         })}
 
-        {/* Typing Indicators - ChatGPT style inline indicators */}
+        {/* Typing Indicators*/}
         {Array.from(typingAgents.values()).map((typing) => (
           <TypingIndicator
             key={typing.id}
@@ -1196,7 +1270,7 @@ export function ChatPanelWS({
           type="file"
           ref={fileInputRef}
           className="hidden"
-          accept=".docx"
+          accept=".docx,.txt"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) {
@@ -1207,8 +1281,11 @@ export function ChatPanelWS({
                 return;
               }
               // Validate extension
-              if (!file.name.toLowerCase().endsWith('.docx')) {
-                alert("Chỉ hỗ trợ file .docx");
+              const fileName = file.name.toLowerCase();
+              const allowedExtensions = ['.docx', '.txt'];
+              const hasValidExt = allowedExtensions.some(ext => fileName.endsWith(ext));
+              if (!hasValidExt) {
+                alert("Chỉ hỗ trợ file .docx và .txt");
                 e.target.value = "";
                 return;
               }
