@@ -5,7 +5,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes._llm import review_llm
-from app.agents.developer_v2.src.nodes.schemas import SimpleReviewOutput
+from app.agents.developer_v2.src.schemas import SimpleReviewOutput
 from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_files
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
 from app.agents.developer_v2.src.utils.prompt_utils import (
@@ -36,25 +36,6 @@ def _get_file_extension(file_path: str) -> str:
 
 def _smart_truncate(content: str, max_tokens: int = MAX_REVIEW_TOKENS) -> tuple[str, bool]:
     return smart_truncate_tokens(content, max_tokens, head_ratio=0.7)
-
-
-def _parse_review_response(response: str) -> dict:
-    result = {"decision": "LGTM", "review": "", "feedback": ""}
-    
-    # Find ALL decisions and take the LAST one (LLM sometimes reconsiders)
-    decisions = re.findall(r'DECISION:\s*(LGTM|LBTM)', response, re.IGNORECASE)
-    if decisions:
-        result["decision"] = decisions[-1].upper()
-    
-    review_match = re.search(r'REVIEW:\s*\n([\s\S]*?)(?=FEEDBACK:|$)', response, re.IGNORECASE)
-    if review_match:
-        result["review"] = review_match.group(1).strip()
-    
-    feedback_match = re.search(r'FEEDBACK:\s*\n?([\s\S]*?)$', response, re.IGNORECASE)
-    if feedback_match:
-        result["feedback"] = feedback_match.group(1).strip()
-    
-    return result
 
 
 async def review(state: DeveloperState, agent=None) -> DeveloperState:
@@ -126,7 +107,6 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
             HumanMessage(content=input_text)
         ]
         
-        # Use structured output for minimal tokens (~30 vs ~300)
         structured_llm = review_llm.with_structured_output(SimpleReviewOutput)
         result = await structured_llm.ainvoke(messages, config=_cfg(state, "review"))
         flush_langfuse(state)
