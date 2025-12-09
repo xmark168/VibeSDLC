@@ -123,34 +123,37 @@ class DeveloperV2(BaseAgent):
         """
         langfuse_handler = None
         langfuse_ctx = None
+        langfuse_span = None
         
         try:
             story_id = story_data.get("story_id", str(task.task_id))
             
-            try:
-                from langfuse import get_client
-                from langfuse.langchain import CallbackHandler
-                langfuse = get_client()
-                langfuse_ctx = langfuse.start_as_current_observation(
-                    as_type="span",
-                    name="developer_v2_graph"
-                )
-                langfuse_span = langfuse_ctx.__enter__()
-                langfuse_span.update_trace(
-                    user_id=str(task.user_id) if task.user_id else None,
-                    session_id=str(self.project_id),
-                    input={
-                        "story_id": story_data.get("story_id", "unknown"),
-                        "title": story_data.get("title", "")[:200],
-                        "content": story_data.get("content", "")[:300]
-                    },
-                    tags=["developer_v2", self.role_type],
-                    metadata={"agent": self.name, "task_id": str(task.task_id)}
-                )
-                langfuse_handler = CallbackHandler()
-            except Exception as e:
-                logger.debug(f"Langfuse setup: {e}")
-                langfuse_span = None
+            # Check if Langfuse is enabled before initializing
+            from app.core.config import settings
+            if settings.LANGFUSE_ENABLED:
+                try:
+                    from langfuse import get_client
+                    from langfuse.langchain import CallbackHandler
+                    langfuse = get_client()
+                    langfuse_ctx = langfuse.start_as_current_observation(
+                        as_type="span",
+                        name="developer_v2_graph"
+                    )
+                    langfuse_span = langfuse_ctx.__enter__()
+                    langfuse_span.update_trace(
+                        user_id=str(task.user_id) if task.user_id else None,
+                        session_id=str(self.project_id),
+                        input={
+                            "story_id": story_data.get("story_id", "unknown"),
+                            "title": story_data.get("title", "")[:200],
+                            "content": story_data.get("content", "")[:300]
+                        },
+                        tags=["developer_v2", self.role_type],
+                        metadata={"agent": self.name, "task_id": str(task.task_id)}
+                    )
+                    langfuse_handler = CallbackHandler()
+                except Exception as e:
+                    logger.debug(f"Langfuse setup: {e}")
             
             # Initial state - workspace will be set up by setup_workspace node if needed
             initial_state = {

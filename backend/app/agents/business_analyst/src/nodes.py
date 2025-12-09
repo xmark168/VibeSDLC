@@ -24,8 +24,7 @@ from .schemas import (
 )
 from app.agents.core.prompt_utils import (
     load_prompts_yaml,
-    build_system_prompt as _build_system_prompt,
-    build_user_prompt as _build_user_prompt,
+    extract_agent_personality,
 )
 
 # Load prompts from YAML (same pattern as Developer V2)
@@ -152,15 +151,46 @@ def _cfg(state: dict, name: str) -> dict:
 
 
 def _sys_prompt(agent, task: str) -> str:
-    """Build system prompt with agent personality (same pattern as Team Leader)."""
-    return _build_system_prompt(PROMPTS, task, agent, BA_DEFAULTS)
+    """Build system prompt with agent personality.
+    
+    Uses .replace() instead of .format() to avoid issues with JSON examples in prompts.
+    Pattern from Developer V2.
+    """
+    task_config = PROMPTS.get("tasks", {}).get(task, {})
+    template = task_config.get("system_prompt", "")
+    
+    # Replace shared context
+    shared = PROMPTS.get("shared_context", {})
+    for key, value in shared.items():
+        template = template.replace(f"{{shared_context.{key}}}", str(value))
+    
+    # Get agent personality or defaults
+    personality = extract_agent_personality(agent) if agent else {}
+    for key, value in BA_DEFAULTS.items():
+        if key not in personality or not personality.get(key):
+            personality[key] = value
+    
+    # Replace personality placeholders
+    for key, value in personality.items():
+        template = template.replace("{" + key + "}", str(value) if value else "")
+    
+    return template
 
 
 def _user_prompt(task: str, **kwargs) -> str:
-    """Build user prompt for LLM."""
-    # Extract user_message from kwargs if present, otherwise use empty string
-    user_message = kwargs.pop("user_message", "")
-    return _build_user_prompt(PROMPTS, task, user_message, **kwargs)
+    """Build user prompt for LLM.
+    
+    Uses .replace() instead of .format() to avoid issues with JSON examples in prompts.
+    Pattern from Developer V2.
+    """
+    task_config = PROMPTS.get("tasks", {}).get(task, {})
+    template = task_config.get("user_prompt", "")
+    
+    # Replace all kwargs
+    for key, value in kwargs.items():
+        template = template.replace("{" + key + "}", str(value) if value else "")
+    
+    return template
 
 
 def _save_interview_state_to_question(
@@ -991,7 +1021,8 @@ async def extract_stories(state: BAState, agent=None) -> dict:
         all_epic_ids = [epic.get("id", "") for epic in epics]
         
         # Use semaphore to limit concurrent LLM calls (avoid rate limiting)
-        MAX_CONCURRENT_LLM_CALLS = 5
+        # Increased from 5 to 7 to process all epics in one batch
+        MAX_CONCURRENT_LLM_CALLS = 7
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_LLM_CALLS)
         
         async def _generate_with_semaphore(epic):
@@ -1001,7 +1032,7 @@ async def extract_stories(state: BAState, agent=None) -> dict:
         # Create tasks with rate limiting
         tasks = [_generate_with_semaphore(epic) for epic in epics]
         
-        # Run tasks (max 2 concurrent at a time)
+        # Run all epics in parallel (limited by semaphore)
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Collect all stories and update epics

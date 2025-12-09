@@ -5,8 +5,6 @@ from pathlib import Path
 from uuid import UUID
 
 from sqlmodel import Session, select
-from langfuse import get_client
-from langfuse.langchain import CallbackHandler
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.core.project_context import ProjectContext
@@ -474,27 +472,33 @@ class BusinessAnalyst(BaseAgent):
         langfuse_handler = None
         langfuse_span = None
         langfuse_ctx = None
-        try:
-            langfuse = get_client()
-            # Create parent span for entire graph execution
-            langfuse_ctx = langfuse.start_as_current_observation(
-                as_type="span",
-                name="business_analyst_graph"
-            )
-            # Enter context and get span object
-            langfuse_span = langfuse_ctx.__enter__()
-            # Update trace with metadata
-            langfuse_span.update_trace(
-                user_id=str(task.user_id) if task.user_id else None,
-                session_id=str(self.project_id),
-                input={"message": task.content[:200] if task.content else ""},
-                tags=["business_analyst", self.role_type],
-                metadata={"agent": self.name, "task_id": str(task.task_id)}
-            )
-            # Handler inherits trace context automatically
-            langfuse_handler = CallbackHandler()
-        except Exception as e:
-            logger.debug(f"[{self.name}] Langfuse setup: {e}")
+        
+        # Check if Langfuse is enabled before initializing
+        from app.core.config import settings
+        if settings.LANGFUSE_ENABLED:
+            try:
+                from langfuse import get_client
+                from langfuse.langchain import CallbackHandler
+                langfuse = get_client()
+                # Create parent span for entire graph execution
+                langfuse_ctx = langfuse.start_as_current_observation(
+                    as_type="span",
+                    name="business_analyst_graph"
+                )
+                # Enter context and get span object
+                langfuse_span = langfuse_ctx.__enter__()
+                # Update trace with metadata
+                langfuse_span.update_trace(
+                    user_id=str(task.user_id) if task.user_id else None,
+                    session_id=str(self.project_id),
+                    input={"message": task.content[:200] if task.content else ""},
+                    tags=["business_analyst", self.role_type],
+                    metadata={"agent": self.name, "task_id": str(task.task_id)}
+                )
+                # Handler inherits trace context automatically
+                langfuse_handler = CallbackHandler()
+            except Exception as e:
+                logger.debug(f"[{self.name}] Langfuse setup: {e}")
         
         # Prepare initial state
         initial_state = {

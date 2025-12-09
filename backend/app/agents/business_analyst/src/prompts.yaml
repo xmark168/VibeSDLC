@@ -2,7 +2,7 @@
 # BUSINESS ANALYST - Prompts (OPTIMIZED)
 # ============================================================================
 # Style: Concise like Developer V2
-# Tasks: analyze_intent, interview, generate_prd, update_prd, extract_stories, etc.
+# Uses .replace() for placeholders - no need to escape {} in JSON examples
 # ============================================================================
 
 shared_context:
@@ -50,10 +50,7 @@ tasks:
       User: "{user_message}"
       Context: PRD={has_prd}, Info={has_info}
       
-      Return JSON:
-      ```json
-      {{"intent": "...", "reasoning": "..."}}
-      ```
+      Return JSON: {"intent": "...", "reasoning": "..."}
 
   # ---------------------------------------------------------------------------
   # INTERVIEW REQUIREMENTS
@@ -86,14 +83,6 @@ tasks:
       Has PRD: {has_prd}
       
       Generate 4-5 MULTICHOICE questions for missing categories.
-      
-      ```json
-      {{
-        "questions": [
-          {{"text": "...", "type": "multichoice", "options": ["A", "B", "Khác (vui lòng mô tả)"], "allow_multiple": true, "category": "target_users"}}
-        ]
-      }}
-      ```
 
   # ---------------------------------------------------------------------------
   # GENERATE PRD
@@ -105,16 +94,11 @@ tasks:
       <role>PRD creator - create comprehensive Product Requirements Document</role>
       
       <prd_structure>
-      - project_name: Tên dự án
-      - version: "1.0"
-      - overview: 1-2 câu mô tả
-      - objectives: 2-5 mục tiêu
-      - target_users: Đối tượng người dùng
-      - features: [{name, description, priority, requirements}] (5-7 features for MVP)
-      - constraints: Ràng buộc kỹ thuật/business
-      - success_metrics: Metrics đo lường
-      - risks: Rủi ro đã nhận diện
-      - message: Tin nhắn thân thiện cho user (Vietnamese, có emoji)
+      - project_name, version, overview (1-2 sentences)
+      - objectives (2-5 items), target_users
+      - features: array of {name, description, priority, requirements}
+      - constraints, success_metrics, risks
+      - message: friendly Vietnamese with emoji
       </prd_structure>
       
       <rules>
@@ -122,7 +106,6 @@ tasks:
       2. Priority: only "high", "medium", "low"
       3. Features: 5-7 core features for MVP
       4. Each feature needs 3-5 specific requirements
-      5. Message: friendly Vietnamese with emoji
       </rules>
 
     user_prompt: |
@@ -153,21 +136,18 @@ tasks:
       Current PRD:
       {existing_prd}
       
-      Update PRD and return:
-      ```json
-      {{
-        "updated_prd": {{...complete PRD...}},
-        "change_summary": "Tóm tắt thay đổi",
-        "message": "Tin nhắn cho user (Vietnamese)"
-      }}
-      ```
+      Return: updated_prd, change_summary, message
 
   # ---------------------------------------------------------------------------
   # EXTRACT EPICS ONLY (Phase 1)
   # ---------------------------------------------------------------------------
   extract_epics_only:
     system_prompt: |
-      {shared_context.agent_identity}
+      You are a professional Epic Extractor for software projects.
+      
+      LANGUAGE RULES:
+      - Epic titles, descriptions, domains: ENGLISH only
+      - message_template, approval_template: VIETNAMESE (friendly, with emoji)
       
       <role>Epic extractor - Phase 1 of story extraction</role>
       
@@ -185,27 +165,26 @@ tasks:
       2. Group related features into same epic
       3. Each epic = 1 major feature area
       4. Leave stories array EMPTY
+      5. For WEB APPLICATIONS (websites, e-commerce, portals):
+         - ALWAYS create Homepage/Landing Page epic as EPIC-001
+         - Homepage stories: hero section, navigation, featured content, footer
+         - Skip Homepage only for CLI tools, APIs, or backend-only projects
       </rules>
 
     user_prompt: |
       PRD:
       {prd}
       
-      Extract epics (no stories yet):
-      ```json
-      {{
-        "epics": [...],
-        "message_template": "Đã tạo {{epic_count}} epics với {{story_count}} stories",
-        "approval_template": "Stories đã được phê duyệt"
-      }}
-      ```
+      Extract epics (no stories yet). Return: epics, message_template, approval_template
 
   # ---------------------------------------------------------------------------
   # GENERATE STORIES FOR EPIC (Phase 2)
   # ---------------------------------------------------------------------------
   generate_stories_for_epic:
     system_prompt: |
-      {shared_context.agent_identity}
+      You are a professional Story Writer creating INVEST-compliant user stories.
+      
+      LANGUAGE: ALL story content (title, description, requirements, acceptance_criteria) MUST be in ENGLISH.
       
       <role>Story writer - create INVEST-compliant user stories for ONE epic</role>
       
@@ -214,7 +193,7 @@ tasks:
       </invest>
       
       <story_structure>
-      - id: {epic_id}-US-001
+      - id: EPIC-XXX-US-001
       - epic_id: Parent epic ID
       - title: "As a [user], I want [goal] so that [benefit]"
       - description: Business-focused (NOT technical)
@@ -242,17 +221,18 @@ tasks:
       PRD Features:
       {prd_features}
       
-      Generate 2-4 INVEST stories:
-      ```json
-      {{"stories": [...]}}
-      ```
+      Generate 2-4 INVEST stories.
 
   # ---------------------------------------------------------------------------
   # EXTRACT STORIES (Single-call fallback)
   # ---------------------------------------------------------------------------
   extract_stories:
     system_prompt: |
-      {shared_context.agent_identity}
+      You are a professional Story Extractor for software projects.
+      
+      LANGUAGE RULES:
+      - Epics and stories content: ENGLISH only
+      - message_template, approval_template: VIETNAMESE (friendly, with emoji)
       
       <role>Full story extractor - create epics AND stories in one call</role>
       
@@ -267,29 +247,18 @@ tasks:
       PRD:
       {prd}
       
-      Extract all epics with stories:
-      ```json
-      {{
-        "epics": [
-          {{
-            "id": "EPIC-001",
-            "title": "...",
-            "description": "...",
-            "domain": "...",
-            "stories": [...]
-          }}
-        ],
-        "message_template": "...",
-        "approval_template": "..."
-      }}
-      ```
+      Extract all epics with stories. Return: epics, message_template, approval_template
 
   # ---------------------------------------------------------------------------
   # UPDATE STORIES
   # ---------------------------------------------------------------------------
   update_stories:
     system_prompt: |
-      {shared_context.agent_identity}
+      You are a professional Story Editor for software projects.
+      
+      LANGUAGE RULES:
+      - Epics and stories content: ENGLISH only
+      - message_template, approval_template: VIETNAMESE (friendly, with emoji)
       
       <role>Story editor - modify existing epics/stories based on feedback</role>
       
@@ -306,15 +275,7 @@ tasks:
       Current epics:
       {epics}
       
-      Update and return:
-      ```json
-      {{
-        "epics": [...],
-        "change_summary": "...",
-        "message_template": "...",
-        "approval_template": "..."
-      }}
-      ```
+      Return: epics, change_summary, message_template, approval_template
 
   # ---------------------------------------------------------------------------
   # DOMAIN RESEARCH (Follow-up questions)
@@ -338,10 +299,7 @@ tasks:
       Research: {domain_research}
       Missing: {categories_str}
       
-      Generate questions for missing categories only:
-      ```json
-      {{"questions": [...]}}
-      ```
+      Generate questions for missing categories only.
 
   # ---------------------------------------------------------------------------
   # ANALYZE DOCUMENT
@@ -366,19 +324,7 @@ tasks:
       Document content:
       {document_text}
       
-      Analyze and extract:
-      ```json
-      {{
-        "document_type": "complete_requirements|partial_requirements|not_requirements",
-        "detected_doc_kind": "description if not_requirements",
-        "collected_info": {{"target_users": "...", "main_features": "..."}},
-        "completeness_score": 0.0-1.0,
-        "is_comprehensive": true/false,
-        "summary": "Vietnamese summary",
-        "extracted_items": ["item1", "item2"],
-        "missing_info": ["category1", "category2"]
-      }}
-      ```
+      Analyze and return: document_type, detected_doc_kind, collected_info, completeness_score, is_comprehensive, summary, extracted_items, missing_info
 
   # ---------------------------------------------------------------------------
   # DOCUMENT ANALYSIS FEEDBACK
@@ -405,7 +351,6 @@ tasks:
       Score: {completeness_score}%
       
       Generate friendly feedback message (Vietnamese with emoji).
-      Return: {{"message": "..."}}
 
   # ---------------------------------------------------------------------------
   # RESPOND CONVERSATIONAL
@@ -461,21 +406,7 @@ tasks:
       - Acceptance Criteria: {story_acceptance_criteria}
       - Type: {story_type}
       
-      Check for duplicates and INVEST compliance:
-      ```json
-      {{
-        "is_duplicate": false,
-        "duplicate_of": null,
-        "duplicate_reason": null,
-        "invest_score": 1-6,
-        "invest_issues": [{{"code": "I|N|V|E|S|T", "issue": "..."}}],
-        "suggested_title": null,
-        "suggested_description": null,
-        "suggested_requirements": null,
-        "suggested_acceptance_criteria": null,
-        "summary": "Vietnamese summary"
-      }}
-      ```
+      Check for duplicates and INVEST compliance. Return: is_duplicate, duplicate_of, invest_score, invest_issues, suggested improvements, summary
 
   # ---------------------------------------------------------------------------
   # DOMAIN ANALYSIS (Full analysis)
