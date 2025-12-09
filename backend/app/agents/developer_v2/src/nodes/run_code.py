@@ -1,13 +1,135 @@
 """Run code node - Execute format, lint fix, typecheck, build."""
+import asyncio
+import concurrent.futures
+import hashlib
+import json
 import logging
+import shutil
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.tools.shell_tools import run_shell
 from app.agents.developer_v2.src.nodes._helpers import setup_tool_context, get_langfuse_span
 
 logger = logging.getLogger(__name__)
+
+
+def _clear_next_types_cache(workspace_path: str) -> None:
+    """Clear .next/types to force Next.js to regenerate route types.
+    
+    Fixes stale type errors when new routes/pages are added:
+    - Type '"/search"' does not satisfy the constraint 'AppRoutes'
+    - Type '"/api/books/search"' does not satisfy the constraint 'AppRouteHandlerRoutes'
+    """
+    next_types = Path(workspace_path) / ".next" / "types"
+    if next_types.exists():
+        try:
+            shutil.rmtree(next_types, ignore_errors=True)
+            logger.info("[run_code] Cleared .next/types cache")
+        except Exception as e:
+            logger.warning(f"[run_code] Failed to clear .next/types: {e}")
+
+
+def _validate_null_safety(workspace_path: str) -> List[str]:
+    """Quick scan for unsafe array operations on API data.
+    
+    Detects patterns like `data.items.map()` without null safety.
+    """
+    import re
+    warnings = []
+    
+    components_dir = Path(workspace_path) / "src" / "components"
+    if not components_dir.exists():
+        return warnings
+    
+    for tsx_file in components_dir.rglob("*.tsx"):
+        try:
+            content = tsx_file.read_text(encoding="utf-8")
+            for i, line in enumerate(content.split('\n')):
+                # Pattern: obj.prop.filter/map/slice without ?? or ?.
+                if re.search(r'\w+\.\w+\.(filter|map|slice|reduce)\(', line):
+                    if '??' not in line and '|| []' not in line and '?.' not in line:
+                        rel_path = tsx_file.relative_to(workspace_path)
+                        warnings.append(f"{rel_path}:{i+1}")
+        except Exception:
+            pass
+    
+    return warnings
+
+
+def _has_script(workspace_path: str, script_name: str) -> bool:
+    """Check if a script exists in package.json."""
+    try:
+        pkg_path = Path(workspace_path) / "package.json"
+        if pkg_path.exists():
+            pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+            return script_name in pkg.get("scripts", {})
+    except Exception:
+        pass
+    return False
+
+# Thread pool for parallel shell commands
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+
+def _should_skip_seed(workspace_path: str) -> bool:
+    """Check if seed can be skipped (seed.ts unchanged)."""
+    seed_file = Path(workspace_path) / "prisma" / "seed.ts"
+    cache_file = Path(workspace_path) / ".seed_cache"
+    
+    if not seed_file.exists():
+        return True  # No seed file, nothing to run
+    
+    try:
+        current_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
+        if cache_file.exists():
+            cached_hash = cache_file.read_text().strip()
+            if cached_hash == current_hash:
+                return True
+    except Exception:
+        pass
+    
+    return False
+
+
+def _update_seed_cache(workspace_path: str) -> None:
+    """Update seed cache after successful seed."""
+    seed_file = Path(workspace_path) / "prisma" / "seed.ts"
+    cache_file = Path(workspace_path) / ".seed_cache"
+    
+    try:
+        if seed_file.exists():
+            current_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
+            cache_file.write_text(current_hash)
+    except Exception:
+        pass
+
+
+def _run_seed(workspace_path: str) -> Tuple[bool, str, str]:
+    """Run database seed (blocking). Returns (success, stdout, stderr)."""
+    seed_file = Path(workspace_path) / "prisma" / "seed.ts"
+    
+    if not seed_file.exists():
+        return True, "", ""
+    
+    if _should_skip_seed(workspace_path):
+        logger.info("[run_code] Skipping seed (cached)")
+        return True, "", ""
+    
+    logger.info("[run_code] Running database seed...")
+    success, stdout, stderr = _run_step(
+        "DB Seed", "pnpm exec ts-node prisma/seed.ts",
+        workspace_path, "prisma", timeout=60, allow_fail=True
+    )
+    
+    if success:
+        _update_seed_cache(workspace_path)
+        logger.info("[run_code] Database seeded successfully")
+    else:
+        logger.warning(f"[run_code] Seed failed (continuing): {stderr[:200] if stderr else 'unknown'}")
+    
+    return success, stdout, stderr
 
 
 def _run_step(
@@ -38,8 +160,8 @@ def _run_step(
                 return True, stdout, stderr
             else:
                 logger.error(f"[run_code] [{svc_name}] {step_name} FAILED (exit={exit_code})")
-                logger.error(f"[run_code] stdout: {stdout[:500] if stdout else '(empty)'}")
-                logger.error(f"[run_code] stderr: {stderr[:500] if stderr else '(empty)'}")
+                logger.error(f"[run_code] stdout: {stdout[:2000] if stdout else '(empty)'}")
+                logger.error(f"[run_code] stderr: {stderr[:2000] if stderr else '(empty)'}")
                 return False, stdout, stderr
         
         logger.info(f"[run_code] [{svc_name}] {step_name} completed")
@@ -55,6 +177,40 @@ def _run_step(
             return False, "", error_msg
 
 
+async def _run_format_lint_parallel(services: List[dict], workspace_path: str) -> None:
+    """Run format and lint commands in parallel for all services.
+    
+    Optimization: Saves ~20-40s by running format/lint concurrently.
+    """
+    loop = asyncio.get_event_loop()
+    tasks = []
+    
+    for svc in services:
+        svc_name = svc.get("name", "app")
+        svc_path = str(Path(workspace_path) / svc.get("path", "."))
+        
+        # Add format task
+        if svc.get("format_cmd"):
+            task = loop.run_in_executor(
+                _executor,
+                _run_step, "Format", svc["format_cmd"], svc_path, svc_name, 60, True
+            )
+            tasks.append(task)
+        
+        # Add lint task
+        if svc.get("lint_fix_cmd"):
+            task = loop.run_in_executor(
+                _executor,
+                _run_step, "Lint Fix", svc["lint_fix_cmd"], svc_path, svc_name, 60, True
+            )
+            tasks.append(task)
+    
+    if tasks:
+        logger.info(f"[run_code] Running {len(tasks)} format/lint tasks in parallel...")
+        await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info("[run_code] Format/lint parallel execution completed")
+
+
 async def _run_service_build(
     svc_config: dict,
     workspace_path: str,
@@ -63,15 +219,14 @@ async def _run_service_build(
     """
     Run build for a single service.
     
-    Flow: Install → Typecheck → Build
+    Flow: Typecheck + Build (PARALLEL for speed)
     
     Returns:
         {"status": "PASS|FAIL|SKIP", "stdout": str, "stderr": str}
     """
     svc_name = svc_config.get("name", "app")
-    install_cmd = svc_config.get("install_cmd", "")
     build_cmd = svc_config.get("build_cmd", "")
-    typecheck_cmd = svc_config.get("typecheck_cmd", "bun run typecheck")
+    typecheck_cmd = svc_config.get("typecheck_cmd", "pnpm run typecheck")
     
     svc_span = None
     if parent_span:
@@ -81,32 +236,61 @@ async def _run_service_build(
     all_stderr = ""
     
     try:
-        if install_cmd:
-            success, stdout, stderr = _run_step("Install", install_cmd, workspace_path, svc_name, timeout=300)
-            all_stdout += f"\n$ {install_cmd}\n{stdout}"
-            if not success:
-                all_stderr += stderr
-                if svc_span:
-                    svc_span.end(output={"status": "INSTALL_FAIL"})
-                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
+        # Clear stale Next.js types cache before typecheck/build
+        _clear_next_types_cache(workspace_path)
         
-        if typecheck_cmd:
-            success, stdout, stderr = _run_step("Typecheck", typecheck_cmd, workspace_path, svc_name, timeout=120)
-            all_stdout += f"\n$ {typecheck_cmd}\n{stdout}"
-            if not success:
-                error_output = stderr.strip() or stdout.strip() or f"Run '{typecheck_cmd}' manually to see errors."
-                all_stderr += f"\n[TYPECHECK FAILED]\n{error_output}"
-                if svc_span:
-                    svc_span.end(output={"status": "TYPECHECK_FAIL"})
-                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
+        # Quick null safety validation
+        null_warnings = _validate_null_safety(workspace_path)
+        if null_warnings:
+            logger.warning(f"[run_code] Null safety warnings ({len(null_warnings)}): {null_warnings[:5]}")
         
+        loop = asyncio.get_event_loop()
+        tasks = []
+        task_names = []
+        
+        # Prepare typecheck task
+        if typecheck_cmd and _has_script(workspace_path, "typecheck"):
+            tasks.append(loop.run_in_executor(
+                _executor, _run_step, "Typecheck", typecheck_cmd, workspace_path, svc_name, 60, False
+            ))
+            task_names.append("typecheck")
+        elif typecheck_cmd:
+            logger.info(f"[run_code] [{svc_name}] Skipping typecheck (script not found)")
+        
+        # Prepare build task
         if build_cmd:
-            success, stdout, stderr = _run_step("Build", build_cmd, workspace_path, svc_name, timeout=180)
-            all_stdout += f"\n$ {build_cmd}\n{stdout}"
-            if not success:
-                all_stderr += f"\n[BUILD FAILED]\n{stderr or stdout}"
+            tasks.append(loop.run_in_executor(
+                _executor, _run_step, "Build", build_cmd, workspace_path, svc_name, 180, False
+            ))
+            task_names.append("build")
+        
+        if not tasks:
+            if svc_span:
+                svc_span.end(output={"status": "PASS"})
+            return {"status": "PASS", "stdout": all_stdout, "stderr": ""}
+        
+        # Run typecheck + build in PARALLEL
+        logger.info(f"[run_code] [{svc_name}] Running {' + '.join(task_names)} in parallel...")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Process results
+        for i, result in enumerate(results):
+            task_name = task_names[i]
+            
+            if isinstance(result, Exception):
+                all_stderr += f"\n[{task_name.upper()} ERROR]\n{str(result)}"
                 if svc_span:
-                    svc_span.end(output={"status": "BUILD_FAIL"})
+                    svc_span.end(output={"status": f"{task_name.upper()}_ERROR"})
+                return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
+            
+            success, stdout, stderr = result
+            cmd = typecheck_cmd if task_name == "typecheck" else build_cmd
+            all_stdout += f"\n$ {cmd}\n{stdout}"
+            
+            if not success:
+                all_stderr += f"\n[{task_name.upper()} FAILED]\n{stderr or stdout}"
+                if svc_span:
+                    svc_span.end(output={"status": f"{task_name.upper()}_FAIL"})
                 return {"status": "FAIL", "stdout": all_stdout, "stderr": all_stderr}
         
         if svc_span:
@@ -158,40 +342,13 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         logger.info(f"[run_code] Services: {[s.get('name', 'app') for s in services]}")
         
-        # Run prisma commands if schema exists
-        schema_path = Path(workspace_path) / "prisma" / "schema.prisma"
-        if schema_path.exists():
-            logger.info("[run_code] Prisma schema found, running generate + db push")
-            
-            # Generate client first
-            success, stdout, stderr = _run_step(
-                "Prisma Generate", "bunx prisma generate",
-                workspace_path, "prisma", timeout=60, allow_fail=False
-            )
-            if not success:
-                logger.warning(f"[run_code] Prisma generate failed: {stderr[:200]}")
-            
-            # Then push schema to DB
-            success, stdout, stderr = _run_step(
-                "Prisma DB Push", "bunx prisma db push --accept-data-loss",
-                workspace_path, "prisma", timeout=60, allow_fail=True
-            )
-            if not success:
-                logger.warning(f"[run_code] Prisma db push failed (may need DB): {stderr[:200]}")
+        # Run seed + format/lint in PARALLEL (optimization: saves ~5s)
+        loop = asyncio.get_event_loop()
+        seed_task = loop.run_in_executor(_executor, _run_seed, workspace_path)
+        format_lint_task = _run_format_lint_parallel(services, workspace_path)
         
-        # Format all services
-        for svc in services:
-            svc_name = svc.get("name", "app")
-            svc_path = str(Path(workspace_path) / svc.get("path", "."))
-            if svc.get("format_cmd"):
-                _run_step("Format", svc["format_cmd"], svc_path, svc_name, timeout=60, allow_fail=True)
-        
-        # Lint fix all services
-        for svc in services:
-            svc_name = svc.get("name", "app")
-            svc_path = str(Path(workspace_path) / svc.get("path", "."))
-            if svc.get("lint_fix_cmd"):
-                _run_step("Lint Fix", svc["lint_fix_cmd"], svc_path, svc_name, timeout=60, allow_fail=True)
+        logger.info("[run_code] Running seed + format/lint in parallel...")
+        await asyncio.gather(seed_task, format_lint_task, return_exceptions=True)
         
         # Build all services
         all_stdout = ""

@@ -2,61 +2,48 @@
 import os
 import logging
 from functools import wraps
-from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-logger = logging.getLogger(__name__)
+from app.agents.developer_v2.src.config import MAX_RETRIES, RETRY_WAIT_MIN, RETRY_WAIT_MAX
 
-# Retry config
-MAX_RETRIES = 3
-RETRY_WAIT_MIN = 1  
-RETRY_WAIT_MAX = 10  
+logger = logging.getLogger(__name__)  
 
-# Model tiers
+
 MODELS = {
-    "fast": "claude-sonnet-4-5-20250929",      # Simple/fast tasks
-    "medium": "claude-sonnet-4-5-20250929",   # Standard tasks (API, DB)
-    "complex": "claude-opus-4-5-20251101",    # Complex tasks (UI design, debug)
+    "fast": "claude-haiku-4-5-20251001",     
+    "medium": "claude-sonnet-4-5-20250929",   
+    "complex": "claude-opus-4-5-20251101",    
 }
 
 # Default model configs per step
 LLM_CONFIG = {
-    # Fast tasks - use haiku
     "router": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     "clarify": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     "respond": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     
-    # Planning - use medium (sonnet)
     "analyze": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 40},
     "plan": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 60},
     
-    # Implementation - default medium, can be overridden by skill type
     "implement": {"model": MODELS["medium"], "temperature": 0, "timeout": 60},
-    "debug": {"model": MODELS["complex"], "temperature": 0.2, "timeout": 40},
+    "debug": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 40},
     
-    # Structured output tasks
-    "structured": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 35},
-    "review": {"model": MODELS["medium"], "temperature": 0.1, "timeout": 30},
-    "summarize": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
+    "review": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
 }
 
 # Model selection by skill type (for implement step)
+# All use Sonnet for speed (Opus too slow, ~26s vs ~10s per step)
 SKILL_MODEL_MAP = {
-    # Complex UI tasks -> opus (best quality)
-    "frontend-design": MODELS["complex"],
-    "frontend-component": MODELS["complex"],
-    
-    # Standard tasks -> sonnet (good balance)
+    "frontend-design": MODELS["complex"],     # Opus for better UI design
+    "frontend-component": MODELS["complex"],  # Opus for accurate components
     "api-route": MODELS["medium"],
     "database-model": MODELS["medium"],
+    "database-seed": MODELS["medium"],  # Sonnet for better seed data
     "server-action": MODELS["medium"],
     "authentication": MODELS["medium"],
     "state-management": MODELS["medium"],
-    
-    # Debug needs complex reasoning
-    "debugging": MODELS["complex"],
+    "debugging": MODELS["medium"],
 }
 
 
@@ -71,11 +58,14 @@ def get_model_for_skills(skills: list[str]) -> str:
     
     has_complex = any(SKILL_MODEL_MAP.get(s) == MODELS["complex"] for s in skills)
     has_medium = any(SKILL_MODEL_MAP.get(s) == MODELS["medium"] for s in skills)
+    has_fast = any(SKILL_MODEL_MAP.get(s) == MODELS["fast"] for s in skills)
     
     if has_complex:
         return MODELS["complex"]
     elif has_medium:
         return MODELS["medium"]
+    elif has_fast:
+        return MODELS["fast"]
     else:
         return MODELS["medium"]  # Default to medium
 
@@ -92,18 +82,16 @@ def get_llm(step: str) -> BaseChatModel:
     model = config["model"]
     timeout = config.get("timeout", 40)
     
-    # API keys and base URLs
-    openai_base_url = os.getenv("OPENAI_API_BASE")
-    openai_api_key = os.getenv("OPENAI_API_KEY")
+  
     anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://ai.megallm.io")
-    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or openai_api_key
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or ''
     
     # Use ChatAnthropic for Claude models
     if "claude" in model.lower():
         kwargs = {
             "model": model,
             "temperature": config.get("temperature", 0.2),
-            "max_tokens": 16384,  # Claude requires max_tokens, set high
+            "max_tokens": 8192,  # Reduced to avoid proxy rejection
             "timeout": timeout,
             "max_retries": MAX_RETRIES,
         }
@@ -145,7 +133,7 @@ def get_llm_for_skills(skills: list[str], temperature: float = 0) -> BaseChatMod
     model = get_model_for_skills(skills)
     
     # API keys and base URLs
-    anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://ai.megallm.io")
+    anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://v98store.com")
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
     
     kwargs = {
@@ -223,7 +211,9 @@ code_llm = get_llm("implement")
 
 # Step-specific LLMs (optional, for fine-tuning)
 router_llm = get_llm("router")
+exploration_llm = get_llm("exploration")  # Fast model for codebase exploration
 analyze_llm = get_llm("analyze")
 plan_llm = get_llm("plan")
 implement_llm = get_llm("implement")
 debug_llm = get_llm("debug")
+review_llm = get_llm("review")

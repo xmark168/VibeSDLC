@@ -1,6 +1,7 @@
 """Analyze error node - Error analysis + fix planning in ONE LLM call."""
 import logging
 import re
+import subprocess
 from dataclasses import dataclass
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
@@ -8,6 +9,7 @@ from typing import Literal, List, Optional
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import PlanStep
+from app.agents.developer_v2.src.config import MAX_DEBUG_ATTEMPTS
 from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, glob
 from app.agents.developer_v2.src.utils.llm_utils import (
     get_langfuse_config as _cfg,
@@ -35,7 +37,7 @@ def _clean_error_logs(logs: str, max_lines: int = 50) -> str:
     noise_patterns = [
         "baseline-browser-mapping",
         "npm WARN",
-        "bun install",
+        "pnpm install",
         "modules old",
         "update:",
         "Compiling",
@@ -172,6 +174,20 @@ def _parse_error_structured(logs: str) -> List[ParsedError]:
             raw_line=match.group(0)
         ))
     
+    # Props mismatch: Type '{ name, slug }' is not assignable to type 'XxxProps'
+    # This is a CRITICAL error - LLM passes wrong props to components
+    props_pattern = r"([^\s(]+\.tsx?)\((\d+),(\d+)\):\s*error\s*(TS2322|TS2739):\s*Type '\{[^}]*\}' is not assignable to type '([^']+)'"
+    for match in re.finditer(props_pattern, logs):
+        errors.append(ParsedError(
+            file_path=match.group(1),
+            line=int(match.group(2)),
+            column=int(match.group(3)),
+            error_code=match.group(4),
+            error_type="PropsMatch",
+            message=f"Props mismatch - check {match.group(5)} interface before passing props",
+            raw_line=match.group(0)
+        ))
+    
     return errors
 
 
@@ -180,11 +196,27 @@ def _format_parsed_errors(errors: List[ParsedError]) -> str:
     if not errors:
         return ""
     
+    # Prioritize PropsMatch errors - they're most common and critical
+    props_errors = [e for e in errors if e.error_type == "PropsMatch"]
+    other_errors = [e for e in errors if e.error_type != "PropsMatch"]
+    sorted_errors = props_errors + other_errors
+    
     lines = ["## PARSED ERRORS (fix these files!):\n"]
-    for i, err in enumerate(errors[:5], 1):
-        loc = f":{err.line}" if err.line else ""
+    
+    # Show PropsMatch errors with extra emphasis
+    if props_errors:
+        lines.append("### ⚠️ PROPS MISMATCH ERRORS (READ component Props interface!):\n")
+    
+    for i, err in enumerate(sorted_errors[:10], 1):  # Increased from 5 to 10
+        loc = f":{err.line}:{err.column}" if err.line else ""
         code = f" [{err.error_code}]" if err.error_code else ""
-        lines.append(f"{i}. **{err.file_path}{loc}**{code}: {err.message}")
+        
+        if err.error_type == "PropsMatch":
+            lines.append(f"{i}. **{err.file_path}{loc}**{code}")
+            lines.append(f"   → {err.message}")
+            lines.append(f"   → FIX: Read the component file to see its Props interface!")
+        else:
+            lines.append(f"{i}. **{err.file_path}{loc}**{code}: {err.message}")
     
     return "\n".join(lines)
 
@@ -203,6 +235,61 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
     logger.info("[NODE] analyze_error")
     
     try:
+        error_logs = state.get("run_stderr", "") or state.get("run_stdout", "")
+        workspace_path = state.get("workspace_path", "")
+        
+        # ========== AUTO-FIX: Module/Prisma errors ==========
+        if workspace_path and error_logs:
+            auto_fixed = False
+            
+            # Prisma errors - specific patterns only
+            prisma_errors = [
+                "Cannot find module '@prisma/client'",
+                "Cannot find module '.prisma/client'",
+                "PrismaClient is unable to run",
+                "Error: P1001",  # Connection error
+                "Error: P2021",  # Table doesn't exist
+                "Error: P2002",  # Unique constraint
+            ]
+            if any(err in error_logs for err in prisma_errors):
+                logger.info("[analyze_error] Prisma error detected, running generate + db:push...")
+                try:
+                    subprocess.run("pnpm exec prisma generate", cwd=workspace_path, shell=True, 
+                                   capture_output=True, timeout=60, encoding='utf-8', errors='replace')
+                    subprocess.run("pnpm exec prisma db push --accept-data-loss", cwd=workspace_path, 
+                                   shell=True, capture_output=True, timeout=60, encoding='utf-8', errors='replace')
+                    auto_fixed = True
+                except Exception as e:
+                    logger.warning(f"[analyze_error] Prisma auto-fix failed: {e}")
+            
+            # Module errors - distinguish local files (@/) from npm packages
+            module_errors = ["Cannot find module", "Module not found", "Can't resolve"]
+            if any(err in error_logs for err in module_errors):
+                # Check if it's a local file import (starts with @/ or ./)
+                import re
+                local_import_pattern = r"(?:Cannot find module|Can't resolve) ['\"](@/[^'\"]+|\.{1,2}/[^'\"]+)['\"]"
+                local_matches = re.findall(local_import_pattern, error_logs)
+                
+                if local_matches:
+                    # Local file missing - pnpm install won't help!
+                    logger.warning(f"[analyze_error] Local file(s) missing: {local_matches[:3]}")
+                    logger.warning("[analyze_error] This is a plan/implement issue, not npm module issue")
+                    # Don't set auto_fixed - let it go to LLM for proper fix
+                else:
+                    # NPM package missing - run pnpm install
+                    logger.info("[analyze_error] NPM module error detected, running pnpm install...")
+                    try:
+                        subprocess.run("pnpm install --frozen-lockfile", cwd=workspace_path, 
+                                       shell=True, capture_output=True, timeout=120, encoding='utf-8', errors='replace')
+                        auto_fixed = True
+                    except Exception as e:
+                        logger.warning(f"[analyze_error] pnpm install auto-fix failed: {e}")
+            
+            if auto_fixed:
+                logger.info("[analyze_error] Auto-fix applied, retrying run_code...")
+                return {**state, "action": "VALIDATE", "run_status": None, "error_analysis": {"auto_fixed": True}}
+        # ====================================================
+        
         error_logs = state.get("run_stderr", "")
         files_modified = state.get("files_modified", [])
         debug_count = state.get("debug_count", 0)
@@ -210,6 +297,10 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         workspace_path = state.get("workspace_path", "")
         project_id = state.get("project_id", "default")
         task_id = state.get("task_id") or state.get("story_id", "")
+        
+        if debug_count >= MAX_DEBUG_ATTEMPTS:
+            logger.warning(f"[analyze_error] Max debug attempts ({MAX_DEBUG_ATTEMPTS}) reached, giving up")
+            return {**state, "action": "RESPOND", "error": f"Max debug attempts ({MAX_DEBUG_ATTEMPTS}) reached"}
         
         if not error_logs:
             logger.info("[analyze_error] No error logs")

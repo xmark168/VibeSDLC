@@ -4,7 +4,8 @@ import re
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.nodes._llm import code_llm
+from app.agents.developer_v2.src.nodes._llm import review_llm
+from app.agents.developer_v2.src.nodes.schemas import SimpleReviewOutput
 from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_files
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
 from app.agents.developer_v2.src.utils.prompt_utils import (
@@ -90,10 +91,24 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         file_content_review, is_truncated = _smart_truncate(file_content)
         truncation_note = " (truncated)" if is_truncated else ""
         
+        # Read fresh dependencies from disk (fix stale cache issue)
         deps_context = ""
         for dep in step.get("dependencies", [])[:5]:
-            if dep in dependencies_content:
-                deps_context += f"### {dep}\n```\n{dependencies_content[dep][:3000]}\n```\n\n"
+            dep_content = None
+            # Try fresh read from disk first
+            if workspace_path:
+                dep_path = os.path.join(workspace_path, dep)
+                if os.path.exists(dep_path):
+                    try:
+                        with open(dep_path, 'r', encoding='utf-8') as f:
+                            dep_content = f.read()
+                    except Exception:
+                        pass
+            # Fallback to cache
+            if not dep_content and dep in dependencies_content:
+                dep_content = dependencies_content[dep]
+            if dep_content:
+                deps_context += f"### {dep}\n```\n{dep_content[:3000]}\n```\n\n"
         deps_context = deps_context or "No dependencies"
         
         system_prompt = _build_system_prompt("review")
@@ -111,10 +126,11 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
             HumanMessage(content=input_text)
         ]
         
-        response = await code_llm.ainvoke(messages, config=_cfg(state, "review"))
-        flush_langfuse(state)  # Real-time update
-        response_text = response.content if hasattr(response, 'content') else str(response)
-        review_result = _parse_review_response(response_text)
+        # Use structured output for minimal tokens (~30 vs ~300)
+        structured_llm = review_llm.with_structured_output(SimpleReviewOutput)
+        result = await structured_llm.ainvoke(messages, config=_cfg(state, "review"))
+        flush_langfuse(state)
+        review_result = result.model_dump()
         
         logger.info(f"[review] {file_path}: {review_result['decision']}")
         if review_result['decision'] == "LBTM":
@@ -130,11 +146,15 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         if review_result["decision"] == "LBTM":
             step_lbtm_counts[step_key] = step_lbtm_counts.get(step_key, 0) + 1
             total_lbtm += 1
-            logger.info(f"[review] Step {step_index} LBTM count: {step_lbtm_counts[step_key]}/2")
             
-            # If this step has been LBTM'd 2+ times, force move to next step
-            if step_lbtm_counts[step_key] >= 2:
-                logger.warning(f"[review] Step {step_index} reached max LBTM ({step_lbtm_counts[step_key]}), forcing LGTM")
+            # Adaptive LBTM limit based on complexity
+            complexity = state.get("complexity", "medium")
+            max_lbtm = {"low": 1, "medium": 2, "high": 3}.get(complexity, 2)
+            logger.info(f"[review] Step {step_index} LBTM count: {step_lbtm_counts[step_key]}/{max_lbtm} (complexity={complexity})")
+            
+            # If this step has reached max LBTM for its complexity, force move to next step
+            if step_lbtm_counts[step_key] >= max_lbtm:
+                logger.warning(f"[review] Step {step_index} reached max LBTM ({step_lbtm_counts[step_key]}/{max_lbtm}), forcing LGTM")
                 review_result["decision"] = "LGTM"
                 review_result["feedback"] = f"(Force-approved after {step_lbtm_counts[step_key]} attempts)"
                 current_step += 1
@@ -146,8 +166,7 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
             **state,
             "current_step": current_step,
             "review_result": review_result["decision"],
-            "review_feedback": review_result["feedback"],
-            "review_details": review_result["review"],
+            "review_feedback": review_result.get("feedback", ""),
             "review_count": state.get("review_count", 0) + (1 if review_result["decision"] == "LBTM" else 0),
             "total_lbtm_count": total_lbtm,
             "step_lbtm_counts": step_lbtm_counts,

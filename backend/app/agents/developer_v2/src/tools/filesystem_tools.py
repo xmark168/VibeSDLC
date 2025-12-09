@@ -21,9 +21,8 @@ def get_modified_files() -> list:
 
 def reset_modified_files():
     """Reset tracking. Call at start of each implement step."""
-    global _modified_files, _files_read_session
-    _modified_files = set()
-    _files_read_session = set()
+    _modified_files.clear()  # Use clear() to keep same reference
+    _files_read_session.clear()
 
 
 def _track_modified(file_path: str):

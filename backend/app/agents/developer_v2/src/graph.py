@@ -1,26 +1,27 @@
 """Developer V2 LangGraph - Story Implementation Workflow.
 
 This module defines the DeveloperGraph class, a LangGraph state machine
-that orchestrates the complete story-to-code workflow with 7 nodes.
+that orchestrates the complete story-to-code workflow with 6 nodes.
 
 Workflow Diagram:
-    setup_workspace -> analyze_and_plan -> implement -> review
-                                              ^           |
-                                              |   LBTM    v
-                                              +-----------+
-                                                          | LGTM
-                                                          v
-    END <- run_code <- summarize <------------------------+
-             |
-             | FAIL (debug_count < 5)
-             v
-        analyze_error -> implement
+    setup_workspace -> plan -> implement <-> review
+                                  ^            |
+                                  |   LBTM     v
+                                  +------------+
+                                               | LGTM (all steps done)
+                                               v
+                         END <- run_code <-----+
+                                  |
+                                  | FAIL (debug_count < 5)
+                                  v
+                            analyze_error -> implement
 
 Key Features:
+    - Zero-tool planning with comprehensive prefetch
     - Conditional routing for code review loops (LGTM/LBTM)
     - Error recovery with analyze_error node
     - Configurable review skipping via use_code_review flag
-    - Per-step LBTM limits (max 2) to prevent infinite loops
+    - Adaptive per-step LBTM limits based on complexity (low=1, medium=2, high=3)
 """
 
 from functools import partial
@@ -30,29 +31,40 @@ from langgraph.graph import StateGraph, END
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
-    setup_workspace, analyze_and_plan, implement,
+    setup_workspace, plan, implement, implement_parallel,
     run_code, analyze_error,
     review, route_after_review,
-    summarize, route_after_summarize,
 )
 
 
-def route_after_implement(state: DeveloperState) -> Literal["review", "implement", "summarize"]:
-    """Route after implement based on use_code_review flag."""
+def route_after_implement(state: DeveloperState) -> Literal["review", "implement", "run_code"]:
+    """Route after implement based on complexity and use_code_review flag.
+    
+    Optimization: Skip review for low complexity stories to save ~25-50s.
+    """
+    # Skip review for low complexity (optimization)
+    complexity = state.get("complexity", "medium")
+    if complexity == "low":
+        current_step = state.get("current_step", 0)
+        total_steps = state.get("total_steps", 0)
+        if current_step < total_steps:
+            return "implement"
+        return "run_code"
+    
     if state.get("use_code_review", True):
         return "review"
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
     if current_step < total_steps:
         return "implement"
-    return "summarize"
+    return "run_code"
 
 
-def route_review_result(state: DeveloperState) -> Literal["implement", "summarize", "run_code"]:
+def route_review_result(state: DeveloperState) -> Literal["implement", "run_code"]:
     """Route based on review result (LGTM/LBTM).
     
-    Note: Per-step LBTM limit (max 2) is enforced in review node.
-    If step gets LBTM 2+ times, review node forces LGTM and increments current_step.
+    Note: Adaptive per-step LBTM limit based on complexity (low=1, medium=2, high=3)
+    is enforced in review node. If step reaches limit, review forces LGTM.
     """
     review_result = state.get("review_result", "LGTM")
     
@@ -65,17 +77,6 @@ def route_review_result(state: DeveloperState) -> Literal["implement", "summariz
     if current_step < total_steps:
         return "implement"
     
-    # Skip summarize if all LGTM
-    if state.get("total_lbtm_count", 0) == 0:
-        return "run_code"
-    return "summarize"
-
-
-def route_summarize_result(state: DeveloperState) -> Literal["implement", "run_code"]:
-    """Route based on IS_PASS result."""
-    is_pass = state.get("is_pass", "YES")
-    if is_pass == "NO" and state.get("summarize_count", 0) < 2:
-        return "implement"
     return "run_code"
 
 
@@ -96,44 +97,63 @@ def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__
     return "__end__"
 
 
+def route_after_debug_implement(state: DeveloperState) -> Literal["run_code"]:
+    """After debug implement, always go back to run_code to verify fix."""
+    return "run_code"
+
+
 class DeveloperGraph:
     """LangGraph state machine for story-driven code generation.
 
-    Sequential flow with per-step review:
-    setup_workspace -> analyze_and_plan -> implement <-> review (LBTM loop)
-                                                           |
-                                                         LGTM
-                                                           v
-                                       END <- run_code <- summarize
+    Parallel flow (default):
+    setup_workspace -> plan -> implement_parallel -> run_code -> END
+                                                        |
+                                                      FAIL
+                                                        v
+                                                  analyze_error -> implement -> run_code
+
+    Sequential flow (fallback for debug):
+    setup_workspace -> plan -> implement <-> review (LBTM loop)
                                                |
-                                             FAIL
+                                             LGTM (all steps done)
                                                v
-                                         analyze_error -> implement
+                               END <- run_code
 
     Attrs: agent (DeveloperV2), graph (compiled StateGraph)
-    Limits: max 5 debug iterations, max 2 LBTM per step
+    Limits: max 5 debug iterations
     """
     
-    def __init__(self, agent=None):
+    def __init__(self, agent=None, parallel=True):
         self.agent = agent
+        self.parallel = parallel
         g = StateGraph(DeveloperState)
         
         # All nodes
         g.add_node("setup_workspace", partial(setup_workspace, agent=agent))
-        g.add_node("analyze_and_plan", partial(analyze_and_plan, agent=agent))
+        g.add_node("plan", partial(plan, agent=agent))
         g.add_node("implement", partial(implement, agent=agent))
+        g.add_node("implement_parallel", partial(implement_parallel, agent=agent))
         g.add_node("review", partial(review, agent=agent))
-        g.add_node("summarize", partial(summarize, agent=agent))
         g.add_node("run_code", partial(run_code, agent=agent))
         g.add_node("analyze_error", partial(analyze_error, agent=agent))
         
-        # Sequential edges
+        # Edges
         g.set_entry_point("setup_workspace")
-        g.add_edge("setup_workspace", "analyze_and_plan")
-        g.add_edge("analyze_and_plan", "implement")
-        g.add_conditional_edges("implement", route_after_implement)
-        g.add_conditional_edges("review", route_review_result)
-        g.add_conditional_edges("summarize", route_summarize_result)
+        g.add_edge("setup_workspace", "plan")
+        
+        if parallel:
+            # Parallel mode: plan -> implement_parallel -> run_code
+            g.add_edge("plan", "implement_parallel")
+            g.add_edge("implement_parallel", "run_code")
+            # Debug path: implement (fix) -> run_code (verify)
+            g.add_edge("implement", "run_code")
+        else:
+            # Sequential mode: plan -> implement <-> review
+            g.add_edge("plan", "implement")
+            g.add_conditional_edges("implement", route_after_implement)
+            g.add_conditional_edges("review", route_review_result)
+        
+        # Debug flow (shared)
         g.add_conditional_edges("run_code", route_after_test)
         g.add_conditional_edges("analyze_error", route_after_analyze_error)
         

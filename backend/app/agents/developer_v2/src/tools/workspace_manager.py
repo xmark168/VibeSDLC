@@ -25,8 +25,9 @@ class ProjectWorkspaceManager:
     def __init__(self, project_id: UUID):
         self.project_id = project_id
         
-        # Find backend root (5 levels up from workspace_manager.py)
-        # workspace_manager.py -> tools -> src -> developer_v2 -> agents -> app -> backend
+        # Find backend root
+        # Path: backend/app/agents/developer_v2/src/tools/workspace_manager.py
+        # Need to go up 6 levels: tools -> src -> developer_v2 -> agents -> app -> backend
         current_file = Path(__file__).resolve()
         self.backend_root = current_file.parent.parent.parent.parent.parent.parent
 
@@ -74,8 +75,8 @@ class ProjectWorkspaceManager:
                 if file in ignore_dirs:
                     ignore.add(file)
                 # Note: .env is NOT ignored - workspace needs env vars for build/test
-                # Note: bun.lock and .bun are NOT ignored - keeps dependency cache
-                elif file in {'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml'}:
+                # Note: pnpm-lock.yaml is NOT ignored - enables fast `pnpm install --frozen-lockfile`
+                elif file in {'package-lock.json', 'yarn.lock', 'bun.lockb'}:
                     ignore.add(file)
             return ignore
 

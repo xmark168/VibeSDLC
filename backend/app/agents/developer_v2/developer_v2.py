@@ -1,12 +1,5 @@
-"""Developer V2 Agent - LangGraph-based Story Processor.
-
-This module contains the main DeveloperV2 agent class that processes
-user stories and generates production-ready code using a LangGraph
-state machine workflow.
-
-Typical usage:
-    agent = DeveloperV2(agent_model)
-    result = await agent.handle_task(task_context)
+"""
+Developer V2 Agent - LangGraph-based Story Processor.
 """
 
 import logging
@@ -24,14 +17,6 @@ logger = logging.getLogger(__name__)
 
 
 class DeveloperV2(BaseAgent):
-    """AI-powered developer agent using LangGraph for story-driven code generation.
-
-    Processes user stories through 7-node workflow: setup_workspace -> analyze_and_plan
-    -> implement -> review -> summarize -> run_code -> (analyze_error if FAIL).
-
-    Attrs: context, graph_engine, workspace_manager, main_workspace
-    Limits: max 5 debug iterations, max 2 LBTM/step, max 40 react loops
-    """
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)

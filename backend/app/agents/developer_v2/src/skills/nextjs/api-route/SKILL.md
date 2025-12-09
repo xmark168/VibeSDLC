@@ -16,6 +16,84 @@ API routes live in the `app/api/` directory:
 
 **CRITICAL**: In Next.js 16, dynamic route params are async. You MUST `await params` before using them.
 
+## ⚠️ Schema Validation - READ FIRST
+
+**BEFORE writing ANY Prisma query:**
+1. READ `prisma/schema.prisma` in Pre-loaded Code
+2. ONLY use fields that EXIST in schema
+3. NEVER invent fields
+
+**Common invented fields that DON'T EXIST:**
+- `featured`, `isFeatured` → Check if schema has this!
+- `reviews`, `ratings` → Check if relation exists!
+- `popularity`, `viewCount`, `soldCount` → Usually not in schema
+
+```typescript
+// ❌ WRONG - 'featured' doesn't exist in schema
+where: { featured: true }
+
+// ✅ CORRECT - check schema first, use isFeatured if exists
+where: { isFeatured: true }  // Only if schema has: isFeatured Boolean
+```
+
+## Prisma Relationship Matching
+
+**CRITICAL**: Field names trong `include` PHẢI khớp CHÍNH XÁC với schema:
+
+| Schema định nghĩa | Query sử dụng | ✅/❌ |
+|-------------------|---------------|------|
+| `categories Category[]` | `include: { categories: true }` | ✅ |
+| `categories Category[]` | `include: { category: true }` | ❌ WRONG |
+| `category Category` | `include: { category: true }` | ✅ |
+
+**Rule**: 
+- Many-to-many/One-to-many → **PLURAL** (categories, tags, posts)
+- One-to-one/Many-to-one → **SINGULAR** (category, user, author)
+
+## Many-to-Many qua Join Table
+
+Khi có join table, PHẢI navigate qua nó:
+
+```prisma
+// Schema với join table
+model Category {
+  books BookCategory[]  // Đây là join table records, KHÔNG PHẢI Book[]!
+}
+model BookCategory {
+  book Book @relation(...)
+}
+```
+
+```typescript
+// ❌ WRONG - books là BookCategory[], không có coverImage
+const categories = await prisma.category.findMany({
+  include: { books: true }
+});
+categories[0].books[0].coverImage  // ERROR!
+
+// ✅ CORRECT - include nested relation
+const categories = await prisma.category.findMany({
+  include: { 
+    books: { 
+      include: { book: { select: { id: true, coverImage: true } } }
+    }
+  }
+});
+categories[0].books[0].book.coverImage  // OK
+```
+
+## Schema Field Validation
+
+**CRITICAL**: ONLY use fields that EXIST in the Prisma schema.
+
+❌ DON'T invent fields:
+- `popularity`, `featuredOrder`, `originalPrice` (common mistakes)
+
+✅ DO:
+- Read `prisma/schema.prisma` in context first
+- Only use fields defined there
+- Use explicit types instead of `any`
+
 ## Route Structure
 
 ### Collection Route (List + Create)
@@ -201,6 +279,47 @@ export async function GET(request: NextRequest) {
 - Default limit: 20 items
 - Always return `total` count for frontend pagination UI
 - Use `Promise.all` for parallel queries
+
+## Query Optimization
+
+**CRITICAL**: Let database do sorting/filtering, NOT JavaScript.
+
+### ❌ WRONG - Fetch all, sort in memory
+```typescript
+const books = await prisma.book.findMany({ 
+  include: { orderItems: true } 
+});
+const top10 = books
+  .sort((a, b) => getTotal(b) - getTotal(a))
+  .slice(0, 10);  // Fetched 1000 books just to get 10!
+```
+
+### ✅ CORRECT - Use orderBy + take
+```typescript
+// Option 1: Order by relation count
+const top10 = await prisma.book.findMany({
+  take: 10,
+  orderBy: {
+    orderItems: { _count: 'desc' }
+  }
+});
+
+// Option 2: Raw query for complex aggregation
+const top10 = await prisma.$queryRaw`
+  SELECT b.*, SUM(oi.quantity) as total_qty
+  FROM "Book" b
+  LEFT JOIN "OrderItem" oi ON b.id = oi."bookId"
+  GROUP BY b.id
+  ORDER BY total_qty DESC
+  LIMIT 10
+`;
+```
+
+**Rules:**
+- Use `take` for LIMIT
+- Use `orderBy` for sorting
+- Use `_count` for relation counts
+- Use `$queryRaw` for complex aggregations
 
 ## After Writing Route
 

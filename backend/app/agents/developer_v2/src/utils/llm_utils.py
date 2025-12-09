@@ -70,12 +70,16 @@ def get_langfuse_config(state: dict, run_name: str) -> dict:
 
 
 def flush_langfuse(state: dict) -> None:
-    """No-op: Langfuse batching handles flush automatically.
+    """Flush Langfuse for real-time updates.
     
-    With flush_at=10 and flush_interval=10, Langfuse batches events
-    and flushes automatically. Manual flush only at end of story.
+    Call this after each LLM invocation for real-time tracing.
     """
-    pass  # Batching handles this - no manual flush needed
+    langfuse_client = state.get("langfuse_client")
+    if langfuse_client:
+        try:
+            langfuse_client.flush()
+        except Exception:
+            pass  # Ignore flush errors
 
 
 async def execute_llm_with_tools(
