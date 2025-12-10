@@ -19,6 +19,7 @@ interface UseStoryWebSocketReturn {
   messages: StoryMessage[]
   isConnected: boolean
   isLoading: boolean
+  clearMessages: () => void
 }
 
 function getWebSocketUrl(projectId: string, token: string): string {
@@ -124,10 +125,15 @@ export function useStoryWebSocket(
   }, [lastJsonMessage])
 
   const isConnected = readyState === ReadyState.OPEN
+  
+  const clearMessages = () => {
+    setMessages([])
+  }
 
   return {
     messages,
     isConnected,
     isLoading,
+    clearMessages,
   }
 }

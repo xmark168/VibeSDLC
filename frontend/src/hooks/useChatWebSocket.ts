@@ -210,6 +210,10 @@ export function useChatWebSocket(
         handleStoryStateChanged(msg)
         break
       
+      case 'branch_changed':
+        handleBranchChanged(msg)
+        break
+      
       default:
         console.warn('[WebSocket] ⚠️ Unknown message type:', msg.type)
     }
@@ -658,6 +662,18 @@ export function useChatWebSocket(
         old_state: msg.old_state,
         running_port: msg.running_port,
         running_pid: msg.running_pid,
+      }
+    }))
+  }
+  
+  const handleBranchChanged = (msg: any) => {
+    console.log('[WS] 🌿 Branch changed:', msg.project_id, msg.branch)
+    
+    // Dispatch custom event for FileExplorer to listen
+    window.dispatchEvent(new CustomEvent('branch-changed', {
+      detail: { 
+        project_id: msg.project_id, 
+        branch: msg.branch
       }
     }))
   }

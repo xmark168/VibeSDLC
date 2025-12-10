@@ -507,6 +507,47 @@ async def send_story_message(
     }
 
 
+@router.delete("/{story_id}/messages")
+async def clear_story_messages(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Clear all messages in story channel."""
+    from app.models import StoryMessage
+    from sqlmodel import delete
+    from app.websocket.connection_manager import connection_manager
+    
+    # Verify story exists
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Count messages before delete
+    count_statement = (
+        select(func.count())
+        .select_from(StoryMessage)
+        .where(StoryMessage.story_id == story_id)
+    )
+    count = session.exec(count_statement).one()
+    
+    # Delete all messages for this story
+    session.exec(delete(StoryMessage).where(StoryMessage.story_id == story_id))
+    session.commit()
+    
+    # Broadcast clear event via WebSocket
+    await connection_manager.broadcast_to_project(
+        {
+            "type": "story_messages_cleared",
+            "story_id": str(story_id),
+        },
+        story.project_id
+    )
+    
+    return {"message": f"Deleted {count} messages", "deleted_count": count}
+
+
 # ===== Agent Task Control =====
 @router.post("/{story_id}/cancel")
 async def cancel_story_task(
@@ -1096,7 +1137,7 @@ async def get_story_diffs(
     current_user: CurrentUser,
     story_id: uuid.UUID
 ) -> Any:
-    """Get git diff for story worktree."""
+    """Get git diff for story worktree compared to base branch."""
     import subprocess
     
     story = session.get(Story, story_id)
@@ -1104,12 +1145,26 @@ async def get_story_diffs(
         raise HTTPException(status_code=404, detail="Story not found")
     
     if not story.worktree_path:
-        return {"files": [], "diff": ""}
+        return {"files": [], "file_count": 0, "diff": "", "base_branch": None}
+    
+    # Helper: Detect default branch (master or main)
+    def get_default_branch(cwd: str) -> str:
+        for branch in ['master', 'main']:
+            result = subprocess.run(
+                ["git", "rev-parse", "--verify", branch],
+                cwd=cwd, capture_output=True, timeout=5
+            )
+            if result.returncode == 0:
+                return branch
+        return 'master'  # fallback
     
     try:
-        # Get changed files
+        base_branch = get_default_branch(story.worktree_path)
+        diff_ref = f"{base_branch}...HEAD"
+        
+        # Get changed files with line stats
         result = subprocess.run(
-            ["git", "diff", "--name-status", "main...HEAD"],
+            ["git", "diff", "--numstat", diff_ref],
             cwd=story.worktree_path,
             capture_output=True,
             text=True,
@@ -1117,30 +1172,97 @@ async def get_story_diffs(
         )
         
         files = []
-        if result.returncode == 0:
+        diff_output = ""
+        total_additions = 0
+        total_deletions = 0
+        
+        if result.returncode == 0 and result.stdout.strip():
             for line in result.stdout.strip().split("\n"):
                 if line:
-                    parts = line.split("\t", 1)
-                    if len(parts) == 2:
-                        status, filename = parts
+                    parts = line.split("\t")
+                    if len(parts) == 3:
+                        additions, deletions, filename = parts
+                        add_count = int(additions) if additions != '-' else 0
+                        del_count = int(deletions) if deletions != '-' else 0
+                        total_additions += add_count
+                        total_deletions += del_count
                         files.append({
-                            "status": status,  # A=Added, M=Modified, D=Deleted
-                            "filename": filename
+                            "filename": filename,
+                            "additions": add_count,
+                            "deletions": del_count,
+                            "binary": additions == '-'
                         })
-        
-        # Get full diff
-        diff_result = subprocess.run(
-            ["git", "diff", "main...HEAD"],
-            cwd=story.worktree_path,
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
+            
+            # Get file statuses (A/M/D)
+            status_result = subprocess.run(
+                ["git", "diff", "--name-status", diff_ref],
+                cwd=story.worktree_path,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if status_result.returncode == 0:
+                status_map = {}
+                for line in status_result.stdout.strip().split("\n"):
+                    if line:
+                        parts = line.split("\t", 1)
+                        if len(parts) == 2:
+                            status_map[parts[1]] = parts[0]
+                for f in files:
+                    f["status"] = status_map.get(f["filename"], "M")
+            
+            # Get full diff
+            diff_result = subprocess.run(
+                ["git", "diff", diff_ref],
+                cwd=story.worktree_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            diff_output = diff_result.stdout if diff_result.returncode == 0 else ""
+        else:
+            # Fallback: show uncommitted changes
+            result = subprocess.run(
+                ["git", "diff", "--numstat"],
+                cwd=story.worktree_path,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                for line in result.stdout.strip().split("\n"):
+                    if line:
+                        parts = line.split("\t")
+                        if len(parts) == 3:
+                            additions, deletions, filename = parts
+                            add_count = int(additions) if additions != '-' else 0
+                            del_count = int(deletions) if deletions != '-' else 0
+                            total_additions += add_count
+                            total_deletions += del_count
+                            files.append({
+                                "filename": filename,
+                                "additions": add_count,
+                                "deletions": del_count,
+                                "status": "M",
+                                "binary": additions == '-'
+                            })
+                
+                diff_result = subprocess.run(
+                    ["git", "diff"],
+                    cwd=story.worktree_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                diff_output = diff_result.stdout if diff_result.returncode == 0 else ""
         
         return {
             "files": files,
             "file_count": len(files),
-            "diff": diff_result.stdout if diff_result.returncode == 0 else ""
+            "total_additions": total_additions,
+            "total_deletions": total_deletions,
+            "diff": diff_output,
+            "base_branch": base_branch
         }
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="Git command timed out")
