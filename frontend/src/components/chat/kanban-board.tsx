@@ -340,7 +340,32 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     cardsRef.current = cards
   }, [cards])
 
-
+  // Listen for story state changes from WebSocket
+  useEffect(() => {
+    const handleStoryStateChanged = (event: CustomEvent) => {
+      const { story_id, agent_state, running_port, running_pid } = event.detail
+      console.log('[KanbanBoard] Story state changed event:', { story_id, agent_state, running_port, running_pid })
+      
+      setCards(prev => {
+        const updatedCards = prev.map(card => {
+          if (card.id !== story_id) return card
+          // Merge updates - only update fields that are explicitly provided
+          const updated = { ...card }
+          if (agent_state !== undefined) updated.agent_state = agent_state
+          if (running_port !== undefined) updated.running_port = running_port
+          if (running_pid !== undefined) updated.running_pid = running_pid
+          console.log('[KanbanBoard] Card updated:', { before: card, after: updated })
+          return updated
+        })
+        return updatedCards
+      })
+    }
+    
+    window.addEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    return () => {
+      window.removeEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    }
+  }, [])
 
   // Get cards by column
   const getCardsByColumn = useCallback((columnId: string) => {

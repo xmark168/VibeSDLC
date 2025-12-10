@@ -70,6 +70,9 @@ from app.models.story import (
     IssueActivity,
 )
 
+# Story log models
+from app.models.story_log import StoryLog, LogLevel
+
 # Message models
 from app.models.message import (
     Message,
@@ -139,6 +142,9 @@ __all__ = [
     "Story",
     "StoryMessage",
     "IssueActivity",
+    # Story Log
+    "StoryLog",
+    "LogLevel",
     # Message
     "Message",
     "AgentConversation",

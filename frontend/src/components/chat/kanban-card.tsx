@@ -1,4 +1,4 @@
-import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight, Link2, Ban, Loader2, Clock } from "lucide-react"
+import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight, Link2, Ban, Loader2, Clock, CheckCircle2 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -279,6 +279,12 @@ function KanbanCardComponent({
               <Badge variant="outline" className="text-xs font-medium gap-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Processing
+              </Badge>
+            )}
+            {card.agent_state === 'finished' && (
+              <Badge variant="outline" className="text-xs font-medium gap-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700">
+                <CheckCircle2 className="w-3 h-3" />
+                Finished
               </Badge>
             )}
             {card.isBlocked && (

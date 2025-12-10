@@ -6,9 +6,11 @@ import uuid
 from typing import Any, Optional
 from enum import Enum
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import select, func
+import httpx
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Story, StoryStatus, StoryType
@@ -741,6 +743,9 @@ async def start_dev_server(
     """Start dev server for story worktree."""
     import subprocess
     import socket
+    import sys
+    import os
+    import time
     
     story = session.get(Story, story_id)
     if not story:
@@ -749,9 +754,116 @@ async def start_dev_server(
     if not story.worktree_path:
         raise HTTPException(status_code=400, detail="No worktree path for this story")
     
-    # Already running
-    if story.running_pid and story.running_port:
-        return {"success": True, "port": story.running_port, "message": "Dev server already running"}
+    # Logger helper - saves to DB and broadcasts via WebSocket
+    async def log_to_story(message: str, level: str = "info"):
+        from app.websocket.connection_manager import connection_manager
+        from datetime import datetime, timezone
+        from app.models.story_log import StoryLog, LogLevel
+        
+        # Save to database
+        try:
+            log_entry = StoryLog(
+                story_id=story_id,
+                content=f"[dev-server] {message}",
+                level=LogLevel(level),
+                node="dev-server"
+            )
+            session.add(log_entry)
+            session.commit()
+            session.refresh(log_entry)
+        except Exception as e:
+            print(f"Failed to save log to DB: {e}")
+        
+        # Broadcast via WebSocket
+        await connection_manager.broadcast_to_project({
+            "type": "story_message",
+            "story_id": str(story_id),
+            "content": f"[dev-server] {message}",
+            "message_type": "log",
+            "details": {"level": level, "node": "dev-server", "timestamp": datetime.now(timezone.utc).isoformat()}
+        }, story.project_id)
+    
+    is_windows = sys.platform == 'win32'
+    
+    # Helper: Kill process by PID
+    def kill_process(pid: int, force: bool = False) -> bool:
+        try:
+            if is_windows:
+                # Windows: use taskkill
+                cmd = f"taskkill /F /PID {pid} /T" if force else f"taskkill /PID {pid} /T"
+                subprocess.run(cmd, shell=True, capture_output=True)
+            else:
+                import signal
+                os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
+            return True
+        except Exception:
+            return False
+    
+    # Helper: Kill processes using a directory (Windows)
+    def kill_processes_using_directory(directory: str) -> int:
+        killed = 0
+        if is_windows:
+            try:
+                # Find processes with handles to the directory using handle.exe or PowerShell
+                result = subprocess.run(
+                    f'powershell -Command "Get-Process | Where-Object {{$_.Path -like \'*node*\' -or $_.Path -like \'*pnpm*\'}} | ForEach-Object {{ if ($_.MainModule.FileName -or $_.Path) {{ $_.Id }} }}"',
+                    shell=True, capture_output=True, text=True
+                )
+                for pid_str in result.stdout.strip().split('\n'):
+                    if pid_str.strip().isdigit():
+                        pid = int(pid_str.strip())
+                        if kill_process(pid, force=True):
+                            killed += 1
+            except Exception:
+                pass
+        return killed
+    
+    # Helper: Kill process on port
+    def kill_process_on_port(port: int) -> bool:
+        try:
+            if is_windows:
+                result = subprocess.run(
+                    f'netstat -ano | findstr :{port}',
+                    shell=True, capture_output=True, text=True
+                )
+                for line in result.stdout.strip().split('\n'):
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        pid = int(parts[-1])
+                        kill_process(pid, force=True)
+                        return True
+            else:
+                result = subprocess.run(
+                    f'lsof -ti:{port}',
+                    shell=True, capture_output=True, text=True
+                )
+                if result.stdout.strip():
+                    pid = int(result.stdout.strip())
+                    kill_process(pid, force=True)
+                    return True
+        except Exception:
+            pass
+        return False
+    
+    # Force kill existing process if any
+    if story.running_pid:
+        await log_to_story(f"Killing existing dev server (PID: {story.running_pid})...")
+        kill_process(story.running_pid, force=True)
+        time.sleep(0.5)
+    
+    if story.running_port:
+        await log_to_story(f"Killing any process on port {story.running_port}...")
+        kill_process_on_port(story.running_port)
+        time.sleep(0.5)
+    
+    # Clean up Next.js dev lock file (prevents "is another instance running?" error)
+    next_lock = os.path.join(story.worktree_path, ".next", "dev", "lock")
+    if os.path.exists(next_lock):
+        try:
+            os.remove(next_lock)
+            await log_to_story("Removed stale Next.js lock file")
+        except Exception:
+            pass
     
     # Find free port
     def find_free_port():
@@ -759,26 +871,84 @@ async def start_dev_server(
             s.bind(('', 0))
             return s.getsockname()[1]
     
-    port = find_free_port()
+    # Helper: Wait for port to be ready
+    def wait_for_port(port: int, timeout: float = 30.0) -> bool:
+        import socket
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(1)
+                    s.connect(('127.0.0.1', port))
+                    return True
+            except (socket.error, socket.timeout):
+                time.sleep(0.5)
+        return False
     
-    # Start dev server
-    try:
-        process = subprocess.Popen(
-            ["pnpm", "dev", "--port", str(port)],
-            cwd=story.worktree_path,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP') else 0,
-        )
-        
-        story.running_port = port
-        story.running_pid = process.pid
-        session.add(story)
-        session.commit()
-        
-        return {"success": True, "port": port, "pid": process.pid}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start dev server: {str(e)}")
+    port = find_free_port()
+    await log_to_story(f"Starting dev server on port {port}...")
+    
+    # Start dev server with retry logic
+    max_attempts = 3
+    last_error = None
+    
+    for attempt in range(max_attempts):
+        try:
+            process = subprocess.Popen(
+                f"pnpm dev --port {port}" if is_windows else ["pnpm", "dev", "--port", str(port)],
+                cwd=story.worktree_path,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                shell=is_windows,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if is_windows else 0,
+                env={**os.environ, "FORCE_COLOR": "0"},
+            )
+            
+            # Wait for port to be ready (up to 30 seconds)
+            await log_to_story(f"Waiting for server to be ready...")
+            if wait_for_port(port, timeout=30.0) and process.poll() is None:
+                story.running_port = port
+                story.running_pid = process.pid
+                session.add(story)
+                session.commit()
+                
+                await log_to_story(f"Dev server started on port {port} (PID: {process.pid})", "success")
+                
+                # Broadcast state change via WebSocket
+                from app.websocket.connection_manager import connection_manager
+                await connection_manager.broadcast_to_project({
+                    "type": "story_state_changed",
+                    "story_id": str(story_id),
+                    "running_port": port,
+                    "running_pid": process.pid,
+                }, story.project_id)
+                
+                return {"success": True, "port": port, "pid": process.pid}
+            else:
+                if process.poll() is not None:
+                    raise Exception(f"Process exited with code {process.returncode}")
+                else:
+                    raise Exception(f"Server started but port {port} not responding after 30s")
+                
+        except Exception as e:
+            last_error = e
+            await log_to_story(f"Attempt {attempt + 1}/{max_attempts} failed: {str(e)}", "warning")
+            
+            if attempt < max_attempts - 1:
+                # Kill processes using the directory
+                await log_to_story(f"Killing processes using directory...")
+                killed = kill_processes_using_directory(story.worktree_path)
+                if killed:
+                    await log_to_story(f"Killed {killed} processes")
+                time.sleep(1)
+                
+                # Try new port
+                port = find_free_port()
+                await log_to_story(f"Retrying with port {port}...")
+    
+    # All attempts failed
+    await log_to_story(f"Failed to start dev server after {max_attempts} attempts: {str(last_error)}", "error")
+    raise HTTPException(status_code=500, detail=f"Failed to start dev server: {str(last_error)}")
 
 
 @router.post("/{story_id}/dev-server/stop")
@@ -790,24 +960,93 @@ async def stop_dev_server(
 ) -> Any:
     """Stop dev server for story."""
     import os
-    import signal
+    import sys
+    import subprocess
     
     story = session.get(Story, story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     
-    if not story.running_pid:
+    # Logger helper - saves to DB and broadcasts via WebSocket
+    async def log_to_story(message: str, level: str = "info"):
+        from app.websocket.connection_manager import connection_manager
+        from datetime import datetime, timezone
+        from app.models.story_log import StoryLog, LogLevel
+        
+        # Save to database
+        try:
+            log_entry = StoryLog(
+                story_id=story_id,
+                content=f"[dev-server] {message}",
+                level=LogLevel(level),
+                node="dev-server"
+            )
+            session.add(log_entry)
+            session.commit()
+            session.refresh(log_entry)
+        except Exception as e:
+            print(f"Failed to save log to DB: {e}")
+        
+        # Broadcast via WebSocket
+        await connection_manager.broadcast_to_project({
+            "type": "story_message",
+            "story_id": str(story_id),
+            "content": f"[dev-server] {message}",
+            "message_type": "log",
+            "details": {"level": level, "node": "dev-server", "timestamp": datetime.now(timezone.utc).isoformat()}
+        }, story.project_id)
+    
+    if not story.running_pid and not story.running_port:
+        await log_to_story("No dev server running")
         return {"success": True, "message": "No dev server running"}
     
-    try:
-        os.kill(story.running_pid, signal.SIGTERM)
-    except (ProcessLookupError, OSError):
-        pass
+    is_windows = sys.platform == 'win32'
     
+    await log_to_story(f"Stopping dev server (PID: {story.running_pid}, Port: {story.running_port})...")
+    
+    # Kill process
+    if story.running_pid:
+        try:
+            if is_windows:
+                subprocess.run(f"taskkill /F /PID {story.running_pid} /T", shell=True, capture_output=True)
+            else:
+                import signal
+                os.kill(story.running_pid, signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+    
+    # Also kill any process on the port
+    if story.running_port:
+        try:
+            if is_windows:
+                result = subprocess.run(f'netstat -ano | findstr :{story.running_port}', shell=True, capture_output=True, text=True)
+                for line in result.stdout.strip().split('\n'):
+                    parts = line.split()
+                    if len(parts) >= 5 and parts[-1].isdigit():
+                        subprocess.run(f"taskkill /F /PID {parts[-1]} /T", shell=True, capture_output=True)
+            else:
+                result = subprocess.run(f'lsof -ti:{story.running_port}', shell=True, capture_output=True, text=True)
+                if result.stdout.strip():
+                    os.kill(int(result.stdout.strip()), signal.SIGTERM)
+        except Exception:
+            pass
+    
+    project_id = story.project_id
     story.running_pid = None
     story.running_port = None
     session.add(story)
     session.commit()
+    
+    await log_to_story("Dev server stopped", "success")
+    
+    # Broadcast state change via WebSocket
+    from app.websocket.connection_manager import connection_manager
+    await connection_manager.broadcast_to_project({
+        "type": "story_state_changed",
+        "story_id": str(story_id),
+        "running_port": None,
+        "running_pid": None,
+    }, project_id)
     
     return {"success": True, "message": "Dev server stopped"}
 
@@ -820,32 +1059,32 @@ async def get_story_logs(
     story_id: uuid.UUID,
     limit: int = Query(100, ge=1, le=500)
 ) -> Any:
-    """Get agent logs/messages for story."""
-    from app.models import StoryMessage
+    """Get story logs from StoryLog table."""
+    from app.models import StoryLog
     
     story = session.get(Story, story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     
-    # Get messages as logs
+    # Get logs from StoryLog table
     statement = (
-        select(StoryMessage)
-        .where(StoryMessage.story_id == story_id)
-        .order_by(StoryMessage.created_at.desc())
+        select(StoryLog)
+        .where(StoryLog.story_id == story_id)
+        .order_by(StoryLog.created_at.desc())
         .limit(limit)
     )
-    messages = session.exec(statement).all()
+    logs = session.exec(statement).all()
     
     return {
         "logs": [
             {
-                "id": str(msg.id),
-                "timestamp": msg.created_at.isoformat() if msg.created_at else None,
-                "author": msg.author_name,
-                "type": msg.message_type,
-                "content": msg.content,
+                "id": str(log.id),
+                "timestamp": log.created_at.isoformat() if log.created_at else None,
+                "level": log.level.value if log.level else "info",
+                "node": log.node or "",
+                "content": log.content,
             }
-            for msg in reversed(messages)
+            for log in reversed(logs)
         ]
     }
 
@@ -907,3 +1146,177 @@ async def get_story_diffs(
         raise HTTPException(status_code=504, detail="Git command timed out")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get diffs: {str(e)}")
+
+
+@router.get("/{story_id}/preview-files")
+async def get_preview_files(
+    story_id: uuid.UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> dict:
+    """
+    Get workspace files for Sandpack preview.
+    Returns files formatted for Sandpack: { "/path/to/file": "content" }
+    """
+    import os
+    from pathlib import Path
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    if not story.worktree_path:
+        return {"files": {}, "error": "No workspace for this story"}
+    
+    workspace_path = Path(story.worktree_path)
+    if not workspace_path.exists():
+        return {"files": {}, "error": "Workspace not found"}
+    
+    # Files to include for preview (frontend files only)
+    INCLUDE_EXTENSIONS = {'.tsx', '.ts', '.jsx', '.js', '.css', '.html', '.json', '.md'}
+    EXCLUDE_DIRS = {'node_modules', '.git', '.next', 'dist', 'build', '.turbo', '.cache'}
+    MAX_FILE_SIZE = 100 * 1024  # 100KB max per file
+    MAX_FILES = 50  # Limit number of files
+    
+    files = {}
+    file_count = 0
+    
+    try:
+        for root, dirs, filenames in os.walk(workspace_path):
+            # Skip excluded directories
+            dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+            
+            rel_root = Path(root).relative_to(workspace_path)
+            
+            for filename in filenames:
+                if file_count >= MAX_FILES:
+                    break
+                    
+                ext = Path(filename).suffix.lower()
+                if ext not in INCLUDE_EXTENSIONS:
+                    continue
+                
+                file_path = Path(root) / filename
+                rel_path = rel_root / filename if str(rel_root) != '.' else Path(filename)
+                
+                try:
+                    if file_path.stat().st_size > MAX_FILE_SIZE:
+                        continue
+                    
+                    content = file_path.read_text(encoding='utf-8')
+                    # Sandpack expects paths starting with /
+                    sandpack_path = '/' + str(rel_path).replace('\\', '/')
+                    files[sandpack_path] = content
+                    file_count += 1
+                except Exception:
+                    # Skip files that can't be read
+                    continue
+        
+        return {
+            "files": files,
+            "file_count": len(files),
+            "workspace_path": str(workspace_path),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read workspace files: {str(e)}")
+
+
+# ===== Preview Proxy =====
+PROXY_HEADERS_SKIP = {'host', 'content-length', 'transfer-encoding', 'connection'}
+
+@router.api_route("/{story_id}/preview/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+async def proxy_preview(
+    story_id: uuid.UUID,
+    path: str,
+    request: Request,
+    session: SessionDep,
+    token: Optional[str] = Query(None),  # Accept token from query param for iframe
+):
+    """
+    Proxy requests to the story's dev server.
+    Allows full Next.js preview with API routes, hot reload, etc.
+    Token can be passed via query param for iframe support.
+    Static assets (_next/static, images, etc.) skip auth for performance.
+    """
+    # Skip auth for static assets (CSS, JS, images, fonts)
+    static_prefixes = ('_next/', 'static/', 'images/', 'fonts/', 'favicon')
+    is_static = path.startswith(static_prefixes) or path.endswith(('.css', '.js', '.png', '.jpg', '.svg', '.ico', '.woff', '.woff2'))
+    
+    if not is_static:
+        # Validate token - from query param (iframe) or header
+        auth_token = token
+        if not auth_token:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                auth_token = auth_header[7:]
+        
+        if not auth_token:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        
+        from app.core.security import decode_access_token
+        try:
+            decode_access_token(auth_token)
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    if not story.running_port:
+        raise HTTPException(
+            status_code=400, 
+            detail="Dev server not running. Start it first via the Start Server button."
+        )
+    
+    # Build target URL
+    target_url = f"http://localhost:{story.running_port}/{path}"
+    if request.url.query:
+        target_url += f"?{request.url.query}"
+    
+    # Filter headers
+    headers = {
+        k: v for k, v in request.headers.items() 
+        if k.lower() not in PROXY_HEADERS_SKIP
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Forward the request
+            resp = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                content=await request.body() if request.method in ["POST", "PUT", "PATCH"] else None,
+            )
+            
+            # Filter response headers
+            response_headers = {
+                k: v for k, v in resp.headers.items()
+                if k.lower() not in {'content-encoding', 'transfer-encoding', 'content-length'}
+            }
+            
+            content = resp.content
+            content_type = resp.headers.get('content-type', 'text/html')
+            
+            # Inject <base> tag for HTML responses to fix relative paths
+            if 'text/html' in content_type and b'<head>' in content:
+                base_url = f"/api/v1/stories/{story_id}/preview/"
+                base_tag = f'<base href="{base_url}">'.encode()
+                content = content.replace(b'<head>', b'<head>' + base_tag, 1)
+            
+            return Response(
+                content=content,
+                status_code=resp.status_code,
+                headers=response_headers,
+                media_type=content_type,
+            )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=502, 
+            detail=f"Cannot connect to dev server on port {story.running_port}. Server may have crashed."
+        )
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Dev server request timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Proxy error: {str(e)}")

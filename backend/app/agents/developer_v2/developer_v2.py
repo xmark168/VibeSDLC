@@ -137,9 +137,9 @@ class DeveloperV2(BaseAgent):
                 story.agent_state = state
                 session.commit()
 
-            logger.info(f"[{self.name}] Story {story_id} state: {old_state} → {state}")
+            logger.info(f"[{self.name}] Story {story_id} agent_state: {old_state} → {state}")
             
-            # Broadcast state change to frontend (best effort, don't fail if broadcast fails)
+            # Broadcast state change to frontend
             if project_id:
                 try:
                     await connection_manager.broadcast_to_project({
@@ -148,6 +148,7 @@ class DeveloperV2(BaseAgent):
                         "agent_state": state.value if state else None,
                         "old_state": old_state.value if old_state else None,
                     }, project_id)
+                    logger.info(f"[{self.name}] Broadcasted agent_state change: {state.value}")
                 except Exception as broadcast_err:
                     logger.warning(f"[{self.name}] Failed to broadcast state change: {broadcast_err}")
             
@@ -155,7 +156,6 @@ class DeveloperV2(BaseAgent):
 
         except Exception as e:
             logger.error(f"[{self.name}] Failed to update story state: {e}", exc_info=True)
-            # Broadcast error to frontend
             if project_id:
                 try:
                     await connection_manager.broadcast_to_project({

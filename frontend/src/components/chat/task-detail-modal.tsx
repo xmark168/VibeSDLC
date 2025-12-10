@@ -1,5 +1,5 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { KanbanCardData } from "./kanban-card"
-import { useState, useRef, useEffect, useCallback } from "react"
+import React, { useState, useRef, useEffect, useCallback } from "react"
 import { useStoryWebSocket } from "@/hooks/useStoryWebSocket"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 
@@ -104,6 +104,63 @@ function DiffsView({ storyId }: { storyId: string }) {
   )
 }
 
+// PreviewDialog component - Fullscreen iframe preview via backend proxy
+function PreviewDialog({ storyId, storyTitle, runningPort, open, onOpenChange }: { 
+  storyId: string
+  storyTitle: string
+  runningPort?: number | null
+  open: boolean
+  onOpenChange: (open: boolean) => void 
+}) {
+  const [iframeKey, setIframeKey] = useState(0)
+  
+  // Direct iframe to dev server - no proxy needed
+  const previewUrl = runningPort ? `http://localhost:${runningPort}` : null
+
+  const handleRefresh = () => setIframeKey(prev => prev + 1)
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="!max-w-none !w-screen !h-screen !max-h-screen !rounded-none !p-0 !gap-0 !translate-x-0 !translate-y-0 !top-0 !left-0 fixed inset-0">
+        <DialogHeader className="px-4 py-3 border-b shrink-0 flex flex-row items-center justify-between">
+          <div>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5" />
+              Preview: {storyTitle}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Live preview of the application
+            </DialogDescription>
+          </div>
+          {previewUrl && (
+            <Button variant="ghost" size="sm" onClick={handleRefresh} className="mr-8">
+              <RotateCcw className="w-4 h-4 mr-1" />
+              Refresh
+            </Button>
+          )}
+        </DialogHeader>
+        
+        <div className="flex-1 overflow-hidden" style={{ height: 'calc(100vh - 57px)' }}>
+          {!runningPort ? (
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+              <AlertTriangle className="w-16 h-16 mb-4 opacity-50" />
+              <p className="text-lg font-medium">Dev server not running</p>
+              <p className="text-sm mt-2">Start the dev server first using the "Dev Server" button</p>
+            </div>
+          ) : (
+            <iframe
+              key={iframeKey}
+              src={previewUrl!}
+              className="w-full h-full border-0"
+              title="App Preview"
+            />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 interface TaskDetailModalProps {
   card: KanbanCardData | null
   open: boolean
@@ -181,8 +238,71 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([])
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isActionLoading, setIsActionLoading] = useState(false)
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false)
+  const [storyLogs, setStoryLogs] = useState<Array<{id: string, content: string, level: string, timestamp: string, node: string}>>([])
   const chatScrollRef = useRef<HTMLDivElement>(null)
+  const logsScrollRef = useRef<HTMLDivElement>(null)
   const token = getToken()
+  
+  // Listen for story log messages from WebSocket
+  useEffect(() => {
+    if (!card?.id) return
+    
+    const handleStoryLog = (event: CustomEvent) => {
+      const { story_id, content, message_type, details } = event.detail
+      if (story_id === card.id && message_type === 'log') {
+        setStoryLogs(prev => [...prev, {
+          id: `${Date.now()}-${Math.random()}`,
+          content,
+          level: details?.level || 'info',
+          timestamp: details?.timestamp || new Date().toISOString(),
+          node: details?.node || ''
+        }])
+      }
+    }
+    
+    window.addEventListener('story-log', handleStoryLog as EventListener)
+    return () => window.removeEventListener('story-log', handleStoryLog as EventListener)
+  }, [card?.id])
+  
+  // Fetch historical logs and clear when modal opens for a new card
+  useEffect(() => {
+    if (open && card?.id) {
+      setStoryLogs([])
+      // Fetch historical logs from API
+      const fetchLogs = async () => {
+        try {
+          const authToken = getToken()
+          const response = await fetch(
+            `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/logs`,
+            {
+              headers: { 'Authorization': `Bearer ${authToken}` }
+            }
+          )
+          if (response.ok) {
+            const data = await response.json()
+            setStoryLogs(data.logs.map((log: any) => ({
+              id: log.id,
+              content: log.content,
+              level: log.level,
+              timestamp: log.timestamp,
+              node: log.node
+            })))
+          }
+        } catch (error) {
+          console.error('Failed to fetch logs:', error)
+        }
+      }
+      fetchLogs()
+    }
+  }, [open, card?.id])
+  
+  // Auto-scroll logs to bottom
+  useEffect(() => {
+    if (logsScrollRef.current && storyLogs.length > 0) {
+      logsScrollRef.current.scrollTop = logsScrollRef.current.scrollHeight
+    }
+  }, [storyLogs])
 
   // Cancel task handler
   const handleCancelTask = async () => {
@@ -650,27 +770,47 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
               {/* Action Buttons */}
               {agentState && (
                 <div className="mt-3 flex items-center gap-2 flex-wrap">
-                  {/* Dev Server Toggle */}
-                  {agentState === 'finished' && card.worktree_path && (
+                  {/* Dev Server Start */}
+                  {agentState === 'finished' && card.worktree_path && !card.running_port && (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={card.running_port ? handleStopDevServer : handleStartDevServer}
+                      onClick={handleStartDevServer}
                       disabled={isActionLoading}
                     >
-                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 
-                       card.running_port ? <Square className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />}
-                      {card.running_port ? 'Stop Server' : 'Dev Server'}
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+                      Dev Server
                     </Button>
                   )}
                   
-                  {/* Preview Link */}
+                  {/* Dev Server Stop - danger color */}
+                  {agentState === 'finished' && card.worktree_path && card.running_port && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleStopDevServer}
+                      disabled={isActionLoading}
+                    >
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
+                      Stop Server
+                    </Button>
+                  )}
+                  
+                  {/* Open App - success/green color */}
                   {card.running_port && (
-                    <Button variant="outline" size="sm" asChild>
+                    <Button variant="outline" size="sm" className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" asChild>
                       <a href={`http://localhost:${card.running_port}`} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="w-4 h-4" />
-                        Preview
+                        Open App
                       </a>
+                    </Button>
+                  )}
+                  
+                  {/* Preview - opens fullscreen preview dialog (requires running dev server) */}
+                  {card.running_port && (
+                    <Button variant="outline" size="sm" onClick={() => setShowPreviewDialog(true)}>
+                      <Eye className="w-4 h-4" />
+                      Preview
                     </Button>
                   )}
 
@@ -702,7 +842,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   {(agentState === 'canceled' || agentState === 'finished') && (
                     <Button variant="default" size="sm" onClick={handleRestartTask} disabled={isActionLoading}>
                       {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                      Chạy lại
+                      Restart
                     </Button>
                   )}
                 </div>
@@ -729,7 +869,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
               Logs
             </TabsTrigger>
             <TabsTrigger value="diffs" className="gap-2">
-              <FileText className="w-4 h-4" />
+              <GitBranch className="w-4 h-4" />
               Diffs
             </TabsTrigger>
           </TabsList>
@@ -1168,12 +1308,41 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
 
           {/* Logs Tab */}
           <TabsContent value="logs" className="flex-1 overflow-y-auto mt-4 min-h-0">
-            <div className="space-y-4">
-              <div className="text-center text-muted-foreground py-8">
-                <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">Activity logs coming soon...</p>
-                <p className="text-xs mt-1">View all activities and changes for this story</p>
-              </div>
+            <div ref={logsScrollRef} className="space-y-1 font-mono text-xs">
+              {storyLogs.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8">
+                  <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">No logs yet</p>
+                  <p className="text-xs mt-1">Logs will appear here when actions are performed</p>
+                </div>
+              ) : (
+                storyLogs.map((log) => (
+                  <div 
+                    key={log.id} 
+                    className={`px-3 py-1.5 rounded ${
+                      log.level === 'error' ? 'bg-red-500/10 text-red-500' :
+                      log.level === 'warning' ? 'bg-yellow-500/10 text-yellow-600' :
+                      log.level === 'success' ? 'bg-green-500/10 text-green-600' :
+                      'bg-muted/50 text-foreground'
+                    }`}
+                  >
+                    <span className="text-muted-foreground">
+                      {new Date(log.timestamp).toLocaleTimeString('vi-VN')}
+                    </span>
+                    {' '}
+                    <span className={`font-semibold uppercase ${
+                      log.level === 'error' ? 'text-red-500' :
+                      log.level === 'warning' ? 'text-yellow-600' :
+                      log.level === 'success' ? 'text-green-600' :
+                      'text-blue-500'
+                    }`}>
+                      [{log.level}]
+                    </span>
+                    {' '}
+                    {log.content}
+                  </div>
+                ))
+              )}
             </div>
           </TabsContent>
 
@@ -1201,6 +1370,8 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
               )}
             </div>
           </TabsContent>
+
+
         </Tabs>
       </DialogContent>
 
@@ -1275,6 +1446,17 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
             </div>
           </DialogContent>
         </Dialog>
+      )}
+      
+      {/* Preview Dialog - Fullscreen iframe via backend proxy */}
+      {card && (
+        <PreviewDialog
+          storyId={card.id}
+          storyTitle={card.content}
+          runningPort={card.running_port}
+          open={showPreviewDialog}
+          onOpenChange={setShowPreviewDialog}
+        />
       )}
     </Dialog>
   )

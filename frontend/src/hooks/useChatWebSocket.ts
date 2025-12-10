@@ -206,6 +206,10 @@ export function useChatWebSocket(
         handleStoryMessage(msg)
         break
       
+      case 'story_state_changed':
+        handleStoryStateChanged(msg)
+        break
+      
       default:
         console.warn('[WebSocket] ⚠️ Unknown message type:', msg.type)
     }
@@ -615,9 +619,22 @@ export function useChatWebSocket(
   }
   
   const handleStoryMessage = (msg: any) => {
-    console.log('[WS] 📋 Story message:', msg.story_id, msg.content)
+    console.log('[WS] 📋 Story message:', msg.story_id, msg.content, msg.message_type)
     
-    // Show toast notification
+    // Dispatch log event for log messages (to show in Logs tab)
+    if (msg.message_type === 'log') {
+      window.dispatchEvent(new CustomEvent('story-log', {
+        detail: { 
+          story_id: msg.story_id, 
+          content: msg.content,
+          message_type: msg.message_type,
+          details: msg.details
+        }
+      }))
+      return // Don't show toast for log messages
+    }
+    
+    // Show toast notification for other messages
     toast(msg.content, {
       description: msg.message_type === 'system' ? 'System' : undefined,
     })
@@ -628,6 +645,21 @@ export function useChatWebSocket(
         detail: { story_id: msg.story_id, agent_state: msg.agent_state }
       }))
     }
+  }
+  
+  const handleStoryStateChanged = (msg: any) => {
+    console.log('[WS] 🔄 Story state changed:', msg.story_id, msg)
+    
+    // Dispatch custom event for components to listen
+    window.dispatchEvent(new CustomEvent('story-state-changed', {
+      detail: { 
+        story_id: msg.story_id, 
+        agent_state: msg.agent_state,
+        old_state: msg.old_state,
+        running_port: msg.running_port,
+        running_pid: msg.running_pid,
+      }
+    }))
   }
   
   const handleQuestionAnswerReceived = (msg: any) => {
