@@ -62,8 +62,8 @@ export const ProjectList = ({ projects, onCreateProject }: ProjectListProps) => 
     },
   })
 
-  const handleDeleteProject = (projectId: string) => {
-    deleteProjectMutation.mutate(projectId)
+  const handleDeleteProject = async (projectId: string) => {
+    await deleteProjectMutation.mutateAsync(projectId)
   }
 
   const handleCleanupWorktrees = (projectId: string) => {

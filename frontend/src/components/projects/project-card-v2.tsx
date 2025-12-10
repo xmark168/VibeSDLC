@@ -8,6 +8,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DeleteProjectDialog } from "./delete-project-dialog";
 
 interface ProjectCardProps {
     title: string;
@@ -77,14 +78,19 @@ export function ProjectCard({
     onCleanup,
 }: ProjectCardProps) {
     const [isHovered, setIsHovered] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const statusInfo = statusConfig[status];
     
-    const handleDelete = (e: React.MouseEvent) => {
+    const handleDeleteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
+        if (projectId) {
+            setDeleteDialogOpen(true);
+        }
+    };
+    
+    const handleDeleteConfirm = async () => {
         if (projectId && onDelete) {
-            if (confirm(`Are you sure you want to delete project "${title}"? This will also delete all workspace files.`)) {
-                onDelete(projectId);
-            }
+            await onDelete(projectId);
         }
     };
     
@@ -199,12 +205,23 @@ export function ProjectCard({
                                 Clean Worktrees
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={handleDelete} className="text-destructive">
+                            <DropdownMenuItem onClick={handleDeleteClick} className="text-destructive">
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 Delete Project
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
+                    
+                    {/* Delete Confirmation Dialog */}
+                    {projectId && (
+                        <DeleteProjectDialog
+                            projectId={projectId}
+                            projectName={title}
+                            open={deleteDialogOpen}
+                            onOpenChange={setDeleteDialogOpen}
+                            onConfirm={handleDeleteConfirm}
+                        />
+                    )}
                 </div>
             </div>
 

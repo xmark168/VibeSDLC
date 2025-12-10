@@ -245,6 +245,17 @@ Each step: file_path, action, task, dependencies."""
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Zero-shot planning with FileRepository."""
+    from langgraph.types import interrupt
+    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[plan] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
+    
     logger.debug("[NODE] plan")
     workspace_path = state.get("workspace_path", "")
     tech_stack = state.get("tech_stack", "nextjs")
@@ -286,6 +297,13 @@ Create implementation plan. Output JSON steps directly."""
         structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
         result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "plan_zero_shot"))
         flush_langfuse(state)
+        
+        # Check for interrupt after LLM call
+        if story_id:
+            signal = check_interrupt_signal(story_id)
+            if signal:
+                logger.info(f"[plan] Interrupt after LLM: {signal}")
+                interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
         
         steps = result.model_dump().get("steps", [])
         logger.debug(f"[plan] Got {len(steps)} steps")
@@ -338,7 +356,7 @@ Create implementation plan. Output JSON steps directly."""
             except Exception:
                 pass
         
-        return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "skill_registry": skill_registry, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
+        return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
     except Exception as e:
         logger.warning(f"[plan] Zero-shot failed: {e}")
         return await _plan_with_exploration(state, agent)
@@ -396,7 +414,11 @@ async def _plan_with_exploration(state: DeveloperState, agent=None) -> Developer
         from app.agents.developer_v2.src.nodes.parallel_utils import group_steps_by_layer, should_use_parallel
         layers = group_steps_by_layer(steps)
         
-        return {**state, "task_type": "feature", "complexity": "medium" if len(steps) <= 5 else "high", "implementation_plan": steps, "dependencies_content": deps_content, "total_steps": len(steps), "current_step": 0, "skill_registry": skill_registry, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": should_use_parallel(steps), "action": "IMPLEMENT"}
+        return {**state, "task_type": "feature", "complexity": "medium" if len(steps) <= 5 else "high", "implementation_plan": steps, "dependencies_content": deps_content, "total_steps": len(steps), "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": should_use_parallel(steps), "action": "IMPLEMENT"}
     except Exception as e:
+        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        from langgraph.errors import GraphInterrupt
+        if isinstance(e, GraphInterrupt):
+            raise
         logger.error(f"[plan] Error: {e}", exc_info=True)
         return {**state, "error": str(e), "action": "RESPOND"}

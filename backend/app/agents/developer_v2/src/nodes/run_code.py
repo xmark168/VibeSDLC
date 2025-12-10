@@ -385,6 +385,17 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
     3. Build all services (install → typecheck → build)
     4. Start dev server if build passes
     """
+    from langgraph.types import interrupt
+    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[run_code] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "run_code"})
+    
     logger.debug("[NODE] run_code")
     
     workspace_path = state.get("workspace_path", "")
@@ -493,6 +504,10 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         }
         
     except Exception as e:
+        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        from langgraph.errors import GraphInterrupt
+        if isinstance(e, GraphInterrupt):
+            raise
         logger.error(f"[run_code] Error: {e}", exc_info=True)
         if run_code_span:
             run_code_span.end(output={"error": str(e)})

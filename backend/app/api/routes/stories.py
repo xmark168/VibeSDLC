@@ -446,6 +446,65 @@ async def get_story_messages(
     }
 
 
+class SendMessageRequest(BaseModel):
+    content: str
+
+
+@router.post("/{story_id}/messages")
+async def send_story_message(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID,
+    request: SendMessageRequest
+) -> Any:
+    """Send a message to story channel."""
+    from app.models import StoryMessage
+    from app.websocket.connection_manager import connection_manager
+    
+    # Verify story exists
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Create message
+    message = StoryMessage(
+        story_id=story_id,
+        author_type="user",
+        author_name=current_user.full_name or current_user.email,
+        user_id=current_user.id,
+        content=request.content,
+        message_type="text",
+    )
+    session.add(message)
+    session.commit()
+    session.refresh(message)
+    
+    # Broadcast via WebSocket
+    await connection_manager.broadcast_to_project(
+        {
+            "type": "story_message",
+            "story_id": str(story_id),
+            "message_id": str(message.id),
+            "author_type": "user",
+            "author_name": message.author_name,
+            "content": message.content,
+            "message_type": "text",
+            "timestamp": message.created_at.isoformat() if message.created_at else None,
+        },
+        story.project_id
+    )
+    
+    return {
+        "id": str(message.id),
+        "author_type": message.author_type,
+        "author_name": message.author_name,
+        "content": message.content,
+        "message_type": message.message_type,
+        "created_at": message.created_at.isoformat() if message.created_at else None,
+    }
+
+
 # ===== Agent Task Control =====
 @router.post("/{story_id}/cancel")
 async def cancel_story_task(
@@ -473,8 +532,9 @@ async def cancel_story_task(
         story.running_pid = None
         story.running_port = None
     
-    # Update state to canceled
+    # Update state to canceled and clear checkpoint (cancel = permanent stop)
     story.agent_state = StoryAgentState.CANCELED
+    story.checkpoint_thread_id = None  # Clear checkpoint - cancel means no resume
     session.add(story)
     session.commit()
     
@@ -516,8 +576,9 @@ async def pause_story_task(
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     
-    if story.agent_state != StoryAgentState.PROCESSING:
-        raise HTTPException(status_code=400, detail="Can only pause processing tasks")
+    # Allow pause for both PENDING and PROCESSING states
+    if story.agent_state not in [StoryAgentState.PENDING, StoryAgentState.PROCESSING]:
+        raise HTTPException(status_code=400, detail="Can only pause pending or processing tasks")
     
     # Update state to paused
     story.agent_state = StoryAgentState.PAUSED
@@ -604,17 +665,45 @@ async def restart_story_task(
     """Restart agent task for story (re-publish Kafka event)."""
     from app.models.base import StoryAgentState
     from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+    import subprocess
     
     story = session.get(Story, story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     
-    # Reset state
+    # Discard old changes in worktree (if exists)
+    if story.worktree_path:
+        try:
+            # Reset all changes to HEAD
+            subprocess.run(
+                ["git", "checkout", "--", "."],
+                cwd=story.worktree_path,
+                capture_output=True,
+                timeout=30
+            )
+            # Remove untracked files
+            subprocess.run(
+                ["git", "clean", "-fd"],
+                cwd=story.worktree_path,
+                capture_output=True,
+                timeout=30
+            )
+        except Exception as e:
+            # Log but don't fail - worktree might not exist
+            import logging
+            logging.warning(f"Failed to cleanup worktree for story {story_id}: {e}")
+    
+    # Reset state and clear checkpoint (start fresh, not resume)
     story.agent_state = StoryAgentState.PENDING
     story.running_pid = None
     story.running_port = None
+    story.checkpoint_thread_id = None  # Clear checkpoint to start fresh
     session.add(story)
     session.commit()
+    
+    # Clear any leftover cancel/pause signals from previous run
+    from app.agents.core.task_registry import clear_signals
+    clear_signals(str(story_id))
     
     # Broadcast WebSocket notification
     from app.websocket.connection_manager import connection_manager

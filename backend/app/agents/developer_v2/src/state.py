@@ -22,8 +22,7 @@ class DeveloperState(TypedDict, total=False):
     project_id: str
     task_id: str
     user_id: str
-    langfuse_handler: Any
-    langfuse_client: Any
+    # NOTE: langfuse_handler/langfuse_client removed - not serializable for checkpointing
 
     # Flow control
     action: Action
@@ -71,7 +70,7 @@ class DeveloperState(TypedDict, total=False):
 
     # Skills
     tech_stack: str
-    skill_registry: Any
+    # skill_registry not stored - contains non-serializable Path objects, loaded on-demand
     available_skills: List[str]
 
     # Context

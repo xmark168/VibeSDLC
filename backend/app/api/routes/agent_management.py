@@ -108,7 +108,7 @@ async def initialize_default_pools() -> None:
     """Initialize agent pools with in-memory management.
 
     Uses AgentPoolManager with configurable pool strategy:
-    - Single universal pool (default) or role-specific pools
+    - Creates universal pool per role if no pools exist
     - Config-driven max_agents and health check intervals
     - Auto-scaling support via AgentMonitor
     - Built-in health monitoring
@@ -117,6 +117,7 @@ async def initialize_default_pools() -> None:
     from sqlmodel import Session, select
     from app.core.db import engine
     from app.core.config import settings
+    from app.models import AgentPool
 
     logger = logging.getLogger(__name__)
     global ROLE_CLASS_MAP
@@ -127,14 +128,24 @@ async def initialize_default_pools() -> None:
 
     logger.info("🚀 Initializing agent pool managers (optimized architecture)")
     
-    if settings.AGENT_POOL_USE_ROLE_SPECIFIC:
-        # Create role-specific pools
-        logger.info("📦 Creating role-specific pools...")
+    # Check if any pools exist in database
+    with Session(engine) as db_session:
+        existing_pools = db_session.exec(select(AgentPool)).all()
+        has_pools = len(existing_pools) > 0
+    
+    if has_pools:
+        # Restore existing pools from database
+        logger.info(f"📦 Found {len(existing_pools)} existing pools in database, restoring...")
+        for db_pool in existing_pools:
+            if db_pool.role_type:
+                await _initialize_role_pool(logger, db_pool.role_type, ROLE_CLASS_MAP)
+            else:
+                await _initialize_pool(logger, ROLE_CLASS_MAP)
+    else:
+        # No pools exist - create universal pool per role
+        logger.info("📦 No pools found, creating universal pool per role...")
         for role_type in ROLE_CLASS_MAP.keys():
             await _initialize_role_pool(logger, role_type, ROLE_CLASS_MAP)
-    else:
-        # Create single universal pool
-        await _initialize_pool(logger, ROLE_CLASS_MAP)
 
 
 async def _initialize_pool(logger, role_class_map) -> None:

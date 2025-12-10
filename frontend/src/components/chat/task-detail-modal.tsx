@@ -1,5 +1,5 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import type { KanbanCardData } from "./kanban-card"
 import { useState, useRef, useEffect, useCallback } from "react"
 import { useStoryWebSocket } from "@/hooks/useStoryWebSocket"
+import { ErrorBoundary } from "@/components/shared/error-boundary"
 
 // DiffsView component for showing git diffs
 function DiffsView({ storyId }: { storyId: string }) {
@@ -433,19 +434,37 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
 
   if (!card) return null
 
-  const handleSendMessage = () => {
-    if (!chatMessage.trim()) return
+  const handleSendMessage = async () => {
+    if (!chatMessage.trim() || !card?.id) return
 
-    const newMessage: ChatMessage = {
-      id: Date.now().toString(),
-      author: 'Current User',
-      author_type: 'user',
-      content: chatMessage,
-      timestamp: new Date().toISOString(),
+    const messageContent = chatMessage.trim()
+    setChatMessage("") // Clear immediately for better UX
+
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ content: messageContent }),
+        }
+      )
+
+      if (!response.ok) {
+        // Restore message on error
+        setChatMessage(messageContent)
+        console.error('Failed to send message:', response.status)
+      }
+      // Message will arrive via WebSocket, no need to manually add
+    } catch (error) {
+      // Restore message on error
+      setChatMessage(messageContent)
+      console.error('Failed to send message:', error)
     }
-
-    setChatMessages(prev => [...prev, newMessage])
-    setChatMessage("")
   }
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -655,8 +674,8 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                     </Button>
                   )}
 
-                  {/* Pause when processing */}
-                  {agentState === 'processing' && (
+                  {/* Pause when pending or processing */}
+                  {(agentState === 'pending' || agentState === 'processing') && (
                     <Button variant="outline" size="sm" onClick={handlePauseTask} disabled={isActionLoading}>
                       {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />}
                       Tạm dừng
@@ -1162,7 +1181,17 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
           <TabsContent value="diffs" className="flex-1 overflow-y-auto mt-4 min-h-0">
             <div className="space-y-4">
               {card.worktree_path ? (
-                <DiffsView storyId={card.id} />
+                <ErrorBoundary
+                  fallback={
+                    <div className="text-center text-destructive/70 py-8">
+                      <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                      <p className="text-sm">Failed to load diffs</p>
+                      <p className="text-xs mt-1">Please try refreshing the page</p>
+                    </div>
+                  }
+                >
+                  <DiffsView storyId={card.id} />
+                </ErrorBoundary>
               ) : (
                 <div className="text-center text-muted-foreground py-8">
                   <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />

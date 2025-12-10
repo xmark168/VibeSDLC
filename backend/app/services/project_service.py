@@ -276,11 +276,49 @@ class ProjectService:
         import shutil
         import stat
         import os
+        import time
+        import subprocess
+        import sys
         
-        def remove_readonly(func, path, excinfo):
-            """Handle Windows readonly files (e.g., .git objects)."""
-            os.chmod(path, stat.S_IWRITE)
-            func(path)
+        def force_remove_tree(path: Path, max_retries: int = 3) -> bool:
+            """Force remove directory tree with multiple strategies."""
+            path_str = str(path)
+            
+            # On Windows, use extended path prefix for long paths
+            if sys.platform == 'win32' and not path_str.startswith('\\\\?\\'):
+                path_str = '\\\\?\\' + os.path.abspath(path_str)
+            
+            def remove_readonly(func, fpath, excinfo):
+                """Handle Windows readonly files."""
+                try:
+                    os.chmod(fpath, stat.S_IWRITE | stat.S_IREAD)
+                    func(fpath)
+                except Exception:
+                    pass
+            
+            for attempt in range(max_retries):
+                try:
+                    if path.exists():
+                        shutil.rmtree(path, onerror=remove_readonly)
+                    return True
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        time.sleep(0.5)  # Wait before retry
+                        # On Windows, try using rmdir /s /q as fallback
+                        if sys.platform == 'win32':
+                            try:
+                                subprocess.run(
+                                    ['cmd', '/c', 'rmdir', '/s', '/q', str(path)],
+                                    capture_output=True,
+                                    timeout=60
+                                )
+                                if not path.exists():
+                                    return True
+                            except Exception:
+                                pass
+                    else:
+                        logger.warning(f"Failed to remove {path} after {max_retries} attempts: {e}")
+            return False
         
         db_project = self.session.get(Project, project_id)
         if not db_project:
@@ -297,13 +335,19 @@ class ProjectService:
             project_dir = backend_root / db_project.project_path
             
             if project_dir.exists():
-                try:
-                    shutil.rmtree(project_dir, onerror=remove_readonly)
+                # First try to remove .next and node_modules (common large dirs)
+                for subdir in ['.next', 'node_modules', '.worktrees']:
+                    subpath = project_dir / subdir
+                    if subpath.exists():
+                        force_remove_tree(subpath)
+                
+                # Then remove the main directory
+                if force_remove_tree(project_dir):
                     logger.info(f"Deleted project directory: {project_dir}")
-                except Exception as e:
-                    logger.error(f"Failed to delete project directory {project_dir}: {e}")
+                else:
+                    logger.error(f"Failed to fully delete project directory {project_dir}")
         
-        # Delete from database
+        # Delete from database regardless of file cleanup result
         self.session.delete(db_project)
         self.session.commit()
         logger.info(f"Deleted project {project_code} (ID: {project_id}) with cleanup")

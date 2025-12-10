@@ -360,6 +360,37 @@ def _run_prisma_generate(workspace_path: str) -> bool:
         return False
 
 
+def _run_prisma_db_push(workspace_path: str) -> bool:
+    """Run prisma db push (blocking). Returns True if successful."""
+    schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
+    if not os.path.exists(schema_path):
+        return True  # No schema, nothing to push
+    
+    try:
+        result = subprocess.run(
+            "pnpm exec prisma db push --skip-generate --accept-data-loss",
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=120,
+            shell=True,
+        )
+        if result.returncode == 0:
+            logger.debug("[setup_workspace] prisma db push successful")
+            return True
+        else:
+            logger.warning(f"[setup_workspace] prisma db push failed: {result.stderr[:200] if result.stderr else 'unknown'}")
+            return False
+    except subprocess.TimeoutExpired:
+        logger.warning("[setup_workspace] prisma db push timed out")
+        return False
+    except Exception as e:
+        logger.warning(f"[setup_workspace] prisma db push error: {e}")
+        return False
+
+
 def _start_database(workspace_path: str, story_id: str = None) -> dict:
     """Start postgres container (blocking). Returns db_info dict."""
     try:
@@ -434,6 +465,17 @@ def _build_project_config(tech_stack: str = "nextjs") -> dict:
 
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
     """Setup git workspace/branch for code modification."""
+    from langgraph.types import interrupt
+    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[setup_workspace] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "setup_workspace"})
+    
     logger.debug("[NODE] setup_workspace")
     try:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
@@ -545,12 +587,17 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             "agents_md": agents_md,
             "project_context": project_context,
             "tech_stack": tech_stack,
-            "skill_registry": skill_registry,
+            # skill_registry not stored in state - contains non-serializable Path objects
+            # It's re-loaded on demand in nodes that need it
             "available_skills": skill_registry.get_skill_ids(),
             "project_config": project_config,
         }
         
     except Exception as e:
+        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        from langgraph.errors import GraphInterrupt
+        if isinstance(e, GraphInterrupt):
+            raise
         logger.error(f"[setup_workspace] Error: {e}", exc_info=True)
         return {
             **state,

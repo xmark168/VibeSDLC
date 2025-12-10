@@ -22,6 +22,135 @@ from app.agents.developer_v2.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Git Helper Functions for commit-per-step workflow (with retry)
+# =============================================================================
+
+from app.agents.developer_v2.src.utils.story_logger import git_with_retry
+
+
+def git_commit_step(workspace_path: str, step_num: int, description: str, files: List[str] = None) -> bool:
+    """Commit changes after a successful implement step (with retry).
+    
+    Args:
+        workspace_path: Path to git repository
+        step_num: Step number for commit message
+        description: Brief description of changes
+        files: Specific files to commit, or None for all changes
+    
+    Returns:
+        True if commit succeeded, False otherwise
+    """
+    try:
+        # Stage files with retry
+        if files:
+            for f in files:
+                try:
+                    git_with_retry(["git", "add", f], cwd=workspace_path)
+                except Exception:
+                    pass  # Individual file add failure is OK
+        else:
+            git_with_retry(["git", "add", "-A"], cwd=workspace_path)
+        
+        # Check if there are staged changes
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=workspace_path, capture_output=True, timeout=30
+        )
+        if result.returncode == 0:
+            logger.debug(f"[git] No changes to commit for step {step_num}")
+            return True
+        
+        # Commit with WIP message (with retry)
+        msg = f"wip: step {step_num} - {description[:50]}"
+        git_with_retry(["git", "commit", "-m", msg, "--no-verify"], cwd=workspace_path)
+        logger.info(f"[git] Committed step {step_num}: {description[:50]}")
+        return True
+    except Exception as e:
+        logger.warning(f"[git] Commit error (after retries): {e}")
+        return False
+
+
+def git_revert_uncommitted(workspace_path: str) -> bool:
+    """Revert uncommitted changes (used on pause, with retry).
+    
+    Returns:
+        True if revert succeeded, False otherwise
+    """
+    try:
+        # Discard unstaged changes with retry
+        git_with_retry(["git", "checkout", "."], cwd=workspace_path)
+        # Remove untracked files
+        git_with_retry(["git", "clean", "-fd"], cwd=workspace_path)
+        logger.info(f"[git] Reverted uncommitted changes")
+        return True
+    except Exception as e:
+        logger.warning(f"[git] Revert error: {e}")
+        return False
+
+
+def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
+    """Reset all changes to base branch (used on cancel, with retry).
+    
+    Returns:
+        True if reset succeeded, False otherwise
+    """
+    try:
+        # Get the merge-base with origin
+        result = subprocess.run(
+            ["git", "merge-base", f"origin/{base_branch}", "HEAD"],
+            cwd=workspace_path, capture_output=True, timeout=30
+        )
+        if result.returncode == 0:
+            base_commit = result.stdout.decode().strip()
+            git_with_retry(["git", "reset", "--hard", base_commit], cwd=workspace_path)
+            logger.info(f"[git] Reset to {base_commit[:8]}")
+            return True
+        else:
+            # Fallback: just reset to origin/base_branch
+            git_with_retry(["git", "reset", "--hard", f"origin/{base_branch}"], cwd=workspace_path)
+            logger.info(f"[git] Reset to origin/{base_branch}")
+            return True
+    except Exception as e:
+        logger.warning(f"[git] Reset error: {e}")
+        return False
+
+
+def git_squash_wip_commits(workspace_path: str, base_branch: str = "main", final_message: str = None) -> bool:
+    """Squash all WIP commits into a single commit (used on finish, with retry).
+    
+    Args:
+        workspace_path: Path to git repository
+        base_branch: Base branch to squash from
+        final_message: Final commit message, or None to auto-generate
+    
+    Returns:
+        True if squash succeeded, False otherwise
+    """
+    try:
+        # Get merge-base
+        result = subprocess.run(
+            ["git", "merge-base", f"origin/{base_branch}", "HEAD"],
+            cwd=workspace_path, capture_output=True, timeout=30
+        )
+        if result.returncode != 0:
+            return False
+        
+        base_commit = result.stdout.decode().strip()
+        
+        # Soft reset to base with retry
+        git_with_retry(["git", "reset", "--soft", base_commit], cwd=workspace_path)
+        
+        # Commit with final message
+        msg = final_message or "feat: implement story"
+        git_with_retry(["git", "commit", "-m", msg, "--no-verify"], cwd=workspace_path)
+        logger.info(f"[git] Squashed commits: {msg}")
+        return True
+    except Exception as e:
+        logger.warning(f"[git] Squash error: {e}")
+        return False
+
+
 def _build_modified_files_context(files_modified: list) -> str:
     return "\n".join(f"- {f}" for f in files_modified) if files_modified else "None"
 
@@ -106,6 +235,17 @@ def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundl
 
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute implementation step with preloaded skills."""
+    from langgraph.types import interrupt
+    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    
+    # Check for pause/cancel signal (triggers LangGraph interrupt)
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[implement] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
+    
     reset_modified_files()
     current_step, total_steps = state.get("current_step", 0), state.get("total_steps", 0)
     logger.debug(f"[NODE] implement {current_step + 1}/{total_steps}")
@@ -194,6 +334,13 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         response = await get_llm_for_skills(step_skills).ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "implement_code"))
         
+        # Check for interrupt after LLM call (can be long-running)
+        if story_id:
+            signal = check_interrupt_signal(story_id)
+            if signal:
+                logger.info(f"[implement] Interrupt after LLM: {signal}")
+                interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
+        
         output = _parse_implement_output(response.content or "")
         if output and file_path:
             fp = os.path.join(workspace_path, file_path)
@@ -235,11 +382,19 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                     except:
                         pass
         
+        # Git commit after each successful step
+        step_desc = f"{action} {file_path}" if file_path else task[:50]
+        git_commit_step(workspace_path, current_step + 1, step_desc, new_modified if new_modified else None)
+        
         complexity = state.get("complexity", "medium")
         next_step = current_step + 1 if complexity == "low" else current_step
         
-        return {**state, "current_step": next_step, "_last_implement_step": current_step, "react_loop_count": react_loop, "debug_count": debug_count, "review_count": review_count, "run_status": None, "skill_registry": skill_registry, "files_modified": all_modified, "dependencies_content": deps, "action": "IMPLEMENT" if next_step < len(plan_steps) else "VALIDATE"}
+        return {**state, "current_step": next_step, "_last_implement_step": current_step, "react_loop_count": react_loop, "debug_count": debug_count, "review_count": review_count, "run_status": None, "files_modified": all_modified, "dependencies_content": deps, "action": "IMPLEMENT" if next_step < len(plan_steps) else "VALIDATE"}
     except Exception as e:
+        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        from langgraph.errors import GraphInterrupt
+        if isinstance(e, GraphInterrupt):
+            raise
         logger.error(f"[implement] Error: {e}", exc_info=True)
         return {**state, "error": str(e), "action": "RESPOND"}
 
@@ -296,6 +451,17 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
 
 async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute steps in parallel by layer."""
+    from langgraph.types import interrupt
+    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[implement_parallel] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "implement_parallel"})
+    
     logger.debug("[NODE] implement_parallel")
     try:
         plan_steps = state.get("implementation_plan", [])
@@ -316,7 +482,17 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             if "/components/" in fp and fp.endswith(".tsx"):
                 created_components[os.path.basename(fp).replace(".tsx", "")] = "@/" + fp.replace(".tsx", "")
         
-        for layer_num in sorted(layers.keys()):
+        sorted_layer_keys = sorted(layers.keys())
+        total_layers = len(sorted_layer_keys)
+        
+        for layer_idx, layer_num in enumerate(sorted_layer_keys, 1):
+            # Check for interrupt before each layer
+            if story_id:
+                signal = check_interrupt_signal(story_id)
+                if signal:
+                    logger.info(f"[implement_parallel] Interrupt at layer {layer_idx}/{total_layers}: {signal}")
+                    interrupt({"reason": signal, "story_id": story_id, "node": "implement_parallel", "layer": layer_idx})
+            
             layer_steps = layers[layer_num]
             is_parallel = len(layer_steps) > 1 and layer_num >= 5
             
@@ -331,7 +507,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                         more = f" +{len(layer_steps)-3}" if len(layer_steps) > 3 else ""
                         await agent.message_story(
                             story_uuid,
-                            f"⚙️ Layer {layer_num}/{len(layers)}: {files_list}{more}",
+                            f"⚙️ Layer {layer_idx}/{total_layers}: {files_list}{more}",
                             message_type="progress"
                         )
                 except Exception:
@@ -385,8 +561,18 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                                     created_components[os.path.basename(fp).replace(".tsx", "")] = "@/" + fp.replace(".tsx", "")
                             except:
                                 pass
+            
+            # Git commit after each layer
+            layer_files = [r.get("file_path") for r in results if r.get("success") and r.get("file_path")]
+            if layer_files:
+                layer_desc = f"layer {layer_num} - {len(layer_files)} files"
+                git_commit_step(workspace_path, layer_num, layer_desc, layer_files)
         
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:
+        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        from langgraph.errors import GraphInterrupt
+        if isinstance(e, GraphInterrupt):
+            raise
         logger.error(f"[implement_parallel] Error: {e}", exc_info=True)
         return {**state, "error": str(e), "action": "RESPOND"}

@@ -772,11 +772,14 @@ class StoryService:
     def get_kanban_board(self, project_id: UUID) -> Dict[str, Any]:
         """Get Kanban board grouped by columns with WIP limits.
 
+        Pre-computes blocked state for stories with dependencies to optimize
+        frontend O(n^2) computation.
+
         Args:
             project_id: Project UUID
 
         Returns:
-            Dict with board data and WIP limits
+            Dict with board data, WIP limits, and pre-computed blocked states
         """
         from sqlalchemy.orm import selectinload
 
@@ -793,6 +796,15 @@ class StoryService:
         ).order_by(Story.status, Story.rank)
 
         stories = self.session.exec(statement).all()
+
+        # Pre-compute: Build set of completed story IDs (Done or Archived)
+        completed_story_ids = {
+            str(story.id) for story in stories
+            if story.status in [StoryStatus.DONE, StoryStatus.ARCHIVED]
+        }
+        
+        # Build story lookup map for dependency resolution
+        story_map = {str(story.id): story for story in stories}
 
         # Group by status
         board = {
@@ -813,7 +825,22 @@ class StoryService:
                     story_data.epic_title = story.epic.title
                     story_data.epic_description = story.epic.description
                     story_data.epic_domain = story.epic.domain
-                board[column].append(story_data)
+                
+                # Pre-compute blocked state (skip for Done/Archived columns)
+                is_blocked = False
+                blocked_by_count = 0
+                if column not in ["Done", "Archived"] and story.dependencies:
+                    # Count incomplete dependencies
+                    for dep_id in story.dependencies:
+                        if dep_id and dep_id not in completed_story_ids:
+                            blocked_by_count += 1
+                    is_blocked = blocked_by_count > 0
+                
+                # Add computed fields to response
+                story_dict = story_data.model_dump()
+                story_dict["is_blocked"] = is_blocked
+                story_dict["blocked_by_count"] = blocked_by_count
+                board[column].append(story_dict)
 
         # Get WIP limits
         wip_limits = {}
@@ -1091,16 +1118,47 @@ class StoryService:
 
     # ===== Private Kafka Publishing Methods =====
 
+    async def _publish_with_retry(
+        self,
+        publish_func,
+        max_retries: int = 3,
+        backoff_base: float = 0.5
+    ) -> bool:
+        """Publish to Kafka with retry and exponential backoff.
+        
+        Args:
+            publish_func: Async function that performs the publish
+            max_retries: Maximum retry attempts
+            backoff_base: Base for exponential backoff (seconds)
+        
+        Returns:
+            True if successful, False if all retries failed
+        """
+        import asyncio
+        
+        for attempt in range(max_retries):
+            try:
+                await publish_func()
+                return True
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = backoff_base * (2 ** attempt)
+                    logger.warning(f"Kafka publish retry {attempt + 1}/{max_retries} after {wait_time}s: {e}")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"Kafka publish failed after {max_retries} attempts: {e}")
+        return False
+
     async def _publish_story_event(
         self,
         event_type: str,
         story: Story,
         user_id: UUID
     ) -> None:
-        """Publish story created event to Kafka."""
-        try:
-            from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+        """Publish story created event to Kafka with retry."""
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
 
+        async def publish():
             producer = await get_kafka_producer()
             await producer.publish(
                 topic=KafkaTopics.STORY_EVENTS,
@@ -1119,8 +1177,8 @@ class StoryService:
                     created_by_agent=None,
                 ),
             )
-        except Exception as e:
-            logger.error(f"Failed to publish {event_type} event: {e}")
+        
+        await self._publish_with_retry(publish)
 
     async def _publish_status_changed_event(
         self,
@@ -1130,10 +1188,10 @@ class StoryService:
         user_id: UUID,
         user_email: str
     ) -> None:
-        """Publish story status changed event to Kafka."""
-        try:
-            from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+        """Publish story status changed event to Kafka with retry."""
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
 
+        async def publish():
             producer = await get_kafka_producer()
             await producer.publish(
                 topic=KafkaTopics.STORY_EVENTS,
@@ -1148,8 +1206,8 @@ class StoryService:
                     transition_reason=f"Updated by {user_email}",
                 ),
             )
-        except Exception as e:
-            logger.error(f"Failed to publish status changed event: {e}")
+        
+        await self._publish_with_retry(publish)
 
     async def _publish_story_updated_event(
         self,
@@ -1157,10 +1215,10 @@ class StoryService:
         update_data: Dict[str, Any],
         user_id: UUID
     ) -> None:
-        """Publish story updated event to Kafka."""
-        try:
-            from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+        """Publish story updated event to Kafka with retry."""
+        from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
 
+        async def publish():
             producer = await get_kafka_producer()
             await producer.publish(
                 topic=KafkaTopics.STORY_EVENTS,
@@ -1173,5 +1231,5 @@ class StoryService:
                     updated_by=str(user_id),
                 ),
             )
-        except Exception as e:
-            logger.error(f"Failed to publish story updated event: {e}")
+        
+        await self._publish_with_retry(publish)

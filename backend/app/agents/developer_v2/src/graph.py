@@ -44,6 +44,23 @@ def route_after_test(state: DeveloperState) -> Literal["analyze_error", "__end__
     return "analyze_error" if state.get("debug_count", 0) < 5 else "__end__"
 
 
+def route_after_parallel(state: DeveloperState) -> Literal["run_code", "implement"]:
+    """Route after parallel implement - fallback to sequential if errors."""
+    parallel_errors = state.get("parallel_errors")
+    
+    # If parallel had errors, fallback to sequential implement
+    if parallel_errors and len(parallel_errors) > 0:
+        # Check if we haven't already tried sequential fallback
+        if not state.get("_tried_sequential_fallback"):
+            import logging
+            logging.getLogger(__name__).warning(
+                f"[graph] Parallel implement had {len(parallel_errors)} errors, falling back to sequential"
+            )
+            return "implement"
+    
+    return "run_code"
+
+
 def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__end__"]:
     return "implement" if state.get("action") == "IMPLEMENT" else "__end__"
 
@@ -111,8 +128,9 @@ class DeveloperGraph:
         
         if parallel:
             g.add_edge("plan", "implement_parallel")
-            g.add_edge("implement_parallel", "run_code")
-            g.add_edge("implement", "run_code")
+            # Parallel → run_code, but fallback to sequential if errors
+            g.add_conditional_edges("implement_parallel", route_after_parallel)
+            g.add_edge("implement", "run_code")  # Sequential fallback path
         else:
             g.add_edge("plan", "implement")
             g.add_conditional_edges("implement", route_after_implement)

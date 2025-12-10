@@ -401,3 +401,75 @@ def cleanup_project_worktrees(
         "deleted_count": deleted_count,
         "project_id": str(project_id),
     }
+
+
+@router.get("/{project_id}/deletion-preview", status_code=status.HTTP_200_OK)
+def preview_project_deletion(
+    project_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> dict:
+    """
+    Preview what data will be deleted when deleting a project.
+    
+    Returns counts of all related entities that will be cascade deleted.
+    """
+    from sqlmodel import select, func
+    from app.models import Story, Message, Artifact, Epic
+    from app.models.execution import AgentExecution
+    
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+    
+    if current_user.role != Role.ADMIN and project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this project",
+        )
+    
+    # Count all related data
+    agents_count = session.exec(
+        select(func.count(Agent.id)).where(Agent.project_id == project_id)
+    ).one()
+    
+    stories_count = session.exec(
+        select(func.count(Story.id)).where(Story.project_id == project_id)
+    ).one()
+    
+    messages_count = session.exec(
+        select(func.count(Message.id)).where(Message.project_id == project_id)
+    ).one()
+    
+    epics_count = session.exec(
+        select(func.count(Epic.id)).where(Epic.project_id == project_id)
+    ).one()
+    
+    executions_count = session.exec(
+        select(func.count(AgentExecution.id)).where(AgentExecution.project_id == project_id)
+    ).one()
+    
+    artifacts_count = session.exec(
+        select(func.count(Artifact.id)).where(Artifact.project_id == project_id)
+    ).one()
+    
+    return {
+        "project_id": str(project_id),
+        "project_name": project.name,
+        "project_code": project.code,
+        "counts": {
+            "agents": agents_count,
+            "stories": stories_count,
+            "epics": epics_count,
+            "messages": messages_count,
+            "executions": executions_count,
+            "artifacts": artifacts_count,
+        },
+        "has_workspace": bool(project.project_path),
+        "workspace_path": project.project_path,
+    }

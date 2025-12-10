@@ -811,23 +811,26 @@ class StoryEventRouter(BaseEventRouter):
     async def _cancel_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
         """Cancel a running story task.
         
-        Note: The API endpoint already updates the story state to CANCELED.
-        This handler just logs the event. The running agent will see the state
-        change and stop processing.
+        Sets cancel signal that nodes check to trigger LangGraph interrupt.
         """
         story_id = event_dict.get("story_id")
         self.logger.info(f"Story cancel event received for: {story_id}")
-        # State already updated by API - agent will check state and stop
+        
+        # Set cancel signal - nodes will check and interrupt
+        from app.agents.core.task_registry import request_cancel
+        request_cancel(story_id)
 
     async def _pause_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
         """Pause a running story task.
         
-        Note: The API endpoint already updates the story state to PAUSED.
-        This handler just logs the event. The running agent will see the state
-        change and pause processing.
+        Sets pause signal that nodes check to trigger LangGraph interrupt.
         """
         story_id = event_dict.get("story_id")
         self.logger.info(f"Story pause event received for: {story_id}")
+        
+        # Set pause signal - nodes will check and interrupt
+        from app.agents.core.task_registry import request_pause
+        request_pause(story_id)
 
     async def _resume_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
         """Resume a paused story task by re-routing to developer."""
