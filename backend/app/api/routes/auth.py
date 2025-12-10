@@ -142,8 +142,8 @@ def login(
             
             if not user:
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Email hoặc mật khẩu không đúng",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid email or password",
                 )
             
             # Check if user registered via OAuth (no password)
@@ -156,8 +156,8 @@ def login(
             # Verify password
             if not user.hashed_password or not verify_password(login_data.password, user.hashed_password):
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Email hoặc mật khẩu không đúng",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid email or password",
                 )
 
     else:

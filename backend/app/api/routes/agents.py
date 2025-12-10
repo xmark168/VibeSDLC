@@ -1,17 +1,25 @@
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlmodel import select, func, case, col
+from sqlalchemy.orm import selectinload
+from sqlmodel import case, col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import Agent as AgentModel, Role, Message, AgentExecution, AgentExecutionStatus, AuthorType
+from app.models import Agent as AgentModel
+from app.models import (
+    AgentExecution,
+    AgentExecutionStatus,
+    AuthorType,
+    Message,
+    Role,
+)
 from app.schemas import (
+    AgentActivityResponse,
     AgentCreate,
-    AgentUpdate,
     AgentPublic,
     AgentsPublic,
-    AgentActivityResponse,
+    AgentUpdate,
     CurrentTaskInfo,
     RecentActivity,
 )
@@ -23,8 +31,8 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 def list_agents(
     session: SessionDep,
     current_user: CurrentUser,
-    name: Optional[str] = Query(None),
-    agent_type: Optional[str] = Query(None),
+    name: str | None = Query(None),
+    agent_type: str | None = Query(None),
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
@@ -78,10 +86,33 @@ def get_project_agents(
     stmt = (
         select(AgentModel)
         .where(AgentModel.project_id == project_id)
+        .options(selectinload(AgentModel.persona_template))
         .order_by(role_order, AgentModel.human_name)
     )
     agents = session.exec(stmt).all()
-    return AgentsPublic(data=agents, count=len(agents))
+
+    # Convert to AgentPublic with persona_avatar
+    agent_list = []
+    for agent in agents:
+        agent_data = AgentPublic(
+            id=agent.id,
+            project_id=agent.project_id,
+            name=agent.name,
+            human_name=agent.human_name,
+            role_type=agent.role_type,
+            agent_type=agent.agent_type,
+            status=agent.status,
+            persona_template_id=agent.persona_template_id,
+            persona_avatar=agent.persona_template.avatar if agent.persona_template else None,
+            personality_traits=agent.personality_traits or [],
+            communication_style=agent.communication_style,
+            persona_metadata=agent.persona_metadata,
+            created_at=agent.created_at,
+            updated_at=agent.updated_at,
+        )
+        agent_list.append(agent_data)
+
+    return AgentsPublic(data=agent_list, count=len(agent_list))
 
 
 @router.get("/{agent_id}", response_model=AgentPublic)
@@ -172,14 +203,14 @@ def get_agent_activity(
     agent = session.get(AgentModel, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    
+
     # Extract data from persona_metadata
     # Structure: {"description": "...", "strengths": ["...", "..."]}
     persona_metadata = agent.persona_metadata or {}
-    
+
     # Get skills from "strengths" field
     skills = persona_metadata.get("strengths", [])
-    
+
     # Default skills based on role if not set
     if not skills:
         default_skills = {
@@ -189,10 +220,10 @@ def get_agent_activity(
             "tester": ["Test Plans", "QA", "Automation", "Bug Reports"],
         }
         skills = default_skills.get(agent.role_type, [])
-    
+
     # Get status_message from "description" field
     status_message = persona_metadata.get("description")
-    
+
     # Get current running task
     current_task = None
     running_execution = session.exec(
@@ -203,7 +234,7 @@ def get_agent_activity(
         .order_by(col(AgentExecution.started_at).desc())
         .limit(1)
     ).first()
-    
+
     if running_execution:
         # Extract task name from result or metadata
         task_name = "Đang xử lý..."
@@ -211,7 +242,7 @@ def get_agent_activity(
             task_name = running_execution.result.get("task_name", task_name)
         elif running_execution.extra_metadata:
             task_name = running_execution.extra_metadata.get("task_name", task_name)
-        
+
         current_task = CurrentTaskInfo(
             id=running_execution.id,
             name=task_name,
@@ -219,7 +250,7 @@ def get_agent_activity(
             progress=running_execution.extra_metadata.get("progress") if running_execution.extra_metadata else None,
             started_at=running_execution.started_at or running_execution.created_at,
         )
-    
+
     # Get recent activities (messages from this agent)
     recent_messages = session.exec(
         select(Message)
@@ -229,13 +260,13 @@ def get_agent_activity(
         .order_by(col(Message.created_at).desc())
         .limit(limit)
     ).all()
-    
+
     recent_activities = []
     for msg in recent_messages:
         # Determine activity type and content
         activity_type = "message"
         content = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
-        
+
         if msg.message_type == "agent_question":
             activity_type = "question"
             content = "Đặt câu hỏi: " + content
@@ -251,14 +282,14 @@ def get_agent_activity(
             elif msg_type == "stories_created":
                 activity_type = "stories"
                 content = "Tạo User Stories"
-        
+
         recent_activities.append(RecentActivity(
             id=msg.id,
             activity_type=activity_type,
             content=content,
             created_at=msg.created_at,
         ))
-    
+
     return AgentActivityResponse(
         agent_id=agent.id,
         human_name=agent.human_name,

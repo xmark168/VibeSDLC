@@ -36,15 +36,21 @@ interface WorkspacePanelProps {
   onMessageAgent?: (agentName: string) => void // Callback to @mention agent in chat
 }
 
+// Default avatars by role type
+const DEFAULT_AVATARS: Record<string, string> = {
+  team_leader: "https://api.dicebear.com/7.x/avataaars/svg?seed=TeamLeader&backgroundColor=6366f1",
+  business_analyst: "https://api.dicebear.com/7.x/avataaars/svg?seed=BusinessAnalyst&backgroundColor=3b82f6",
+  developer: "https://api.dicebear.com/7.x/avataaars/svg?seed=Developer&backgroundColor=22c55e",
+  tester: "https://api.dicebear.com/7.x/avataaars/svg?seed=Tester&backgroundColor=f59e0b",
+}
+
 // Generate avatar URL from agent human_name using DiceBear API
-const generateAvatarUrl = (name: string): string => {
-  const initials = name
-    .split(' ')
-    .map(part => part[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
-  // Using DiceBear API for initials-based avatars
+const generateAvatarUrl = (name: string, roleType?: string): string => {
+  // Use default avatar for role if available
+  if (roleType && DEFAULT_AVATARS[roleType]) {
+    return DEFAULT_AVATARS[roleType]
+  }
+  // Fallback to initials-based avatar
   return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&chars=2&backgroundColor=6366f1`
 }
 
@@ -170,11 +176,14 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
       console.log(`[WorkspacePanel] Agent ${agent.human_name}: WS status=${wsStatus?.status}, DB status=${agent.status}, Display=${displayStatus}`)
 
+      // Use persona_avatar if available, otherwise generate from role type
+      const avatarUrl = agent.persona_avatar || generateAvatarUrl(agent.human_name, agent.role_type)
+
       return {
         id: agent.id,
         name: agent.human_name, // Use human name like "Mike"
         designation: getRoleDesignation(agent.role_type),
-        image: generateAvatarUrl(agent.human_name),
+        image: avatarUrl,
         status: displayStatus, // Use WebSocket status (real-time) or fallback to DB
         onClick: () => {
           // Open detail sheet when agent is clicked

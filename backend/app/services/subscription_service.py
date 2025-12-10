@@ -18,6 +18,16 @@ class SubscriptionService:
     def __init__(self, session: Session):
         self.session = session
 
+    def get_active_subscription(self, user_id: UUID) -> Subscription | None:
+        """Get user's active subscription"""
+        statement = (
+            select(Subscription)
+            .where(Subscription.user_id == user_id)
+            .where(Subscription.status == "active")
+            .order_by(Subscription.created_at.desc())
+        )
+        return self.session.exec(statement).first()
+
     def activate_subscription(
         self,
         user_id: UUID,
