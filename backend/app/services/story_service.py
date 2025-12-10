@@ -24,40 +24,83 @@ class StoryService:
         self.session = session
 
     def _generate_story_code(self, project_id: UUID, epic_id: Optional[UUID] = None) -> str:
-        """Generate story code in format EPIC-XXX-US-YYY or US-YYY.
+        """Generate unique story code in format EPIC-XXX-US-YYY or US-YYY.
         
         Args:
             project_id: Project UUID
             epic_id: Optional Epic UUID
             
         Returns:
-            Generated story code string
+            Generated unique story code string
         """
         from app.models import Epic
+        
+        max_attempts = 100
         
         if epic_id:
             # Get epic code
             epic = self.session.get(Epic, epic_id)
             epic_code = epic.epic_code if epic and epic.epic_code else f"EPIC-{str(epic_id)[:3].upper()}"
             
-            # Count existing stories in this epic
-            story_count = self.session.exec(
-                select(func.count()).select_from(Story).where(
-                    Story.epic_id == epic_id
+            # Find max story number in this epic
+            max_num = self.session.exec(
+                select(func.max(Story.story_code)).where(
+                    Story.epic_id == epic_id,
+                    Story.story_code.like(f"{epic_code}-US-%")
                 )
             ).one()
             
-            return f"{epic_code}-US-{story_count + 1:03d}"
+            if max_num:
+                # Extract number from code like "EPIC-001-US-005"
+                try:
+                    last_num = int(max_num.split('-')[-1])
+                except (ValueError, IndexError):
+                    last_num = 0
+            else:
+                last_num = 0
+            
+            # Try to find a unique code
+            for i in range(1, max_attempts + 1):
+                code = f"{epic_code}-US-{last_num + i:03d}"
+                existing = self.session.exec(
+                    select(Story.id).where(Story.story_code == code)
+                ).first()
+                if not existing:
+                    return code
+            
+            # Fallback with timestamp
+            import time
+            return f"{epic_code}-US-{int(time.time()) % 100000}"
         else:
-            # No epic - generate US-XXX based on project story count
-            story_count = self.session.exec(
-                select(func.count()).select_from(Story).where(
+            # No epic - generate US-XXX based on project
+            max_num = self.session.exec(
+                select(func.max(Story.story_code)).where(
                     Story.project_id == project_id,
-                    Story.epic_id == None
+                    Story.epic_id == None,
+                    Story.story_code.like("US-%")
                 )
             ).one()
             
-            return f"US-{story_count + 1:03d}"
+            if max_num:
+                try:
+                    last_num = int(max_num.split('-')[-1])
+                except (ValueError, IndexError):
+                    last_num = 0
+            else:
+                last_num = 0
+            
+            # Try to find a unique code
+            for i in range(1, max_attempts + 1):
+                code = f"US-{last_num + i:03d}"
+                existing = self.session.exec(
+                    select(Story.id).where(Story.story_code == code)
+                ).first()
+                if not existing:
+                    return code
+            
+            # Fallback with timestamp
+            import time
+            return f"US-{int(time.time()) % 100000}"
 
     # ===== Story Creation =====
 

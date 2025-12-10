@@ -49,7 +49,7 @@ class Story(BaseModel, table=True):
         default=None, foreign_key="stories.id", ondelete="SET NULL"
     )
 
-    story_code: str | None = Field(default=None)  # e.g., "EPIC-001-US-001"
+    story_code: str | None = Field(default=None, unique=True, index=True)  # e.g., "EPIC-001-US-001" - unique per project
     type: StoryType = Field(default=StoryType.USER_STORY)
     title: str
     description: str | None = Field(default=None, sa_column=Column(Text))
@@ -100,6 +100,9 @@ class Story(BaseModel, table=True):
     # PR and merge tracking
     pr_url: str | None = Field(default=None, max_length=500)
     merge_status: str | None = Field(default=None, max_length=50)  # "not_merged", "merged", "conflict"
+    
+    # LangGraph checkpoint for pause/resume
+    checkpoint_thread_id: str | None = Field(default=None, max_length=100)
 
     project: "Project" = Relationship(back_populates="stories")
     epic: Optional["Epic"] = Relationship(back_populates="stories")

@@ -48,6 +48,13 @@ export type KanbanCardData = {
   // Agent state
   agent_state?: 'pending' | 'processing' | 'canceled' | 'finished' | null
   running_port?: number | null
+  running_pid?: number | null
+  worktree_path?: string | null
+  worktree_path_display?: string | null
+  branch_name?: string | null
+  pr_url?: string | null
+  merge_status?: string | null  // "not_merged", "merged", "conflict"
+  started_at?: string | null
   // TraDS ============= Kanban Hierarchy: Parent/children relationships
   parent?: KanbanCardData
   children?: KanbanCardData[]

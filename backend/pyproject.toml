@@ -50,6 +50,7 @@ dependencies = [
     "Pillow>=10.0.0",
     "langchain-anthropic>=1.2.0",
     "python-docx>=1.1.0",
+    "langgraph-checkpoint-postgres>=3.0.2",
 ]
 
 

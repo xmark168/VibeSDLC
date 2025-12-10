@@ -1564,8 +1564,9 @@ class BaseAgent(ABC):
             self._queue_worker_task = asyncio.create_task(self._task_queue_worker())
             
             # Create consumer with wrapper that calls our handle_task
+            # Skip old messages to start fresh on each restart
             self._consumer = AgentTaskConsumer(self)
-            await self._consumer.start()
+            await self._consumer.start(seek_to_end=True)
 
 
             return True

@@ -58,7 +58,7 @@ async def create_test_story():
         story = Story(
             id=story_id,
             project_id=PROJECT_ID,
-            story_code="EPIC-001-US-001",
+            story_code=f"TEST-{uuid4().hex[:6].upper()}",
             title="As a first-time visitor, I want to see featured books and categories on the homepage",
             description="""
 The homepage serves as the primary entry point for all visitors, showcasing the bookstore's offerings through curated collections and categories. This story establishes the foundation for user engagement by presenting featured books, bestsellers, and category navigation that helps visitors understand what the store offers and guides them toward their interests.

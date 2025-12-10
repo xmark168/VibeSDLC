@@ -125,11 +125,9 @@ def stop_container_by_id(container_id: str) -> bool:
         return False
 
 
-def update_story_db_info(story_id: str, worktree_path: str) -> bool:
-    """Update story in DB with container info."""
+def update_story_db_info(story_id: str, worktree_path: str, branch_name: str = None) -> bool:
+    """Update story in DB with container and workspace info."""
     info = get_connection_info(story_id)
-    if not info:
-        return False
     
     try:
         from sqlmodel import Session
@@ -140,8 +138,11 @@ def update_story_db_info(story_id: str, worktree_path: str) -> bool:
             story = session.get(Story, UUID(story_id))
             if story:
                 story.worktree_path = worktree_path
-                story.db_container_id = info.get("container_id")
-                story.db_port = int(info.get("port", 0))
+                if branch_name:
+                    story.branch_name = branch_name
+                if info:
+                    story.db_container_id = info.get("container_id")
+                    story.db_port = int(info.get("port", 0))
                 session.add(story)
                 session.commit()
                 return True

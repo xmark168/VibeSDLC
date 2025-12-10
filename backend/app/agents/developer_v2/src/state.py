@@ -12,6 +12,7 @@ class DeveloperState(TypedDict, total=False):
 
     # Input
     story_id: str
+    story_code: str  # Unique story code (e.g., "US-001", "EPIC-001-US-001")
     epic: str
     story_title: str
     story_content: str

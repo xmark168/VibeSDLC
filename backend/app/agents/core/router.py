@@ -663,10 +663,17 @@ class StoryEventRouter(BaseEventRouter):
     """
 
     def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
-        """Check if event is a story status change event."""
+        """Check if event is a story-related event."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         event_type = event_dict.get("event_type", "")
-        return event_type == "story.status.changed"
+        return event_type in (
+            "story.status.changed", 
+            "story.cancel", 
+            "story.pause", 
+            "story.resume",
+            "story.created",
+            "story.review_action",
+        )
 
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
         """Route based on story event type.
@@ -691,10 +698,29 @@ class StoryEventRouter(BaseEventRouter):
             self.logger.info(f"Story review action: {event_dict.get('action')} for {story_id}")
             await self._handle_review_action(event_dict, project_id)
             return
+        
+        # Handle story.cancel → Cancel running task
+        if event_type == "story.cancel":
+            self.logger.info(f"Story cancel requested: {story_id}")
+            await self._cancel_story_task(event_dict, project_id)
+            return
+        
+        # Handle story.pause → Pause running task
+        if event_type == "story.pause":
+            self.logger.info(f"Story pause requested: {story_id}")
+            await self._pause_story_task(event_dict, project_id)
+            return
+        
+        # Handle story.resume → Resume paused task
+        if event_type == "story.resume":
+            self.logger.info(f"Story resume requested: {story_id}")
+            await self._resume_story_task(event_dict, project_id)
+            return
 
-        # Handle status changes
-        new_status = event_dict.get("new_status")
-        old_status = event_dict.get("old_status")
+        # Handle status changes (support both naming conventions)
+        payload = event_dict.get("payload", {})
+        new_status = event_dict.get("new_status") or payload.get("to_status")
+        old_status = event_dict.get("old_status") or payload.get("from_status")
 
         self.logger.info(
             f"Story {story_id} moved from {old_status} to {new_status} in project {project_id}"
@@ -781,6 +807,62 @@ class StoryEventRouter(BaseEventRouter):
                 self.logger.warning(
                     f"No Tester found in project {project_id} for story review testing"
                 )
+
+    async def _cancel_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
+        """Cancel a running story task.
+        
+        Note: The API endpoint already updates the story state to CANCELED.
+        This handler just logs the event. The running agent will see the state
+        change and stop processing.
+        """
+        story_id = event_dict.get("story_id")
+        self.logger.info(f"Story cancel event received for: {story_id}")
+        # State already updated by API - agent will check state and stop
+
+    async def _pause_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
+        """Pause a running story task.
+        
+        Note: The API endpoint already updates the story state to PAUSED.
+        This handler just logs the event. The running agent will see the state
+        change and pause processing.
+        """
+        story_id = event_dict.get("story_id")
+        self.logger.info(f"Story pause event received for: {story_id}")
+
+    async def _resume_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
+        """Resume a paused story task by re-routing to developer."""
+        story_id = event_dict.get("story_id")
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+        
+        with Session(engine) as session:
+            from app.services import AgentService
+            agent_service = AgentService(session)
+            
+            developer = agent_service.get_by_project_and_role(
+                project_id=project_id,
+                role_type="developer"
+            )
+            
+            if developer:
+                # Route task to developer with resume flag
+                # The agent will detect resume=True and load from checkpoint
+                await self.publish_task(
+                    agent_id=developer.id,
+                    task_type=AgentTaskType.IMPLEMENT_STORY,
+                    source_event=event_dict,
+                    routing_reason="story_resume",
+                    priority="high",
+                    additional_context={
+                        "story_id": story_id,
+                        "content": f"Resume paused story",
+                        "resume": True
+                    }
+                )
+                self.logger.info(f"Resumed story task: {story_id}")
+            else:
+                self.logger.warning(f"No Developer agent found to resume story {story_id}")
+
     async def _verify_new_story(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
         """Verify a newly created story using BA agent."""
         from app.models import Story, ArtifactType
@@ -1571,8 +1653,12 @@ class MessageRouterService(BaseKafkaConsumer):
         self.routers: List[BaseEventRouter] = []
         self.logger = logging.getLogger(__name__)
 
-    async def start(self):
-        """Start the router service."""
+    async def start(self, seek_to_end: bool = False):
+        """Start the router service.
+        
+        Args:
+            seek_to_end: If True, skip old messages and start fresh.
+        """
         self.logger.info("Starting Message Router Service...")
 
         producer = await get_kafka_producer()
@@ -1590,9 +1676,9 @@ class MessageRouterService(BaseKafkaConsumer):
 
         self.logger.info(f"Initialized {len(self.routers)} routers")
 
-        await super().start()
+        await super().start(seek_to_end=seek_to_end)
 
-        self.logger.info("Message Router Service started successfully")
+        self.logger.info(f"Message Router Service started successfully (seek_to_end={seek_to_end})")
 
     async def stop(self):
         """Stop the router service."""
@@ -1653,11 +1739,16 @@ async def get_router_service() -> MessageRouterService:
     return _router_service
 
 
-async def start_router_service() -> MessageRouterService:
-    """Start the global router service."""
+async def start_router_service(skip_old_messages: bool = True) -> MessageRouterService:
+    """Start the global router service.
+    
+    Args:
+        skip_old_messages: If True, skip all existing messages and start fresh.
+                          This prevents processing stale events from previous runs.
+    """
     service = await get_router_service()
     if not service.running:
-        await service.start()
+        await service.start(seek_to_end=skip_old_messages)
     return service
 
 

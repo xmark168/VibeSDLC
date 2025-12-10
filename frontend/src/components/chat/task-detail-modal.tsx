@@ -1,8 +1,8 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -12,6 +12,96 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import type { KanbanCardData } from "./kanban-card"
 import { useState, useRef, useEffect, useCallback } from "react"
 import { useStoryWebSocket } from "@/hooks/useStoryWebSocket"
+
+// DiffsView component for showing git diffs
+function DiffsView({ storyId }: { storyId: string }) {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [diffs, setDiffs] = useState<{ files: { status: string; filename: string }[]; file_count: number; diff: string } | null>(null)
+  
+  useEffect(() => {
+    const fetchDiffs = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const token = localStorage.getItem('access_token')
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/v1/stories/${storyId}/diffs`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        )
+        if (response.ok) {
+          setDiffs(await response.json())
+        } else {
+          setError('Failed to load diffs')
+        }
+      } catch {
+        setError('Failed to load diffs')
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchDiffs()
+  }, [storyId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center text-destructive py-8">
+        <p className="text-sm">{error}</p>
+      </div>
+    )
+  }
+
+  if (!diffs || diffs.files.length === 0) {
+    return (
+      <div className="text-center text-muted-foreground py-8">
+        <GitBranch className="w-12 h-12 mx-auto mb-3 opacity-50" />
+        <p className="text-sm">No changes detected</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* File list */}
+      <div className="border rounded-lg">
+        <div className="px-3 py-2 bg-muted/50 border-b text-xs font-medium text-muted-foreground flex items-center gap-2">
+          <FileCode className="w-4 h-4" />
+          {diffs.file_count} files changed
+        </div>
+        <div className="divide-y">
+          {diffs.files.map((file, idx) => (
+            <div key={idx} className="px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted/30">
+              {file.status === 'A' && <Plus className="w-3 h-3 text-green-500" />}
+              {file.status === 'M' && <FileText className="w-3 h-3 text-amber-500" />}
+              {file.status === 'D' && <Minus className="w-3 h-3 text-red-500" />}
+              <span className="font-mono truncate">{file.filename}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      {/* Diff content */}
+      {diffs.diff && (
+        <div className="border rounded-lg overflow-hidden">
+          <div className="px-3 py-2 bg-muted/50 border-b text-xs font-medium text-muted-foreground">
+            Diff
+          </div>
+          <pre className="p-3 text-xs font-mono overflow-x-auto bg-muted/20 max-h-[400px] overflow-y-auto whitespace-pre">
+            {diffs.diff}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface TaskDetailModalProps {
   card: KanbanCardData | null
@@ -45,6 +135,31 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   const [selectedChild, setSelectedChild] = useState<KanbanCardData | null>(null)
   const [selectedDependency, setSelectedDependency] = useState<KanbanCardData | null>(null)
   const [selectedEpic, setSelectedEpic] = useState<EpicInfo | null>(null)
+  const [localAgentState, setLocalAgentState] = useState<string | null>(null)
+  
+  // Sync local agent state with card prop
+  useEffect(() => {
+    if (card?.agent_state) {
+      setLocalAgentState(card.agent_state)
+    }
+  }, [card?.agent_state])
+  
+  // Listen for story state changes via WebSocket
+  useEffect(() => {
+    const handleStoryStateChanged = (event: CustomEvent) => {
+      if (event.detail.story_id === card?.id) {
+        setLocalAgentState(event.detail.agent_state)
+      }
+    }
+    
+    window.addEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    return () => {
+      window.removeEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    }
+  }, [card?.id])
+  
+  // Use local state for agent_state display
+  const agentState = localAgentState || card?.agent_state
   
   // Get token from localStorage
   const getToken = () => typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
@@ -119,6 +234,119 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
       }
     } catch (error) {
       toast.error('Failed to restart task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Pause task handler
+  const handlePauseTask = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/pause`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Task paused')
+      } else {
+        toast.error('Failed to pause task')
+      }
+    } catch (error) {
+      toast.error('Failed to pause task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Resume task handler
+  const handleResumeTask = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/resume`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Task resumed')
+      } else {
+        toast.error('Failed to resume task')
+      }
+    } catch (error) {
+      toast.error('Failed to resume task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Start dev server handler
+  const handleStartDevServer = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/dev-server/start`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        const data = await response.json()
+        toast.success(`Dev server started on port ${data.port}`)
+      } else {
+        toast.error('Failed to start dev server')
+      }
+    } catch (error) {
+      toast.error('Failed to start dev server')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Stop dev server handler
+  const handleStopDevServer = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/dev-server/stop`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Dev server stopped')
+      } else {
+        toast.error('Failed to stop dev server')
+      }
+    } catch (error) {
+      toast.error('Failed to stop dev server')
     } finally {
       setIsActionLoading(false)
     }
@@ -288,10 +516,13 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   const getStatusBadgeColor = (status?: string) => {
     switch (status) {
       case "Backlog":
-        return "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20"
+        return "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20"
       case "Todo":
         return "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20"
+      case "InProgress":
       case "Doing":
+        return "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20"
+      case "Review":
         return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
       case "Done":
         return "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20"
@@ -300,17 +531,31 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     }
   }
 
+  // Format status name for display
+  const formatStatusName = (status?: string) => {
+    switch (status) {
+      case "InProgress": return "In Progress"
+      case "Todo": return "To Do"
+      default: return status
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle className="flex items-start justify-between gap-3">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 {card.story_code && (
                   <Badge
-                    variant="outline"
-                    className=""
+                    variant="default"
+                    className="bg-primary/90 hover:bg-primary text-primary-foreground font-mono font-semibold tracking-wide cursor-pointer"
+                    title="Click to copy"
+                    onClick={() => {
+                      navigator.clipboard.writeText(card.story_code || '')
+                      toast.success('Story code copied!')
+                    }}
                   >
                     {card.story_code}
                   </Badge>
@@ -320,106 +565,127 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                     {formatTypeName(card.type)}
                   </Badge>
                 )}
-                {card.status && (
-                  <Badge variant="outline" className={getStatusBadgeColor(card.status)}>
-                    {card.status}
-                  </Badge>
-                )}
-                {card.rank !== undefined && card.rank !== null && (
-                  <Badge
-                    variant="outline"
-                    className={`gap-1 ${card.rank <= 3
-                        ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20"
-                        : card.rank <= 7
-                          ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20"
-                          : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
-                      }`}
-                  >
-                    <Flag className="w-3 h-3" />
-                    Thứ tự: {card.rank}
-                  </Badge>
-                )}
               </div>
               <div className="text-base font-semibold text-foreground">{card.content}</div>
               
-              {/* Agent Action Bar */}
-              {card.agent_state && (
-                <div className="mt-3 flex items-center gap-3 p-2.5 rounded-lg bg-muted/50 border">
-                  {/* Status indicator */}
-                  <div className="flex items-center gap-2">
-                    <div className={`relative flex items-center justify-center w-2 h-2 ${
-                      card.agent_state === 'processing' ? 'animate-pulse' : ''
-                    }`}>
-                      {card.agent_state === 'processing' && (
-                        <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping bg-primary/60"></span>
-                      )}
-                      <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                        card.agent_state === 'pending' ? 'bg-muted-foreground' :
-                        card.agent_state === 'processing' ? 'bg-primary' :
-                        card.agent_state === 'finished' ? 'bg-primary' :
-                        'bg-destructive'
-                      }`}></span>
-                    </div>
-                    <span className={`text-xs font-medium ${
-                      card.agent_state === 'canceled' ? 'text-destructive' : 'text-muted-foreground'
-                    }`}>
-                      {card.agent_state === 'processing' ? 'Đang xử lý...' :
-                       card.agent_state === 'pending' ? 'Chờ xử lý' :
-                       card.agent_state === 'finished' ? 'Hoàn thành' :
-                       'Đã hủy'}
-                    </span>
-                  </div>
-
-                  {/* Preview link */}
+              {/* Task Details Grid */}
+              {(card.started_at || agentState || card.branch_name || card.merge_status || card.running_port) && (
+                <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 p-3 rounded-lg bg-muted/30 border text-xs">
+                  {card.started_at && (
+                    <>
+                      <span className="text-muted-foreground font-medium">STARTED</span>
+                      <span>{new Date(card.started_at).toLocaleString('vi-VN')}</span>
+                    </>
+                  )}
+                  {agentState && (
+                    <>
+                      <span className="text-muted-foreground font-medium">AGENT STATUS</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className={`inline-block w-2 h-2 rounded-full ${
+                          agentState === 'processing' ? 'bg-primary animate-pulse' :
+                          agentState === 'paused' ? 'bg-amber-500' :
+                          agentState === 'finished' ? 'bg-green-500' :
+                          agentState === 'canceled' ? 'bg-destructive' :
+                          'bg-muted-foreground'
+                        }`}></span>
+                        {agentState === 'processing' ? 'Processing' :
+                         agentState === 'paused' ? 'Paused' :
+                         agentState === 'finished' ? 'Finished' :
+                         agentState === 'canceled' ? 'Canceled' : 'Pending'}
+                      </span>
+                    </>
+                  )}
+                  {card.branch_name && (
+                    <>
+                      <span className="text-muted-foreground font-medium">BRANCH</span>
+                      <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">{card.branch_name}</code>
+                    </>
+                  )}
+                  {card.merge_status !== undefined && (
+                    <>
+                      <span className="text-muted-foreground font-medium">MERGE STATUS</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className={`inline-block w-2 h-2 rounded-full ${
+                          card.merge_status === 'merged' ? 'bg-green-500' :
+                          card.merge_status === 'conflict' ? 'bg-destructive' :
+                          'bg-amber-500'
+                        }`}></span>
+                        {card.merge_status === 'merged' ? 'Merged' :
+                         card.merge_status === 'conflict' ? 'Conflict' : 'Not merged'}
+                      </span>
+                    </>
+                  )}
                   {card.running_port && (
                     <>
-                      <div className="h-4 w-px bg-border"></div>
-                      <Button variant="link" size="sm" className="h-auto p-0 text-xs" asChild>
-                        <a 
-                          href={`http://localhost:${card.running_port}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5 mr-1" />
-                          Preview ::{card.running_port}
-                        </a>
-                      </Button>
+                      <span className="text-muted-foreground font-medium">DEV SERVER</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                        Running on :{card.running_port}
+                      </span>
                     </>
                   )}
 
-                  {/* Action buttons */}
-                  <div className="flex items-center gap-2 ml-auto">
-                    {card.agent_state === 'processing' && (
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={handleCancelTask}
-                        disabled={isActionLoading}
-                      >
-                        {isActionLoading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Square className="w-4 h-4" />
-                        )}
-                        Hủy
-                      </Button>
-                    )}
-                    {(card.agent_state === 'canceled' || card.agent_state === 'finished') && (
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={handleRestartTask}
-                        disabled={isActionLoading}
-                      >
-                        {isActionLoading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <RotateCcw className="w-4 h-4" />
-                        )}
-                        Chạy lại
-                      </Button>
-                    )}
-                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              {agentState && (
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  {/* Dev Server Toggle */}
+                  {agentState === 'finished' && card.worktree_path && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={card.running_port ? handleStopDevServer : handleStartDevServer}
+                      disabled={isActionLoading}
+                    >
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 
+                       card.running_port ? <Square className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />}
+                      {card.running_port ? 'Stop Server' : 'Dev Server'}
+                    </Button>
+                  )}
+                  
+                  {/* Preview Link */}
+                  {card.running_port && (
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={`http://localhost:${card.running_port}`} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="w-4 h-4" />
+                        Preview
+                      </a>
+                    </Button>
+                  )}
+
+                  {/* Pause when processing */}
+                  {agentState === 'processing' && (
+                    <Button variant="outline" size="sm" onClick={handlePauseTask} disabled={isActionLoading}>
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />}
+                      Tạm dừng
+                    </Button>
+                  )}
+                  
+                  {/* Resume when paused */}
+                  {agentState === 'paused' && (
+                    <Button variant="default" size="sm" onClick={handleResumeTask} disabled={isActionLoading}>
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                      Tiếp tục
+                    </Button>
+                  )}
+                  
+                  {/* Cancel when processing or paused */}
+                  {(agentState === 'pending' || agentState === 'processing' || agentState === 'paused') && (
+                    <Button variant="destructive" size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={handleCancelTask} disabled={isActionLoading}>
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
+                      Hủy
+                    </Button>
+                  )}
+                  
+                  {/* Restart when canceled or finished */}
+                  {(agentState === 'canceled' || agentState === 'finished') && (
+                    <Button variant="default" size="sm" onClick={handleRestartTask} disabled={isActionLoading}>
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                      Chạy lại
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -430,7 +696,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
 
         {/* Tabs Navigation */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="detail" className="gap-2">
               <FileText className="w-4 h-4" />
               Detail
@@ -442,6 +708,10 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
             <TabsTrigger value="logs" className="gap-2">
               <ScrollText className="w-4 h-4" />
               Logs
+            </TabsTrigger>
+            <TabsTrigger value="diffs" className="gap-2">
+              <FileText className="w-4 h-4" />
+              Diffs
             </TabsTrigger>
           </TabsList>
 
@@ -488,6 +758,19 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
 
           {/* Metadata Grid */}
           <div className="grid grid-cols-2 gap-4">
+            {/* Status */}
+            {card.status && (
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-muted-foreground" />
+                <div>
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  <Badge variant="outline" className={`w-fit ${getStatusBadgeColor(card.status)}`}>
+                    {formatStatusName(card.status)}
+                  </Badge>
+                </div>
+              </div>
+            )}
+
             {/* Story Points / Estimate */}
             {(card.story_point !== undefined && card.story_point !== null) && (
               <div className="flex items-center gap-2">
@@ -649,7 +932,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                     <span className="text-sm flex-1">{child.content}</span>
                     {child.status && (
                       <Badge variant="outline" className={getStatusBadgeColor(child.status)}>
-                        {child.status}
+                        {formatStatusName(child.status)}
                       </Badge>
                     )}
                     {child.story_point !== undefined && child.story_point !== null && (
@@ -872,6 +1155,21 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                 <p className="text-sm">Activity logs coming soon...</p>
                 <p className="text-xs mt-1">View all activities and changes for this story</p>
               </div>
+            </div>
+          </TabsContent>
+
+          {/* Diffs Tab */}
+          <TabsContent value="diffs" className="flex-1 overflow-y-auto mt-4 min-h-0">
+            <div className="space-y-4">
+              {card.worktree_path ? (
+                <DiffsView storyId={card.id} />
+              ) : (
+                <div className="text-center text-muted-foreground py-8">
+                  <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">No worktree available</p>
+                  <p className="text-xs mt-1">Diffs will appear once the agent starts working</p>
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>

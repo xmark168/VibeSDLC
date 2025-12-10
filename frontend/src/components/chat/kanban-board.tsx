@@ -294,6 +294,13 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         updated_at: item.updated_at,
         agent_state: item.agent_state,
         running_port: item.running_port,
+        running_pid: item.running_pid,
+        worktree_path: item.worktree_path,
+        worktree_path_display: item.worktree_path_display,
+        branch_name: item.branch_name,
+        pr_url: item.pr_url,
+        merge_status: item.merge_status,
+        started_at: item.started_at,
       })
 
       const allCards: KanbanCardData[] = [

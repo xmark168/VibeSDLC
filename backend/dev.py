@@ -4,7 +4,12 @@
 import subprocess
 import sys
 import os
+import asyncio
 from pathlib import Path
+
+# On Windows, use SelectorEventLoop for psycopg compatibility
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Ensure we're in the backend directory
 os.chdir(Path(__file__).parent)

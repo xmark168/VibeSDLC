@@ -56,21 +56,29 @@ def cleanup_old_worktree(main_workspace: Path, branch_name: str, worktree_path: 
 
 
 def setup_git_worktree(
-    story_id: str,
+    story_code: str,
     main_workspace: Path | str,
     agent_name: str = "Developer"
 ) -> dict:
     """Setup git worktree for story development.
     
-    Worktree path: {main_workspace}_{story_id}
-    Example: /path/to/project_abc12345
+    Worktree path: {main_workspace}/.worktrees/{story_code}
+    Example: /path/to/project/.worktrees/US-001
+    
+    Args:
+        story_code: Unique story code (e.g., "US-001", "EPIC-001-US-001")
+        main_workspace: Path to main project workspace
+        agent_name: Agent name for logging
     """
     main_workspace = Path(main_workspace).resolve()
-    short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
-    branch_name = f"story_{short_id}"
+    # Sanitize story_code for filesystem (replace invalid chars)
+    safe_code = story_code.replace('/', '-').replace('\\', '-')
+    branch_name = f"story_{safe_code}"
     
-    # Worktree path: main_workspace + '_' + story_id
-    worktree_path = Path(f"{main_workspace}_{short_id}").resolve()
+    # Worktree path: main_workspace/.worktrees/story_code
+    worktrees_dir = main_workspace / ".worktrees"
+    worktrees_dir.mkdir(exist_ok=True)
+    worktree_path = (worktrees_dir / safe_code).resolve()
     
     if not main_workspace.exists():
         logger.error(f"[{agent_name}] Workspace does not exist: {main_workspace}")
@@ -360,10 +368,10 @@ def _start_database(workspace_path: str, story_id: str = None) -> dict:
             update_env_file(workspace_path, story_id)
             database_url = get_database_url(story_id)
             
-            # Update story in DB with container info
+            # Update story DB info (container info only, workspace already updated)
             if story_id:
                 from app.agents.developer_v2.src.utils.db_container import update_story_db_info
-                update_story_db_info(story_id, workspace_path)
+                update_story_db_info(story_id, workspace_path, None)
             
             return {"ready": True, "url": database_url, "info": db_info}
     except Exception as db_err:
@@ -429,12 +437,14 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
     logger.debug("[NODE] setup_workspace")
     try:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
+        story_code = state.get("story_code", f"STORY-{story_id[:8]}")
         
         if state.get("workspace_ready"):
             logger.debug("[setup_workspace] Workspace ready, checking dependencies...")
         
-        short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
-        branch_name = f"story_{short_id}"
+        # Use story_code for branch name (sanitized)
+        safe_code = story_code.replace('/', '-').replace('\\', '-')
+        branch_name = f"story_{safe_code}"
         
         # Check if workspace_path already exists and is valid (reuse mode)
         existing_workspace = state.get("workspace_path", "")
@@ -458,13 +468,19 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 return {**state, "workspace_ready": False, "index_ready": False}
             
             workspace_info = setup_git_worktree(
-                story_id=story_id,
+                story_code=story_code,
                 main_workspace=main_workspace,
                 agent_name=agent.name
             )
         
         index_ready = False
         workspace_path = workspace_info.get("workspace_path", "")
+        branch_name = workspace_info.get("branch_name", "")
+        
+        # Update story in DB with workspace info and branch name
+        if story_id and workspace_path:
+            from app.agents.developer_v2.src.utils.db_container import update_story_db_info
+            update_story_db_info(story_id, workspace_path, branch_name)
         
         # Load context (fast, sync)
         project_context = ""

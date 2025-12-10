@@ -57,3 +57,6 @@ next-env.d.ts
 /src/generated
 
 .swc
+
+# git worktrees (managed by VibeSDLC)
+.worktrees/
