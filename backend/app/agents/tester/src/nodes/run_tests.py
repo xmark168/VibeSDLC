@@ -294,7 +294,7 @@ async def run_tests(state: TesterState, agent=None) -> dict:
         "tests_running",
         f"{len(test_commands)} test commands",
         agent,
-        f"files: {len(test_files)}"
+        f"files: {len(all_test_files)}"
     )
     await send_message(state, agent, running_msg, "progress")
     
