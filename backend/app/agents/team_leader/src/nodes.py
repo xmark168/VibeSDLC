@@ -364,19 +364,31 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                             "wip_blocked": False
                                         }
                                     else:
-                                        # Same domain → PRD already exists, ask what to do
-                                        logger.info(
-                                            f"[router] Same domain detected: '{existing_prd.title}'. "
-                                            f"Asking user what to do with existing project."
-                                        )
+                                        # Same domain - check if user explicitly wants to UPDATE
+                                        is_update_request = result.get("is_update_request", False)
+                                        
+                                        if is_update_request:
+                                            # User explicitly wants to update/edit something
+                                            # Skip CONFIRM_EXISTING and delegate directly to BA
+                                            logger.info(
+                                                f"[router] Same domain with explicit UPDATE request. "
+                                                f"Delegating directly to BA without confirmation."
+                                            )
+                                            # Continue to normal delegation (don't return here)
+                                        else:
+                                            # Vague request on same domain → ask what to do
+                                            logger.info(
+                                                f"[router] Same domain detected: '{existing_prd.title}'. "
+                                                f"Asking user what to do with existing project."
+                                            )
 
-                                        return {
-                                            **state,
-                                            "action": "CONFIRM_EXISTING",
-                                            "existing_prd_title": existing_prd.title,
-                                            "existing_stories_count": len(stories_count),
-                                            "wip_blocked": False
-                                        }
+                                            return {
+                                                **state,
+                                                "action": "CONFIRM_EXISTING",
+                                                "existing_prd_title": existing_prd.title,
+                                                "existing_stories_count": len(stories_count),
+                                                "wip_blocked": False
+                                            }
                     except Exception as e:
                         logger.error(f"[router] Error checking domain change: {e}", exc_info=True)
 
@@ -585,11 +597,9 @@ async def check_cancel_intent(user_message: str, agent=None) -> bool:
         True if user wants to cancel, False if they want to proceed
     """
     try:
-        system_prompt, user_prompt = _get_task_prompts(
-            _PROMPTS, "cancel_intent_check",
-            agent_info=_DEFAULTS,
-            user_message=user_message
-        )
+        prompts = _get_task_prompts(_PROMPTS, "cancel_intent_check")
+        system_prompt = prompts["system_prompt"]
+        user_prompt = prompts["user_prompt"].replace("{user_message}", user_message)
 
         response = await _fast_llm.ainvoke([
             SystemMessage(content=system_prompt),

@@ -100,8 +100,21 @@ tasks:
           "action": "DELEGATE" or "RESPOND",
           "target_role": "business_analyst" | "developer" | "tester" (if DELEGATE),
           "message": "Your response to user (in Vietnamese if appropriate, warm and explanatory)",
-          "reason": "Internal routing reason"
+          "reason": "Internal routing reason",
+          "is_update_request": true/false
       }}
+      
+      **is_update_request field:**
+      - Set to TRUE when user explicitly wants to UPDATE/EDIT/MODIFY existing content:
+        - "sửa story X", "edit story", "update story"
+        - "thêm feature Y vào", "add feature to existing"
+        - "bỏ requirement Z", "remove requirement", "xóa requirement"
+        - "thay đổi acceptance criteria", "modify description"
+        - "cập nhật PRD", "update PRD"
+      - Set to FALSE for vague/new project requests:
+        - "tôi muốn làm website bán hàng" (new project)
+        - "tạo app quản lý" (new project)
+        - General questions without specific edit intent
 
       # ROUTING EXAMPLES
       

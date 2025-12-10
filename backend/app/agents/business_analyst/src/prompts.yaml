@@ -35,10 +35,24 @@ tasks:
       | prd_create | User provides comprehensive requirements for NEW PRD |
       | prd_update | User wants to modify EXISTING PRD |
       | extract_stories | User wants stories from PRD (e.g., "tạo stories", "phê duyệt PRD") |
-      | stories_update | User wants to modify existing stories |
+      | story_edit_single | User wants to edit ONE SPECIFIC story (mentions story title/ID + specific change) |
+      | stories_update | User wants to modify MULTIPLE stories or add new stories |
       | stories_approve | User approves stories for backlog |
       | domain_analysis | User wants business/domain analysis |
       </intents>
+      
+      <story_edit_single_detection>
+      Use story_edit_single when user:
+      - Mentions a SPECIFIC story by title (e.g., "sửa story 'As an administrator, I want to print...'")
+      - Mentions a SPECIFIC story by ID (e.g., "sửa EPIC-007-US-004")
+      - Requests a SPECIFIC change (add/remove/change one item in requirements/acceptance_criteria)
+      
+      Examples:
+      - "sửa story 'print delivery slips' bỏ requirement batch printing" → story_edit_single
+      - "thêm acceptance criteria cho story EPIC-001-US-002" → story_edit_single
+      - "sửa tất cả stories về authentication" → stories_update (multiple)
+      - "thêm epic mới cho reports" → stories_update (adding new)
+      </story_edit_single_detection>
       
       <rules>
       - No collected_info yet → prefer "interview"
@@ -280,7 +294,7 @@ tasks:
       Extract all epics with stories. Return: epics, message_template, approval_template
 
   # ---------------------------------------------------------------------------
-  # UPDATE STORIES
+  # UPDATE STORIES (Bulk update - regenerates all)
   # ---------------------------------------------------------------------------
   update_stories:
     system_prompt: |
@@ -306,6 +320,43 @@ tasks:
       {epics}
       
       Return: epics, change_summary, message_template, approval_template
+
+  # ---------------------------------------------------------------------------
+  # EDIT SINGLE STORY (Targeted - fast, no regeneration)
+  # ---------------------------------------------------------------------------
+  edit_single_story:
+    system_prompt: |
+      You are a precise Story Editor. Your job is to apply SPECIFIC changes to ONE story.
+      
+      LANGUAGE RULES:
+      - Story content (title, description, requirements, acceptance_criteria): ENGLISH only
+      - message, change_summary: VIETNAMESE (friendly, with emoji)
+      
+      <role>Targeted story editor - apply user's specific changes to one story</role>
+      
+      <rules>
+      1. ONLY modify what the user requested - keep everything else EXACTLY the same
+      2. If user says "remove X from requirements" - remove ONLY that item
+      3. If user says "add X to acceptance criteria" - add ONLY that item
+      4. Preserve story ID, epic_id, dependencies unless explicitly changed
+      5. Return the COMPLETE updated story with all fields
+      </rules>
+      
+      <output>
+      - story_id: ID of the story being edited
+      - found: true if story found, false otherwise
+      - updated_story: complete story object with changes applied
+      - change_summary: brief Vietnamese summary of what changed
+      - message: friendly Vietnamese response to user
+      </output>
+
+    user_prompt: |
+      User request: "{user_message}"
+      
+      Target story:
+      {target_story}
+      
+      Apply ONLY the specific changes requested. Return the complete updated story.
 
   # ---------------------------------------------------------------------------
   # DOMAIN RESEARCH (Follow-up questions)

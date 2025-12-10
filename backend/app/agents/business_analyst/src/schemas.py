@@ -15,7 +15,8 @@ class IntentOutput(BaseModel):
     """Output schema for analyze_intent node."""
     intent: Literal[
         "conversational", "interview", "prd_create", "prd_update",
-        "extract_stories", "stories_update", "stories_approve", "domain_analysis"
+        "extract_stories", "stories_update", "stories_approve", "domain_analysis",
+        "story_edit_single"
     ] = Field(description="Classified user intent")
     reasoning: str = Field(description="Brief explanation of why this intent was chosen")
 
@@ -177,6 +178,19 @@ class VerifyStoryOutput(BaseModel):
     suggested_requirements: Optional[List[str]] = Field(default=None)
     suggested_acceptance_criteria: Optional[List[str]] = Field(default=None)
     summary: str = Field(description="Brief review summary in Vietnamese")
+
+
+# =============================================================================
+# SINGLE STORY EDIT
+# =============================================================================
+
+class SingleStoryEditOutput(BaseModel):
+    """Output schema for edit_single_story node - targeted edit of ONE story."""
+    story_id: str = Field(description="ID of the story being edited (e.g., EPIC-007-US-004)")
+    found: bool = Field(default=True, description="Whether the story was found - always True when called correctly")
+    updated_story: UserStory = Field(description="Updated story with changes applied")
+    change_summary: str = Field(description="Brief summary of changes made (Vietnamese)")
+    message: str = Field(description="Response message to user (Vietnamese, with emoji)")
 
 
 # =============================================================================
