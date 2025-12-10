@@ -32,7 +32,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Loader2 } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Loader2, Save } from "lucide-react"
 
 const planFormSchema = z.object({
   code: z.string().min(1, "Code is required").max(50),
@@ -50,7 +51,17 @@ const planFormSchema = z.object({
   is_featured: z.boolean().default(false),
   is_custom_price: z.boolean().default(false),
   features_text: z.string().optional(),
-})
+}).refine(
+  (data) => {
+    if (data.is_custom_price) return true
+    const price = data.monthly_price
+    return typeof price === "number" && !isNaN(price) && price >= 0
+  },
+  {
+    message: "Monthly price is required for non-custom plans (enter 0 for free plans)",
+    path: ["monthly_price"],
+  }
+)
 
 type PlanFormValues = z.infer<typeof planFormSchema>
 
@@ -88,12 +99,9 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
     },
   })
 
-  // Update form when plan or initialData changes
   useEffect(() => {
     if (plan) {
-      // Calculate discount from existing prices
       const discount = plan.yearly_discount_percentage ?? null
-
       form.reset({
         code: plan.code,
         name: plan.name,
@@ -113,7 +121,6 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
       })
     } else if (initialData) {
       const discount = initialData.yearly_discount_percentage ?? null
-
       form.reset({
         code: initialData.code || "",
         name: initialData.name || "",
@@ -181,7 +188,6 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
       form.reset()
       onSuccess?.()
     } catch (error) {
-      // Error handling is done in the mutation hooks
       console.error("Form submission error:", error)
     }
   }
@@ -190,12 +196,10 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-slate-900 border-slate-800 text-white">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-serif">
-            {isEditing ? "Edit Plan" : "Create New Plan"}
-          </DialogTitle>
-          <DialogDescription className="text-slate-400">
+          <DialogTitle>{isEditing ? "Edit Plan" : "Create New Plan"}</DialogTitle>
+          <DialogDescription>
             {isEditing
               ? "Update the plan details below."
               : "Fill in the details to create a new subscription plan."}
@@ -205,419 +209,326 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {/* Basic Information */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-amber-400 border-b border-slate-800 pb-2">
-                Basic Information
-              </h3>
-
-              <div className="grid grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Basic Information</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4 items-start">
+                  <FormField
+                    control={form.control}
+                    name="code"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Plan Code *</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="e.g., PRO, FREE" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Plan Name *</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="e.g., Professional Plan" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 <FormField
                   control={form.control}
-                  name="code"
+                  name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Plan Code *</FormLabel>
+                      <FormLabel>Description</FormLabel>
                       <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="e.g., PRO, FREE, ENTERPRISE"
-                          className="bg-slate-950/50 border-slate-700 text-white"
-                        />
+                        <Textarea {...field} placeholder="Describe what this plan offers..." className="resize-none" rows={2} />
                       </FormControl>
-                      <FormDescription className="text-slate-500 text-xs">
-                        Unique identifier for the plan
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Plan Name *</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="e.g., Professional Plan"
-                          className="bg-slate-950/50 border-slate-700 text-white"
-                        />
-                      </FormControl>
-                      <FormDescription className="text-slate-500 text-xs">
-                        Display name for the plan
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        {...field}
-                        placeholder="Describe what this plan offers..."
-                        className="bg-slate-950/50 border-slate-700 text-white min-h-[80px]"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+              </CardContent>
+            </Card>
 
             {/* Pricing */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-amber-400 border-b border-slate-800 pb-2">
-                Pricing
-              </h3>
-
-              <div className="grid grid-cols-3 gap-4">
-                <FormField
-                  control={form.control}
-                  name="monthly_price"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Monthly Price</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="1"
-                          placeholder="0"
-                          value={field.value == null ? "" : String(field.value)}
-                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                          className="bg-slate-950/50 border-slate-700 text-white"
-                        />
-                      </FormControl>
-                      <FormDescription className="text-slate-500 text-xs">
-                        Leave empty if not offered
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="yearly_discount_percentage"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Yearly Discount %</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.1"
-                          placeholder="0"
-                          value={field.value == null ? "" : String(field.value)}
-                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                          className="bg-slate-950/50 border-slate-700 text-white"
-                        />
-                      </FormControl>
-                      <FormDescription className="text-slate-500 text-xs">
-                        Discount percentage (0-100%)
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="currency"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Currency</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Pricing</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-3 gap-4 items-start">
+                  <FormField
+                    control={form.control}
+                    name="monthly_price"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Monthly Price</FormLabel>
                         <FormControl>
-                          <SelectTrigger className="bg-slate-950/50 border-slate-700 text-white">
-                            <SelectValue />
-                          </SelectTrigger>
+                          <Input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={field.value == null ? "" : String(field.value)}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
+                          />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="VND">VND</SelectItem>
-                          <SelectItem value="USD">USD</SelectItem>
-                          <SelectItem value="EUR">EUR</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              {/* Yearly price calculation display */}
-              {form.watch("monthly_price") && form.watch("yearly_discount_percentage") && (
-                <div className="text-sm text-emerald-400 flex items-center gap-2">
-                  <span>Calculated yearly price: {
-                    (() => {
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="yearly_discount_percentage"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Yearly Discount %</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="100"
+                            placeholder="0"
+                            value={field.value == null ? "" : String(field.value)}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="currency"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Currency</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="VND">VND</SelectItem>
+                            <SelectItem value="USD">USD</SelectItem>
+                            <SelectItem value="EUR">EUR</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                {form.watch("monthly_price") && form.watch("yearly_discount_percentage") && (
+                  <p className="text-sm text-green-500">
+                    Yearly price: {(() => {
                       const monthly = form.watch("monthly_price")
                       const discount = form.watch("yearly_discount_percentage")
                       if (monthly && discount != null) {
-                        const annualPrice = monthly * 12
-                        const yearlyPrice = Math.round(annualPrice * (1 - discount / 100))
-                        return new Intl.NumberFormat('vi-VN', {
-                          style: 'currency',
-                          currency: 'VND',
-                        }).format(yearlyPrice)
+                        const yearlyPrice = Math.round(monthly * 12 * (1 - discount / 100))
+                        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(yearlyPrice)
                       }
                       return "0"
-                    })()
-                  }</span>
-                </div>
-              )}
-            </div>
+                    })()}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Features & Limits */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-amber-400 border-b border-slate-800 pb-2">
-                Features & Limits
-              </h3>
-
-              <div className="grid grid-cols-3 gap-4">
-                <FormField
-                  control={form.control}
-                  name="monthly_credits"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Monthly Credits</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          placeholder="1000"
-                          value={field.value == null ? "" : String(field.value)}
-                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                          className="bg-slate-950/50 border-slate-700 text-white"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="additional_credit_price"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Price per 100 Credits</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          placeholder="10000"
-                          value={field.value == null ? "" : String(field.value)}
-                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                          className="bg-slate-950/50 border-slate-700 text-white"
-                        />
-                      </FormControl>
-                      <FormDescription className="text-slate-500 text-xs">
-                        Price to buy 100 additional credits
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="available_project"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Available Projects</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          placeholder="10"
-                          value={field.value == null ? "" : String(field.value)}
-                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                          className="bg-slate-950/50 border-slate-700 text-white"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={form.control}
-                name="features_text"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Features Text</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        {...field}
-                        placeholder="List plan features (one per line or comma separated)"
-                        className="bg-slate-950/50 border-slate-700 text-white min-h-[80px]"
-                      />
-                    </FormControl>
-                    <FormDescription className="text-slate-500 text-xs">
-                      Additional features description
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Plan Configuration */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-amber-400 border-b border-slate-800 pb-2">
-                Configuration
-              </h3>
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="tier"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Tier</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Features & Limits</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-3 gap-4 items-start">
+                  <FormField
+                    control={form.control}
+                    name="monthly_credits"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Monthly Credits</FormLabel>
                         <FormControl>
-                          <SelectTrigger className="bg-slate-950/50 border-slate-700 text-white">
-                            <SelectValue />
-                          </SelectTrigger>
+                          <Input
+                            type="number"
+                            min="0"
+                            placeholder="1000"
+                            value={field.value == null ? "" : String(field.value)}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
+                          />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="free">Free</SelectItem>
-                          <SelectItem value="pay">Pay</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="additional_credit_price"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Price per 100 Credits</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            placeholder="10000"
+                            value={field.value == null ? "" : String(field.value)}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="available_project"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Available Projects</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            placeholder="10"
+                            value={field.value == null ? "" : String(field.value)}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 <FormField
                   control={form.control}
-                  name="sort_index"
+                  name="features_text"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Sort Index</FormLabel>
+                      <FormLabel>Features Text</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
-                          min="0"
-                          placeholder="0"
-                          value={field.value == null ? "" : String(field.value)}
-                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : 0)}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                          className="bg-slate-950/50 border-slate-700 text-white"
-                        />
+                        <Textarea {...field} placeholder="List plan features..." className="resize-none" rows={2} />
                       </FormControl>
-                      <FormDescription className="text-slate-500 text-xs">
-                        Display order (lower = first)
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-              </div>
+              </CardContent>
+            </Card>
 
-              <div className="grid grid-cols-3 gap-6 pt-4">
-                <FormField
-                  control={form.control}
-                  name="is_active"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border border-slate-800 p-4 bg-slate-950/30">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-base">Active</FormLabel>
-                        <FormDescription className="text-xs text-slate-500">
-                          Enable this plan
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="is_featured"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border border-slate-800 p-4 bg-slate-950/30">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-base">Featured</FormLabel>
-                        <FormDescription className="text-xs text-slate-500">
-                          Highlight plan
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="is_custom_price"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border border-slate-800 p-4 bg-slate-950/30">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-base">Custom Price</FormLabel>
-                        <FormDescription className="text-xs text-slate-500">
-                          Show "Custom"
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </div>
+            {/* Configuration */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Configuration</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4 items-start">
+                  <FormField
+                    control={form.control}
+                    name="tier"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Tier</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="free">Free</SelectItem>
+                            <SelectItem value="pay">Pay</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="sort_index"
+                    render={({ field }) => (
+                      <FormItem className="space-y-2">
+                        <FormLabel>Sort Index</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={field.value == null ? "" : String(field.value)}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : 0)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-4 pt-2">
+                  <FormField
+                    control={form.control}
+                    name="is_active"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel>Active</FormLabel>
+                          <FormDescription className="text-xs">Enable plan</FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="is_featured"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel>Featured</FormLabel>
+                          <FormDescription className="text-xs">Highlight plan</FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="is_custom_price"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel>Custom</FormLabel>
+                          <FormDescription className="text-xs">Show "Custom"</FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </CardContent>
+            </Card>
 
             <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                className="bg-slate-800 border-slate-700 text-white hover:bg-slate-700"
-                disabled={isLoading}
-              >
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                className="bg-amber-600 hover:bg-amber-700 text-white"
-                disabled={isLoading}
-              >
+              <Button type="submit" disabled={isLoading}>
                 {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                <Save className="w-4 h-4 mr-2" />
                 {isEditing ? "Update Plan" : "Create Plan"}
               </Button>
             </DialogFooter>

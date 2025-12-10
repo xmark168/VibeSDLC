@@ -3,7 +3,7 @@
 from typing import Optional, TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import JSON, UniqueConstraint, ForeignKey
+from sqlalchemy import JSON, UniqueConstraint, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlmodel import Field, Relationship, Column
 
@@ -20,6 +20,7 @@ class AgentPersonaTemplate(BaseModel, table=True):
     
     name: str = Field(nullable=False, index=True)
     role_type: str = Field(nullable=False, index=True)
+    avatar: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     
     personality_traits: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     communication_style: str = Field(nullable=False)

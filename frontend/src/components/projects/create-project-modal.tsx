@@ -1,6 +1,6 @@
 import { motion } from "framer-motion"
-import { Globe, Lock, X, Layers, Users, Search, Check, ChevronDown } from "lucide-react"
-import { useId, useState, useMemo } from "react"
+import { Globe, X, Layers, Users, Search, Check, ChevronDown, Shuffle, Settings } from "lucide-react"
+import { useId, useState, useMemo, useEffect } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -27,37 +27,16 @@ import { useAppStore } from "@/stores/auth-store"
 import toast from "react-hot-toast"
 import { withToast } from "@/utils"
 import { usePersonasByRole } from "@/queries/personas"
+import { useStacks } from "@/queries/stacks"
 import { cn } from "@/lib/utils"
 import type { PersonaTemplate, RoleType } from "@/types/persona"
+import type { TechStack } from "@/types/stack"
 
 interface CreateProjectModalProps {
   isOpen: boolean
   onClose: () => void
   setIsOpen: React.Dispatch<React.SetStateAction<boolean>>
 }
-
-interface TechStackOption {
-  value: string
-  label: string
-  icon: string
-  description: string
-  category: string
-  template_owner: string
-  template_repo: string
-}
-
-const TECH_STACK_OPTIONS: TechStackOption[] = [
-  {
-    value: "Next.js",
-    label: "Next.js + Prisma + TailwindCSS",
-    icon: "/assets/images/icon/1.png",
-    description: "Fast development with modern tooling",
-    category: "Full Stack",
-    template_owner: "trong03",
-    template_repo: "boilerplate-vibe-sdlc"
-  },
-  // Add more tech stacks here in the future
-]
 
 const TECH_STACK_CATEGORIES = ["All", "Full Stack", "Frontend", "Backend", "Mobile", "Desktop"]
 
@@ -208,8 +187,8 @@ export function CreateProjectModal({
   const [activeTab, setActiveTab] = useState("info")
   const [projectName, setProjectName] = useState("")
   const [description, setDescription] = useState("")
-  const [isPrivate, setIsPrivate] = useState(true)
-  const [techStack, setTechStack] = useState("nodejs-react")
+  const [agentMode, setAgentMode] = useState<"random" | "custom">("random")
+  const [techStack, setTechStack] = useState("")
   const [techStackSearch, setTechStackSearch] = useState("")
   const [techStackCategory, setTechStackCategory] = useState("All")
   const [isLoading, setIsLoading] = useState(false)
@@ -219,18 +198,30 @@ export function CreateProjectModal({
 
   const user = useAppStore((state) => state.user)
   const queryClient = useQueryClient()
+  
+  // Fetch tech stacks from database
+  const { data: stacksData, isLoading: stacksLoading } = useStacks({ is_active: true })
+  const techStacks = stacksData?.data || []
+
+  // Auto-select first stack when loaded
+  useEffect(() => {
+    if (techStacks.length > 0 && !techStack) {
+      setTechStack(techStacks[0].code)
+    }
+  }, [techStacks, techStack])
 
   const filteredTechStacks = useMemo(() => {
-    return TECH_STACK_OPTIONS.filter(option => {
+    return techStacks.filter(stack => {
       const matchesSearch = !techStackSearch ||
-        option.label.toLowerCase().includes(techStackSearch.toLowerCase()) ||
-        option.description.toLowerCase().includes(techStackSearch.toLowerCase())
-      const matchesCategory = techStackCategory === "All" || option.category === techStackCategory
+        stack.name.toLowerCase().includes(techStackSearch.toLowerCase()) ||
+        stack.description?.toLowerCase().includes(techStackSearch.toLowerCase())
+      const matchesCategory = techStackCategory === "All" || 
+        stack.stack_config?.category === techStackCategory
       return matchesSearch && matchesCategory
     })
-  }, [techStackSearch, techStackCategory])
+  }, [techStacks, techStackSearch, techStackCategory])
 
-  const selectedTechStack = TECH_STACK_OPTIONS.find(o => o.value === techStack)
+  const selectedTechStack = techStacks.find(s => s.code === techStack)
 
   const createProjectMutation = useMutation({
     mutationFn: (data: ProjectCreate) =>
@@ -274,12 +265,17 @@ export function CreateProjectModal({
       return
     }
 
+    if (!techStack) {
+      toast.error("Please select a tech stack")
+      setActiveTab("tech")
+      return
+    }
+
     setIsLoading(true)
     try {
       const dataProjectCreate: ProjectCreate = {
         name: projectName,
-        is_private: isPrivate,
-        tech_stack: techStack,
+        tech_stack: techStack ? [techStack] : null,
       }
 
       await withToast(
@@ -302,10 +298,11 @@ export function CreateProjectModal({
   const resetForm = () => {
     setProjectName("")
     setDescription("")
-    setTechStack("nodejs-react")
+    setTechStack("")
     setTechStackSearch("")
     setTechStackCategory("All")
     setActiveTab("info")
+    setAgentMode("random")
     setAgentSelections(AGENT_ROLES.map(r => ({ role: r.role, personaId: null })))
     setIsLoading(false)
   }
@@ -378,7 +375,7 @@ export function CreateProjectModal({
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-6">
+            <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="info" className="flex items-center gap-2">
                 <Globe className="h-4 w-4" />
                 Project Info
@@ -386,10 +383,6 @@ export function CreateProjectModal({
               <TabsTrigger value="tech" className="flex items-center gap-2">
                 <Layers className="h-4 w-4" />
                 Tech Stack
-              </TabsTrigger>
-              <TabsTrigger value="agents" className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                Agents
               </TabsTrigger>
             </TabsList>
 
@@ -426,53 +419,96 @@ export function CreateProjectModal({
                 />
               </div>
 
-              {/* Privacy Toggle */}
+              {/* Agent Mode Toggle */}
               <div className="space-y-3">
-                <Label className="text-foreground">Visibility</Label>
+                <Label className="text-foreground">Agents</Label>
                 <div className="grid grid-cols-2 gap-3">
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => setIsPrivate(true)}
+                    onClick={() => setAgentMode("random")}
                     disabled={isLoading}
-                    className={`relative p-4 rounded-lg border-2 transition-all ${isPrivate
+                    className={`relative p-4 rounded-lg border-2 transition-all ${agentMode === "random"
                       ? "border-primary bg-primary/10"
                       : "border-border bg-muted hover:border-primary/50"
                       } disabled:opacity-50`}
                   >
-                    <Lock
-                      className={`h-5 w-5 mx-auto mb-2 ${isPrivate ? "text-primary" : "text-muted-foreground"}`}
+                    <Shuffle
+                      className={`h-5 w-5 mx-auto mb-2 ${agentMode === "random" ? "text-primary" : "text-muted-foreground"}`}
                     />
-                    <p className={`text-sm font-semibold ${isPrivate ? "text-foreground" : "text-muted-foreground"}`}>
-                      Private
+                    <p className={`text-sm font-semibold ${agentMode === "random" ? "text-foreground" : "text-muted-foreground"}`}>
+                      Random
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Only you can access
+                      Auto assign personas
                     </p>
                   </motion.button>
 
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => setIsPrivate(false)}
+                    onClick={() => setAgentMode("custom")}
                     disabled={isLoading}
-                    className={`relative p-4 rounded-lg border-2 transition-all ${!isPrivate
+                    className={`relative p-4 rounded-lg border-2 transition-all ${agentMode === "custom"
                       ? "border-primary bg-primary/10"
                       : "border-border bg-muted hover:border-primary/50"
                       } disabled:opacity-50`}
                   >
-                    <Globe
-                      className={`h-5 w-5 mx-auto mb-2 ${!isPrivate ? "text-primary" : "text-muted-foreground"}`}
+                    <Settings
+                      className={`h-5 w-5 mx-auto mb-2 ${agentMode === "custom" ? "text-primary" : "text-muted-foreground"}`}
                     />
-                    <p className={`text-sm font-semibold ${!isPrivate ? "text-foreground" : "text-muted-foreground"}`}>
-                      Public
+                    <p className={`text-sm font-semibold ${agentMode === "custom" ? "text-foreground" : "text-muted-foreground"}`}>
+                      Custom
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Everyone can see
+                      Choose personas manually
                     </p>
                   </motion.button>
                 </div>
               </div>
+
+              {/* Custom Agent Persona Selection */}
+              {agentMode === "custom" && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-4"
+                >
+                  <div className="text-sm text-muted-foreground">
+                    Select persona for each agent role.
+                  </div>
+                  <div className="grid gap-3">
+                    {AGENT_ROLES.map((agentRole) => {
+                      const selection = agentSelections.find(a => a.role === agentRole.role)
+                      return (
+                        <div
+                          key={agentRole.role}
+                          className="p-3 rounded-lg border border-border bg-card"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="text-2xl">{agentRole.icon}</div>
+                            <div className="flex-1">
+                              <h4 className="font-medium text-sm">{agentRole.label}</h4>
+                              <p className="text-xs text-muted-foreground">
+                                {agentRole.description}
+                              </p>
+                            </div>
+                            <div className="w-48">
+                              <PersonaSelector
+                                role={agentRole.role}
+                                selectedPersonaId={selection?.personaId || null}
+                                onSelect={(personaId) => handleAgentPersonaChange(agentRole.role, personaId)}
+                                disabled={isLoading}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </motion.div>
+              )}
             </TabsContent>
 
             {/* Tech Stack Tab */}
@@ -509,36 +545,59 @@ export function CreateProjectModal({
               {/* Tech Stack List */}
               <ScrollArea className="h-[280px] pr-4">
                 <div className="space-y-3">
-                  {filteredTechStacks.length === 0 ? (
+                  {stacksLoading ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      Loading tech stacks...
+                    </div>
+                  ) : filteredTechStacks.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       No tech stack found matching your criteria
                     </div>
                   ) : (
-                    filteredTechStacks.map((option) => (
+                    filteredTechStacks.map((stack) => (
                       <motion.div
-                        key={option.value}
+                        key={stack.code}
                         whileHover={{ scale: 1.01 }}
-                        onClick={() => !isLoading && setTechStack(option.value)}
-                        className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all ${techStack === option.value
+                        onClick={() => !isLoading && setTechStack(stack.code)}
+                        className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all ${techStack === stack.code
                           ? "border-primary bg-primary/5"
                           : "border-border hover:border-primary/50"
                           } ${isLoading ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
-                        <img
-                          src={option.icon}
-                          alt={option.label}
-                          className="h-10 w-10 rounded-lg"
-                        />
+                        {stack.image ? (
+                          <img
+                            src={stack.image}
+                            alt={stack.name}
+                            className="h-10 w-10 rounded-lg object-cover"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                            <Layers className="h-5 w-5 text-muted-foreground" />
+                          </div>
+                        )}
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold">{option.label}</span>
-                            <Badge variant="secondary" className="text-xs">
-                              {option.category}
-                            </Badge>
+                            <span className="font-semibold">{stack.name}</span>
+                            {stack.stack_config?.category && (
+                              <Badge variant="secondary" className="text-xs">
+                                {stack.stack_config.category}
+                              </Badge>
+                            )}
                           </div>
-                          <p className="text-sm text-muted-foreground">{option.description}</p>
+                          <p className="text-sm text-muted-foreground mb-2">{stack.description || "No description"}</p>
+                          {stack.stack_config && Object.keys(stack.stack_config).length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {Object.entries(stack.stack_config)
+                                .filter(([key]) => key !== "category")
+                                .map(([key, value]) => (
+                                  <Badge key={key} variant="outline" className="text-[10px] px-1.5 py-0">
+                                    {key}: {value}
+                                  </Badge>
+                                ))}
+                            </div>
+                          )}
                         </div>
-                        {techStack === option.value && (
+                        {techStack === stack.code && (
                           <Check className="h-5 w-5 text-primary" />
                         )}
                       </motion.div>
@@ -552,59 +611,12 @@ export function CreateProjectModal({
                 <div className="p-3 bg-muted rounded-lg">
                   <p className="text-sm">
                     <span className="text-muted-foreground">Selected: </span>
-                    <span className="font-medium">{selectedTechStack.label}</span>
+                    <span className="font-medium">{selectedTechStack.name}</span>
                   </p>
                 </div>
               )}
             </TabsContent>
 
-            {/* Agents Tab */}
-            <TabsContent value="agents" className="space-y-4">
-              <div className="text-sm text-muted-foreground mb-4">
-                Select persona for each agent role. Personas define the personality and communication style of your AI agents.
-              </div>
-
-              <div className="grid gap-4">
-                {AGENT_ROLES.map((agentRole) => {
-                  const selection = agentSelections.find(a => a.role === agentRole.role)
-                  return (
-                    <div
-                      key={agentRole.role}
-                      className="p-4 rounded-lg border border-border bg-card"
-                    >
-                      <div className="flex items-start gap-4">
-                        <div className="text-3xl">{agentRole.icon}</div>
-                        <div className="flex-1 space-y-3">
-                          <div>
-                            <h4 className="font-semibold">{agentRole.label}</h4>
-                            <p className="text-sm text-muted-foreground">
-                              {agentRole.description}
-                            </p>
-                          </div>
-                          <div>
-                            <Label className="text-xs text-muted-foreground mb-1.5 block">
-                              Select Persona
-                            </Label>
-                            <PersonaSelector
-                              role={agentRole.role}
-                              selectedPersonaId={selection?.personaId || null}
-                              onSelect={(personaId) => handleAgentPersonaChange(agentRole.role, personaId)}
-                              disabled={isLoading}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div className="p-3 bg-muted rounded-lg">
-                <p className="text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground">Tip:</span> You can change agent personas later in project settings.
-                </p>
-              </div>
-            </TabsContent>
           </Tabs>
 
           {/* Action Buttons */}

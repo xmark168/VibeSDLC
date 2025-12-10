@@ -21,7 +21,7 @@ export function LargeTestimonial() {
                 />
                 <div className="flex flex-col justify-start items-start">
                   <div className="text-foreground text-base font-medium leading-6">
-                    Soobin Hoàng Sơn
+                    Soobin Hoang Son
                   </div>
                   <div className="text-muted-foreground text-sm font-normal leading-6">
                     {"Sonmm"}

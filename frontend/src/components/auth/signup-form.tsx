@@ -45,9 +45,9 @@ export function SignUpForm() {
         )
       }),
       {
-        loading: "Đang tạo tài khoản...",
-        success: <b>Tạo tài khoản thành công!</b>,
-        error: <b>Tạo tài khoản thất bại. Vui lòng thử lại.</b>,
+        loading: "Creating account...",
+        success: <b>Account created successfully!</b>,
+        error: <b>Failed to create account. Please try again.</b>,
       },
     )
   }
@@ -71,16 +71,16 @@ export function SignUpForm() {
 
   const isOAuthDisabled = oauthLoading !== null
   const passwordRequirements = [
-    { label: "Ít nhất 8 ký tự", met: formData.password.length >= 8 },
+    { label: "At least 8 characters", met: formData.password.length >= 8 },
     {
-      label: "Chứa chữ in hoa",
+      label: "Contains uppercase letter",
       met: /[A-Z]/.test(formData.password),
     },
     {
-      label: "Chứa chữ thường",
+      label: "Contains lowercase letter",
       met: /[a-z]/.test(formData.password),
     },
-    { label: "Chứa số", met: /[0-9]/.test(formData.password) },
+    { label: "Contains number", met: /[0-9]/.test(formData.password) },
   ]
 
   const passwordsMatch =
@@ -109,7 +109,7 @@ export function SignUpForm() {
           transition={{ delay: 0.4 }}
           className="text-3xl font-bold text-foreground"
         >
-          Tạo tài khoản
+          Create account
         </motion.h2>
         <motion.p
           initial={{ opacity: 0 }}
@@ -117,7 +117,7 @@ export function SignUpForm() {
           transition={{ delay: 0.5 }}
           className="text-muted-foreground"
         >
-          Bắt đầu với đội ngũ AI của bạn
+          Get started with your AI team
         </motion.p>
       </div>
 
@@ -178,7 +178,7 @@ export function SignUpForm() {
           </div>
           <div className="relative flex justify-center text-sm">
             <span className="bg-card px-4 text-muted-foreground">
-              Hoặc tiếp tục với email
+              Or continue with email
             </span>
           </div>
         </div>
@@ -192,12 +192,12 @@ export function SignUpForm() {
             className="space-y-2"
           >
             <Label htmlFor="name" className="text-sm font-medium">
-              Họ và tên
+              Full name
             </Label>
             <Input
               id="name"
               type="text"
-              placeholder="Nguyễn Văn A"
+              placeholder="John Doe"
               value={formData.fullname}
               onChange={(e) =>
                 setFormData({ ...formData, fullname: e.target.value })
@@ -214,7 +214,7 @@ export function SignUpForm() {
             className="space-y-2"
           >
             <Label htmlFor="email" className="text-sm font-medium">
-              Địa chỉ Email
+              Email address
             </Label>
             <Input
               id="email"
@@ -236,13 +236,13 @@ export function SignUpForm() {
             className="space-y-2"
           >
             <Label htmlFor="password" className="text-sm font-medium">
-              Mật khẩu
+              Password
             </Label>
             <div className="relative">
               <Input
                 id="password"
                 type={showPassword ? "text" : "password"}
-                placeholder="Tạo mật khẩu mạnh"
+                placeholder="Create a strong password"
                 value={formData.password}
                 onChange={(e) =>
                   setFormData({ ...formData, password: e.target.value })
@@ -306,13 +306,13 @@ export function SignUpForm() {
             className="space-y-2"
           >
             <Label htmlFor="confirmPassword" className="text-sm font-medium">
-              Xác nhận mật khẩu
+              Confirm password
             </Label>
             <div className="relative">
               <Input
                 id="confirmPassword"
                 type={showConfirmPassword ? "text" : "password"}
-                placeholder="Nhập lại mật khẩu"
+                placeholder="Re-enter password"
                 value={formData.confirmPassword}
                 onChange={(e) =>
                   setFormData({ ...formData, confirmPassword: e.target.value })
@@ -342,7 +342,7 @@ export function SignUpForm() {
                 className="text-sm text-red-500 flex items-center gap-1"
               >
                 <X className="h-4 w-4" />
-                Mật khẩu không khớp
+                Passwords do not match
               </motion.p>
             )}
             {passwordsMatch && (
@@ -352,7 +352,7 @@ export function SignUpForm() {
                 className="text-sm text-green-500 flex items-center gap-1"
               >
                 <Check className="h-4 w-4" />
-                Mật khẩu khớp
+                Passwords match
               </motion.p>
             )}
           </motion.div>
@@ -366,7 +366,7 @@ export function SignUpForm() {
               type="submit"
               className="w-full h-12 text-base font-semibold bg-primary hover:bg-primary/90 transition-all"
             >
-              Tạo tài khoản
+              Create account
             </Button>
           </motion.div>
 
@@ -376,12 +376,12 @@ export function SignUpForm() {
             transition={{ delay: 1.1 }}
             className="text-center text-sm text-muted-foreground"
           >
-            Đã có tài khoản?{" "}
+            Already have an account?{" "}
             <Link
               to="/login"
               className="text-foreground underline hover:text-accent transition-colors"
             >
-              Đăng nhập
+              Sign in
             </Link>
           </motion.div>
         </form>

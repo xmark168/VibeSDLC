@@ -120,6 +120,10 @@ class Order(BaseModel, table=True):
     payment_link_id: str | None = Field(default=None, sa_column=Column(Text))
     qr_code: str | None = Field(default=None, sa_column=Column(Text))
     checkout_url: str | None = Field(default=None, sa_column=Column(Text))
+    
+    # SePay fields
+    sepay_transaction_code: str | None = Field(default=None, sa_column=Column(Text, unique=True, index=True))
+    sepay_transaction_id: str | None = Field(default=None, sa_column=Column(Text))
 
     billing_cycle: str | None = Field(default="monthly", sa_column=Column(Text))
     plan_code: str | None = Field(default=None, sa_column=Column(Text))

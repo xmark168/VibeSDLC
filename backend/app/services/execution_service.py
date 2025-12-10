@@ -78,7 +78,9 @@ class ExecutionService:
         error: Optional[str] = None,
         error_traceback: Optional[str] = None,
         events: Optional[list] = None,
-        duration_ms: Optional[int] = None
+        duration_ms: Optional[int] = None,
+        token_used: int = 0,
+        llm_calls: int = 0,
     ) -> None:
         """Complete execution record (async-safe, uses thread pool).
         
@@ -91,6 +93,8 @@ class ExecutionService:
             error_traceback: Optional error traceback
             events: Optional list of events
             duration_ms: Optional duration in milliseconds
+            token_used: Total tokens used in this execution
+            llm_calls: Number of LLM calls made
         """
         def _update():
             from app.core.db import engine  # Import here to avoid circular import
@@ -103,6 +107,8 @@ class ExecutionService:
                     )
                     execution.completed_at = datetime.now(timezone.utc)
                     execution.duration_ms = duration_ms
+                    execution.token_used = token_used
+                    execution.llm_calls = llm_calls
                     
                     # Store events
                     if events:

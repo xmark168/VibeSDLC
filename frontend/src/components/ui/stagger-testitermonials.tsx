@@ -7,74 +7,74 @@ const SQRT_5000 = Math.sqrt(5000);
 const defaultTestimonials = [
     {
         tempId: 0,
-        testimonial: "AI agents giúp team mình viết PRD và User Stories nhanh gấp 5 lần. Không còn phải ngồi brainstorm cả ngày nữa!",
-        by: "Minh Tuấn, Tech Lead tại FPT Software",
+        testimonial: "AI agents help our team write PRD and User Stories 5x faster. No more brainstorming all day!",
+        by: "Minh Tuan, Tech Lead at FPT Software",
         imgSrc: "https://i.pravatar.cc/150?img=52"
     },
     {
         tempId: 1,
-        testimonial: "Team Leader agent thực sự hiểu Kanban. Nó tự động cân bằng WIP và nhắc nhở khi có bottleneck.",
-        by: "Hồng Nhung, Scrum Master tại VNG",
+        testimonial: "Team Leader agent really understands Kanban. It automatically balances WIP and alerts when there's a bottleneck.",
+        by: "Hong Nhung, Scrum Master at VNG",
         imgSrc: "https://i.pravatar.cc/150?img=44"
     },
     {
         tempId: 2,
-        testimonial: "Lần đầu tiên mình thấy AI có thể giao tiếp bằng tiếng Việt tự nhiên đến vậy. Như chat với đồng nghiệp thật!",
-        by: "Đức Anh, Senior Developer tại Tiki",
+        testimonial: "First time I've seen AI communicate so naturally. It's like chatting with a real colleague!",
+        by: "Duc Anh, Senior Developer at Tiki",
         imgSrc: "https://i.pravatar.cc/150?img=12"
     },
     {
         tempId: 3,
-        testimonial: "Developer agent generate code khá chuẩn, chỉ cần review và tweak một chút là deploy được luôn.",
-        by: "Thanh Hà, Full-stack Developer",
+        testimonial: "Developer agent generates pretty accurate code, just need a quick review and tweak before deploying.",
+        by: "Thanh Ha, Full-stack Developer",
         imgSrc: "https://i.pravatar.cc/150?img=45"
     },
     {
         tempId: 4,
-        testimonial: "Tester agent tạo test cases rất chi tiết, cover được nhiều edge cases mà mình không nghĩ tới.",
-        by: "Quốc Bảo, QA Engineer tại Shopee",
+        testimonial: "Tester agent creates very detailed test cases, covering many edge cases I didn't think of.",
+        by: "Quoc Bao, QA Engineer at Shopee",
         imgSrc: "https://i.pravatar.cc/150?img=15"
     },
     {
         tempId: 5,
-        testimonial: "Từ khi dùng VibeSDLC, cycle time giảm 40%. Flow metrics dashboard rất trực quan!",
-        by: "Phương Linh, Product Owner tại MoMo",
+        testimonial: "Since using VibeSDLC, cycle time reduced by 40%. Flow metrics dashboard is very intuitive!",
+        by: "Phuong Linh, Product Owner at MoMo",
         imgSrc: "https://i.pravatar.cc/150?img=47"
     },
     {
         tempId: 6,
-        testimonial: "BA agent phân tích requirements rất kỹ, hỏi đúng những câu hỏi mà mình chưa nghĩ tới.",
-        by: "Văn Hùng, Business Analyst tại VNPAY",
+        testimonial: "BA agent analyzes requirements thoroughly, asking the right questions I hadn't thought of.",
+        by: "Van Hung, Business Analyst at VNPAY",
         imgSrc: "https://i.pravatar.cc/150?img=18"
     },
     {
         tempId: 7,
-        testimonial: "Multi-agent system này thực sự game-changing. Mỗi agent chuyên môn hóa một việc, phối hợp rất nhịp nhàng.",
-        by: "Khánh Vy, CTO tại Startup ABC",
+        testimonial: "This multi-agent system is truly game-changing. Each agent specializes in one thing, coordinating seamlessly.",
+        by: "Khanh Vy, CTO at Startup ABC",
         imgSrc: "https://i.pravatar.cc/150?img=48"
     },
     {
         tempId: 8,
-        testimonial: "Cuối cùng cũng có tool AI hiểu context dự án Việt Nam. Không còn phải translate qua lại nữa!",
-        by: "Hoàng Nam, Engineering Manager",
+        testimonial: "Finally an AI tool that understands project context. No more translating back and forth!",
+        by: "Hoang Nam, Engineering Manager",
         imgSrc: "https://i.pravatar.cc/150?img=53"
     },
     {
         tempId: 9,
-        testimonial: "Smart routing rất thông minh, tự biết chuyển task đến đúng agent. Tiết kiệm thời gian đáng kể.",
-        by: "Thùy Dương, Project Manager tại NashTech",
+        testimonial: "Smart routing is very intelligent, knows how to route tasks to the right agent. Saves significant time.",
+        by: "Thuy Duong, Project Manager at NashTech",
         imgSrc: "https://i.pravatar.cc/150?img=43"
     },
     {
         tempId: 10,
-        testimonial: "Personas feature rất hay! Mỗi agent có tính cách riêng, chat vui hơn hẳn các tool AI khác.",
-        by: "Minh Khôi, Junior Developer",
+        testimonial: "Personas feature is great! Each agent has its own personality, much more fun than other AI tools.",
+        by: "Minh Khoi, Junior Developer",
         imgSrc: "https://i.pravatar.cc/150?img=57"
     },
     {
         tempId: 11,
-        testimonial: "Dùng để onboard member mới rất hiệu quả. AI giải thích codebase và quy trình rõ ràng.",
-        by: "Ngọc Ánh, HR Tech tại KMS Technology",
+        testimonial: "Very effective for onboarding new members. AI explains codebase and processes clearly.",
+        by: "Ngoc Anh, HR Tech at KMS Technology",
         imgSrc: "https://i.pravatar.cc/150?img=49"
     }
 ];

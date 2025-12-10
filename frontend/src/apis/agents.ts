@@ -16,6 +16,14 @@ import type {
   AgentPoolMetrics,
   UpdatePoolConfigRequest,
   PoolSuggestion,
+  SystemStatusResponse,
+  EmergencyActionResponse,
+  BulkOperationResponse,
+  AutoScalingRule,
+  AutoScalingRuleCreate,
+  AgentTemplate,
+  AgentTemplateCreate,
+  AgentTemplateFromAgent,
 } from "@/types"
 
 // Re-export types for convenience
@@ -328,6 +336,239 @@ export const agentsApi = {
     return __request(OpenAPI, {
       method: "GET",
       url: "/api/v1/agent-management/pools/suggestions",
+    })
+  },
+
+  // ===== Emergency Controls =====
+
+  getSystemStatus: async (): Promise<SystemStatusResponse> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agents/system/status",
+    })
+  },
+
+  emergencyPause: async (): Promise<EmergencyActionResponse> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/system/emergency/pause",
+    })
+  },
+
+  emergencyResume: async (): Promise<EmergencyActionResponse> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/system/emergency/resume",
+    })
+  },
+
+  emergencyStop: async (force: boolean = false): Promise<EmergencyActionResponse> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/system/emergency/stop",
+      query: { force },
+    })
+  },
+
+  enterMaintenanceMode: async (message: string = "System under maintenance"): Promise<EmergencyActionResponse> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/system/emergency/maintenance",
+      query: { message },
+    })
+  },
+
+  restartPool: async (poolName: string): Promise<{
+    message: string
+    pool_name: string
+    agents_terminated: number
+    agents_respawned: number
+  }> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: `/api/v1/agents/system/emergency/restart-pool/${poolName}`,
+    })
+  },
+
+  // ===== Bulk Operations =====
+
+  bulkTerminate: async (agentIds: string[], graceful: boolean = true): Promise<BulkOperationResponse> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/bulk/terminate",
+      query: { graceful },
+      body: { agent_ids: agentIds },
+    })
+  },
+
+  bulkSetIdle: async (agentIds: string[]): Promise<BulkOperationResponse> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/bulk/set-idle",
+      body: { agent_ids: agentIds },
+    })
+  },
+
+  bulkRestart: async (agentIds: string[]): Promise<BulkOperationResponse> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/bulk/restart",
+      body: { agent_ids: agentIds },
+    })
+  },
+
+  bulkSpawn: async (params: {
+    role_type: string
+    count: number
+    project_id: string
+    pool_name?: string
+  }): Promise<BulkOperationResponse> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/bulk/spawn",
+      body: {
+        role_type: params.role_type,
+        count: params.count,
+        project_id: params.project_id,
+        pool_name: params.pool_name || "universal_pool",
+      },
+    })
+  },
+
+  // ===== Auto-scaling Rules =====
+
+  listScalingRules: async (params?: { poolName?: string; enabledOnly?: boolean }): Promise<AutoScalingRule[]> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agents/scaling/rules",
+      query: {
+        pool_name: params?.poolName,
+        enabled_only: params?.enabledOnly,
+      },
+    })
+  },
+
+  createScalingRule: async (rule: AutoScalingRuleCreate): Promise<AutoScalingRule> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/scaling/rules",
+      body: rule,
+    })
+  },
+
+  getScalingRule: async (ruleId: string): Promise<AutoScalingRule> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: `/api/v1/agents/scaling/rules/${ruleId}`,
+    })
+  },
+
+  updateScalingRule: async (ruleId: string, rule: AutoScalingRuleCreate): Promise<AutoScalingRule> => {
+    return __request(OpenAPI, {
+      method: "PUT",
+      url: `/api/v1/agents/scaling/rules/${ruleId}`,
+      body: rule,
+    })
+  },
+
+  deleteScalingRule: async (ruleId: string): Promise<{ message: string }> => {
+    return __request(OpenAPI, {
+      method: "DELETE",
+      url: `/api/v1/agents/scaling/rules/${ruleId}`,
+    })
+  },
+
+  toggleScalingRule: async (ruleId: string): Promise<AutoScalingRule> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: `/api/v1/agents/scaling/rules/${ruleId}/toggle`,
+    })
+  },
+
+  triggerScalingRule: async (ruleId: string): Promise<{
+    message: string
+    current_count: number
+    target_count: number
+    action_taken: string
+    agents_to_spawn?: number
+    agents_terminated?: number
+  }> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: `/api/v1/agents/scaling/rules/${ruleId}/trigger`,
+    })
+  },
+
+  // ===== Agent Templates =====
+
+  listTemplates: async (params?: { roleType?: string; tag?: string }): Promise<AgentTemplate[]> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agents/templates",
+      query: {
+        role_type: params?.roleType,
+        tag: params?.tag,
+      },
+    })
+  },
+
+  createTemplate: async (template: AgentTemplateCreate): Promise<AgentTemplate> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/templates",
+      body: template,
+    })
+  },
+
+  createTemplateFromAgent: async (request: AgentTemplateFromAgent): Promise<AgentTemplate> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/templates/from-agent",
+      body: request,
+    })
+  },
+
+  getTemplate: async (templateId: string): Promise<AgentTemplate> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: `/api/v1/agents/templates/${templateId}`,
+    })
+  },
+
+  updateTemplate: async (templateId: string, template: AgentTemplateCreate): Promise<AgentTemplate> => {
+    return __request(OpenAPI, {
+      method: "PUT",
+      url: `/api/v1/agents/templates/${templateId}`,
+      body: template,
+    })
+  },
+
+  deleteTemplate: async (templateId: string): Promise<{ message: string }> => {
+    return __request(OpenAPI, {
+      method: "DELETE",
+      url: `/api/v1/agents/templates/${templateId}`,
+    })
+  },
+
+  spawnFromTemplate: async (templateId: string, projectId: string, count?: number): Promise<{
+    message: string
+    success_count: number
+    failed_count: number
+    results: Array<{ index: number; agent_id?: string; agent_name?: string; status: string; error?: string }>
+    template: AgentTemplate
+  }> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: `/api/v1/agents/templates/${templateId}/spawn`,
+      query: { project_id: projectId, count: count || 1 },
+    })
+  },
+
+  duplicateTemplate: async (templateId: string, newName: string): Promise<AgentTemplate> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: `/api/v1/agents/templates/${templateId}/duplicate`,
+      query: { new_name: newName },
     })
   },
 

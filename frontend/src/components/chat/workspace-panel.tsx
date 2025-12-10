@@ -328,7 +328,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       window.URL.revokeObjectURL(url)
     } catch (err) {
       console.error('Download failed:', err)
-      alert('Không thể tải file. Vui lòng thử lại.')
+      alert('Failed to download file. Please try again.')
     }
   }
 
@@ -475,7 +475,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
               size="sm"
               onClick={onExpandChat}
               className="h-8 px-2 mr-1"
-              title="Mở lại Chat"
+              title="Reopen Chat"
             >
               <ChevronsRight className="w-4 h-4" />
             </Button>

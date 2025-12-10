@@ -132,20 +132,20 @@ export default function IntroduceAgents() {
             </section>
 
             <ScrollSection
-                title="Rồng Lửa"
-                content="Ngọn lửa bất diệt – sức mạnh hủy diệt mọi kẻ thù. Biểu tượng của quyền lực tối cao trong truyền thuyết."
+                title="Fire Dragon"
+                content="Immortal flame - destructive power against all enemies. Symbol of supreme authority in legends."
                 imageSide="right"
             />
 
             <ScrollSection
-                title="Băng Giá Vĩnh Cửu"
-                content="Làm chủ băng tuyết, đóng băng thời gian. Sự lạnh lùng và chính xác là vũ khí đáng sợ nhất."
+                title="Eternal Ice"
+                content="Master of ice and snow, freezing time itself. Coldness and precision are the most fearsome weapons."
                 imageSide="left"
             />
 
             <ScrollSection
-                title="Thần Sấm Sét"
-                content="Tốc độ ánh sáng, sức mạnh từ trời cao. Không kẻ nào thoát khỏi cơn thịnh nộ của thiên lôi."
+                title="Thunder God"
+                content="Speed of light, power from the heavens. None can escape the wrath of thunder."
                 imageSide="right"
             />
             <div className="w-full py-4">

@@ -99,8 +99,12 @@ export const HeaderProject = ({
       <div className="container flex h-16 items-center justify-between px-6">
         {/* Left side - Logo/Brand */}
         <div className="flex items-center gap-2 ml-2">
-          <div className="flex items-center justify-center rounded-lg px-3 py-2">
-            <span className="text-xl font-bold">VibeSDLC</span>
+          <div className="flex items-center justify-center rounded-lg">
+            <img 
+              src="/assets/images/logo.png" 
+              alt="VibeSDLC" 
+              className="h-5 object-contain" 
+            />
           </div>
         </div>
 

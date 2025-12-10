@@ -1,8 +1,8 @@
-"""add db
+"""add new db
 
-Revision ID: 50bde58e62a4
+Revision ID: d2912015720e
 Revises: 
-Create Date: 2025-12-08 19:47:43.902969
+Create Date: 2025-12-10 11:47:25.407504
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision = '50bde58e62a4'
+revision = 'd2912015720e'
 down_revision = None
 branch_labels = None
 depends_on = None

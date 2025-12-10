@@ -61,9 +61,9 @@ export function LoginForm() {
         )
       }),
       {
-        loading: "Đang đăng nhập...",
-        success: <b>Chào mừng quay trở lại!</b>,
-        error: <b>Đăng nhập thất bại. Vui lòng thử lại.</b>,
+        loading: "Signing in...",
+        success: <b>Welcome back!</b>,
+        error: <b>Login failed. Please try again.</b>,
       },
     )
   }
@@ -111,7 +111,7 @@ export function LoginForm() {
           transition={{ delay: 0.4 }}
           className="text-3xl font-bold text-foreground"
         >
-          Chào mừng quay trở lại
+          Welcome back
         </motion.h2>
       </div>
 
@@ -125,7 +125,7 @@ export function LoginForm() {
         <div className="relative">
           {/* <div className="relative flex justify-center text-sm"> */}
           <span className="bg-card text-muted-foreground">
-            Đăng nhập để bắt đầu với đội ngũ AI của bạn
+            Sign in to start with your AI team
           </span>
         </div>
         {/* </div> */}
@@ -139,7 +139,7 @@ export function LoginForm() {
             <Input
               id="email"
               type="email"
-              placeholder="Email của bạn"
+              placeholder="Your email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="h-12"
@@ -154,7 +154,7 @@ export function LoginForm() {
             <Input
               id="password"
               type="password"
-              placeholder="Mật khẩu"
+              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="h-12"
@@ -174,14 +174,14 @@ export function LoginForm() {
                 htmlFor="remember"
                 className="text-sm text-muted-foreground cursor-pointer select-none"
               >
-                Ghi nhớ đăng nhập
+                Remember me
               </Label>
             </div>
             <Link
               to="/forgot-password"
               className="text-sm text-muted-foreground transition-colors underline hover:text-foreground"
             >
-              Quên mật khẩu?
+              Forgot password?
             </Link>
           </div>
 
@@ -190,12 +190,12 @@ export function LoginForm() {
             disabled={loginMutation.isPending}
             className="w-full h-12 text-base font-semibold bg-primary hover:bg-primary/90 transition-all"
           >
-            {loginMutation.isPending ? "Đang đăng nhập..." : "Đăng nhập"}
+            {loginMutation.isPending ? "Signing in..." : "Sign in"}
           </Button>
 
           {loginMutation.error && (
             <div className="text-sm text-red-500 text-center">
-              {loginMutation.error.message || "Đăng nhập thất bại"}
+              {loginMutation.error.message || "Login failed"}
             </div>
           )}
 
@@ -205,7 +205,7 @@ export function LoginForm() {
             </div>
             <div className="relative flex justify-center text-xs uppercase">
               <span className="bg-card px-2 text-muted-foreground">
-                Hoặc tiếp tục với
+                Or continue with
               </span>
             </div>
           </div>
@@ -254,12 +254,12 @@ export function LoginForm() {
             </div>
           </div>
           <div className="text-center text-sm text-muted-foreground">
-            {"Chưa có tài khoản? "}
+            {"Don't have an account? "}
             <Link
               to="/signup"
               className="text-foreground underline transition-colors"
             >
-              Tạo tài khoản mới
+              Create new account
             </Link>
           </div>
         </form>

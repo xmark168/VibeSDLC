@@ -41,7 +41,7 @@ export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpi
 
   const handleSubmit = () => {
     if (!formData.title.trim()) {
-      alert("Vui lòng nhập tên Epic")
+      alert("Please enter Epic name")
       return
     }
 
@@ -64,10 +64,10 @@ export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpi
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Layers className="w-5 h-5" />
-            Tạo Epic mới
+            Create New Epic
           </DialogTitle>
           <DialogDescription>
-            Epic là một nhóm các User Stories liên quan đến cùng một chức năng lớn
+            An Epic is a group of User Stories related to the same large feature
           </DialogDescription>
         </DialogHeader>
 
@@ -75,11 +75,11 @@ export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpi
           {/* Title */}
           <div className="space-y-2">
             <Label htmlFor="epic-title" className="text-sm font-semibold">
-              Tên Epic *
+              Epic Name *
             </Label>
             <Input
               id="epic-title"
-              placeholder="VD: Quản lý người dùng, Hệ thống thanh toán..."
+              placeholder="e.g., User Management, Payment System..."
               value={formData.title}
               onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
               className="h-10"
@@ -97,7 +97,7 @@ export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpi
               onValueChange={(value) => setFormData(prev => ({ ...prev, domain: value }))}
             >
               <SelectTrigger id="epic-domain" className="h-10">
-                <SelectValue placeholder="Chọn domain..." />
+                <SelectValue placeholder="Select domain..." />
               </SelectTrigger>
               <SelectContent>
                 {DOMAIN_OPTIONS.map((option) => (
@@ -112,11 +112,11 @@ export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpi
           {/* Description */}
           <div className="space-y-2">
             <Label htmlFor="epic-description" className="text-sm font-semibold">
-              Mô tả
+              Description
             </Label>
             <Textarea
               id="epic-description"
-              placeholder="Mô tả chi tiết về Epic này..."
+              placeholder="Describe this Epic in detail..."
               value={formData.description}
               onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               className="min-h-[80px] resize-none"
@@ -132,13 +132,13 @@ export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpi
               onOpenChange(false)
             }}
           >
-            Hủy
+            Cancel
           </Button>
           <Button
             onClick={handleSubmit}
             disabled={!formData.title.trim()}
           >
-            Tạo Epic
+            Create Epic
           </Button>
         </DialogFooter>
       </DialogContent>

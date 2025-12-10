@@ -3,10 +3,10 @@ import { Menu, X } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
-  { title: "Trang chủ", path: "#" },
+  { title: "Home", path: "#" },
   { title: "AI Agents", path: "#agents" },
-  { title: "Tính năng", path: "#features" },
-  { title: "Đánh giá", path: "#testimonials" },
+  { title: "Features", path: "#features" },
+  { title: "Testimonials", path: "#testimonials" },
 ];
 
 const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
@@ -57,7 +57,7 @@ export const Header = () => {
         {/* Login Button - Desktop */}
         <div className="hidden md:block">
           <Button variant="default" size="sm" className="rounded-full px-6" asChild>
-            <a href="/login">Đăng nhập</a>
+            <a href="/login">Sign in</a>
           </Button>
         </div>
 
@@ -85,7 +85,7 @@ export const Header = () => {
               </a>
             ))}
             <Button variant="default" size="sm" className="w-full" asChild>
-              <a href="/login">Đăng nhập</a>
+              <a href="/login">Sign in</a>
             </Button>
           </nav>
         </div>
