@@ -2,8 +2,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy.orm import selectinload
-from sqlmodel import case, col, func, select
+from sqlmodel import col, func, select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Agent as AgentModel
@@ -53,66 +52,66 @@ def list_agents(
     return AgentsPublic(data=rows, count=count)
 
 
-@router.get("/project/{project_id}", response_model=AgentsPublic)
-def get_project_agents(
-    project_id: UUID,
-    session: SessionDep,
-    current_user: CurrentUser,
-) -> Any:
-    """
-    Get all agents for a specific project.
+# @router.get("/project/{project_id}", response_model=AgentsPublic)
+# def get_project_agents(
+#     project_id: UUID,
+#     session: SessionDep,
+#     current_user: CurrentUser,
+# ) -> Any:
+#     """
+#     Get all agents for a specific project.
 
-    Agents are ordered by:
-    1. Role priority (Team Leader → Business Analyst → Developer → Tester)
-    2. Human name (alphabetically)
+#     Agents are ordered by:
+#     1. Role priority (Team Leader → Business Analyst → Developer → Tester)
+#     2. Human name (alphabetically)
 
-    Args:
-        project_id: UUID of the project
-        session: Database session
-        current_user: Current authenticated user
+#     Args:
+#         project_id: UUID of the project
+#         session: Database session
+#         current_user: Current authenticated user
 
-    Returns:
-        AgentsPublic: List of agents for the project
-    """
-    # Define role order priority
-    role_order = case(
-        (AgentModel.role_type == "team_leader", 1),
-        (AgentModel.role_type == "business_analyst", 2),
-        (AgentModel.role_type == "developer", 3),
-        (AgentModel.role_type == "tester", 4),
-        else_=5  # For any other roles
-    )
+#     Returns:
+#         AgentsPublic: List of agents for the project
+#     """
+#     # Define role order priority
+#     role_order = case(
+#         (AgentModel.role_type == "team_leader", 1),
+#         (AgentModel.role_type == "business_analyst", 2),
+#         (AgentModel.role_type == "developer", 3),
+#         (AgentModel.role_type == "tester", 4),
+#         else_=5  # For any other roles
+#     )
 
-    stmt = (
-        select(AgentModel)
-        .where(AgentModel.project_id == project_id)
-        .options(selectinload(AgentModel.persona_template))
-        .order_by(role_order, AgentModel.human_name)
-    )
-    agents = session.exec(stmt).all()
+#     stmt = (
+#         select(AgentModel)
+#         .where(AgentModel.project_id == project_id)
+#         .options(selectinload(AgentModel.persona_template))
+#         .order_by(role_order, AgentModel.human_name)
+#     )
+#     agents = session.exec(stmt).all()
+#     print("agents",agents)
+#     # Convert to AgentPublic with persona_avatar
+#     agent_list = []
+#     for agent in agents:
+#         agent_data = AgentPublic(
+#             id=agent.id,
+#             project_id=agent.project_id,
+#             name=agent.name,
+#             human_name=agent.human_name,
+#             role_type=agent.role_type,
+#             agent_type=agent.agent_type,
+#             status=agent.status,
+#             persona_template_id=agent.persona_template_id,
+#             persona_avatar=agent.persona_template.avatar if agent.persona_template else None,
+#             personality_traits=agent.personality_traits or [],
+#             communication_style=agent.communication_style,
+#             persona_metadata=agent.persona_metadata,
+#             created_at=agent.created_at,
+#             updated_at=agent.updated_at,
+#         )
+#         agent_list.append(agent_data)
 
-    # Convert to AgentPublic with persona_avatar
-    agent_list = []
-    for agent in agents:
-        agent_data = AgentPublic(
-            id=agent.id,
-            project_id=agent.project_id,
-            name=agent.name,
-            human_name=agent.human_name,
-            role_type=agent.role_type,
-            agent_type=agent.agent_type,
-            status=agent.status,
-            persona_template_id=agent.persona_template_id,
-            persona_avatar=agent.persona_template.avatar if agent.persona_template else None,
-            personality_traits=agent.personality_traits or [],
-            communication_style=agent.communication_style,
-            persona_metadata=agent.persona_metadata,
-            created_at=agent.created_at,
-            updated_at=agent.updated_at,
-        )
-        agent_list.append(agent_data)
-
-    return AgentsPublic(data=agent_list, count=len(agent_list))
+#     return AgentsPublic(data=agent_list, count=len(agent_list))
 
 
 @router.get("/{agent_id}", response_model=AgentPublic)
