@@ -14,6 +14,7 @@ class DeveloperState(TypedDict, total=False):
     story_id: str
     epic: str
     story_title: str
+    story_content: str
     story_description: str
     story_requirements: List[str]
     acceptance_criteria: List[str]
@@ -53,6 +54,10 @@ class DeveloperState(TypedDict, total=False):
     run_stdout: Optional[str]
     run_stderr: Optional[str]
     run_status: Optional[str]
+    
+    # Dev server
+    dev_server_port: Optional[int]
+    dev_server_pid: Optional[int]
 
     # Debug
     debug_count: int

@@ -444,3 +444,77 @@ async def get_story_messages(
         "limit": limit,
         "offset": offset,
     }
+
+
+# ===== Agent Task Control =====
+@router.post("/{story_id}/cancel")
+async def cancel_story_task(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Cancel running agent task for story."""
+    from app.models.base import StoryAgentState
+    import os
+    import signal
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Kill dev server if running
+    if story.running_pid:
+        try:
+            os.kill(story.running_pid, signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+        story.running_pid = None
+        story.running_port = None
+    
+    # Update state to canceled
+    story.agent_state = StoryAgentState.CANCELED
+    session.add(story)
+    session.commit()
+    
+    return {"success": True, "message": "Task cancelled"}
+
+
+@router.post("/{story_id}/restart")
+async def restart_story_task(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Restart agent task for story (re-publish Kafka event)."""
+    from app.models.base import StoryAgentState
+    from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Reset state
+    story.agent_state = StoryAgentState.PENDING
+    story.running_pid = None
+    story.running_port = None
+    session.add(story)
+    session.commit()
+    
+    # Publish event to trigger agent
+    producer = await get_kafka_producer()
+    event = StoryEvent(
+        event_type="story.status.changed",
+        project_id=str(story.project_id),
+        user_id=str(current_user.id),
+        story_id=str(story.id),
+        payload={
+            "story_id": str(story.id),
+            "from_status": "Todo",
+            "to_status": "InProgress",
+        }
+    )
+    await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+    
+    return {"success": True, "message": "Task restarted"}

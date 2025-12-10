@@ -2,12 +2,19 @@
 
 Lightweight monitoring coordinator that aggregates stats from AgentPoolManager
 instances and provides system-wide monitoring interface.
+
+Features:
+- System-wide statistics aggregation
+- Auto-scaling based on pool load thresholds
+- Periodic logging of key metrics
 """
 
 import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -198,10 +205,11 @@ class AgentMonitor:
     # ===== Background Task =====
 
     async def _monitoring_loop(self) -> None:
-        """Periodic monitoring loop that logs system statistics.
+        """Periodic monitoring loop that logs system statistics and triggers auto-scaling.
         
-        This is NOT for health checking (that's done by AgentPoolManager).
-        This is for system-wide observability and logging.
+        This handles:
+        - System-wide observability and logging
+        - Auto-scaling when pool load exceeds threshold
         """
         logger.info("AgentMonitor loop started")
         
@@ -221,9 +229,99 @@ class AgentMonitor:
                     f"Utilization: {stats['utilization']:.1%}"
                 )
                 
+                # Auto-scaling check
+                if settings.AGENT_POOL_AUTO_SCALE_ENABLED:
+                    await self._check_auto_scaling(stats)
+                
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in monitoring loop: {e}", exc_info=True)
         
         logger.info("AgentMonitor loop stopped")
+
+    async def _check_auto_scaling(self, stats: Dict[str, Any]) -> None:
+        """Check if auto-scaling is needed based on pool loads.
+        
+        Creates overflow pools when universal pool exceeds threshold.
+        """
+        from app.agents.core.pool_helpers import get_pool_load, should_create_new_pool
+        
+        threshold = settings.AGENT_POOL_AUTO_SCALE_THRESHOLD
+        
+        for pool_stats in stats.get("pools", []):
+            pool_name = pool_stats.get("pool_name")
+            manager = self.manager_registry.get(pool_name)
+            
+            if not manager:
+                continue
+            
+            load = get_pool_load(manager)
+            
+            # Log warning if approaching capacity
+            if load >= threshold * 0.9:
+                logger.warning(
+                    f"[AUTO-SCALE] Pool '{pool_name}' at {load:.1%} capacity "
+                    f"(threshold: {threshold:.0%})"
+                )
+            
+            # Trigger overflow pool creation if needed
+            if should_create_new_pool(manager, threshold):
+                await self._create_overflow_pool(pool_name, manager)
+
+    async def _create_overflow_pool(self, source_pool: str, source_manager: Any) -> None:
+        """Create an overflow pool when source pool is overloaded.
+        
+        Args:
+            source_pool: Name of the overloaded pool
+            source_manager: Manager of the overloaded pool
+        """
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.services.pool_service import PoolService
+        from app.models import PoolType
+        from app.agents.core.agent_pool_manager import AgentPoolManager
+        
+        # Count existing overflow pools
+        overflow_count = len([p for p in self.manager_registry.keys() if "overflow" in p])
+        new_pool_name = f"overflow_pool_{overflow_count + 1}"
+        
+        # Check if we already have this pool
+        if new_pool_name in self.manager_registry:
+            return
+        
+        logger.info(f"[AUTO-SCALE] Creating overflow pool: {new_pool_name}")
+        
+        try:
+            with Session(engine) as session:
+                pool_service = PoolService(session)
+                
+                # Check if pool exists in DB
+                db_pool = pool_service.get_pool_by_name(new_pool_name)
+                
+                if not db_pool:
+                    db_pool = pool_service.create_pool(
+                        pool_name=new_pool_name,
+                        role_type=None,  # Universal overflow
+                        pool_type=PoolType.FREE,
+                        max_agents=settings.AGENT_POOL_MAX_AGENTS // 2,  # Half capacity
+                        health_check_interval=settings.AGENT_POOL_HEALTH_CHECK_INTERVAL,
+                        auto_created=True,
+                    )
+            
+            # Create and start manager
+            manager = AgentPoolManager(
+                pool_name=new_pool_name,
+                max_agents=db_pool.max_agents,
+                health_check_interval=db_pool.health_check_interval,
+                pool_id=db_pool.id,
+            )
+            
+            if await manager.start():
+                self.manager_registry[new_pool_name] = manager
+                logger.info(f"[AUTO-SCALE] ✓ Created overflow pool: {new_pool_name}")
+            else:
+                logger.error(f"[AUTO-SCALE] ✗ Failed to start overflow pool: {new_pool_name}")
+                
+        except Exception as e:
+            logger.error(f"[AUTO-SCALE] Error creating overflow pool: {e}", exc_info=True)

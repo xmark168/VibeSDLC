@@ -1,5 +1,6 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -63,8 +64,65 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   const [chatMessage, setChatMessage] = useState("")
   const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([])
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  const [isActionLoading, setIsActionLoading] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const token = getToken()
+
+  // Cancel task handler
+  const handleCancelTask = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/cancel`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Task cancelled')
+      } else {
+        toast.error('Failed to cancel task')
+      }
+    } catch (error) {
+      toast.error('Failed to cancel task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Restart task handler
+  const handleRestartTask = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/restart`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Task restarted')
+      } else {
+        toast.error('Failed to restart task')
+      }
+    } catch (error) {
+      toast.error('Failed to restart task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
 
   // Fetch initial messages from API
   const fetchMessages = useCallback(async (storyId: string) => {
@@ -283,6 +341,87 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                 )}
               </div>
               <div className="text-base font-semibold text-foreground">{card.content}</div>
+              
+              {/* Agent Action Bar */}
+              {card.agent_state && (
+                <div className="mt-3 flex items-center gap-3 p-2.5 rounded-lg bg-muted/50 border">
+                  {/* Status indicator */}
+                  <div className="flex items-center gap-2">
+                    <div className={`relative flex items-center justify-center w-2 h-2 ${
+                      card.agent_state === 'processing' ? 'animate-pulse' : ''
+                    }`}>
+                      {card.agent_state === 'processing' && (
+                        <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping bg-primary/60"></span>
+                      )}
+                      <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                        card.agent_state === 'pending' ? 'bg-muted-foreground' :
+                        card.agent_state === 'processing' ? 'bg-primary' :
+                        card.agent_state === 'finished' ? 'bg-primary' :
+                        'bg-destructive'
+                      }`}></span>
+                    </div>
+                    <span className={`text-xs font-medium ${
+                      card.agent_state === 'canceled' ? 'text-destructive' : 'text-muted-foreground'
+                    }`}>
+                      {card.agent_state === 'processing' ? 'Đang xử lý...' :
+                       card.agent_state === 'pending' ? 'Chờ xử lý' :
+                       card.agent_state === 'finished' ? 'Hoàn thành' :
+                       'Đã hủy'}
+                    </span>
+                  </div>
+
+                  {/* Preview link */}
+                  {card.running_port && (
+                    <>
+                      <div className="h-4 w-px bg-border"></div>
+                      <Button variant="link" size="sm" className="h-auto p-0 text-xs" asChild>
+                        <a 
+                          href={`http://localhost:${card.running_port}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                          Preview ::{card.running_port}
+                        </a>
+                      </Button>
+                    </>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2 ml-auto">
+                    {card.agent_state === 'processing' && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleCancelTask}
+                        disabled={isActionLoading}
+                      >
+                        {isActionLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                        Hủy
+                      </Button>
+                    )}
+                    {(card.agent_state === 'canceled' || card.agent_state === 'finished') && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={handleRestartTask}
+                        disabled={isActionLoading}
+                      >
+                        {isActionLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RotateCcw className="w-4 h-4" />
+                        )}
+                        Chạy lại
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </DialogTitle>
         </DialogHeader>

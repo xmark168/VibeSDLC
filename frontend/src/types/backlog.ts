@@ -23,6 +23,7 @@ export interface BacklogItem {
   agent_state?: StoryAgentState | null
   assigned_agent_id?: string | null
   branch_name?: string | null
+  running_port?: number | null
 }
 
 export interface KanbanBoard {

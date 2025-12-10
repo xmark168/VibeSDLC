@@ -1,14 +1,16 @@
-import { ProjectPublic } from "@/client"
+import { ProjectPublic, ProjectsService } from "@/client"
 import { ProjectCard } from "./project-card-v2"
-import { useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { motion } from "framer-motion"
 import { formatDistanceToNow } from "date-fns"
 import { vi } from "date-fns/locale"
+import toast from "react-hot-toast"
 
 import { useAppStore } from "@/stores/auth-store"
 import { useNavigate } from "@tanstack/react-router"
 import { ArrowRight, FolderPlus, Rocket, Sparkles, Zap } from "lucide-react"
 import { Button } from "../ui/button"
+import { OpenAPI } from "@/client"
 
 interface ProjectListProps {
   projects: ProjectPublic[]
@@ -24,6 +26,48 @@ export const ProjectList = ({ projects, onCreateProject }: ProjectListProps) => 
 
   const handleClickProject = (project: ProjectPublic) => {
     naviagate({ to: "/workspace/$workspaceId", params: { workspaceId: project.id } })
+  }
+
+  // Delete project mutation
+  const deleteProjectMutation = useMutation({
+    mutationFn: (projectId: string) => ProjectsService.deleteProject({ projectId }),
+    onSuccess: () => {
+      toast.success("Project deleted successfully")
+      queryClient.invalidateQueries({ queryKey: ["list-project"] })
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to delete project: ${error.message}`)
+    },
+  })
+
+  // Cleanup worktrees - direct API call since not in generated client
+  const cleanupWorktreesMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      const token = localStorage.getItem('access_token') || ''
+      const response = await fetch(`${OpenAPI.BASE}/api/v1/projects/${projectId}/cleanup`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      })
+      if (!response.ok) throw new Error("Failed to cleanup worktrees")
+      return response.json()
+    },
+    onSuccess: (data) => {
+      toast.success(`Cleaned up ${data.deleted_count} worktrees`)
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to cleanup: ${error.message}`)
+    },
+  })
+
+  const handleDeleteProject = (projectId: string) => {
+    deleteProjectMutation.mutate(projectId)
+  }
+
+  const handleCleanupWorktrees = (projectId: string) => {
+    cleanupWorktreesMutation.mutate(projectId)
   }
 
   if (projects.length === 0) {
@@ -158,11 +202,14 @@ export const ProjectList = ({ projects, onCreateProject }: ProjectListProps) => 
           <ProjectCard
             title={project.name}
             code={project.code}
+            projectId={project.id}
             status={project.is_init ? "in-progress" : "planning"}
             techStack={project.tech_stack || []}
             agents={["Team Leader", "Developer"]}
             lastUpdated={formatDistanceToNow(new Date(project.updated_at), { addSuffix: true, locale: vi })}
             githubUrl={project.repository_url || undefined}
+            onDelete={handleDeleteProject}
+            onCleanup={handleCleanupWorktrees}
           />
         </div>
       ))}

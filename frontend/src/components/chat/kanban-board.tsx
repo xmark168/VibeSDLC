@@ -292,6 +292,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         dependencies: item.dependencies || [],
         created_at: item.created_at,
         updated_at: item.updated_at,
+        agent_state: item.agent_state,
+        running_port: item.running_port,
       })
 
       const allCards: KanbanCardData[] = [

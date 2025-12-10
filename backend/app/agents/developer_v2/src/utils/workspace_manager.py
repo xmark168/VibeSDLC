@@ -1,7 +1,6 @@
 """Project Workspace Manager - Git worktree for isolated story development."""
 
 import logging
-import shutil
 from pathlib import Path
 from uuid import UUID
 
@@ -9,37 +8,42 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectWorkspaceManager:
-    """Git worktree manager. Structure: projects_workspace/project_{uuid}/ws_main/ + ws_story_{id}/"""
+    """Git worktree manager using project_path from database.
+    
+    Main workspace: {project_path} (from Project.project_path in DB)
+    Story worktree: {project_path}_{story_id}
+    """
 
     def __init__(self, project_id: UUID):
         self.project_id = project_id
-        current_file = Path(__file__).resolve()
-        self.backend_root = current_file.parent.parent.parent.parent.parent.parent
-        self.workspace_root = self.backend_root / "app" / "agents" / "developer" / "projects_workspace"
-        self.project_dir = self.workspace_root / f"project_{project_id}"
-        self.template_dir = self.backend_root / "app" / "agents" / "templates" / "boilerplate" / "nextjs-boilerplate"
+        self._project_path = None
+        self._load_project_path()
+
+    def _load_project_path(self):
+        """Load project_path from database."""
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Project
+        
+        with Session(engine) as session:
+            project = session.get(Project, self.project_id)
+            if project and project.project_path:
+                # Convert relative path to absolute
+                backend_root = Path(__file__).resolve().parent.parent.parent.parent.parent.parent
+                self._project_path = (backend_root / project.project_path).resolve()
+                logger.info(f"Loaded project path from DB: {self._project_path}")
+            else:
+                logger.warning(f"Project {self.project_id} has no project_path, using fallback")
+                backend_root = Path(__file__).resolve().parent.parent.parent.parent.parent.parent
+                self._project_path = backend_root / "projects" / str(self.project_id)
 
     def get_main_workspace(self) -> Path:
-        main_workspace = self.project_dir / "ws_main"
-        if not main_workspace.exists():
-            self._initialize_workspace(main_workspace)
-            logger.info(f"Created main workspace for project {self.project_id}")
-        return main_workspace
+        """Get main workspace path (project_path from DB)."""
+        if not self._project_path.exists():
+            logger.warning(f"Project path does not exist: {self._project_path}")
+        return self._project_path
 
     def get_task_workspace(self, story_id: str) -> Path:
-        short_id = story_id.split('-')[-1] if '-' in story_id else story_id[:8]
-        return self.project_dir / f"ws_story_{short_id}"
-
-    def _initialize_workspace(self, workspace_path: Path):
-        if not self.template_dir.exists():
-            raise FileNotFoundError(f"Template not found: {self.template_dir}")
-
-        workspace_path.parent.mkdir(parents=True, exist_ok=True)
-
-        def ignore_patterns(directory, files):
-            ignore_dirs = {'node_modules', '.next', 'build', 'dist', 'out', '.turbo',
-                          '.cache', 'coverage', '.swc', '__pycache__', '.pytest_cache', '.venv', 'venv'}
-            return {f for f in files if f in ignore_dirs or f in {'package-lock.json', 'yarn.lock', 'bun.lockb'}}
-
-        shutil.copytree(self.template_dir, workspace_path, ignore=ignore_patterns)
-        logger.info(f"Initialized workspace: {workspace_path}")
+        """Get worktree path for a story: {project_path}_{story_id}"""
+        short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
+        return Path(f"{self._project_path}_{short_id}")

@@ -2,6 +2,7 @@
 
 import logging
 import re
+from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
@@ -9,6 +10,7 @@ from sqlmodel import Session, select, func
 
 from app.models import Project
 from app.schemas import ProjectCreate, ProjectUpdate
+from app.utils.seed_techstacks import copy_boilerplate_to_project, init_git_repo
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,8 @@ class ProjectService:
         if project_dict.get('tech_stack') and isinstance(project_dict['tech_stack'], list):
             project_dict['tech_stack'] = project_dict['tech_stack'][0] if project_dict['tech_stack'] else "nodejs-react"
 
+        tech_stack = project_dict.get('tech_stack', 'nodejs-react')
+
         # Prepare update dict with required fields
         update_dict = {
             "code": project_code,
@@ -91,6 +95,22 @@ class ProjectService:
         self.session.add(db_project)
         self.session.commit()
         self.session.refresh(db_project)
+
+        # Setup project directory with boilerplate
+        backend_root = Path(__file__).resolve().parent.parent.parent
+        project_path = backend_root / "projects" / str(db_project.id)
+        
+        # Copy boilerplate based on tech stack
+        if copy_boilerplate_to_project(tech_stack, project_path):
+            # Initialize git repo
+            init_git_repo(project_path)
+            
+            # Update project with path
+            db_project.project_path = f"projects/{db_project.id}"
+            self.session.add(db_project)
+            self.session.commit()
+            self.session.refresh(db_project)
+            logger.info(f"Setup project directory at {project_path}")
 
         logger.info(f"Created project {db_project.code} (ID: {db_project.id}) for user {owner_id}")
         return db_project
@@ -235,7 +255,7 @@ class ProjectService:
 
     def delete(self, project_id: UUID) -> None:
         """
-        Delete a project by ID.
+        Delete a project by ID (DB only, no file cleanup).
 
         Args:
             project_id: UUID of the project to delete
@@ -245,3 +265,93 @@ class ProjectService:
             self.session.delete(db_project)
             self.session.commit()
             logger.info(f"Deleted project {db_project.code} (ID: {project_id})")
+
+    def delete_with_cleanup(self, project_id: UUID) -> None:
+        """
+        Delete a project and clean up all associated files (workspace + worktrees).
+
+        Args:
+            project_id: UUID of the project to delete
+        """
+        import shutil
+        import stat
+        import os
+        
+        def remove_readonly(func, path, excinfo):
+            """Handle Windows readonly files (e.g., .git objects)."""
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        
+        db_project = self.session.get(Project, project_id)
+        if not db_project:
+            return
+        
+        project_code = db_project.code
+        
+        # Clean up worktrees first
+        self.cleanup_worktrees(project_id)
+        
+        # Clean up main project directory
+        if db_project.project_path:
+            backend_root = Path(__file__).resolve().parent.parent.parent
+            project_dir = backend_root / db_project.project_path
+            
+            if project_dir.exists():
+                try:
+                    shutil.rmtree(project_dir, onerror=remove_readonly)
+                    logger.info(f"Deleted project directory: {project_dir}")
+                except Exception as e:
+                    logger.error(f"Failed to delete project directory {project_dir}: {e}")
+        
+        # Delete from database
+        self.session.delete(db_project)
+        self.session.commit()
+        logger.info(f"Deleted project {project_code} (ID: {project_id}) with cleanup")
+
+    def cleanup_worktrees(self, project_id: UUID) -> int:
+        """
+        Clean up all worktrees for a project.
+        
+        Worktrees are named: {project_path}_{story_id_suffix}
+        
+        Args:
+            project_id: UUID of the project
+            
+        Returns:
+            int: Number of worktrees deleted
+        """
+        import shutil
+        import stat
+        import os
+        
+        def remove_readonly(func, path, excinfo):
+            """Handle Windows readonly files."""
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        
+        db_project = self.session.get(Project, project_id)
+        if not db_project or not db_project.project_path:
+            return 0
+        
+        backend_root = Path(__file__).resolve().parent.parent.parent
+        project_dir = backend_root / db_project.project_path
+        
+        if not project_dir.exists():
+            return 0
+        
+        # Find worktrees: directories that start with project_path + "_"
+        parent_dir = project_dir.parent
+        project_name = project_dir.name
+        
+        deleted_count = 0
+        for item in parent_dir.iterdir():
+            if item.is_dir() and item.name.startswith(f"{project_name}_"):
+                try:
+                    shutil.rmtree(item, onerror=remove_readonly)
+                    logger.info(f"Deleted worktree: {item}")
+                    deleted_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to delete worktree {item}: {e}")
+        
+        logger.info(f"Cleaned up {deleted_count} worktrees for project {project_id}")
+        return deleted_count

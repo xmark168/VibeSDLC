@@ -245,15 +245,26 @@ Each step: file_path, action, task, dependencies."""
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Zero-shot planning with FileRepository."""
-    logger.info("[NODE] plan")
+    logger.debug("[NODE] plan")
     workspace_path = state.get("workspace_path", "")
     tech_stack = state.get("tech_stack", "nextjs")
     set_tool_context(root_dir=workspace_path, project_id=state.get("project_id", ""), task_id=state.get("task_id") or state.get("story_id", ""))
     
+    # Notify user planning started
+    if agent:
+        try:
+            from uuid import UUID
+            story_id = state.get("story_id", "")
+            if story_id:
+                story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
+                await agent.message_story(story_uuid, "📋 Đang phân tích và lên kế hoạch...", message_type="progress")
+        except Exception:
+            pass
+    
     try:
         repo = FileRepository(workspace_path)
         context = repo.to_context()
-        logger.info(f"[plan] FileRepository: {len(repo.file_tree)} files")
+        logger.debug(f"[plan] FileRepository: {len(repo.file_tree)} files")
         
         plan_prompts = get_plan_prompts(tech_stack)
         system_prompt = plan_prompts.get('zero_shot_system', plan_prompts.get('system_prompt', ''))
@@ -277,7 +288,7 @@ Create implementation plan. Output JSON steps directly."""
         flush_langfuse(state)
         
         steps = result.model_dump().get("steps", [])
-        logger.info(f"[plan] Got {len(steps)} steps")
+        logger.debug(f"[plan] Got {len(steps)} steps")
         
         if not steps:
             return await _plan_with_exploration(state, agent)
@@ -311,6 +322,22 @@ Create implementation plan. Output JSON steps directly."""
         layers = group_steps_by_layer(steps)
         can_parallel = should_use_parallel(steps)
         
+        # Notify user with plan details
+        if agent and steps:
+            try:
+                from uuid import UUID
+                story_id = state.get("story_id", "")
+                if story_id:
+                    story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
+                    step_list = "\n".join([f"  {i+1}. {s.get('file_path', '')} ({s.get('action', 'modify')})" for i, s in enumerate(steps)])
+                    await agent.message_story(
+                        story_uuid,
+                        f"📝 Kế hoạch ({len(steps)} bước):\n{step_list}",
+                        message_type="update"
+                    )
+            except Exception:
+                pass
+        
         return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "skill_registry": skill_registry, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
     except Exception as e:
         logger.warning(f"[plan] Zero-shot failed: {e}")
@@ -319,7 +346,7 @@ Create implementation plan. Output JSON steps directly."""
 
 async def _plan_with_exploration(state: DeveloperState, agent=None) -> DeveloperState:
     """Fallback with tool exploration."""
-    logger.info("[NODE] plan_with_exploration")
+    logger.debug("[NODE] plan_with_exploration")
     try:
         workspace_path = state.get("workspace_path", "")
         tech_stack = state.get("tech_stack", "nextjs")

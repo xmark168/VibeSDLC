@@ -8,6 +8,7 @@ from typing import List, Optional
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.core.project_context import ProjectContext
 from app.models import Agent as AgentModel
+from app.models.base import StoryAgentState
 from app.agents.developer_v2.src import DeveloperGraph
 from app.agents.developer_v2.src.utils.workspace_manager import ProjectWorkspaceManager
 from app.kafka.event_schemas import AgentTaskType
@@ -19,7 +20,6 @@ class DeveloperV2(BaseAgent):
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
-        logger.info(f"[{self.name}] Initializing Developer V2 Agent")
         
         self.context = ProjectContext.get(self.project_id)
         self.graph_engine = DeveloperGraph(agent=self)
@@ -27,17 +27,30 @@ class DeveloperV2(BaseAgent):
         # Workspace management
         self.workspace_manager = ProjectWorkspaceManager(self.project_id)
         self.main_workspace = self.workspace_manager.get_main_workspace()
-        
-        logger.info(f"[{self.name}] LangGraph initialized, workspace: {self.main_workspace}")
+
+    async def _update_story_state(self, story_id: str, state: StoryAgentState):
+        """Update story agent_state in database."""
+        try:
+            from uuid import UUID
+            from sqlmodel import Session
+            from app.core.db import engine
+            from app.models import Story
+            
+            with Session(engine) as session:
+                story = session.get(Story, UUID(story_id))
+                if story:
+                    story.agent_state = state
+                    session.commit()
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to update story state: {e}")
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
         """Handle task - route to story processing or user message handling."""
-        logger.info(f"[{self.name}] Received task: type={task.task_type}, content={task.content[:100]}...")
         
         await self.context.ensure_loaded()
         
         # Route based on task type
-        if task.task_type in [AgentTaskType.STORY_PROCESS, AgentTaskType.IMPLEMENT_STORY]:
+        if task.task_type == AgentTaskType.IMPLEMENT_STORY:
             return await self._handle_story_processing(task)
         else:
             return await self._handle_user_message(task)
@@ -88,16 +101,72 @@ class DeveloperV2(BaseAgent):
 
     async def _handle_story_processing(self, task: TaskContext) -> TaskResult:
         """Handle story processing using LangGraph."""
+        story_id = None
         try:
-            story_data = self._parse_story_content(task)
+            # Check if story data comes from router context (story status change)
+            context = task.context or {}
+            story_id_from_context = context.get("story_id")
+            event_type = context.get("event_type", "")
+            
+            if story_id_from_context and event_type == "story.status.changed":
+                story_id = story_id_from_context
+                # Set PENDING state
+                await self._update_story_state(story_id, StoryAgentState.PENDING)
+                
+                story_data = await self._load_story_from_db(story_id)
+                # Notify user that we started processing
+                from uuid import UUID
+                await self.message_story(
+                    UUID(story_id),
+                    f"🚀 Bắt đầu triển khai: {story_data.get('title', 'Story')}",
+                    message_type="progress"
+                )
+            else:
+                # Parse from task content (legacy/direct call)
+                story_data = self._parse_story_content(task)
+                story_id = story_data.get("story_id")
+            
             return await self._process_story(story_data, task)
         except Exception as e:
             logger.error(f"[{self.name}] Story processing error: {e}", exc_info=True)
+            # Set CANCELED on error
+            if story_id:
+                await self._update_story_state(story_id, StoryAgentState.CANCELED)
             return TaskResult(
                 success=False,
                 output="",
                 error_message=f"Story processing error: {str(e)}"
             )
+
+    async def _load_story_from_db(self, story_id: str) -> dict:
+        """Load story details from database.
+        
+        Args:
+            story_id: UUID string of the story
+            
+        Returns:
+            dict with story_id, title, content, acceptance_criteria
+        """
+        from uuid import UUID
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Story
+        
+        story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
+        
+        with Session(engine) as session:
+            story = session.get(Story, story_uuid)
+            if not story:
+                raise ValueError(f"Story {story_id} not found")
+            
+
+            
+            return {
+                "story_id": str(story.id),
+                "title": story.title or "Untitled Story",
+                "content": story.description or "",
+                "acceptance_criteria": story.acceptance_criteria or [],
+            }
 
     async def _process_story(self, story_data: dict, task: TaskContext) -> TaskResult:
         """Process story through LangGraph workflow.
@@ -207,7 +276,9 @@ class DeveloperV2(BaseAgent):
                 "tech_stack": "nextjs",
             }
             
-            logger.info(f"[{self.name}] Invoking LangGraph for story: {story_data.get('title', 'Untitled')}")
+            # Set PROCESSING state before starting graph
+            await self._update_story_state(story_id, StoryAgentState.PROCESSING)
+            
             final_state = await self.graph_engine.graph.ainvoke(initial_state)
             
             # Update trace output and close span (Team Leader pattern)
@@ -222,17 +293,37 @@ class DeveloperV2(BaseAgent):
                         "branch_name": final_state.get("branch_name"),
                     })
                     langfuse_ctx.__exit__(None, None, None)
-                    logger.info(f"[{self.name}] Langfuse span closed successfully")
                 except Exception as e:
-                    logger.error(f"[{self.name}] Langfuse span close error: {e}")
+                    logger.debug(f"[{self.name}] Langfuse span close error: {e}")
             
 
             
             action = final_state.get("action")
             task_type = final_state.get("task_type")
             message = final_state.get("message", "")
+            files_created = final_state.get("files_created", [])
+            files_modified = final_state.get("files_modified", [])
             
-            logger.info(f"[{self.name}] Graph completed: action={action}, type={task_type}")
+            # Update story state based on result
+            run_status = final_state.get("run_status", "")
+            if run_status == "PASS":
+                await self._update_story_state(story_id, StoryAgentState.FINISHED)
+            else:
+                await self._update_story_state(story_id, StoryAgentState.CANCELED)
+            
+            # Notify user of completion
+            from uuid import UUID
+            try:
+                story_uuid = UUID(story_id)
+                total_files = len(files_created) + len(files_modified)
+                await self.message_story(
+                    story_uuid,
+                    f"✅ Hoàn thành! Đã tạo/sửa {total_files} files. Branch: {final_state.get('branch_name', 'N/A')}",
+                    message_type="update",
+                    details={"files_created": files_created, "files_modified": files_modified}
+                )
+            except Exception:
+                pass
             
             return TaskResult(
                 success=True,
@@ -243,8 +334,8 @@ class DeveloperV2(BaseAgent):
                     "complexity": final_state.get("complexity"),
                     "analysis": final_state.get("analysis_result"),
                     "plan_steps": len(final_state.get("implementation_plan", [])),
-                    "files_created": final_state.get("files_created", []),
-                    "files_modified": final_state.get("files_modified", []),
+                    "files_created": files_created,
+                    "files_modified": files_modified,
                     "validation": final_state.get("validation_result"),
                     "tests_passed": final_state.get("tests_passed"),
                     "branch_name": final_state.get("branch_name"),
@@ -255,13 +346,27 @@ class DeveloperV2(BaseAgent):
         except Exception as e:
             logger.error(f"[{self.name}] Graph execution error: {e}", exc_info=True)
             
-            # Cleanup langfuse span on error (Team Leader pattern)
+            # Set CANCELED on error
+            await self._update_story_state(story_id, StoryAgentState.CANCELED)
+            
+            # Notify user of error
+            from uuid import UUID
+            try:
+                story_uuid = UUID(story_id)
+                await self.message_story(
+                    story_uuid,
+                    f"❌ Lỗi: {str(e)[:200]}",
+                    message_type="error"
+                )
+            except Exception:
+                pass
+            
+            # Cleanup langfuse span on error
             if langfuse_ctx:
                 try:
                     langfuse_ctx.__exit__(type(e), e, e.__traceback__)
-                    logger.info(f"[{self.name}] Langfuse span closed (on error)")
-                except Exception as cleanup_err:
-                    logger.error(f"[{self.name}] Langfuse cleanup error: {cleanup_err}")
+                except Exception:
+                    pass
             
             return TaskResult(
                 success=False,
@@ -332,10 +437,7 @@ class DeveloperV2(BaseAgent):
         This method is called when a story transitions to InProgress,
         triggering the developer workflow.
         """
-        logger.info(f"[{self.name}] Story event: {story_id} ({from_status} -> {to_status})")
-        
         if to_status != "InProgress":
-            logger.info(f"[{self.name}] Ignoring non-InProgress transition")
             return TaskResult(
                 success=True,
                 output="Story event ignored (not InProgress transition)",
@@ -354,7 +456,7 @@ class DeveloperV2(BaseAgent):
         
         task = TaskContext(
             task_id=uuid4(),
-            task_type=AgentTaskType.STORY_PROCESS,
+            task_type=AgentTaskType.IMPLEMENT_STORY,
             priority="high",
             project_id=self.project_id,
             content=story_data,

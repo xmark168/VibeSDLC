@@ -45,6 +45,9 @@ export type KanbanCardData = {
   created_at?: string
   updated_at?: string
   age_hours?: number  // Age in current status (hours)
+  // Agent state
+  agent_state?: 'pending' | 'processing' | 'canceled' | 'finished' | null
+  running_port?: number | null
   // TraDS ============= Kanban Hierarchy: Parent/children relationships
   parent?: KanbanCardData
   children?: KanbanCardData[]

@@ -1,8 +1,10 @@
 """Setup workspace node - Setup git workspace/branch for code modification."""
 import asyncio
 import hashlib
+import json
 import logging
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +19,180 @@ from app.agents.developer_v2.src.utils.db_container import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Git worktree management
+# =============================================================================
+
+def cleanup_old_worktree(main_workspace: Path, branch_name: str, worktree_path: Path, agent_name: str = "Developer"):
+    """Clean up existing worktree directory and branch."""
+    if worktree_path.exists():
+        try:
+            subprocess.run(
+                ["git", "worktree", "remove", str(worktree_path), "--force"],
+                cwd=str(main_workspace),
+                capture_output=True,
+                timeout=30,
+            )
+        except Exception as e:
+            logger.warning(f"[{agent_name}] Git worktree remove failed: {e}")
+        
+        if worktree_path.exists():
+            try:
+                shutil.rmtree(worktree_path)
+            except Exception as e:
+                logger.error(f"[{agent_name}] Failed to remove directory: {e}")
+    
+    try:
+        subprocess.run(
+            ["git", "branch", "-D", branch_name],
+            cwd=str(main_workspace),
+            capture_output=True,
+            timeout=10,
+        )
+    except Exception as e:
+        logger.debug(f"[{agent_name}] Branch delete (may not exist): {e}")
+
+
+def setup_git_worktree(
+    story_id: str,
+    main_workspace: Path | str,
+    agent_name: str = "Developer"
+) -> dict:
+    """Setup git worktree for story development.
+    
+    Worktree path: {main_workspace}_{story_id}
+    Example: /path/to/project_abc12345
+    """
+    main_workspace = Path(main_workspace).resolve()
+    short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
+    branch_name = f"story_{short_id}"
+    
+    # Worktree path: main_workspace + '_' + story_id
+    worktree_path = Path(f"{main_workspace}_{short_id}").resolve()
+    
+    if not main_workspace.exists():
+        logger.error(f"[{agent_name}] Workspace does not exist: {main_workspace}")
+        return {
+            "workspace_path": str(main_workspace),
+            "branch_name": branch_name,
+            "main_workspace": str(main_workspace),
+            "workspace_ready": False,
+        }
+    
+    # Check if it's a valid git repo
+    status_result = subprocess.run(
+        ["git", "status"],
+        cwd=str(main_workspace),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    
+    if status_result.returncode != 0:
+        logger.error(f"[{agent_name}] Not a git repo: {main_workspace}")
+        return {
+            "workspace_path": str(main_workspace),
+            "branch_name": branch_name,
+            "main_workspace": str(main_workspace),
+            "workspace_ready": False,
+        }
+    
+    # Clean up old worktree
+    cleanup_old_worktree(main_workspace, branch_name, worktree_path, agent_name)
+    
+    logger.debug(f"[{agent_name}] Creating worktree '{branch_name}' at: {worktree_path}")
+    
+    # Get current branch
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(main_workspace),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    current_branch = result.stdout.strip() if result.returncode == 0 else "main"
+    
+    # Create new branch from current
+    subprocess.run(
+        ["git", "branch", branch_name, current_branch],
+        cwd=str(main_workspace),
+        capture_output=True,
+        timeout=30,
+    )
+    
+    # Create worktree
+    worktree_result = subprocess.run(
+        ["git", "worktree", "add", str(worktree_path), branch_name],
+        cwd=str(main_workspace),
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    
+    logger.debug(f"[{agent_name}] Worktree created: {worktree_path}")
+    
+    workspace_ready = worktree_path.exists() and worktree_path.is_dir()
+    
+    if not workspace_ready:
+        logger.warning(f"[{agent_name}] Worktree not created, using main workspace")
+        worktree_path = main_workspace
+    
+    return {
+        "workspace_path": str(worktree_path),
+        "branch_name": branch_name,
+        "main_workspace": str(main_workspace),
+        "workspace_ready": workspace_ready,
+    }
+
+
+# =============================================================================
+# Context helpers
+# =============================================================================
+
+def get_agents_md(workspace_path: str | Path) -> str:
+    """Read AGENTS.md from workspace root."""
+    if not workspace_path:
+        return ""
+    agents_path = Path(workspace_path) / "AGENTS.md"
+    if agents_path.exists():
+        try:
+            return agents_path.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Failed to read AGENTS.md: {e}")
+    return ""
+
+
+def get_project_context(workspace_path: str | Path) -> str:
+    """Read project context files (README.md, package.json summary)."""
+    if not workspace_path:
+        return ""
+    
+    workspace_path = Path(workspace_path)
+    parts = []
+    
+    readme_path = workspace_path / "README.md"
+    if readme_path.exists():
+        try:
+            content = readme_path.read_text(encoding="utf-8")[:2000]
+            parts.append(f"## README.md\n{content}")
+        except Exception:
+            pass
+    
+    pkg_path = workspace_path / "package.json"
+    if pkg_path.exists():
+        try:
+            pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+            parts.append(
+                f"## package.json\n"
+                f"name: {pkg.get('name', 'unknown')}\n"
+                f"dependencies: {list(pkg.get('dependencies', {}).keys())[:10]}"
+            )
+        except Exception:
+            pass
+    
+    return "\n\n".join(parts)
 
 # Thread pool for running blocking operations in parallel
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -93,28 +269,14 @@ def _update_prisma_generate_cache(workspace_path: str) -> None:
 def _run_pnpm_install(workspace_path: str) -> bool:
     """Run pnpm install (blocking). Returns True if successful."""
     if _should_skip_pnpm_install(workspace_path):
-        logger.info("[setup_workspace] Skipping pnpm install (cached)")
+        logger.debug("[setup_workspace] Skipping pnpm install (cached)")
         return True
     
+    lockfile = Path(workspace_path) / "pnpm-lock.yaml"
+    has_lockfile = lockfile.exists()
+    
     try:
-        logger.info("[setup_workspace] Running pnpm install --frozen-lockfile --prefer-offline...")
-        result = subprocess.run(
-            "pnpm install --frozen-lockfile --prefer-offline",
-            cwd=workspace_path,
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            timeout=120,
-            shell=True,
-        )
-        if result.returncode == 0:
-            logger.info("[setup_workspace] pnpm install successful")
-            _update_pnpm_install_cache(workspace_path)
-            return True
-        else:
-            # Retry without --prefer-offline if it fails
-            logger.info("[setup_workspace] Retrying pnpm install without --prefer-offline...")
+        if has_lockfile:
             result = subprocess.run(
                 "pnpm install --frozen-lockfile",
                 cwd=workspace_path,
@@ -122,15 +284,32 @@ def _run_pnpm_install(workspace_path: str) -> bool:
                 text=True,
                 encoding='utf-8',
                 errors='replace',
-                timeout=120,
+                timeout=180,
                 shell=True,
             )
             if result.returncode == 0:
-                logger.info("[setup_workspace] pnpm install successful (retry)")
                 _update_pnpm_install_cache(workspace_path)
                 return True
-            logger.warning(f"[setup_workspace] pnpm install failed: {result.stderr[:200]}")
-            return False
+            # Frozen-lockfile failed - fallback to regular install
+            logger.debug(f"[setup_workspace] --frozen-lockfile failed, using fallback")
+        
+        # Regular pnpm install (generates/updates lockfile)
+        result = subprocess.run(
+            "pnpm install",
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=300,
+            shell=True,
+        )
+        
+        if result.returncode == 0:
+            _update_pnpm_install_cache(workspace_path)
+            return True
+        logger.warning(f"[setup_workspace] pnpm install failed")
+        return False
     except subprocess.TimeoutExpired:
         logger.warning("[setup_workspace] pnpm install timed out")
         return False
@@ -146,11 +325,9 @@ def _run_prisma_generate(workspace_path: str) -> bool:
         return True  # No schema, nothing to generate
     
     if _should_skip_prisma_generate(workspace_path):
-        logger.info("[setup_workspace] Skipping prisma generate (cached)")
         return True
     
     try:
-        logger.info("[setup_workspace] Running prisma generate...")
         result = subprocess.run(
             "pnpm exec prisma generate",
             cwd=workspace_path,
@@ -162,11 +339,10 @@ def _run_prisma_generate(workspace_path: str) -> bool:
             shell=True,
         )
         if result.returncode == 0:
-            logger.info("[setup_workspace] prisma generate successful")
             _update_prisma_generate_cache(workspace_path)
             return True
         else:
-            logger.warning(f"[setup_workspace] prisma generate failed: {result.stderr[:200]}")
+            logger.warning(f"[setup_workspace] prisma generate failed")
             return False
     except subprocess.TimeoutExpired:
         logger.warning("[setup_workspace] prisma generate timed out")
@@ -176,28 +352,86 @@ def _run_prisma_generate(workspace_path: str) -> bool:
         return False
 
 
-def _start_database(workspace_path: str) -> dict:
+def _start_database(workspace_path: str, story_id: str = None) -> dict:
     """Start postgres container (blocking). Returns db_info dict."""
     try:
-        db_info = start_postgres_container()
+        db_info = start_postgres_container(story_id)
         if db_info:
-            update_env_file(workspace_path)
-            database_url = get_database_url()
-            logger.info(f"[setup_workspace] Database ready at port {db_info.get('port')}")
+            update_env_file(workspace_path, story_id)
+            database_url = get_database_url(story_id)
+            
+            # Update story in DB with container info
+            if story_id:
+                from app.agents.developer_v2.src.utils.db_container import update_story_db_info
+                update_story_db_info(story_id, workspace_path)
+            
             return {"ready": True, "url": database_url, "info": db_info}
     except Exception as db_err:
         logger.warning(f"[setup_workspace] Database setup failed: {db_err}")
     return {"ready": False, "url": "", "info": None}
 
 
+def _build_project_config(tech_stack: str = "nextjs") -> dict:
+    """Build default project config based on tech stack."""
+    if tech_stack in ("nextjs", "nodejs-react", "react"):
+        return {
+            "tech_stack": {
+                "name": tech_stack,
+                "service": [
+                    {
+                        "name": "app",
+                        "path": ".",
+                        "format_cmd": "pnpm run format",
+                        "lint_fix_cmd": "pnpm run lint:fix", 
+                        "typecheck_cmd": "pnpm run typecheck",
+                        "build_cmd": "pnpm run build",
+                    }
+                ]
+            }
+        }
+    elif tech_stack in ("python", "fastapi", "django"):
+        return {
+            "tech_stack": {
+                "name": tech_stack,
+                "service": [
+                    {
+                        "name": "backend",
+                        "path": ".",
+                        "format_cmd": "ruff format .",
+                        "lint_fix_cmd": "ruff check --fix .",
+                        "typecheck_cmd": "mypy .",
+                        "build_cmd": "",
+                    }
+                ]
+            }
+        }
+    else:
+        # Default fallback
+        return {
+            "tech_stack": {
+                "name": tech_stack,
+                "service": [
+                    {
+                        "name": "app",
+                        "path": ".",
+                        "format_cmd": "",
+                        "lint_fix_cmd": "",
+                        "typecheck_cmd": "",
+                        "build_cmd": "",
+                    }
+                ]
+            }
+        }
+
+
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
     """Setup git workspace/branch for code modification."""
-    logger.info("[NODE] setup_workspace")
+    logger.debug("[NODE] setup_workspace")
     try:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
         
         if state.get("workspace_ready"):
-            logger.info("[setup_workspace] Workspace ready, checking dependencies...")
+            logger.debug("[setup_workspace] Workspace ready, checking dependencies...")
         
         short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
         branch_name = f"story_{short_id}"
@@ -205,7 +439,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         # Check if workspace_path already exists and is valid (reuse mode)
         existing_workspace = state.get("workspace_path", "")
         if existing_workspace and Path(existing_workspace).exists():
-            logger.info(f"[setup_workspace] Reusing existing workspace: {existing_workspace}")
+            logger.debug(f"[setup_workspace] Reusing existing workspace: {existing_workspace}")
             workspace_info = {
                 "workspace_path": existing_workspace,
                 "branch_name": branch_name,
@@ -213,7 +447,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 "workspace_ready": True,
             }
         else:
-            logger.info(f"[setup_workspace] Setting up workspace for branch '{branch_name}'")
+            logger.debug(f"[setup_workspace] Setting up workspace for branch '{branch_name}'")
             
             if hasattr(agent, 'main_workspace'):
                 main_workspace = agent.main_workspace
@@ -239,15 +473,12 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             try:
                 agents_md = get_agents_md(workspace_path)
                 project_context = get_project_context(workspace_path)
-                if agents_md:
-                    logger.info(f"[setup_workspace] Loaded AGENTS.md: {len(agents_md)} chars")
             except Exception as ctx_err:
                 logger.warning(f"[setup_workspace] Failed to load project context: {ctx_err}")
         
         # Load skill registry (fast, sync)
         tech_stack = state.get("tech_stack", "nextjs")
         skill_registry = SkillRegistry.load(tech_stack)
-        logger.info(f"[setup_workspace] Loaded SkillRegistry for '{tech_stack}' with {len(skill_registry.skills)} skills")
         
         # Run postgres + pnpm install in PARALLEL
         database_ready = False
@@ -257,10 +488,8 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if workspace_path and pkg_json and os.path.exists(pkg_json):
             loop = asyncio.get_event_loop()
-            
-            # Run both in parallel using thread pool
-            logger.info("[setup_workspace] Starting parallel setup (postgres + pnpm)...")
-            db_future = loop.run_in_executor(_executor, _start_database, workspace_path)
+            from functools import partial
+            db_future = loop.run_in_executor(_executor, partial(_start_database, workspace_path, story_id))
             pnpm_future = loop.run_in_executor(_executor, _run_pnpm_install, workspace_path)
             
             # Wait for both
@@ -272,6 +501,23 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             # Run prisma generate AFTER pnpm install completes
             if pnpm_success:
                 await loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
+        
+        # Build project config with tech stack
+        project_config = _build_project_config(tech_stack)
+        
+        # Notify user workspace is ready
+        if agent and workspace_info.get("workspace_ready"):
+            try:
+                from uuid import UUID
+                story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
+                db_status = "DB ready" if database_ready else "No DB"
+                await agent.message_story(
+                    story_uuid,
+                    f"📁 Workspace ready. Branch: {workspace_info.get('branch_name')} | {db_status}",
+                    message_type="progress"
+                )
+            except Exception:
+                pass
         
         return {
             **state,
@@ -285,6 +531,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             "tech_stack": tech_stack,
             "skill_registry": skill_registry,
             "available_skills": skill_registry.get_skill_ids(),
+            "project_config": project_config,
         }
         
     except Exception as e:

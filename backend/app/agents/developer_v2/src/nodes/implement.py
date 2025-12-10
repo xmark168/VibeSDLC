@@ -108,7 +108,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute implementation step with preloaded skills."""
     reset_modified_files()
     current_step, total_steps = state.get("current_step", 0), state.get("total_steps", 0)
-    logger.info(f"[NODE] implement {current_step + 1}/{total_steps}")
+    logger.debug(f"[NODE] implement {current_step + 1}/{total_steps}")
     
     debug_count = state.get("debug_count", 0)
     is_debug = state.get("task_type") == "bug_fix" or debug_count > 0
@@ -139,6 +139,22 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         action = step.get("action", "")
         step_deps = step.get("dependencies", [])
         step_skills = step.get("skills", [])
+        
+        # Notify user - starting step
+        if agent and file_path:
+            try:
+                from uuid import UUID
+                story_id = state.get("story_id", "")
+                if story_id:
+                    story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
+                    task_short = task[:80] + "..." if len(task) > 80 else task
+                    await agent.message_story(
+                        story_uuid,
+                        f"⚙️ [{current_step + 1}/{len(plan_steps)}] {action.upper()} `{file_path}`\n   → {task_short}",
+                        message_type="progress"
+                    )
+            except Exception:
+                pass
         
         if "frontend-design" in step_skills and "frontend-component" not in step_skills:
             step_skills = step_skills + ["frontend-component"]
@@ -185,7 +201,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             with open(fp, 'w', encoding='utf-8') as f:
                 f.write(output.content)
             _modified_files.add(file_path)
-            logger.info(f"[implement] {action.upper()} {file_path}")
+            logger.debug(f"[implement] {action.upper()} {file_path}")
         elif not output and response.content and file_path:
             match = re.search(r'```(?:typescript|tsx|javascript|jsx|python|prisma)?\s*([\s\S]*?)\s*```', response.content)
             if match:
@@ -280,7 +296,7 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
 
 async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute steps in parallel by layer."""
-    logger.info("[NODE] implement_parallel")
+    logger.debug("[NODE] implement_parallel")
     try:
         plan_steps = state.get("implementation_plan", [])
         workspace_path = state.get("workspace_path", "")
@@ -303,6 +319,23 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         for layer_num in sorted(layers.keys()):
             layer_steps = layers[layer_num]
             is_parallel = len(layer_steps) > 1 and layer_num >= 5
+            
+            # Notify user - layer starting
+            if agent:
+                try:
+                    from uuid import UUID
+                    story_id = state.get("story_id", "")
+                    if story_id:
+                        story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
+                        files_list = ", ".join([s.get("file_path", "").split("/")[-1] for s in layer_steps[:3]])
+                        more = f" +{len(layer_steps)-3}" if len(layer_steps) > 3 else ""
+                        await agent.message_story(
+                            story_uuid,
+                            f"⚙️ Layer {layer_num}/{len(layers)}: {files_list}{more}",
+                            message_type="progress"
+                        )
+                except Exception:
+                    pass
             
             if is_parallel:
                 results = await run_layer_parallel(layer_steps, lambda s, c=created_components: _implement_single_step(s, state, skill_registry, workspace_path, deps_content, c), state, MAX_CONCURRENT)

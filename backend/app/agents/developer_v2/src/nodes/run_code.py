@@ -5,6 +5,9 @@ import hashlib
 import json
 import logging
 import shutil
+import socket
+import subprocess
+import time
 from pathlib import Path
 from typing import Tuple, Optional, List
 
@@ -24,7 +27,7 @@ def _clear_next_types_cache(workspace_path: str) -> None:
     if next_types.exists():
         try:
             shutil.rmtree(next_types, ignore_errors=True)
-            logger.info("[run_code] Cleared .next/types cache")
+            logger.debug("[run_code] Cleared .next/types cache")
         except Exception as e:
             logger.warning(f"[run_code] Failed to clear .next/types: {e}")
 
@@ -112,10 +115,10 @@ def _run_seed(workspace_path: str) -> Tuple[bool, str, str]:
         return True, "", ""
     
     if _should_skip_seed(workspace_path):
-        logger.info("[run_code] Skipping seed (cached)")
+        logger.debug("[run_code] Skipping seed (cached)")
         return True, "", ""
     
-    logger.info("[run_code] Running database seed...")
+    logger.debug("[run_code] Running database seed...")
     success, stdout, stderr = _run_step(
         "DB Seed", "pnpm exec ts-node prisma/seed.ts",
         workspace_path, "prisma", timeout=60, allow_fail=True
@@ -123,7 +126,7 @@ def _run_seed(workspace_path: str) -> Tuple[bool, str, str]:
     
     if success:
         _update_seed_cache(workspace_path)
-        logger.info("[run_code] Database seeded successfully")
+        logger.debug("[run_code] Database seeded successfully")
     else:
         logger.warning(f"[run_code] Seed failed (continuing): {stderr[:200] if stderr else 'unknown'}")
     
@@ -144,7 +147,7 @@ def _run_step(
     Returns:
         (success, stdout, stderr)
     """
-    logger.info(f"[run_code] [{svc_name}] {step_name}: {cmd}")
+    logger.debug(f"[run_code] [{svc_name}] {step_name}: {cmd}")
     
     try:
         result = run_shell(cmd, cwd, timeout)
@@ -162,7 +165,7 @@ def _run_step(
                 logger.error(f"[run_code] stderr: {stderr[:2000] if stderr else '(empty)'}")
                 return False, stdout, stderr
         
-        logger.info(f"[run_code] [{svc_name}] {step_name} completed")
+        logger.debug(f"[run_code] [{svc_name}] {step_name} completed")
         return True, stdout, stderr
         
     except Exception as e:
@@ -204,9 +207,9 @@ async def _run_format_lint_parallel(services: List[dict], workspace_path: str) -
             tasks.append(task)
     
     if tasks:
-        logger.info(f"[run_code] Running {len(tasks)} format/lint tasks in parallel...")
+        logger.debug(f"[run_code] Running {len(tasks)} format/lint tasks in parallel...")
         await asyncio.gather(*tasks, return_exceptions=True)
-        logger.info("[run_code] Format/lint parallel execution completed")
+        logger.debug("[run_code] Format/lint parallel execution completed")
 
 
 async def _run_service_build(
@@ -253,7 +256,7 @@ async def _run_service_build(
             ))
             task_names.append("typecheck")
         elif typecheck_cmd:
-            logger.info(f"[run_code] [{svc_name}] Skipping typecheck (script not found)")
+            logger.debug(f"[run_code] [{svc_name}] Skipping typecheck (script not found)")
         
         # Prepare build task
         if build_cmd:
@@ -268,7 +271,7 @@ async def _run_service_build(
             return {"status": "PASS", "stdout": all_stdout, "stderr": ""}
         
         # Run typecheck + build in PARALLEL
-        logger.info(f"[run_code] [{svc_name}] Running {' + '.join(task_names)} in parallel...")
+        logger.debug(f"[run_code] [{svc_name}] Running {' + '.join(task_names)} in parallel...")
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Process results
@@ -302,6 +305,76 @@ async def _run_service_build(
         return {"status": "FAIL", "stdout": all_stdout, "stderr": str(e)}
 
 
+def _find_free_port() -> int:
+    """Find a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+    return port
+
+
+def _start_dev_server(workspace_path: str, story_id: str) -> dict:
+    """Start pnpm dev on a free port. Returns {port, pid} or empty dict on failure."""
+    try:
+        port = _find_free_port()
+        
+        # Start dev server in background
+        process = subprocess.Popen(
+            f"pnpm dev --port {port}",
+            cwd=workspace_path,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        
+        # Wait for server to be ready (max 30s)
+        start_time = time.time()
+        while time.time() - start_time < 30:
+            if process.poll() is not None:
+                # Process exited
+                logger.warning(f"[run_code] Dev server exited early")
+                return {}
+            
+            # Check if port is listening
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(('localhost', port)) == 0:
+                    logger.debug(f"[run_code] Dev server ready on port {port}")
+                    
+                    # Update story in DB
+                    _update_story_dev_server(story_id, port, process.pid)
+                    return {"port": port, "pid": process.pid}
+            
+            time.sleep(0.5)
+        
+        logger.warning(f"[run_code] Dev server timeout")
+        process.terminate()
+        return {}
+    except Exception as e:
+        logger.error(f"[run_code] Failed to start dev server: {e}")
+        return {}
+
+
+def _update_story_dev_server(story_id: str, port: int, pid: int):
+    """Update story with dev server info."""
+    try:
+        from uuid import UUID
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Story
+        
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id))
+            if story:
+                story.running_port = port
+                story.running_pid = pid
+                session.add(story)
+                session.commit()
+    except Exception as e:
+        logger.error(f"[run_code] Failed to update story: {e}")
+
+
 async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
     """
     Execute format, lint fix, typecheck, build.
@@ -310,8 +383,9 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
     1. Format all services (prettier)
     2. Lint fix all services (eslint)
     3. Build all services (install → typecheck → build)
+    4. Start dev server if build passes
     """
-    logger.info("[NODE] run_code")
+    logger.debug("[NODE] run_code")
     
     workspace_path = state.get("workspace_path", "")
     project_id = state.get("project_id", "default")
@@ -338,14 +412,14 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
                 run_code_span.end(output={"status": "ERROR", "reason": "Missing config"})
             return {**state, "run_status": "ERROR", "run_result": {"status": "ERROR", "summary": "Missing config"}}
         
-        logger.info(f"[run_code] Services: {[s.get('name', 'app') for s in services]}")
+        logger.debug(f"[run_code] Services: {[s.get('name', 'app') for s in services]}")
         
         # Run seed + format/lint in PARALLEL (optimization: saves ~5s)
         loop = asyncio.get_event_loop()
         seed_task = loop.run_in_executor(_executor, _run_seed, workspace_path)
         format_lint_task = _run_format_lint_parallel(services, workspace_path)
         
-        logger.info("[run_code] Running seed + format/lint in parallel...")
+        logger.debug("[run_code] Running seed + format/lint in parallel...")
         await asyncio.gather(seed_task, format_lint_task, return_exceptions=True)
         
         # Build all services
@@ -370,7 +444,41 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         run_status = "PASS" if all_passed else "FAIL"
         summary = ", ".join(summaries)
         
-        logger.info(f"[run_code] Result: {summary}")
+        # Notify user of build result
+        story_id = state.get("story_id", "")
+        dev_server_info = {}
+        
+        if agent:
+            try:
+                from uuid import UUID
+                if story_id:
+                    story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
+                    icon = "✅" if all_passed else "❌"
+                    await agent.message_story(
+                        story_uuid,
+                        f"{icon} Build: {summary}",
+                        message_type="update" if all_passed else "error"
+                    )
+            except Exception:
+                pass
+        
+        # Start dev server if build passed
+        if all_passed and workspace_path and story_id:
+            loop = asyncio.get_event_loop()
+            dev_server_info = await loop.run_in_executor(_executor, _start_dev_server, workspace_path, story_id)
+            
+            if dev_server_info.get("port") and agent:
+                try:
+                    from uuid import UUID
+                    story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
+                    await agent.message_story(
+                        story_uuid,
+                        f"🚀 Dev server: http://localhost:{dev_server_info['port']}",
+                        message_type="update"
+                    )
+                except Exception:
+                    pass
+        
         if run_code_span:
             run_code_span.end(output={"status": run_status, "summary": summary})
         
@@ -380,6 +488,8 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
             "run_stdout": all_stdout,
             "run_stderr": all_stderr,
             "run_result": {"status": run_status, "summary": summary, "services": summaries},
+            "dev_server_port": dev_server_info.get("port"),
+            "dev_server_pid": dev_server_info.get("pid"),
         }
         
     except Exception as e:

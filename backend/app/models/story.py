@@ -87,6 +87,19 @@ class Story(BaseModel, table=True):
     
     # Git worktree - each story has its own branch
     branch_name: str | None = Field(default=None, max_length=255)
+    worktree_path: str | None = Field(default=None, max_length=500)
+    
+    # Database container for this story (testcontainers)
+    db_container_id: str | None = Field(default=None, max_length=100)
+    db_port: int | None = Field(default=None)
+    
+    # Dev server running port
+    running_port: int | None = Field(default=None)
+    running_pid: int | None = Field(default=None)
+    
+    # PR and merge tracking
+    pr_url: str | None = Field(default=None, max_length=500)
+    merge_status: str | None = Field(default=None, max_length=50)  # "not_merged", "merged", "conflict"
 
     project: "Project" = Relationship(back_populates="stories")
     epic: Optional["Epic"] = Relationship(back_populates="stories")
