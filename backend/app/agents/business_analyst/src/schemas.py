@@ -61,14 +61,14 @@ class PRDOutput(BaseModel):
     constraints: List[str] = Field(default=[], description="Technical/business constraints")
     success_metrics: List[str] = Field(default=[], description="Success metrics")
     risks: List[str] = Field(default=[], description="Identified risks")
-    message: str = Field(description="Natural message to user (Vietnamese, with emoji)")
+    message: str = Field(description="Natural message to user (Vietnamese, with emoji, KHÔNG dùng ký tự ** hoặc *)")
 
 
 class PRDUpdateOutput(BaseModel):
     """Output schema for update_prd node."""
     updated_prd: PRDOutput = Field(description="Complete updated PRD")
     change_summary: str = Field(description="Summary of changes made (Vietnamese)")
-    message: str = Field(description="Natural message to user (Vietnamese, with emoji)")
+    message: str = Field(description="Natural message to user (Vietnamese, with emoji, KHÔNG dùng ký tự ** hoặc *)")
 
 
 # =============================================================================
@@ -185,7 +185,7 @@ class VerifyStoryOutput(BaseModel):
 
 class ConversationalOutput(BaseModel):
     """Output schema for respond_conversational (optional, can use raw text)."""
-    message: str = Field(description="Natural response message in Vietnamese")
+    message: str = Field(description="Natural response message in Vietnamese, KHÔNG dùng ký tự ** hoặc *")
 
 
 # =============================================================================
@@ -194,4 +194,4 @@ class ConversationalOutput(BaseModel):
 
 class DocumentFeedbackOutput(BaseModel):
     """Output schema for generate_document_feedback."""
-    message: str = Field(description="Natural feedback message in Vietnamese with emoji")
+    message: str = Field(description="Natural feedback message in Vietnamese with emoji, KHÔNG dùng ký tự ** hoặc *")

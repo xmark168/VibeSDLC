@@ -275,6 +275,21 @@ async def create_message_with_file(
     
     logger.info(f"Created message {obj.id} with attachment: {attachment['filename'] if attachment else 'none'}")
     
+    # Broadcast reload trigger to WebSocket (lightweight, frontend will refetch from DB)
+    try:
+        from app.websocket.connection_manager import connection_manager
+        
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "messages_updated",
+                "project_id": str(obj.project_id),
+            },
+            project_id
+        )
+        logger.info(f"Broadcasted messages_updated for project {obj.project_id}")
+    except Exception as e:
+        logger.error(f"Failed to broadcast to WebSocket: {e}")
+    
     # Publish to Kafka for agent routing
     try:
         from app.kafka import get_kafka_producer, KafkaTopics, UserMessageEvent

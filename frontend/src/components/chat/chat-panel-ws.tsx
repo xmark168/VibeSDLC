@@ -219,10 +219,19 @@ export function ChatPanelWS({
     typingAgents,
     answeredBatchIds,  // Track which batches have been answered
     conversationOwner,
+    refetchTrigger,  // Trigger for refetching messages (file uploads)
     sendMessage: wsSendMessage,
     sendQuestionAnswer,
     sendBatchAnswers,
   } = useChatWebSocket(projectId ?? null, token || '');
+
+  // Refetch messages when messages_updated event received (file uploads, etc.)
+  useEffect(() => {
+    if (refetchTrigger > 0) {
+      console.log('[ChatPanel] Refetching messages due to messages_updated event')
+      queryClient.invalidateQueries({ queryKey: ['messages-infinite', projectId] })
+    }
+  }, [refetchTrigger, queryClient, projectId])
 
   // Notify parent when agent statuses change
   useEffect(() => {
@@ -1246,7 +1255,27 @@ export function ChatPanelWS({
                 variant="outline"
                 onClick={() => {
                   const element = document.getElementById(`question-${pendingQuestion.id}`)
-                  element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  const container = messagesContainerRef.current
+                  if (!element || !container) return
+
+                  const elementRect = element.getBoundingClientRect()
+                  const containerRect = container.getBoundingClientRect()
+                  const targetScrollTop = container.scrollTop + (elementRect.top - containerRect.top) - (containerRect.height / 2 - elementRect.height / 2)
+
+                  // Smooth scroll animation
+                  const start = container.scrollTop
+                  const distance = targetScrollTop - start
+                  const duration = 400
+                  let startTime: number | null = null
+
+                  const animate = (time: number) => {
+                    if (!startTime) startTime = time
+                    const progress = Math.min((time - startTime) / duration, 1)
+                    const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2
+                    container.scrollTop = start + distance * ease
+                    if (progress < 1) requestAnimationFrame(animate)
+                  }
+                  requestAnimationFrame(animate)
                 }}
                 className="text-xs text-blue-600 border-blue-300 hover:bg-blue-100 h-7 px-3"
               >
