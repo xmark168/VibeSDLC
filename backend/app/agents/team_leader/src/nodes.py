@@ -395,6 +395,12 @@ async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         msg = state.get("message") or f"Chuyển cho @{state['target_role']} nhé!"
         await agent.message_user("response", msg)
 
+        # Build context with attachments if present
+        task_context = {}
+        if state.get("attachments"):
+            task_context["attachments"] = state["attachments"]
+            logger.info(f"[delegate] Passing {len(state['attachments'])} attachment(s) to {state['target_role']}")
+
         task = TaskContext(
             task_id=UUID(state["task_id"]), task_type=AgentTaskType.MESSAGE, priority="high",
             routing_reason=state.get("reason", "team_leader_routing"),
