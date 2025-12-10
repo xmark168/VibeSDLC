@@ -12,16 +12,17 @@ class DeveloperState(TypedDict, total=False):
 
     # Input
     story_id: str
+    story_code: str  # Unique story code (e.g., "US-001", "EPIC-001-US-001")
     epic: str
     story_title: str
+    story_content: str
     story_description: str
     story_requirements: List[str]
     acceptance_criteria: List[str]
     project_id: str
     task_id: str
     user_id: str
-    langfuse_handler: Any
-    langfuse_client: Any
+    # NOTE: langfuse_handler/langfuse_client removed - not serializable for checkpointing
 
     # Flow control
     action: Action
@@ -53,6 +54,10 @@ class DeveloperState(TypedDict, total=False):
     run_stdout: Optional[str]
     run_stderr: Optional[str]
     run_status: Optional[str]
+    
+    # Dev server
+    dev_server_port: Optional[int]
+    dev_server_pid: Optional[int]
 
     # Debug
     debug_count: int
@@ -65,7 +70,7 @@ class DeveloperState(TypedDict, total=False):
 
     # Skills
     tech_stack: str
-    skill_registry: Any
+    # skill_registry not stored - contains non-serializable Path objects, loaded on-demand
     available_skills: List[str]
 
     # Context

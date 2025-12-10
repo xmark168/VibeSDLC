@@ -444,3 +444,466 @@ async def get_story_messages(
         "limit": limit,
         "offset": offset,
     }
+
+
+class SendMessageRequest(BaseModel):
+    content: str
+
+
+@router.post("/{story_id}/messages")
+async def send_story_message(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID,
+    request: SendMessageRequest
+) -> Any:
+    """Send a message to story channel."""
+    from app.models import StoryMessage
+    from app.websocket.connection_manager import connection_manager
+    
+    # Verify story exists
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Create message
+    message = StoryMessage(
+        story_id=story_id,
+        author_type="user",
+        author_name=current_user.full_name or current_user.email,
+        user_id=current_user.id,
+        content=request.content,
+        message_type="text",
+    )
+    session.add(message)
+    session.commit()
+    session.refresh(message)
+    
+    # Broadcast via WebSocket
+    await connection_manager.broadcast_to_project(
+        {
+            "type": "story_message",
+            "story_id": str(story_id),
+            "message_id": str(message.id),
+            "author_type": "user",
+            "author_name": message.author_name,
+            "content": message.content,
+            "message_type": "text",
+            "timestamp": message.created_at.isoformat() if message.created_at else None,
+        },
+        story.project_id
+    )
+    
+    return {
+        "id": str(message.id),
+        "author_type": message.author_type,
+        "author_name": message.author_name,
+        "content": message.content,
+        "message_type": message.message_type,
+        "created_at": message.created_at.isoformat() if message.created_at else None,
+    }
+
+
+# ===== Agent Task Control =====
+@router.post("/{story_id}/cancel")
+async def cancel_story_task(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Cancel running agent task for story."""
+    from app.models.base import StoryAgentState
+    from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+    import os
+    import signal
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Kill dev server if running
+    if story.running_pid:
+        try:
+            os.kill(story.running_pid, signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+        story.running_pid = None
+        story.running_port = None
+    
+    # Update state to canceled and clear checkpoint (cancel = permanent stop)
+    story.agent_state = StoryAgentState.CANCELED
+    story.checkpoint_thread_id = None  # Clear checkpoint - cancel means no resume
+    session.add(story)
+    session.commit()
+    
+    # Broadcast WebSocket notification
+    from app.websocket.connection_manager import connection_manager
+    await connection_manager.broadcast_to_project({
+        "type": "story_message",
+        "story_id": str(story_id),
+        "content": f"🛑 Task đã bị hủy",
+        "message_type": "system",
+        "agent_state": "canceled",
+    }, story.project_id)
+    
+    # Publish cancel event to actually stop the agent
+    producer = await get_kafka_producer()
+    event = StoryEvent(
+        event_type="story.cancel",
+        project_id=str(story.project_id),
+        user_id=str(current_user.id),
+        story_id=str(story.id),
+    )
+    await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+    
+    return {"success": True, "message": "Task cancelled"}
+
+
+@router.post("/{story_id}/pause")
+async def pause_story_task(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Pause running agent task for story (can be resumed later)."""
+    from app.models.base import StoryAgentState
+    from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Allow pause for both PENDING and PROCESSING states
+    if story.agent_state not in [StoryAgentState.PENDING, StoryAgentState.PROCESSING]:
+        raise HTTPException(status_code=400, detail="Can only pause pending or processing tasks")
+    
+    # Update state to paused
+    story.agent_state = StoryAgentState.PAUSED
+    session.add(story)
+    session.commit()
+    
+    # Broadcast WebSocket notification
+    from app.websocket.connection_manager import connection_manager
+    await connection_manager.broadcast_to_project({
+        "type": "story_message",
+        "story_id": str(story_id),
+        "content": f"⏸️ Task đã tạm dừng",
+        "message_type": "system",
+        "agent_state": "paused",
+    }, story.project_id)
+    
+    # Publish pause event to stop the agent
+    producer = await get_kafka_producer()
+    event = StoryEvent(
+        event_type="story.pause",
+        project_id=str(story.project_id),
+        user_id=str(current_user.id),
+        story_id=str(story.id),
+    )
+    await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+    
+    return {"success": True, "message": "Task paused"}
+
+
+@router.post("/{story_id}/resume")
+async def resume_story_task(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Resume paused agent task for story."""
+    from app.models.base import StoryAgentState
+    from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    if story.agent_state != StoryAgentState.PAUSED:
+        raise HTTPException(status_code=400, detail="Can only resume paused tasks")
+    
+    # Update state to processing
+    story.agent_state = StoryAgentState.PROCESSING
+    session.add(story)
+    session.commit()
+    
+    # Broadcast WebSocket notification
+    from app.websocket.connection_manager import connection_manager
+    await connection_manager.broadcast_to_project({
+        "type": "story_message",
+        "story_id": str(story_id),
+        "content": f"▶️ Đang tiếp tục task...",
+        "message_type": "system",
+        "agent_state": "processing",
+    }, story.project_id)
+    
+    # Publish resume event to continue the agent
+    producer = await get_kafka_producer()
+    event = StoryEvent(
+        event_type="story.resume",
+        project_id=str(story.project_id),
+        user_id=str(current_user.id),
+        story_id=str(story.id),
+        title=story.title,
+    )
+    await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+    
+    return {"success": True, "message": "Task resumed"}
+
+
+@router.post("/{story_id}/restart")
+async def restart_story_task(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Restart agent task for story (re-publish Kafka event)."""
+    from app.models.base import StoryAgentState
+    from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+    import subprocess
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Discard old changes in worktree (if exists)
+    if story.worktree_path:
+        try:
+            # Reset all changes to HEAD
+            subprocess.run(
+                ["git", "checkout", "--", "."],
+                cwd=story.worktree_path,
+                capture_output=True,
+                timeout=30
+            )
+            # Remove untracked files
+            subprocess.run(
+                ["git", "clean", "-fd"],
+                cwd=story.worktree_path,
+                capture_output=True,
+                timeout=30
+            )
+        except Exception as e:
+            # Log but don't fail - worktree might not exist
+            import logging
+            logging.warning(f"Failed to cleanup worktree for story {story_id}: {e}")
+    
+    # Reset state and clear checkpoint (start fresh, not resume)
+    story.agent_state = StoryAgentState.PENDING
+    story.running_pid = None
+    story.running_port = None
+    story.checkpoint_thread_id = None  # Clear checkpoint to start fresh
+    session.add(story)
+    session.commit()
+    
+    # Clear any leftover cancel/pause signals from previous run
+    from app.agents.core.task_registry import clear_signals
+    clear_signals(str(story_id))
+    
+    # Broadcast WebSocket notification
+    from app.websocket.connection_manager import connection_manager
+    await connection_manager.broadcast_to_project({
+        "type": "story_message",
+        "story_id": str(story_id),
+        "content": f"🔄 Đang chạy lại task...",
+        "message_type": "system",
+        "agent_state": "pending",
+    }, story.project_id)
+    
+    # Publish event to trigger agent
+    producer = await get_kafka_producer()
+    event = StoryEvent(
+        event_type="story.status.changed",
+        project_id=str(story.project_id),
+        user_id=str(current_user.id),
+        story_id=str(story.id),
+        old_status="Todo",
+        new_status="InProgress",
+        title=story.title,
+    )
+    await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+    
+    return {"success": True, "message": "Task restarted"}
+
+
+@router.post("/{story_id}/dev-server/start")
+async def start_dev_server(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Start dev server for story worktree."""
+    import subprocess
+    import socket
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    if not story.worktree_path:
+        raise HTTPException(status_code=400, detail="No worktree path for this story")
+    
+    # Already running
+    if story.running_pid and story.running_port:
+        return {"success": True, "port": story.running_port, "message": "Dev server already running"}
+    
+    # Find free port
+    def find_free_port():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('', 0))
+            return s.getsockname()[1]
+    
+    port = find_free_port()
+    
+    # Start dev server
+    try:
+        process = subprocess.Popen(
+            ["pnpm", "dev", "--port", str(port)],
+            cwd=story.worktree_path,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP') else 0,
+        )
+        
+        story.running_port = port
+        story.running_pid = process.pid
+        session.add(story)
+        session.commit()
+        
+        return {"success": True, "port": port, "pid": process.pid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start dev server: {str(e)}")
+
+
+@router.post("/{story_id}/dev-server/stop")
+async def stop_dev_server(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Stop dev server for story."""
+    import os
+    import signal
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    if not story.running_pid:
+        return {"success": True, "message": "No dev server running"}
+    
+    try:
+        os.kill(story.running_pid, signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        pass
+    
+    story.running_pid = None
+    story.running_port = None
+    session.add(story)
+    session.commit()
+    
+    return {"success": True, "message": "Dev server stopped"}
+
+
+@router.get("/{story_id}/logs")
+async def get_story_logs(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID,
+    limit: int = Query(100, ge=1, le=500)
+) -> Any:
+    """Get agent logs/messages for story."""
+    from app.models import StoryMessage
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Get messages as logs
+    statement = (
+        select(StoryMessage)
+        .where(StoryMessage.story_id == story_id)
+        .order_by(StoryMessage.created_at.desc())
+        .limit(limit)
+    )
+    messages = session.exec(statement).all()
+    
+    return {
+        "logs": [
+            {
+                "id": str(msg.id),
+                "timestamp": msg.created_at.isoformat() if msg.created_at else None,
+                "author": msg.author_name,
+                "type": msg.message_type,
+                "content": msg.content,
+            }
+            for msg in reversed(messages)
+        ]
+    }
+
+
+@router.get("/{story_id}/diffs")
+async def get_story_diffs(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Get git diff for story worktree."""
+    import subprocess
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    if not story.worktree_path:
+        return {"files": [], "diff": ""}
+    
+    try:
+        # Get changed files
+        result = subprocess.run(
+            ["git", "diff", "--name-status", "main...HEAD"],
+            cwd=story.worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        files = []
+        if result.returncode == 0:
+            for line in result.stdout.strip().split("\n"):
+                if line:
+                    parts = line.split("\t", 1)
+                    if len(parts) == 2:
+                        status, filename = parts
+                        files.append({
+                            "status": status,  # A=Added, M=Modified, D=Deleted
+                            "filename": filename
+                        })
+        
+        # Get full diff
+        diff_result = subprocess.run(
+            ["git", "diff", "main...HEAD"],
+            cwd=story.worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        return {
+            "files": files,
+            "file_count": len(files),
+            "diff": diff_result.stdout if diff_result.returncode == 0 else ""
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Git command timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get diffs: {str(e)}")

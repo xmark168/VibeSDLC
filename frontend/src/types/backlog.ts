@@ -1,6 +1,6 @@
 // Backlog and Kanban-related types
 
-export type StoryAgentState = 'pending' | 'processing' | 'canceled' | 'finished'
+export type StoryAgentState = 'pending' | 'processing' | 'paused' | 'canceled' | 'finished'
 
 export interface BacklogItem {
   id: string
@@ -23,6 +23,13 @@ export interface BacklogItem {
   agent_state?: StoryAgentState | null
   assigned_agent_id?: string | null
   branch_name?: string | null
+  worktree_path?: string | null
+  worktree_path_display?: string | null
+  running_port?: number | null
+  running_pid?: number | null
+  pr_url?: string | null
+  merge_status?: string | null
+  started_at?: string | null
 }
 
 export interface KanbanBoard {

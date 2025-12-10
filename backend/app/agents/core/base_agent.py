@@ -1588,8 +1588,9 @@ class BaseAgent(ABC):
             self._queue_worker_task = asyncio.create_task(self._task_queue_worker())
             
             # Create consumer with wrapper that calls our handle_task
+            # Skip old messages to start fresh on each restart
             self._consumer = AgentTaskConsumer(self)
-            await self._consumer.start()
+            await self._consumer.start(seek_to_end=True)
 
 
             return True
@@ -2096,8 +2097,12 @@ class AgentTaskConsumer:
         self.agent = agent
         self._consumer_instance = None
 
-    async def start(self) -> None:
-        """Start consuming tasks from Kafka."""
+    async def start(self, seek_to_end: bool = False) -> None:
+        """Start consuming tasks from Kafka.
+        
+        Args:
+            seek_to_end: If True, skip all existing messages and start from latest.
+        """
         from app.agents.core.base_agent_consumer import BaseAgentInstanceConsumer
 
         # Create a dynamic consumer class that wraps the agent
@@ -2114,7 +2119,7 @@ class AgentTaskConsumer:
         self._consumer_instance = DynamicConsumer(self.agent.agent_model, self.agent)
 
         # Start consumer
-        await self._consumer_instance.start()
+        await self._consumer_instance.start(seek_to_end=seek_to_end)
 
     async def stop(self) -> None:
         """Stop consuming tasks."""

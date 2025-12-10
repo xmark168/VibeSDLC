@@ -1,4 +1,11 @@
-"""Pool helper functions for quick wins: auto-creation, smart selection, etc."""
+"""Pool helper functions for quick wins: auto-creation, smart selection, etc.
+
+Features:
+- Pool load calculation
+- Smart pool selection based on role type and load
+- Auto-scaling support
+- Priority-based allocation for PAID pools
+"""
 
 import logging
 from typing import Optional, Dict
@@ -9,6 +16,7 @@ from sqlmodel import Session
 from app.models import PoolType, AgentPool
 from app.services.pool_service import PoolService
 from app.agents.core.agent_pool_manager import AgentPoolManager
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +84,34 @@ async def create_pool_for_role(
         return None
 
 
+def get_pool_priority(pool_id: Optional[UUID]) -> int:
+    """Get pool priority based on PoolType.
+    
+    PAID pools have higher priority (lower number = higher priority).
+    
+    Args:
+        pool_id: Pool UUID
+        
+    Returns:
+        Priority value (1 = highest, 2 = normal)
+    """
+    if not pool_id:
+        return 2  # Default priority
+    
+    try:
+        from sqlmodel import Session
+        from app.core.db import engine
+        
+        with Session(engine) as session:
+            pool = session.get(AgentPool, pool_id)
+            if pool and pool.pool_type == PoolType.PAID:
+                return 1  # Higher priority for PAID pools
+    except Exception as e:
+        logger.error(f"Error getting pool priority: {e}")
+    
+    return 2  # Default priority
+
+
 def get_best_pool_for_agent(
     manager_registry: Dict[str, AgentPoolManager],
     role_type: str,
@@ -86,8 +122,9 @@ def get_best_pool_for_agent(
     
     Strategy:
     1. If prefer_role_pool=True, try role-specific pool first
-    2. Fall back to pool with lowest load
-    3. Return None if all pools are full
+    2. Prefer PAID pools over FREE pools (priority-based)
+    3. Among same-priority pools, select lowest load
+    4. Return None if all pools are full
     
     Args:
         manager_registry: Dict of pool_name -> AgentPoolManager
@@ -109,10 +146,8 @@ def get_best_pool_for_agent(
                 logger.debug(f"Selected role-specific pool '{role_pool_name}' for {role_type}")
                 return manager
     
-    # Find pool with lowest load that has capacity
-    best_manager = None
-    lowest_load = float('inf')
-    
+    # Build list of available pools with their priorities and loads
+    available_pools = []
     for manager in manager_registry.values():
         current_agents = len(manager.agents)
         
@@ -121,26 +156,35 @@ def get_best_pool_for_agent(
             continue
         
         load = current_agents / manager.max_agents if manager.max_agents > 0 else 0
+        priority = get_pool_priority(manager.pool_id)
         
-        if load < lowest_load:
-            lowest_load = load
-            best_manager = manager
+        available_pools.append({
+            "manager": manager,
+            "priority": priority,
+            "load": load,
+        })
     
-    if best_manager:
-        logger.debug(
-            f"Selected pool '{best_manager.pool_name}' with load {lowest_load:.2%} "
-            f"for {role_type}"
-        )
-    else:
+    if not available_pools:
         logger.warning(f"All pools are at capacity, cannot spawn {role_type} agent")
+        return None
     
-    return best_manager
+    # Sort by priority (ascending) then by load (ascending)
+    # Lower priority number = higher priority
+    available_pools.sort(key=lambda x: (x["priority"], x["load"]))
+    
+    best = available_pools[0]
+    logger.debug(
+        f"Selected pool '{best['manager'].pool_name}' "
+        f"(priority={best['priority']}, load={best['load']:.2%}) for {role_type}"
+    )
+    
+    return best["manager"]
 
 
 async def auto_scale_pools(
     session: Session,
     manager_registry: Dict[str, AgentPoolManager],
-    scale_threshold: float = 0.8,
+    scale_threshold: Optional[float] = None,
 ) -> Optional[AgentPool]:
     """
     Auto-create new pool if universal pool is overloaded.
@@ -148,42 +192,46 @@ async def auto_scale_pools(
     Args:
         session: Database session
         manager_registry: Current pool managers
-        scale_threshold: Load threshold to trigger scaling (default 80%)
+        scale_threshold: Load threshold to trigger scaling (uses config default)
     
     Returns:
         Newly created pool or None
     """
-    universal_pool = manager_registry.get("universal_pool")
-    if not universal_pool:
-        return None
+    if scale_threshold is None:
+        scale_threshold = settings.AGENT_POOL_AUTO_SCALE_THRESHOLD
     
-    if not should_create_new_pool(universal_pool, scale_threshold):
-        return None
-    
-    logger.info(
-        f"Universal pool load at {get_pool_load(universal_pool):.2%}, "
-        f"creating overflow pool"
-    )
-    
-    # Create overflow pool
-    pool_service = PoolService(session)
-    overflow_count = len([p for p in manager_registry.keys() if "overflow" in p])
-    
-    pool_name = f"overflow_pool_{overflow_count + 1}"
-    
-    try:
-        pool = pool_service.create_pool(
-            pool_name=pool_name,
-            role_type=None,  # Universal
-            pool_type=PoolType.FREE,
-            max_agents=50,  # Smaller than main pool
-            auto_created=True,
+    # Check all pools, not just universal
+    for pool_name, manager in manager_registry.items():
+        if not should_create_new_pool(manager, scale_threshold):
+            continue
+        
+        load = get_pool_load(manager)
+        logger.info(
+            f"Pool '{pool_name}' load at {load:.2%}, "
+            f"creating overflow pool"
         )
-        logger.info(f"✓ Auto-created overflow pool: {pool_name}")
-        return pool
-    except Exception as e:
-        logger.error(f"Failed to auto-create overflow pool: {e}", exc_info=True)
-        return None
+        
+        # Create overflow pool
+        pool_service = PoolService(session)
+        overflow_count = len([p for p in manager_registry.keys() if "overflow" in p])
+        
+        new_pool_name = f"overflow_pool_{overflow_count + 1}"
+        
+        try:
+            pool = pool_service.create_pool(
+                pool_name=new_pool_name,
+                role_type=None,  # Universal overflow
+                pool_type=PoolType.FREE,
+                max_agents=settings.AGENT_POOL_MAX_AGENTS // 2,
+                health_check_interval=settings.AGENT_POOL_HEALTH_CHECK_INTERVAL,
+                auto_created=True,
+            )
+            logger.info(f"✓ Auto-created overflow pool: {new_pool_name}")
+            return pool
+        except Exception as e:
+            logger.error(f"Failed to auto-create overflow pool: {e}", exc_info=True)
+    
+    return None
 
 
 def get_pool_statistics(

@@ -86,18 +86,35 @@ class BaseKafkaConsumer(ABC):
 
         return config
 
-    async def start(self):
-        """Start consuming messages from Kafka."""
+    async def start(self, seek_to_end: bool = False):
+        """Start consuming messages from Kafka.
+        
+        Args:
+            seek_to_end: If True, skip all existing messages and start from latest.
+                        Use this on restart to avoid processing old events.
+        """
         try:
             config = self._build_config()
             self.consumer = Consumer(config)
-            self.consumer.subscribe(self.topics)
+            
+            if seek_to_end:
+                # Seek to end of all partitions to skip old messages
+                def on_assign(consumer, partitions):
+                    for p in partitions:
+                        p.offset = -1  # OFFSET_END
+                    consumer.assign(partitions)
+                    logger.info(f"Seeking to end of {len(partitions)} partitions (skipping old messages)")
+                
+                self.consumer.subscribe(self.topics, on_assign=on_assign)
+            else:
+                self.consumer.subscribe(self.topics)
+            
             self.running = True
 
             logger.info(
                 f"Kafka consumer started for topics {self.topics} with group {self.group_id}"
             )
-            logger.info(f"Consumer config: bootstrap.servers={config.get('bootstrap.servers')}")
+            logger.info(f"Consumer config: bootstrap.servers={config.get('bootstrap.servers')}, seek_to_end={seek_to_end}")
 
             # Start consume loop in background
             self._consume_task = asyncio.create_task(self._consume_loop())
