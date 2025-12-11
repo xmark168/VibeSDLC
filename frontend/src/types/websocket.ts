@@ -46,6 +46,7 @@ export interface UseChatWebSocketReturn {
     agentName: string
     status: 'active' | 'thinking' | 'waiting'
   } | null
+  refetchTrigger: number  // Trigger for refetching messages (file uploads)
   sendMessage: (content: string, agentName?: string) => void
   sendQuestionAnswer: (question_id: string, answer: string, selected_options?: string[]) => boolean
   sendBatchAnswers: (batch_id: string, answers: Array<{ question_id: string; answer: string; selected_options?: string[] }>) => boolean

@@ -25,6 +25,10 @@ class RoutingDecision(BaseModel):
         default=0.8,
         description="Routing confidence 0.0-1.0"
     )
+    is_update_request: bool = Field(
+        default=False,
+        description="True if user explicitly wants to UPDATE/EDIT/MODIFY existing stories/PRD (e.g., 'sửa story X', 'thêm feature Y', 'bỏ requirement Z'). False for vague/new project requests."
+    )
 
 
 class ExtractedPreferences(BaseModel):

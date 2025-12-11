@@ -262,7 +262,7 @@ function KanbanCardComponent({
       <div className="space-y-3">
         {/* Header: Type Badge, Agent State Badge, Blocked Badge and Age */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5">
             {card.type && (
               <Badge variant="outline" className={`text-xs font-medium ${getTypeBadgeColor(card.type)}`}>
                 {formatTypeName(card.type)}
