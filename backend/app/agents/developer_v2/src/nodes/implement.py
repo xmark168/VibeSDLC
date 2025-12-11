@@ -41,12 +41,27 @@ def git_commit_step(workspace_path: str, step_num: int, description: str, files:
     Returns:
         True if commit succeeded, False otherwise
     """
+    # Validate workspace_path
+    if not workspace_path:
+        logger.warning(f"[git] Cannot commit: workspace_path is empty")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.warning(f"[git] Cannot commit: workspace does not exist: {workspace_path}")
+        return False
+    
+    # Normalize path for Windows
+    workspace_path = str(workspace.resolve())
+    
     try:
         # Stage files with retry
         if files:
             for f in files:
                 try:
-                    git_with_retry(["git", "add", f], cwd=workspace_path)
+                    # Use absolute path for file
+                    file_path = str((workspace / f).resolve()) if not os.path.isabs(f) else f
+                    git_with_retry(["git", "add", file_path], cwd=workspace_path)
                 except Exception:
                     pass  # Individual file add failure is OK
         else:
@@ -77,6 +92,19 @@ def git_revert_uncommitted(workspace_path: str) -> bool:
     Returns:
         True if revert succeeded, False otherwise
     """
+    # Validate workspace_path
+    if not workspace_path:
+        logger.warning(f"[git] Cannot revert: workspace_path is empty")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.warning(f"[git] Cannot revert: workspace does not exist: {workspace_path}")
+        return False
+    
+    # Normalize path for Windows
+    workspace_path = str(workspace.resolve())
+    
     try:
         # Discard unstaged changes with retry
         git_with_retry(["git", "checkout", "."], cwd=workspace_path)
@@ -95,6 +123,19 @@ def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
     Returns:
         True if reset succeeded, False otherwise
     """
+    # Validate workspace_path
+    if not workspace_path:
+        logger.warning(f"[git] Cannot reset: workspace_path is empty")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.warning(f"[git] Cannot reset: workspace does not exist: {workspace_path}")
+        return False
+    
+    # Normalize path for Windows
+    workspace_path = str(workspace.resolve())
+    
     try:
         # Get the merge-base with origin
         result = subprocess.run(
@@ -127,6 +168,19 @@ def git_squash_wip_commits(workspace_path: str, base_branch: str = "main", final
     Returns:
         True if squash succeeded, False otherwise
     """
+    # Validate workspace_path
+    if not workspace_path:
+        logger.warning(f"[git] Cannot squash: workspace_path is empty")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.warning(f"[git] Cannot squash: workspace does not exist: {workspace_path}")
+        return False
+    
+    # Normalize path for Windows
+    workspace_path = str(workspace.resolve())
+    
     try:
         # Get merge-base
         result = subprocess.run(
@@ -252,11 +306,10 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     
     reset_modified_files()
     current_step, total_steps = state.get("current_step", 0), state.get("total_steps", 0)
-    await story_logger.info(f"Implementing step {current_step + 1}/{total_steps}...")
     
-    # Send user-visible task message
-    if current_step == 0:
-        await story_logger.message("🔨 Bắt đầu implement code...")
+    # Task update (transient) - show current step
+    progress = (current_step + 1) / total_steps if total_steps > 0 else 0
+    await story_logger.task(f"🔨 Implementing step {current_step + 1}/{total_steps}...", progress=progress)
     
     debug_count = state.get("debug_count", 0)
     is_debug = state.get("task_type") == "bug_fix" or debug_count > 0
@@ -288,10 +341,8 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         step_deps = step.get("dependencies", [])
         step_skills = step.get("skills", [])
         
-        # Log step details
-        task_short = task[:80] + "..." if len(task) > 80 else task
-        await story_logger.info(f"[{current_step + 1}/{len(plan_steps)}] {action.upper()} `{file_path}` → {task_short}")
-        await story_logger.task(f"[{current_step + 1}/{len(plan_steps)}] {action.upper()} {file_path}", progress=(current_step + 1) / len(plan_steps))
+        # Task update (transient) - show file being processed
+        await story_logger.task(f"📝 {action.upper()} {file_path}", progress=(current_step + 1) / len(plan_steps))
         
         if "frontend-design" in step_skills and "frontend-component" not in step_skills:
             step_skills = step_skills + ["frontend-component"]
@@ -345,8 +396,6 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             with open(fp, 'w', encoding='utf-8') as f:
                 f.write(output.content)
             _modified_files.add(file_path)
-            await story_logger.success(f"Created/modified: {file_path}")
-            await story_logger.task(f"✓ {file_path}")
         elif not output and response.content and file_path:
             match = re.search(r'```(?:typescript|tsx|javascript|jsx|python|prisma)?\s*([\s\S]*?)\s*```', response.content)
             if match:
@@ -464,7 +513,6 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "implement_parallel"})
     
-    await story_logger.info("Starting parallel implementation...")
     try:
         plan_steps = state.get("implementation_plan", [])
         workspace_path = state.get("workspace_path", "")
@@ -487,22 +535,23 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         sorted_layer_keys = sorted(layers.keys())
         total_layers = len(sorted_layer_keys)
         
+        # Milestone message at start (saved to DB)
+        await story_logger.message(f"🔨 Implementing {len(plan_steps)} files in {total_layers} layers...")
+        
         # Read completed layer from state (for resume support)
         start_layer = state.get("current_layer", 0)
         if start_layer > 0:
-            await story_logger.info(f"Resuming from layer {start_layer + 1}/{total_layers}")
+            await story_logger.info(f"▶️ Resuming from layer {start_layer + 1}/{total_layers}")
         
         for layer_idx, layer_num in enumerate(sorted_layer_keys, 1):
             # Skip already completed layers (resume support)
             if layer_idx <= start_layer:
-                await story_logger.info(f"Skipping completed layer {layer_idx}/{total_layers}")
                 continue
             
             # Check for interrupt BEFORE starting layer - return state to save checkpoint
             if story_id:
                 signal = check_interrupt_signal(story_id)
                 if signal:
-                    await story_logger.info(f"Pausing before layer {layer_idx}/{total_layers}: {signal}")
                     return {
                         **state,
                         "current_layer": layer_idx - 1,
@@ -517,8 +566,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             # Log layer progress
             files_list = ", ".join([s.get("file_path", "").split("/")[-1] for s in layer_steps[:3]])
             more = f" +{len(layer_steps)-3}" if len(layer_steps) > 3 else ""
-            mode = "parallel" if is_parallel else "sequential"
-            await story_logger.info(f"Layer {layer_idx}/{total_layers} ({mode}): {files_list}{more}")
+            await story_logger.info(f"📂 Layer {layer_idx}/{total_layers}: {files_list}{more}")
             
             if is_parallel:
                 results = await run_layer_parallel(layer_steps, lambda s, c=created_components: _implement_single_step(s, state, skill_registry, workspace_path, deps_content, c), state, MAX_CONCURRENT)
@@ -577,9 +625,11 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             
 
         
-        await story_logger.success(f"Implementation complete: {len(all_modified)} files in {len(layers)} layers")
+        # Milestone message at end (saved to DB)
         if all_errors:
-            await story_logger.warning(f"Errors encountered: {len(all_errors)}")
+            await story_logger.message(f"⚠️ Implemented {len(all_modified)} files with {len(all_errors)} errors")
+        else:
+            await story_logger.message(f"✅ Implemented {len(all_modified)} files successfully")
         
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "current_layer": total_layers, "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:

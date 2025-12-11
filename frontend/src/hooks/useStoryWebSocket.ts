@@ -106,7 +106,13 @@ export function useStoryWebSocket(
     const msg = lastJsonMessage as any
     
     // Only handle story_message events for this story
+    // Skip 'log' message_type - those go to Logs tab via story_log event
     if (msg.type === 'story_message' && msg.story_id === storyIdRef.current) {
+      // Skip log messages - they should only appear in Logs tab
+      if (msg.message_type === 'log') {
+        return
+      }
+      
       const newMessage: StoryMessage = {
         id: msg.message_id || `ws_${Date.now()}`,
         author: msg.author_name || 'Unknown',

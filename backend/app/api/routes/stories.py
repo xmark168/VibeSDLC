@@ -2,7 +2,11 @@
 Story Management API
 Endpoints for BA/TeamLeader/Dev/Tester to manage stories in Kanban board
 """
+import asyncio
+import logging
 import uuid
+
+logger = logging.getLogger(__name__)
 from typing import Any, Optional
 from enum import Enum
 
@@ -19,6 +23,14 @@ from app.schemas.story import BulkRankUpdateRequest
 from app.services.story_service import StoryService
 
 router = APIRouter(prefix="/stories", tags=["stories"])
+
+
+# Helper to run blocking subprocess in thread pool (non-blocking for async)
+async def run_subprocess_async(*args, **kwargs):
+    """Run subprocess.run in thread pool to avoid blocking event loop."""
+    import subprocess
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: subprocess.run(*args, **kwargs))
 
 
 # ===== Request/Response Models =====
@@ -590,6 +602,7 @@ async def cancel_story_task(
     from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
     import os
     import signal
+    import subprocess
     
     story = session.get(Story, story_id)
     if not story:
@@ -603,6 +616,25 @@ async def cancel_story_task(
             pass
         story.running_pid = None
         story.running_port = None
+    
+    # Stop docker container if running (non-blocking)
+    if story.db_container_id:
+        try:
+            await run_subprocess_async(
+                ["docker", "stop", story.db_container_id],
+                capture_output=True,
+                timeout=30
+            )
+            await run_subprocess_async(
+                ["docker", "rm", "-f", story.db_container_id],
+                capture_output=True,
+                timeout=30
+            )
+            logger.info(f"[cancel] Stopped docker container: {story.db_container_id}")
+        except Exception as e:
+            logger.warning(f"[cancel] Failed to stop docker container: {e}")
+        story.db_container_id = None
+        story.db_port = None
     
     # Update state to canceled and clear checkpoint (cancel = permanent stop)
     story.agent_state = StoryAgentState.CANCELED
@@ -727,6 +759,135 @@ async def resume_story_task(
     return {"success": True, "message": "Task resumed"}
 
 
+def _cleanup_worktree_sync(
+    worktree_path: str,
+    branch_name: str,
+    main_workspace: str,
+    checkpoint_thread_id: str,
+    story_id: str,
+) -> None:
+    """Synchronous cleanup - runs in thread pool."""
+    from pathlib import Path
+    import subprocess
+    import shutil
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # 1. Git worktree remove
+    if worktree_path:
+        worktree = Path(worktree_path)
+        try:
+            if main_workspace and Path(main_workspace).exists():
+                subprocess.run(
+                    ["git", "worktree", "remove", str(worktree), "--force"],
+                    cwd=main_workspace,
+                    capture_output=True,
+                    timeout=30
+                )
+        except Exception as e:
+            logger.debug(f"Git worktree remove failed: {e}")
+        
+        # 2. Force delete directory if still exists
+        if worktree.exists():
+            try:
+                shutil.rmtree(worktree)
+            except Exception:
+                # Windows long path workaround
+                import platform
+                import tempfile
+                if platform.system() == "Windows":
+                    try:
+                        empty_dir = tempfile.mkdtemp()
+                        subprocess.run(
+                            ["robocopy", empty_dir, str(worktree), "/mir", "/njh", "/njs", "/nc", "/ns", "/np"],
+                            capture_output=True,
+                            timeout=60,
+                        )
+                        shutil.rmtree(empty_dir, ignore_errors=True)
+                        shutil.rmtree(worktree, ignore_errors=True)
+                    except Exception:
+                        pass
+    
+    # 3. Delete branch
+    if branch_name and main_workspace and Path(main_workspace).exists():
+        try:
+            subprocess.run(
+                ["git", "branch", "-D", branch_name],
+                cwd=main_workspace,
+                capture_output=True,
+                timeout=10
+            )
+        except Exception:
+            pass
+    
+    # 4. Delete checkpoint data (separate DB session)
+    if checkpoint_thread_id:
+        try:
+            from sqlmodel import Session
+            from sqlalchemy import text
+            from app.core.db import engine
+            
+            with Session(engine) as db:
+                db.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
+                db.execute(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
+                db.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
+                db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to delete checkpoint data: {e}")
+    
+    # Note: We don't clear story_logs or story_messages on restart
+    # to preserve history for user reference
+
+
+async def _cleanup_and_trigger_agent(
+    worktree_path: str,
+    branch_name: str,
+    main_workspace: str,
+    checkpoint_thread_id: str,
+    story_id: str,
+    project_id: str,
+    user_id: str,
+    story_title: str,
+) -> None:
+    """Background task: cleanup worktree then trigger agent."""
+    import asyncio
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    loop = asyncio.get_event_loop()
+    
+    # Run sync cleanup in thread pool (non-blocking)
+    await loop.run_in_executor(
+        None,
+        _cleanup_worktree_sync,
+        worktree_path,
+        branch_name,
+        main_workspace,
+        checkpoint_thread_id,
+        story_id,
+    )
+    
+    logger.info(f"[restart] Cleanup complete for {story_id}, triggering agent...")
+    
+    # Now trigger agent AFTER cleanup is done
+    from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+    
+    producer = await get_kafka_producer()
+    event = StoryEvent(
+        event_type="story.status.changed",
+        project_id=project_id,
+        user_id=user_id,
+        story_id=story_id,
+        old_status="Todo",
+        new_status="InProgress",
+        title=story_title,
+    )
+    await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+    
+    logger.info(f"[restart] Agent triggered for {story_id}")
+
+
 @router.post("/{story_id}/restart")
 async def restart_story_task(
     *,
@@ -734,12 +895,17 @@ async def restart_story_task(
     current_user: CurrentUser,
     story_id: uuid.UUID
 ) -> Any:
-    """Restart agent task for story (re-publish Kafka event)."""
+    """Restart agent task for story (re-publish Kafka event).
+    
+    Flow:
+    1. Reset state in DB immediately
+    2. Broadcast "pending" state to UI
+    3. Return response immediately
+    4. Background: cleanup worktree -> then trigger agent
+    """
+    import asyncio
     from app.models.base import StoryAgentState
-    from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
     from pathlib import Path
-    import subprocess
-    import shutil
     import os
     import signal
     
@@ -747,131 +913,94 @@ async def restart_story_task(
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     
-    # Stop dev server if running
+    # Stop dev server if running and notify UI
     if story.running_pid:
+        old_port = story.running_port
         try:
             os.kill(story.running_pid, signal.SIGTERM)
         except (ProcessLookupError, OSError):
             pass
+        
+        # Broadcast dev server stopped
+        from app.websocket.connection_manager import connection_manager
+        await connection_manager.broadcast_to_project({
+            "type": "story_state_changed",
+            "story_id": str(story_id),
+            "running_port": None,
+            "running_pid": None,
+            "old_port": old_port,
+        }, story.project_id)
     
-    # Get main workspace from Project (required for git operations)
+    # Stop docker container if running (non-blocking)
+    if story.db_container_id:
+        try:
+            await run_subprocess_async(
+                ["docker", "stop", story.db_container_id],
+                capture_output=True,
+                timeout=30
+            )
+            await run_subprocess_async(
+                ["docker", "rm", "-f", story.db_container_id],
+                capture_output=True,
+                timeout=30
+            )
+            logger.info(f"[restart] Stopped docker container: {story.db_container_id}")
+        except Exception as e:
+            logger.warning(f"[restart] Failed to stop docker container: {e}")
+    
+    # Get main workspace from Project
     from app.models import Project
     project = session.get(Project, story.project_id)
     main_workspace = None
     if project and project.project_path:
         backend_root = Path(__file__).resolve().parent.parent.parent.parent
-        main_workspace = (backend_root / project.project_path).resolve()
+        main_workspace = str((backend_root / project.project_path).resolve())
     
-    # DELETE worktree completely (fresh start)
-    if story.worktree_path:
-        worktree_path = Path(story.worktree_path)
-        
-        try:
-            # 1. Git worktree remove
-            if main_workspace and main_workspace.exists():
-                subprocess.run(
-                    ["git", "worktree", "remove", str(worktree_path), "--force"],
-                    cwd=str(main_workspace),
-                    capture_output=True,
-                    timeout=30
-                )
-        except Exception:
-            pass
-        
-        # 2. Force delete directory if still exists
-        if worktree_path.exists():
-            try:
-                shutil.rmtree(worktree_path)
-            except Exception:
-                # Windows long path workaround: use robocopy to delete
-                import platform
-                import tempfile
-                if platform.system() == "Windows":
-                    try:
-                        empty_dir = tempfile.mkdtemp()
-                        subprocess.run(
-                            ["robocopy", empty_dir, str(worktree_path), "/mir", "/njh", "/njs", "/nc", "/ns", "/np"],
-                            capture_output=True,
-                            timeout=60,
-                        )
-                        shutil.rmtree(empty_dir, ignore_errors=True)
-                        shutil.rmtree(worktree_path, ignore_errors=True)
-                    except Exception:
-                        pass
+    # Capture values before clearing in DB
+    worktree_path = story.worktree_path
+    branch_name = story.branch_name
+    checkpoint_thread_id = story.checkpoint_thread_id
+    project_id = story.project_id
+    story_title = story.title
     
-    # 3. Delete branch (always try, even if worktree_path is None)
-    if story.branch_name and main_workspace and main_workspace.exists():
-        try:
-            subprocess.run(
-                ["git", "branch", "-D", story.branch_name],
-                cwd=str(main_workspace),
-                capture_output=True,
-                timeout=10
-            )
-        except Exception:
-            pass
-    
-    # 4. Delete checkpoint data from PostgreSQL (LangGraph tables)
-    if story.checkpoint_thread_id:
-        try:
-            from sqlalchemy import text
-            thread_id = story.checkpoint_thread_id
-            # Delete from LangGraph checkpoint tables
-            session.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), {"tid": thread_id})
-            session.execute(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), {"tid": thread_id})
-            session.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": thread_id})
-            session.commit()
-        except Exception as e:
-            import logging
-            logging.warning(f"Failed to delete checkpoint data for {story_id}: {e}")
-    
-    # 5. Clear old logs for fresh start
-    try:
-        from sqlalchemy import text
-        session.execute(text("DELETE FROM story_logs WHERE story_id = :sid"), {"sid": str(story_id)})
-        session.commit()
-    except Exception as e:
-        import logging
-        logging.warning(f"Failed to clear logs for {story_id}: {e}")
-    
-    # Reset state and clear checkpoint (start fresh, not resume)
+    # Reset state immediately
     story.agent_state = StoryAgentState.PENDING
     story.running_pid = None
     story.running_port = None
-    story.worktree_path = None  # Clear worktree path
-    story.branch_name = None    # Clear branch name
-    story.checkpoint_thread_id = None  # Clear checkpoint to start fresh
+    story.worktree_path = None
+    story.branch_name = None
+    story.checkpoint_thread_id = None
+    story.db_container_id = None
+    story.db_port = None
     session.add(story)
     session.commit()
     
-    # Clear any leftover cancel/pause signals from previous run
+    # Clear signals
     from app.agents.core.task_registry import clear_signals
     clear_signals(str(story_id))
     
-    # Broadcast WebSocket notification
+    # Broadcast "pending" state to UI immediately
     from app.websocket.connection_manager import connection_manager
     await connection_manager.broadcast_to_project({
-        "type": "story_message",
+        "type": "story_state_changed",
         "story_id": str(story_id),
-        "content": f"🔄 Đang chạy lại task...",
-        "message_type": "system",
         "agent_state": "pending",
-    }, story.project_id)
+        "old_state": None,
+    }, project_id)
     
-    # Publish event to trigger agent
-    producer = await get_kafka_producer()
-    event = StoryEvent(
-        event_type="story.status.changed",
-        project_id=str(story.project_id),
-        user_id=str(current_user.id),
-        story_id=str(story.id),
-        old_status="Todo",
-        new_status="InProgress",
-        title=story.title,
-    )
-    await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+    # Schedule background task: cleanup THEN trigger agent
+    asyncio.create_task(_cleanup_and_trigger_agent(
+        worktree_path,
+        branch_name,
+        main_workspace,
+        checkpoint_thread_id,
+        str(story_id),
+        str(project_id),
+        str(current_user.id),
+        story_title,
+    ))
     
-    return {"success": True, "message": "Task restarted"}
+    return {"success": True, "message": "Task restarting..."}
 
 
 @router.post("/{story_id}/dev-server/start")
@@ -915,13 +1044,14 @@ async def start_dev_server(
         except Exception as e:
             print(f"Failed to save log to DB: {e}")
         
-        # Broadcast via WebSocket
+        # Broadcast via WebSocket (use story_log type, not story_message)
         await connection_manager.broadcast_to_project({
-            "type": "story_message",
+            "type": "story_log",
             "story_id": str(story_id),
             "content": f"[dev-server] {message}",
-            "message_type": "log",
-            "details": {"level": level, "node": "dev-server", "timestamp": datetime.now(timezone.utc).isoformat()}
+            "level": level,
+            "node": "dev-server",
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, story.project_id)
     
     is_windows = sys.platform == 'win32'
@@ -990,12 +1120,12 @@ async def start_dev_server(
     if story.running_pid:
         await log_to_story(f"Killing existing dev server (PID: {story.running_pid})...")
         kill_process(story.running_pid, force=True)
-        time.sleep(0.5)
+        await asyncio.sleep(0.5)
     
     if story.running_port:
         await log_to_story(f"Killing any process on port {story.running_port}...")
         kill_process_on_port(story.running_port)
-        time.sleep(0.5)
+        await asyncio.sleep(0.5)
     
     # Clean up Next.js dev lock file (prevents "is another instance running?" error)
     next_lock = os.path.join(story.worktree_path, ".next", "dev", "lock")
@@ -1012,8 +1142,8 @@ async def start_dev_server(
             s.bind(('', 0))
             return s.getsockname()[1]
     
-    # Helper: Wait for port to be ready
-    def wait_for_port(port: int, timeout: float = 30.0) -> bool:
+    # Helper: Wait for port to be ready (async version to not block event loop)
+    async def wait_for_port_async(port: int, timeout: float = 30.0) -> bool:
         import socket
         start = time.time()
         while time.time() - start < timeout:
@@ -1023,14 +1153,14 @@ async def start_dev_server(
                     s.connect(('127.0.0.1', port))
                     return True
             except (socket.error, socket.timeout):
-                time.sleep(0.5)
+                await asyncio.sleep(0.5)
         return False
     
     port = find_free_port()
     await log_to_story(f"Starting dev server on port {port}...")
     
     # Start dev server with retry logic
-    max_attempts = 3
+    max_attempts = 2
     last_error = None
     
     for attempt in range(max_attempts):
@@ -1045,9 +1175,9 @@ async def start_dev_server(
                 env={**os.environ, "FORCE_COLOR": "0"},
             )
             
-            # Wait for port to be ready (up to 30 seconds)
+            # Wait for port to be ready (up to 15 seconds)
             await log_to_story(f"Waiting for server to be ready...")
-            if wait_for_port(port, timeout=30.0) and process.poll() is None:
+            if await wait_for_port_async(port, timeout=15.0) and process.poll() is None:
                 story.running_port = port
                 story.running_pid = process.pid
                 session.add(story)
@@ -1069,7 +1199,7 @@ async def start_dev_server(
                 if process.poll() is not None:
                     raise Exception(f"Process exited with code {process.returncode}")
                 else:
-                    raise Exception(f"Server started but port {port} not responding after 30s")
+                    raise Exception(f"Server started but port {port} not responding after 15s")
                 
         except Exception as e:
             last_error = e
@@ -1081,7 +1211,7 @@ async def start_dev_server(
                 killed = kill_processes_using_directory(story.worktree_path)
                 if killed:
                     await log_to_story(f"Killed {killed} processes")
-                time.sleep(1)
+                await asyncio.sleep(1)
                 
                 # Try new port
                 port = find_free_port()
@@ -1128,13 +1258,14 @@ async def stop_dev_server(
         except Exception as e:
             print(f"Failed to save log to DB: {e}")
         
-        # Broadcast via WebSocket
+        # Broadcast via WebSocket (use story_log type, not story_message)
         await connection_manager.broadcast_to_project({
-            "type": "story_message",
+            "type": "story_log",
             "story_id": str(story_id),
             "content": f"[dev-server] {message}",
-            "message_type": "log",
-            "details": {"level": level, "node": "dev-server", "timestamp": datetime.now(timezone.utc).isoformat()}
+            "level": level,
+            "node": "dev-server",
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, story.project_id)
     
     if not story.running_pid and not story.running_port:
@@ -1143,34 +1274,37 @@ async def stop_dev_server(
     
     is_windows = sys.platform == 'win32'
     
-    await log_to_story(f"Stopping dev server (PID: {story.running_pid}, Port: {story.running_port})...")
+    # Sync helper to kill processes (runs in thread pool)
+    def _kill_processes_sync(pid: int | None, port: int | None) -> None:
+        if pid:
+            try:
+                if is_windows:
+                    subprocess.run(f"taskkill /F /PID {pid} /T", shell=True, capture_output=True)
+                else:
+                    import signal
+                    os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, OSError):
+                pass
+        
+        if port:
+            try:
+                if is_windows:
+                    result = subprocess.run(f'netstat -ano | findstr :{port}', shell=True, capture_output=True, text=True)
+                    for line in result.stdout.strip().split('\n'):
+                        parts = line.split()
+                        if len(parts) >= 5 and parts[-1].isdigit():
+                            subprocess.run(f"taskkill /F /PID {parts[-1]} /T", shell=True, capture_output=True)
+                else:
+                    result = subprocess.run(f'lsof -ti:{port}', shell=True, capture_output=True, text=True)
+                    if result.stdout.strip():
+                        import signal
+                        os.kill(int(result.stdout.strip()), signal.SIGTERM)
+            except Exception:
+                pass
     
-    # Kill process
-    if story.running_pid:
-        try:
-            if is_windows:
-                subprocess.run(f"taskkill /F /PID {story.running_pid} /T", shell=True, capture_output=True)
-            else:
-                import signal
-                os.kill(story.running_pid, signal.SIGTERM)
-        except (ProcessLookupError, OSError):
-            pass
-    
-    # Also kill any process on the port
-    if story.running_port:
-        try:
-            if is_windows:
-                result = subprocess.run(f'netstat -ano | findstr :{story.running_port}', shell=True, capture_output=True, text=True)
-                for line in result.stdout.strip().split('\n'):
-                    parts = line.split()
-                    if len(parts) >= 5 and parts[-1].isdigit():
-                        subprocess.run(f"taskkill /F /PID {parts[-1]} /T", shell=True, capture_output=True)
-            else:
-                result = subprocess.run(f'lsof -ti:{story.running_port}', shell=True, capture_output=True, text=True)
-                if result.stdout.strip():
-                    os.kill(int(result.stdout.strip()), signal.SIGTERM)
-        except Exception:
-            pass
+    # Run kill processes in thread pool (non-blocking)
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _kill_processes_sync, story.running_pid, story.running_port)
     
     project_id = story.project_id
     story.running_pid = None
@@ -1230,6 +1364,128 @@ async def get_story_logs(
     }
 
 
+def _get_story_diffs_sync(worktree_path: str) -> dict:
+    """Sync function to get git diffs - runs in thread pool."""
+    import subprocess
+    
+    # Helper: Detect default branch (master or main)
+    def get_default_branch(cwd: str) -> str:
+        for branch in ['master', 'main']:
+            result = subprocess.run(
+                ["git", "rev-parse", "--verify", branch],
+                cwd=cwd, capture_output=True, timeout=5
+            )
+            if result.returncode == 0:
+                return branch
+        return 'master'  # fallback
+    
+    base_branch = get_default_branch(worktree_path)
+    diff_ref = f"{base_branch}...HEAD"
+    
+    # Get changed files with line stats
+    result = subprocess.run(
+        ["git", "diff", "--numstat", diff_ref],
+        cwd=worktree_path,
+        capture_output=True,
+        text=True,
+        timeout=10
+    )
+    
+    files = []
+    diff_output = ""
+    total_additions = 0
+    total_deletions = 0
+    
+    if result.returncode == 0 and result.stdout.strip():
+        for line in result.stdout.strip().split("\n"):
+            if line:
+                parts = line.split("\t")
+                if len(parts) == 3:
+                    additions, deletions, filename = parts
+                    add_count = int(additions) if additions != '-' else 0
+                    del_count = int(deletions) if deletions != '-' else 0
+                    total_additions += add_count
+                    total_deletions += del_count
+                    files.append({
+                        "filename": filename,
+                        "additions": add_count,
+                        "deletions": del_count,
+                        "binary": additions == '-'
+                    })
+        
+        # Get file statuses (A/M/D)
+        status_result = subprocess.run(
+            ["git", "diff", "--name-status", diff_ref],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if status_result.returncode == 0:
+            status_map = {}
+            for line in status_result.stdout.strip().split("\n"):
+                if line:
+                    parts = line.split("\t", 1)
+                    if len(parts) == 2:
+                        status_map[parts[1]] = parts[0]
+            for f in files:
+                f["status"] = status_map.get(f["filename"], "M")
+        
+        # Get full diff
+        diff_result = subprocess.run(
+            ["git", "diff", diff_ref],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        diff_output = diff_result.stdout if diff_result.returncode == 0 else ""
+    else:
+        # Fallback: show uncommitted changes
+        result = subprocess.run(
+            ["git", "diff", "--numstat"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            for line in result.stdout.strip().split("\n"):
+                if line:
+                    parts = line.split("\t")
+                    if len(parts) == 3:
+                        additions, deletions, filename = parts
+                        add_count = int(additions) if additions != '-' else 0
+                        del_count = int(deletions) if deletions != '-' else 0
+                        total_additions += add_count
+                        total_deletions += del_count
+                        files.append({
+                            "filename": filename,
+                            "additions": add_count,
+                            "deletions": del_count,
+                            "status": "M",
+                            "binary": additions == '-'
+                        })
+            
+            diff_result = subprocess.run(
+                ["git", "diff"],
+                cwd=worktree_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            diff_output = diff_result.stdout if diff_result.returncode == 0 else ""
+    
+    return {
+        "files": files,
+        "file_count": len(files),
+        "total_additions": total_additions,
+        "total_deletions": total_deletions,
+        "diff": diff_output,
+        "base_branch": base_branch
+    }
+
+
 @router.get("/{story_id}/diffs")
 async def get_story_diffs(
     *,
@@ -1247,123 +1503,11 @@ async def get_story_diffs(
     if not story.worktree_path:
         return {"files": [], "file_count": 0, "diff": "", "base_branch": None}
     
-    # Helper: Detect default branch (master or main)
-    def get_default_branch(cwd: str) -> str:
-        for branch in ['master', 'main']:
-            result = subprocess.run(
-                ["git", "rev-parse", "--verify", branch],
-                cwd=cwd, capture_output=True, timeout=5
-            )
-            if result.returncode == 0:
-                return branch
-        return 'master'  # fallback
-    
     try:
-        base_branch = get_default_branch(story.worktree_path)
-        diff_ref = f"{base_branch}...HEAD"
-        
-        # Get changed files with line stats
-        result = subprocess.run(
-            ["git", "diff", "--numstat", diff_ref],
-            cwd=story.worktree_path,
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        
-        files = []
-        diff_output = ""
-        total_additions = 0
-        total_deletions = 0
-        
-        if result.returncode == 0 and result.stdout.strip():
-            for line in result.stdout.strip().split("\n"):
-                if line:
-                    parts = line.split("\t")
-                    if len(parts) == 3:
-                        additions, deletions, filename = parts
-                        add_count = int(additions) if additions != '-' else 0
-                        del_count = int(deletions) if deletions != '-' else 0
-                        total_additions += add_count
-                        total_deletions += del_count
-                        files.append({
-                            "filename": filename,
-                            "additions": add_count,
-                            "deletions": del_count,
-                            "binary": additions == '-'
-                        })
-            
-            # Get file statuses (A/M/D)
-            status_result = subprocess.run(
-                ["git", "diff", "--name-status", diff_ref],
-                cwd=story.worktree_path,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if status_result.returncode == 0:
-                status_map = {}
-                for line in status_result.stdout.strip().split("\n"):
-                    if line:
-                        parts = line.split("\t", 1)
-                        if len(parts) == 2:
-                            status_map[parts[1]] = parts[0]
-                for f in files:
-                    f["status"] = status_map.get(f["filename"], "M")
-            
-            # Get full diff
-            diff_result = subprocess.run(
-                ["git", "diff", diff_ref],
-                cwd=story.worktree_path,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            diff_output = diff_result.stdout if diff_result.returncode == 0 else ""
-        else:
-            # Fallback: show uncommitted changes
-            result = subprocess.run(
-                ["git", "diff", "--numstat"],
-                cwd=story.worktree_path,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if result.returncode == 0:
-                for line in result.stdout.strip().split("\n"):
-                    if line:
-                        parts = line.split("\t")
-                        if len(parts) == 3:
-                            additions, deletions, filename = parts
-                            add_count = int(additions) if additions != '-' else 0
-                            del_count = int(deletions) if deletions != '-' else 0
-                            total_additions += add_count
-                            total_deletions += del_count
-                            files.append({
-                                "filename": filename,
-                                "additions": add_count,
-                                "deletions": del_count,
-                                "status": "M",
-                                "binary": additions == '-'
-                            })
-                
-                diff_result = subprocess.run(
-                    ["git", "diff"],
-                    cwd=story.worktree_path,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                diff_output = diff_result.stdout if diff_result.returncode == 0 else ""
-        
-        return {
-            "files": files,
-            "file_count": len(files),
-            "total_additions": total_additions,
-            "total_deletions": total_deletions,
-            "diff": diff_output,
-            "base_branch": base_branch
-        }
+        # Run blocking git operations in thread pool
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _get_story_diffs_sync, story.worktree_path)
+        return result
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="Git command timed out")
     except Exception as e:

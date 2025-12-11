@@ -147,8 +147,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "analyze_error"})
     
-    await story_logger.info("Analyzing build errors...")
-    await story_logger.message("🔍 Đang phân tích lỗi...")
+    await story_logger.task("🔍 Analyzing build errors...")
     
     try:
         error_logs = state.get("run_stderr", "") or state.get("run_stdout", "")
@@ -162,10 +161,10 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         
         if workspace_path and error_logs:
             error_analysis = analyze_error_type(error_logs)
-            await story_logger.info(f"Error type: {error_analysis['error_type']}, auto_fixable: {error_analysis['auto_fixable']}")
+            logger.info(f"[analyze_error] Error type: {error_analysis['error_type']}, auto_fixable: {error_analysis['auto_fixable']}")
             
             if error_analysis["auto_fixable"]:
-                await story_logger.info(f"Attempting auto-fix: {error_analysis['fix_strategy']}")
+                await story_logger.task(f"⚡ Attempting auto-fix: {error_analysis['fix_strategy']}")
                 
                 import asyncio
                 auto_fixed = asyncio.get_event_loop().run_until_complete(
@@ -173,7 +172,6 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
                 )
                 
                 if auto_fixed:
-                    await story_logger.success("Auto-fix successful, revalidating...")
                     return {**state, "action": "VALIDATE", "run_status": None, "error_analysis": {"auto_fixed": True, "fix_strategy": error_analysis["fix_strategy"]}}
         
         if debug_count >= MAX_DEBUG_ATTEMPTS:
@@ -193,8 +191,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         file_context = _preload_error_context(workspace_path, parsed_errors, files_modified)
         cleaned_logs = _clean_logs(error_logs)
         
-        await story_logger.info(f"Found {len(parsed_errors)} errors to analyze")
-        await story_logger.task(f"Analyzing {len(parsed_errors)} errors...")
+        await story_logger.task(f"🔎 Analyzing {len(parsed_errors)} errors...")
         
         # History context
         history = ""
@@ -251,16 +248,14 @@ Analyze the error and respond with JSON in <result> tags:
             fix_steps=valid_steps
         )
         
-        await story_logger.info(f"Analysis: {result.error_type} - {result.root_cause[:100]}")
+        logger.info(f"[analyze_error] Analysis: {result.error_type} - {result.root_cause[:100]}")
         
         if not result.should_continue or not result.fix_steps:
-            await story_logger.warning("Error cannot be auto-fixed, requires manual intervention")
-            await story_logger.message("⚠️ Lỗi không thể tự động sửa, cần can thiệp thủ công")
+            await story_logger.message("⚠️ Lỗi không thể tự động sửa")
             return {**state, "error_analysis": {"error_type": result.error_type, "root_cause": result.root_cause}, "action": "RESPOND"}
         
         debug_count = state.get("debug_count", 0)
-        await story_logger.success(f"Generated {len(result.fix_steps)} fix steps, attempting repair...")
-        await story_logger.message(f"🔧 Đã tìm ra lỗi, đang thử sửa (lần {debug_count + 1})...")
+        await story_logger.message(f"🔧 Đang thử sửa lỗi (lần {debug_count + 1})...")
         
         return {
             **state,
