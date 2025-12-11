@@ -560,6 +560,35 @@ async def clear_story_messages(
     return {"message": f"Deleted {count} messages", "deleted_count": count}
 
 
+# ===== Story Review (BA Agent) =====
+@router.post("/{story_id}/review")
+async def review_story(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Trigger BA agent to review and suggest improvements for a story."""
+    from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Publish review event to trigger BA agent
+    producer = await get_kafka_producer()
+    event = StoryEvent(
+        event_type="story.review_requested",
+        project_id=str(story.project_id),
+        user_id=str(current_user.id),
+        story_id=str(story.id),
+        title=story.title,
+    )
+    await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+    
+    return {"success": True, "message": "Review requested", "story_id": str(story_id)}
+
+
 # ===== Agent Task Control =====
 @router.post("/{story_id}/cancel")
 async def cancel_story_task(

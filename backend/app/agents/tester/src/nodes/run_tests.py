@@ -9,7 +9,7 @@ from pathlib import Path
 from uuid import UUID
 
 from app.agents.tester.src.state import TesterState
-from app.agents.tester.src.core_nodes import send_message
+from app.agents.tester.src.core_nodes import send_message, generate_user_message
 
 logger = logging.getLogger(__name__)
 
@@ -195,13 +195,26 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     3. Executes integration tests
     4. Parses results
     
+    Includes interrupt signal check for pause/cancel support.
+    
     Output:
     - run_status: "PASS" | "FAIL" | "ERROR"
     - run_result: Parsed test results
     - run_stdout: Raw stdout
     - run_stderr: Raw stderr
     """
+    from langgraph.types import interrupt
+    from app.agents.tester.src.graph import check_interrupt_signal
+    
     print("[NODE] run_tests")
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[run_tests] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "run_tests"})
     
     # Use workspace_path (worktree) where files are written, not project_path from DB
     project_path = _get_workspace_path(state)
@@ -251,9 +264,14 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     typecheck_result = _run_typecheck(project_path, all_test_files)
     
     if typecheck_result:
-        # TypeScript errors found
+        # TypeScript errors found (persona intro + technical details)
         error_summary = "\n".join(typecheck_result["errors"][:10])
-        msg = f"❌ TypeScript errors found:\n```\n{error_summary}\n```"
+        intro = await generate_user_message(
+            "typecheck_error",
+            f"{len(typecheck_result['errors'])} TypeScript errors",
+            agent
+        )
+        msg = f"{intro}\n```\n{error_summary}\n```"
         
         await send_message(state, agent, msg, "error")
         
@@ -284,8 +302,14 @@ async def run_tests(state: TesterState, agent=None) -> dict:
             "message": "Không phát hiện test commands.",
         }
     
-    # Notify via appropriate channel
-    await send_message(state, agent, f"🧪 Đang chạy tests ({len(test_commands)} command)...", "progress")
+    # Notify via appropriate channel (persona-driven message)
+    running_msg = await generate_user_message(
+        "tests_running",
+        f"{len(test_commands)} test commands",
+        agent,
+        f"files: {len(all_test_files)}"
+    )
+    await send_message(state, agent, running_msg, "progress")
     
     all_stdout = []
     all_stderr = []
@@ -348,13 +372,24 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     has_failures = overall_failed > 0 or any(not r.get("success", True) for r in all_results)
     run_status = "FAIL" if has_failures else "PASS"
     
-    # Build result message
+    # Build result message (persona-driven)
     if run_status == "PASS":
-        msg = f"✅ Tests passed! ({overall_passed} passed)"
+        msg = await generate_user_message(
+            "tests_passed",
+            f"{overall_passed} tests passed",
+            agent,
+            "all green"
+        )
     else:
-        msg = f"❌ Tests failed! ({overall_passed} passed, {overall_failed} failed)"
+        # For failures, use persona intro + technical details
+        intro = await generate_user_message(
+            "tests_failed",
+            f"{overall_passed} passed, {overall_failed} failed",
+            agent
+        )
+        msg = intro
         
-        # Add failed test names
+        # Add failed test names (keep technical details)
         for res in all_results:
             if res.get("failed_tests"):
                 msg += f"\n\nFailed in {res['type']}:"

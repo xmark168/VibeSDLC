@@ -233,10 +233,23 @@ async def review(state: TesterState, agent=None) -> dict:
     3. Collects LGTM/LBTM for each file
     4. Returns aggregated result
 
+    Includes interrupt signal check for pause/cancel support.
+
     Benefits:
     - 50% faster: All files reviewed simultaneously
     - Better feedback: Each file gets specific feedback
     """
+    from langgraph.types import interrupt
+    from app.agents.tester.src.graph import check_interrupt_signal
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[review] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "review"})
+    
     files_modified = state.get("files_modified", [])
     test_plan = state.get("test_plan", [])
     total_steps = len(test_plan)

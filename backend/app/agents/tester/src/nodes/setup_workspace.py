@@ -64,8 +64,20 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
     """Setup git workspace/branch for test generation.
     
     Exactly mirrored from developer_v2's setup_workspace.
+    Includes interrupt signal check for pause/cancel support.
     """
+    from langgraph.types import interrupt
+    from app.agents.tester.src.graph import check_interrupt_signal
+    
     logger.info("[NODE] setup_workspace")
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[setup_workspace] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "setup_workspace"})
     
     try:
         # Get IDs - support both story_id and task_id for compatibility
@@ -243,6 +255,10 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
         }
         
     except Exception as e:
+        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        from langgraph.errors import GraphInterrupt
+        if isinstance(e, GraphInterrupt):
+            raise
         logger.error(f"[setup_workspace] Error: {e}", exc_info=True)
         return {
             "workspace_ready": False,

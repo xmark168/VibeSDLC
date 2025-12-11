@@ -179,8 +179,8 @@ export function StorySuggestionsCard({
           </div>
         )}
 
-        {/* Action buttons - always show if no action taken */}
-        {!actionTaken && (
+        {/* Action buttons - show if no action taken AND score is not perfect */}
+        {!actionTaken && investScore < 6 && (
           <div className="flex items-center gap-2 flex-wrap">
             {/* Only show Apply button if NOT duplicate AND has suggestions */}
             {!isDuplicate && hasSuggestions && (

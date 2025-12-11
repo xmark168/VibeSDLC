@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -9,7 +9,8 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { Zap, Flag, X, Link2, ChevronsUpDown, Check, Layers, Plus } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Zap, Flag, X, ChevronsUpDown, Check, Layers, Plus, Upload, FileText, ClipboardPaste } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { storiesApi } from "@/apis/stories"
 import { CreateEpicDialog, type NewEpicData } from "./create-epic-dialog"
@@ -67,6 +68,182 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
   const [loadingEpics, setLoadingEpics] = useState(false)
   const [showCreateEpicDialog, setShowCreateEpicDialog] = useState(false)
   const [newEpicData, setNewEpicData] = useState<NewEpicData | null>(null)
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [importText, setImportText] = useState("")
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Parse markdown story format
+  const parseMarkdownStory = (markdown: string): Partial<StoryFormData> & { dependency_codes?: string[]; epic_code?: string } => {
+    const result: Partial<StoryFormData> & { dependency_codes?: string[]; epic_code?: string } = {}
+    
+    // Extract title from ### Title section
+    const titleMatch = markdown.match(/###\s*Title\s*\n([\s\S]*?)(?=###|$)/i)
+    if (titleMatch) {
+      result.title = titleMatch[1].trim()
+    }
+    
+    // Extract epic code from ### Epic section
+    const epicMatch = markdown.match(/###\s*Epic\s*\n([\s\S]*?)(?=###|$)/i)
+    if (epicMatch) {
+      result.epic_code = epicMatch[1].trim()
+    }
+    
+    // Extract story point from ### Story points section
+    const storyPointMatch = markdown.match(/###\s*Story\s*points?\s*\n([\s\S]*?)(?=###|$)/i)
+    if (storyPointMatch) {
+      const point = parseInt(storyPointMatch[1].trim())
+      if ([1, 2, 3, 5, 8, 13].includes(point)) {
+        result.story_point = point
+      }
+    }
+    
+    // Extract priority from ### Priority section
+    const priorityMatch = markdown.match(/###\s*Priority\s*\n([\s\S]*?)(?=###|$)/i)
+    if (priorityMatch) {
+      const priorityText = priorityMatch[1].trim().toLowerCase()
+      if (priorityText.includes('high') || priorityText.includes('must')) {
+        result.priority = 'High'
+      } else if (priorityText.includes('medium') || priorityText.includes('should')) {
+        result.priority = 'Medium'
+      } else if (priorityText.includes('low') || priorityText.includes('nice')) {
+        result.priority = 'Low'
+      }
+    }
+    
+    // Extract description from ### Description section
+    const descriptionMatch = markdown.match(/###\s*Description\s*\n([\s\S]*?)(?=###|$)/i)
+    if (descriptionMatch) {
+      result.description = descriptionMatch[1].trim()
+    }
+    
+    // Extract requirements from ### Requirements section
+    const requirementsMatch = markdown.match(/###\s*Requirements\s*\n([\s\S]*?)(?=###|$)/i)
+    if (requirementsMatch) {
+      const requirementsText = requirementsMatch[1]
+      const requirements = requirementsText
+        .split('\n')
+        .filter(line => line.trim().startsWith('-'))
+        .map(line => line.replace(/^-\s*/, '').trim())
+        .filter(line => line.length > 0)
+      if (requirements.length > 0) {
+        result.requirements = requirements
+      }
+    }
+    
+    // Extract acceptance criteria from ### Acceptance Criteria section
+    const criteriaMatch = markdown.match(/###\s*Acceptance\s*Criteria\s*\n([\s\S]*?)(?=###|$)/i)
+    if (criteriaMatch) {
+      const criteriaText = criteriaMatch[1]
+      const criteria = criteriaText
+        .split('\n')
+        .filter(line => line.trim().startsWith('-'))
+        .map(line => line.replace(/^-\s*/, '').trim())
+        .filter(line => line.length > 0)
+      if (criteria.length > 0) {
+        result.acceptance_criteria = criteria
+      }
+    }
+    
+    // Extract dependencies from ### Dependencies section
+    const dependenciesMatch = markdown.match(/###\s*Dependencies\s*\n([\s\S]*?)(?=###|$)/i)
+    if (dependenciesMatch) {
+      const dependenciesText = dependenciesMatch[1]
+      const codes = dependenciesText
+        .split('\n')
+        .filter(line => line.trim().startsWith('-'))
+        .map(line => line.replace(/^-\s*/, '').trim())
+        .filter(line => line.length > 0)
+      if (codes.length > 0) {
+        result.dependency_codes = codes
+      }
+    }
+    
+    return result
+  }
+
+  // Match dependency codes to story IDs
+  const matchDependencyCodesToIds = (codes: string[]): string[] => {
+    const matchedIds: string[] = []
+    for (const code of codes) {
+      const story = existingStories.find(s => s.story_code === code)
+      if (story) {
+        matchedIds.push(story.id)
+      }
+    }
+    return matchedIds
+  }
+
+  // Match epic code to epic ID
+  const matchEpicCodeToId = (code: string): string | undefined => {
+    const epic = availableEpics.find(e => e.code === code)
+    return epic?.id
+  }
+
+  // Handle import from pasted text
+  const handleImportFromText = () => {
+    if (!importText.trim()) return
+    
+    const parsed = parseMarkdownStory(importText)
+    const dependencyIds = parsed.dependency_codes 
+      ? matchDependencyCodesToIds(parsed.dependency_codes)
+      : []
+    const epicId = parsed.epic_code 
+      ? matchEpicCodeToId(parsed.epic_code)
+      : undefined
+    
+    setFormData(prev => ({
+      ...prev,
+      title: parsed.title || prev.title,
+      description: parsed.description || prev.description,
+      requirements: parsed.requirements || prev.requirements,
+      acceptance_criteria: parsed.acceptance_criteria || prev.acceptance_criteria,
+      dependencies: dependencyIds.length > 0 ? dependencyIds : prev.dependencies,
+      epic_id: epicId || prev.epic_id,
+      story_point: parsed.story_point || prev.story_point,
+      priority: parsed.priority || prev.priority
+    }))
+    
+    setShowImportDialog(false)
+    setImportText("")
+  }
+
+  // Handle import from .md file
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const content = e.target?.result as string
+      if (content) {
+        const parsed = parseMarkdownStory(content)
+        const dependencyIds = parsed.dependency_codes 
+          ? matchDependencyCodesToIds(parsed.dependency_codes)
+          : []
+        const epicId = parsed.epic_code 
+          ? matchEpicCodeToId(parsed.epic_code)
+          : undefined
+        
+        setFormData(prev => ({
+          ...prev,
+          title: parsed.title || prev.title,
+          description: parsed.description || prev.description,
+          requirements: parsed.requirements || prev.requirements,
+          acceptance_criteria: parsed.acceptance_criteria || prev.acceptance_criteria,
+          dependencies: dependencyIds.length > 0 ? dependencyIds : prev.dependencies,
+          epic_id: epicId || prev.epic_id,
+          story_point: parsed.story_point || prev.story_point,
+          priority: parsed.priority || prev.priority
+        }))
+      }
+    }
+    reader.readAsText(file)
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }
 
   // Populate form data when editing
   useEffect(() => {
@@ -238,9 +415,31 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl font-bold">
-            {isEditMode ? "Edit Story" : "Create New Story"}
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="text-xl font-bold">
+              {isEditMode ? "Edit Story" : "Create New Story"}
+            </DialogTitle>
+            {!isEditMode && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 gap-1.5">
+                    <Upload className="w-4 h-4" />
+                    Import
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setShowImportDialog(true)}>
+                    <ClipboardPaste className="w-4 h-4 mr-2" />
+                    Paste Text
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                    <FileText className="w-4 h-4 mr-2" />
+                    Select .md File
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
           <DialogDescription>
             {isEditMode 
               ? "Update the story details below"
@@ -248,6 +447,15 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
             }
           </DialogDescription>
         </DialogHeader>
+
+        {/* Hidden file input for .md upload */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".md,.markdown,.txt"
+          onChange={handleFileUpload}
+          className="hidden"
+        />
 
         <Separator />
 
@@ -727,6 +935,68 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
         onOpenChange={setShowCreateEpicDialog}
         onCreateEpic={handleCreateEpic}
       />
+
+      {/* Import Text Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Import Story from Markdown</DialogTitle>
+            <DialogDescription>
+              Paste your story in markdown format below. Use ### sections for each field.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              placeholder={`### Title
+As a [role], I want [feature] so that [benefit]
+
+### Epic
+EPIC-001
+
+### Description
+Detailed description of the story...
+
+### Requirements
+- Requirement 1
+- Requirement 2
+
+### Acceptance Criteria
+- Given [context], When [action], Then [outcome]
+- Given [context], When [action], Then [outcome]
+
+### Dependencies
+- EPIC-001-US-001
+- EPIC-001-US-002
+
+### Story points
+5
+
+### Priority
+High`}
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              className="min-h-[300px] font-mono text-sm"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowImportDialog(false)
+                  setImportText("")
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleImportFromText}
+                disabled={!importText.trim()}
+              >
+                Import
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

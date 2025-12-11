@@ -69,6 +69,8 @@ export function useChatWebSocket(
   } | null>(null)
   // Track individual agent statuses for avatar display
   const [agentStatuses, setAgentStatuses] = useState<Map<string, { status: string; lastUpdate: string }>>(new Map())
+  // Trigger for refetching messages (increments when new_message received)
+  const [refetchTrigger, setRefetchTrigger] = useState(0)
   
   // Refs
   const projectIdRef = useRef(projectId)
@@ -131,6 +133,12 @@ export function useChatWebSocket(
     switch (msg.type) {
       case 'connected':
         console.log('[WS] ✅ Server confirmed connection')
+        break
+      
+      case 'messages_updated':
+        // Trigger refetch messages (for file uploads via REST API)
+        console.log('[WS] 🔄 Messages updated, triggering refetch')
+        handleMessagesUpdated()
         break
       
       case 'user_message':
@@ -230,6 +238,11 @@ export function useChatWebSocket(
   // ========================================================================
   // Message Handlers
   // ========================================================================
+  
+  const handleMessagesUpdated = () => {
+    // Trigger refetch - component using this hook should react to refetchTrigger
+    setRefetchTrigger(prev => prev + 1)
+  }
   
   const handleUserMessage = (msg: any) => {
     console.log('[WS] 📤 User message confirmed:', msg.message_id)
@@ -405,7 +418,7 @@ export function useChatWebSocket(
       case 'notification':
         // Show as toast
         const stepInfo = details.step ? ` (${details.step}/${details.total})` : ''
-        toast.info(`${msg.agent_name}${stepInfo}: ${msg.content}`)
+        toast.success(`${msg.agent_name}${stepInfo}: ${msg.content}`)
         break
       
       case 'none':
@@ -906,6 +919,7 @@ export function useChatWebSocket(
     backgroundTasks,  // NEW
     answeredBatchIds,  // Track batches that have been answered
     conversationOwner,
+    refetchTrigger,  // Trigger for refetching messages (file uploads)
     sendMessage,
     sendQuestionAnswer,
     sendBatchAnswers,

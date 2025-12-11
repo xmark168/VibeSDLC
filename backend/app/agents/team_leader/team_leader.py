@@ -297,10 +297,16 @@ class TeamLeader(BaseAgent):
                 logger.info(f"[{self.name}] Delegating to BA with message: {original_message[:50] if original_message else 'empty'}...")
                 logger.info(f"[{self.name}] Passing {len(original_attachments)} attachment(s) to BA")
                 
-                # Build context with attachments
+                # Build context with attachments and conversation history
                 new_task_context = {}
                 if original_attachments:
                     new_task_context["attachments"] = original_attachments
+                
+                # Pass conversation history for BA to understand context
+                conversation_history = self.context.format_memory()
+                if conversation_history:
+                    new_task_context["conversation_history"] = conversation_history
+                    logger.info(f"[{self.name}] Passing conversation history ({len(conversation_history)} chars) to BA")
                 
                 new_task = TaskContext(
                     task_id=task.task_id,
@@ -556,6 +562,12 @@ class TeamLeader(BaseAgent):
             }
             if attachments:
                 new_task_context["attachments"] = attachments
+            
+            # Pass conversation history for BA to understand context
+            conversation_history = self.context.format_memory()
+            if conversation_history:
+                new_task_context["conversation_history"] = conversation_history
+                logger.info(f"[{self.name}] Passing conversation history ({len(conversation_history)} chars) to BA")
             
             # Delegate to BA with update context
             new_task = TaskContext(

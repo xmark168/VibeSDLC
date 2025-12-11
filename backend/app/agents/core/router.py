@@ -673,6 +673,7 @@ class StoryEventRouter(BaseEventRouter):
             "story.resume",
             "story.created",
             "story.review_action",
+            "story.review_requested",
         )
 
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
@@ -687,16 +688,25 @@ class StoryEventRouter(BaseEventRouter):
         story_id = event_dict.get("story_id")
         project_id = event_dict.get("project_id")
 
-        # Handle story.created → BA auto-verify
+        # Handle story.created → BA auto-verify (DISABLED - user creates stories manually)
+        # if event_type == "story.created":
+        #     self.logger.info(f"New story created: {story_id} in project {project_id}")
+        #     await self._verify_new_story(event_dict, project_id)
+        #     return
         if event_type == "story.created":
-            self.logger.info(f"New story created: {story_id} in project {project_id}")
-            await self._verify_new_story(event_dict, project_id)
+            self.logger.info(f"New story created: {story_id} (auto-verify disabled)")
             return
 
         # Handle story.review_action → BA sends response message
         if event_type == "story.review_action":
             self.logger.info(f"Story review action: {event_dict.get('action')} for {story_id}")
             await self._handle_review_action(event_dict, project_id)
+            return
+        
+        # Handle story.review_requested → BA reviews story (manually triggered)
+        if event_type == "story.review_requested":
+            self.logger.info(f"Story review requested: {story_id} in project {project_id}")
+            await self._verify_new_story(event_dict, project_id)
             return
         
         # Handle story.cancel → Cancel running task
