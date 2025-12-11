@@ -125,6 +125,14 @@ tasks:
       Collected: {collected_info}
       Has PRD: {has_prd}
       
+      Conversation context (from previous Team Leader conversation):
+      {conversation_context}
+      
+      IMPORTANT: If conversation_context shows that Team Leader already discussed this project 
+      (e.g., user said "tạo website bán sách" and Team Leader confirmed/routed), 
+      then you ALREADY KNOW the project type. Generate SPECIFIC questions for that project type,
+      don't ask basic questions like "what product do you want to build".
+      
       Generate 4-5 MULTICHOICE questions for missing categories.
 
   # ---------------------------------------------------------------------------

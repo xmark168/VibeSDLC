@@ -516,12 +516,18 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
     """
     logger.info(f"[BA] Generating interview questions...")
     
+    # Get conversation context from Team Leader delegation
+    conversation_context = state.get("conversation_context", "")
+    if conversation_context:
+        logger.info(f"[BA] Using conversation context ({len(conversation_context)} chars) for question generation")
+    
     system_prompt = _sys_prompt(agent, "interview_requirements")
     user_prompt = _user_prompt(
         "interview_requirements",
         user_message=state["user_message"],
         collected_info=json.dumps(state.get("collected_info", {}), ensure_ascii=False),
-        has_prd="Yes" if state.get("existing_prd") else "No"
+        has_prd="Yes" if state.get("existing_prd") else "No",
+        conversation_context=conversation_context
     )
     
     messages = [

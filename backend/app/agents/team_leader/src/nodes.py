@@ -407,11 +407,16 @@ async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         msg = state.get("message") or f"Chuyển cho @{state['target_role']} nhé!"
         await agent.message_user("response", msg)
 
-        # Build context with attachments if present
+        # Build context with attachments and conversation history
         task_context = {}
         if state.get("attachments"):
             task_context["attachments"] = state["attachments"]
             logger.info(f"[delegate] Passing {len(state['attachments'])} attachment(s) to {state['target_role']}")
+        
+        # Pass conversation history to specialist agent for context
+        if state.get("conversation_history"):
+            task_context["conversation_history"] = state["conversation_history"]
+            logger.info(f"[delegate] Passing conversation history ({len(state['conversation_history'])} chars) to {state['target_role']}")
 
         task = TaskContext(
             task_id=UUID(state["task_id"]), task_type=AgentTaskType.MESSAGE, priority="high",
