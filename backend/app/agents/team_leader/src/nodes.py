@@ -5,15 +5,23 @@ import re
 from pathlib import Path
 from uuid import UUID
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 
-from app.agents.team_leader.src.state import TeamLeaderState
-from app.agents.team_leader.src.schemas import ExtractedPreferences, RoutingDecision
 from app.agents.core.prompt_utils import (
-    load_prompts_yaml, get_task_prompts as _get_task_prompts,
-    build_system_prompt as _build_system_prompt, build_user_prompt as _build_user_prompt,
+    build_system_prompt as _build_system_prompt,
 )
+from app.agents.core.prompt_utils import (
+    build_user_prompt as _build_user_prompt,
+)
+from app.agents.core.prompt_utils import (
+    get_task_prompts as _get_task_prompts,
+)
+from app.agents.core.prompt_utils import (
+    load_prompts_yaml,
+)
+from app.agents.team_leader.src.schemas import ExtractedPreferences, RoutingDecision
+from app.agents.team_leader.src.state import TeamLeaderState
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +29,7 @@ _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 _DEFAULTS = {"name": "Team Leader", "role": "Team Leader & Project Coordinator", "personality": "Professional and helpful"}
 _fast_llm = ChatOpenAI(model="gpt-5", temperature=0.1, timeout=60)
 _chat_llm = ChatOpenAI(model="gpt-5", temperature=0.3, timeout=90)
-    
+
 ROLE_WIP_MAP = {"developer": "InProgress", "tester": "Review", "business_analyst": None}
 
 # Patterns to detect specialist task completion - must be specific completion messages
@@ -34,7 +42,7 @@ SPECIALIST_COMPLETION_PATTERNS = {
     ],
     "developer": [
         "implement xong",
-        "code xong", 
+        "code xong",
         "đã merge",
         "pull request đã được merge",
     ],
@@ -62,10 +70,10 @@ def _detect_specialist_completion(conversation_history: str) -> str | None:
     """
     if not conversation_history:
         return None
-    
+
     # Parse conversation to get LAST Assistant message only
     lines = conversation_history.strip().split('\n')
-    
+
     # Find last Assistant message (format: "Assistant: message")
     last_assistant_msg = None
     for line in reversed(lines):
@@ -74,18 +82,18 @@ def _detect_specialist_completion(conversation_history: str) -> str | None:
         if line_stripped.startswith('Assistant:'):
             last_assistant_msg = line_stripped[len('Assistant:'):].strip()
             break
-    
+
     if not last_assistant_msg:
         return None
-    
+
     last_msg_lower = last_assistant_msg.lower()
-    
+
     # Check each role's completion patterns
     for role, patterns in SPECIALIST_COMPLETION_PATTERNS.items():
         for pattern in patterns:
             if pattern.lower() in last_msg_lower:
                 return role
-    
+
     return None
 
 
@@ -137,9 +145,9 @@ async def generate_response_message(action: str, context: str, extra_info: str =
     # Skip LLM for simple "keep" action - use static message for instant response
     # Note: "view" still uses LLM because it has extra_info with PRD title/story count
     if action == "keep":
-        logger.info(f"[generate_response_message] Using static message for action='keep' (no LLM needed)")
+        logger.info("[generate_response_message] Using static message for action='keep' (no LLM needed)")
         return _FALLBACK_MESSAGES["keep"]
-    
+
     try:
         sys_prompt = _sys_prompt(agent, "response_generation")
         user_prompt = _user_prompt(
@@ -149,7 +157,7 @@ async def generate_response_message(action: str, context: str, extra_info: str =
             context=context,
             extra_info=extra_info or "N/A"
         )
-        
+
         response = await _chat_llm.ainvoke(
             [SystemMessage(content=sys_prompt), HumanMessage(content=user_prompt)]
         )
@@ -221,14 +229,14 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                 board_state = f"WIP: InProgress={wip.get('InProgress', '?')}, Review={wip.get('Review', '?')}"
             except Exception:
                 pass
-        
+
         # Build user message with attachment info for routing
         user_message = state["user_message"]
         if state.get("attachments"):
             files = [att.get("filename", "file") for att in state["attachments"]]
             user_message = f"{user_message}\n[Đính kèm: {', '.join(files)}]"
             logger.info(f"[router] Message includes {len(files)} attachment(s): {files}")
-        
+
         messages = [
             SystemMessage(content=_sys_prompt(agent)),
             HumanMessage(content=_user_prompt(
@@ -239,13 +247,13 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                 board_state=board_state,
             ))
         ]
-        
+
         response = await _fast_llm.ainvoke(messages, config=_cfg(state, "router"))
         clean_json = _clean_json(response.content)
         decision = RoutingDecision.model_validate_json(clean_json)
         logger.info(f"[router] Decision: action={decision.action}, target={decision.target_role}")
         result = decision.model_dump()
-        
+
         if result["action"] == "DELEGATE":
             wip_col = ROLE_WIP_MAP.get(result.get("target_role"))
             if wip_col and agent and hasattr(agent, 'context'):
@@ -253,17 +261,17 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                 if wip_available.get(wip_col, 1) <= 0:
                     return {**state, "action": "RESPOND", "wip_blocked": True,
                             "message": f"Hiện tại {wip_col} đang full. Cần đợi stories hoàn thành.", "confidence": 0.95}
-            
+
             # Check for domain change when delegating to BA (only if no attachments)
             if result.get("target_role") == "business_analyst" and agent:
                 # IMPORTANT: If user uploaded a file (attachment), skip domain check
                 # "Phân tích tài liệu" should UPDATE existing PRD, not trigger replacement
                 has_attachments = bool(state.get("attachments"))
-                
+
                 if has_attachments:
                     logger.info(
-                        f"[router] User uploaded file(s), skipping domain check. "
-                        f"Will delegate to BA for document analysis/update."
+                        "[router] User uploaded file(s), skipping domain check. "
+                        "Will delegate to BA for document analysis/update."
                     )
                     # Skip domain check - just delegate to BA
                     # BA will analyze document and update existing PRD
@@ -271,32 +279,34 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                     # No attachments - proceed with normal domain check
                     try:
                         from sqlmodel import Session
+
                         from app.core.db import engine
-                        from app.services.artifact_service import ArtifactService
                         from app.models import ArtifactType, Epic, Story
-                        
+                        from app.services.artifact_service import ArtifactService
+
                         project_id = UUID(state["project_id"])
-                        
+
                         with Session(engine) as session:
                             artifact_service = ArtifactService(session)
                             existing_prd = artifact_service.get_latest_version(
                                 project_id=project_id,
                                 artifact_type=ArtifactType.PRD
                             )
-                            
+
                             if existing_prd:
                                 # Check if there are any previous user messages
                                 # If no messages (project was reset), skip domain check and auto-replace
-                                from app.models import Message
                                 from sqlmodel import select
-                                
+
+                                from app.models import Message
+
                                 message_count = len(session.exec(
                                     select(Message).where(
                                         Message.project_id == project_id,
                                         Message.author_type == "user"
                                     )
                                 ).all())
-                                
+
                                 # If only 1 message (current one) or no messages, skip domain check
                                 # This handles the case where user cleared messages via API
                                 if message_count <= 1:
@@ -305,10 +315,12 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                         f"Will auto-replace old PRD '{existing_prd.title}'"
                                     )
                                     # Auto-delete old data and proceed
-                                    from app.services.artifact_service import ArtifactService
+                                    from app.services.artifact_service import (
+                                        ArtifactService,
+                                    )
                                     artifact_service.delete_by_type(project_id, ArtifactType.PRD)
                                     artifact_service.delete_by_type(project_id, ArtifactType.USER_STORIES)
-                                    
+
                                     # Delete epics and stories
                                     epics = session.exec(select(Epic).where(Epic.project_id == project_id)).all()
                                     for epic in epics:
@@ -317,11 +329,11 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                     for story in stories:
                                         session.delete(story)
                                     session.commit()
-                                    
+
                                     # Archive docs if available
                                     if agent and hasattr(agent, 'project_files') and agent.project_files:
                                         await agent.project_files.archive_docs()
-                                    
+
                                     # Continue with normal delegation (no confirmation needed)
                                 else:
                                     # Check if domains are different
@@ -330,19 +342,19 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                         existing_prd.title,
                                         state
                                     )
-                                    
+
                                     # Count existing stories
                                     stories_count = session.exec(
                                         select(Story).where(Story.project_id == project_id)
                                     ).all()
-                                    
+
                                     if is_different:
                                         # Different domain → ask to replace
                                         logger.info(
                                             f"[router] Domain change detected: '{existing_prd.title}' → new request. "
                                             f"Asking for confirmation."
                                         )
-                                        
+
                                         return {
                                             **state,
                                             "action": "CONFIRM_REPLACE",
@@ -357,7 +369,7 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                             f"[router] Same domain detected: '{existing_prd.title}'. "
                                             f"Asking user what to do with existing project."
                                         )
-                                        
+
                                         return {
                                             **state,
                                             "action": "CONFIRM_EXISTING",
@@ -367,7 +379,7 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                         }
                     except Exception as e:
                         logger.error(f"[router] Error checking domain change: {e}", exc_info=True)
-        
+
         return {**state, **result, "wip_blocked": False}
     except Exception as e:
         logger.error(f"[router] {e}", exc_info=True)
@@ -379,22 +391,16 @@ async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     if agent:
         from app.agents.core.base_agent import TaskContext
         from app.kafka.event_schemas import AgentTaskType
-        
+
         msg = state.get("message") or f"Chuyển cho @{state['target_role']} nhé!"
         await agent.message_user("response", msg)
-        
+
         # Build context with attachments if present
         task_context = {}
         if state.get("attachments"):
             task_context["attachments"] = state["attachments"]
             logger.info(f"[delegate] Passing {len(state['attachments'])} attachment(s) to {state['target_role']}")
-            # Debug: Log attachment details
-            for i, att in enumerate(state["attachments"]):
-                text_len = len(att.get("extracted_text", "")) if att.get("extracted_text") else 0
-                logger.info(f"[delegate] Attachment[{i}]: filename={att.get('filename')}, text_len={text_len}")
-        else:
-            logger.info(f"[delegate] No attachments in state to pass")
-        
+
         task = TaskContext(
             task_id=UUID(state["task_id"]), task_type=AgentTaskType.MESSAGE, priority="high",
             routing_reason=state.get("reason", "team_leader_routing"),
@@ -419,7 +425,7 @@ async def clarify(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     try:
         reason = state.get("reason", "need more details")
         hint = state.get("clarification_question", "")
-        
+
         sys_prompt = _sys_prompt(agent, "conversational")
         user_prompt = f"""User vừa nói: "{state['user_message']}"
 
@@ -439,7 +445,7 @@ Hãy viết MỘT câu hỏi clarification thân thiện, tự nhiên để hi�
     except Exception as e:
         logger.error(f"[clarify] LLM error: {e}")
         question = state.get("message") or "Hmm, mình cần biết rõ hơn chút! 🤔 Bạn có thể mô tả chi tiết hơn không?"
-    
+
     if agent:
         await agent.message_user("response", question)
     return {**state, "message": question, "action": "CLARIFY"}
@@ -449,19 +455,19 @@ async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Generate conversational response."""
     try:
         conversation_history = state.get("conversation_history", "")
-        
+
         # Detect if specialist just completed a task
         specialist_role = _detect_specialist_completion(conversation_history)
-        
+
         # Build context for LLM
         sys_prompt = _sys_prompt(agent, "conversational")
-        
+
         # Add specialist completion context if detected
         specialist_context = ""
         if specialist_role:
             role_names = {
                 "business_analyst": "Business Analyst",
-                "developer": "Developer", 
+                "developer": "Developer",
                 "tester": "Tester"
             }
             role_display = role_names.get(specialist_role, specialist_role)
@@ -470,7 +476,7 @@ async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
 - Hãy chào đón user trở lại một cách tự nhiên
 - Có thể hỏi user cần gì tiếp theo
 - Đừng lặp lại những gì {role_display} đã nói"""
-        
+
         if conversation_history:
             sys_prompt += f"""
 
@@ -481,7 +487,7 @@ async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
 {specialist_context}
 
 **Lưu ý:** Dựa vào context trên để trả lời tự nhiên và liên quan. Đừng lặp lại những gì đã nói."""
-        
+
         response = await _chat_llm.ainvoke(
             [SystemMessage(content=sys_prompt), HumanMessage(content=state["user_message"])],
             config=_cfg(state, "conversational")
@@ -501,8 +507,9 @@ async def status_check(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Check board status using tool-calling agent."""
     try:
         from langchain.agents import create_agent
+
         from app.agents.team_leader.tools import get_team_leader_tools
-        
+
         status_agent = create_agent(model=_chat_llm, tools=get_team_leader_tools(), system_prompt=_sys_prompt(agent, "status_check"))
         result = await status_agent.ainvoke(
             {"messages": [{"role": "user", "content": f"{state.get('user_message', '')}\n\nproject_id: {state.get('project_id', '')}"}]},
@@ -522,12 +529,12 @@ async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState
     try:
         existing_title = state.get("existing_prd_title", "project hiện tại")
         stories_count = state.get("existing_stories_count", 0)
-        
+
         question = (
             f"Bạn đã có project '{existing_title}' và các tài liệu liên quan. "
             f"Bạn muốn:"
         )
-        
+
         if agent:
             # IMPORTANT: Include attachments in context so they can be passed to BA after confirmation
             # Note: use "or []" because attachments may be None
@@ -536,9 +543,9 @@ async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState
                 "original_user_message": state.get("user_message", ""),
                 "attachments": attachments
             }
-            
+
             logger.info(f"[confirm_replace] Saving context with {len(attachments)} attachment(s)")
-            
+
             await agent.message_user(
                 "question",
                 question,
@@ -552,9 +559,9 @@ async def confirm_replace(state: TeamLeaderState, agent=None) -> TeamLeaderState
                     "context": question_context
                 }
             )
-        
+
         logger.info(f"[confirm_replace] Asked user to confirm replacing '{existing_title}'")
-        
+
         return {
             **state,
             "action": "CONFIRM_REPLACE",
@@ -583,20 +590,20 @@ async def check_cancel_intent(user_message: str, agent=None) -> bool:
             agent_info=_DEFAULTS,
             user_message=user_message
         )
-        
+
         response = await _fast_llm.ainvoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt)
         ])
-        
+
         result = response.content.strip().upper()
         is_cancel = "CANCEL" in result
-        
+
         agent_name = agent.name if agent else "TeamLeader"
         logger.info(f"[{agent_name}] Cancel intent check: '{user_message[:50]}...' -> {result} (is_cancel={is_cancel})")
-        
+
         return is_cancel
-        
+
     except Exception as e:
         logger.error(f"[check_cancel_intent] Error: {e}")
         return False
@@ -607,13 +614,13 @@ async def confirm_existing(state: TeamLeaderState, agent=None) -> TeamLeaderStat
     try:
         existing_title = state.get("existing_prd_title", "project hiện tại")
         stories_count = state.get("existing_stories_count", 0)
-        
+
         stories_info = f" với {stories_count} user stories" if stories_count > 0 else ""
         question = (
             f"Bạn đã có project '{existing_title}'{stories_info}. "
             f"Bạn muốn làm gì?"
         )
-        
+
         if agent:
             # IMPORTANT: Include attachments in context so they can be passed to BA after confirmation
             # Note: use "or []" because attachments may be None
@@ -624,9 +631,9 @@ async def confirm_existing(state: TeamLeaderState, agent=None) -> TeamLeaderStat
                 "existing_stories_count": stories_count,
                 "attachments": attachments
             }
-            
+
             logger.info(f"[confirm_existing] Saving context with {len(attachments)} attachment(s)")
-            
+
             await agent.message_user(
                 "question",
                 question,
@@ -641,9 +648,9 @@ async def confirm_existing(state: TeamLeaderState, agent=None) -> TeamLeaderStat
                     "context": question_context
                 }
             )
-        
+
         logger.info(f"[confirm_existing] Asked user what to do with existing project '{existing_title}'")
-        
+
         return {
             **state,
             "action": "CONFIRM_EXISTING",

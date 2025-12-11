@@ -139,6 +139,10 @@ class BaseAgent(ABC):
         # Execution tracking
         self._execution_start_time: Optional[Any] = None  # datetime object
         self._execution_events: list = []  # List of events for current execution
+        
+        # Token usage tracking (per execution)
+        self._total_tokens: int = 0
+        self._llm_call_count: int = 0
 
         # Kafka producer (lazy init)
         self._producer: Optional[KafkaProducer] = None
@@ -1540,13 +1544,33 @@ class BaseAgent(ABC):
                 error=error,
                 error_traceback=error_traceback,
                 events=self._execution_events,
-                duration_ms=duration_ms
+                duration_ms=duration_ms,
+                token_used=self._total_tokens,
+                llm_calls=self._llm_call_count,
             )
         
         logger.info(
             f"[{self.name}] Execution {self._current_execution_id} "
-            f"{'completed' if success else 'failed'} in {duration_ms}ms with {len(self._execution_events)} events"
+            f"{'completed' if success else 'failed'} in {duration_ms}ms "
+            f"with {len(self._execution_events)} events, {self._total_tokens} tokens, {self._llm_call_count} LLM calls"
         )
+        
+        # Reset token counters for next execution
+        self._total_tokens = 0
+        self._llm_call_count = 0
+    
+    def track_llm_usage(self, tokens: int, calls: int = 1) -> None:
+        """Track LLM token usage for current execution.
+        
+        Call this after each LLM invoke to accumulate usage stats.
+        
+        Args:
+            tokens: Number of tokens used
+            calls: Number of LLM calls (default 1)
+        """
+        self._total_tokens += tokens
+        self._llm_call_count += calls
+        logger.debug(f"[{self.name}] LLM usage: +{tokens} tokens, +{calls} calls (total: {self._total_tokens} tokens, {self._llm_call_count} calls)")
 
     async def start(self) -> bool:
         """Start the agent's Kafka consumer and task queue worker.

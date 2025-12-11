@@ -40,7 +40,6 @@ export const HeaderProject = ({
   const [defaultTab, setDefaultTab] = useState<string | undefined>(undefined)
   const location = useLocation()
   const navigate = useNavigate()
-
   // Get avatar URL with fallback
   const avatarUrl = import.meta.env.VITE_API_URL + profile?.avatar_url || DEFAULT_AVATAR
   const displayName = profile?.full_name || user?.full_name || ""
@@ -99,8 +98,12 @@ export const HeaderProject = ({
       <div className="container flex h-16 items-center justify-between px-6">
         {/* Left side - Logo/Brand */}
         <div className="flex items-center gap-2 ml-2">
-          <div className="flex items-center justify-center rounded-lg px-3 py-2">
-            <span className="text-xl font-bold">VibeSDLC</span>
+          <div className="flex items-center justify-center rounded-lg">
+            <img 
+              src="/assets/images/logo.png" 
+              alt="VibeSDLC" 
+              className="h-5 object-contain" 
+            />
           </div>
         </div>
 
@@ -135,9 +138,9 @@ export const HeaderProject = ({
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{userName}</p>
+                <p className="text-sm font-medium leading-none">{user?.full_name}</p>
                 <p className="text-xs leading-none text-muted-foreground">
-                  {userEmail}
+                  {user?.email}
                 </p>
               </div>
             </DropdownMenuLabel>

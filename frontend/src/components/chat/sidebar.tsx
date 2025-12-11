@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   ChevronDown,
   ChevronRight,
   PanelLeftClose,
@@ -7,57 +8,43 @@ import {
   Sparkles,
 } from "lucide-react"
 import { useState } from "react"
+import { useNavigate } from "@tanstack/react-router"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
-  hovered: boolean
-  onHoverChange: (hovered: boolean) => void
 }
 
 export function Sidebar({
   collapsed,
   onToggle,
-  hovered,
-  onHoverChange,
 }: SidebarProps) {
   const [myChatsExpanded, setMyChatsExpanded] = useState(true)
+  const navigate = useNavigate()
 
-
-  const _isVisible = !collapsed || hovered
+  const handleBackToProjects = () => {
+    navigate({ to: "/projects" })
+  }
 
   return (
     <div
       className={cn(
-        "flex flex-col bg-sidebar transition-all duration-300 ease-in-out w-[280px] h-full",
-        !collapsed
-          ? "relative translate-x-0 z-50"
-          : hovered
-            ? "fixed translate-x-0 z-50"
-            : "absolute -translate-x-full z-50",
-        hovered && collapsed && "shadow-2xl",
+        "flex flex-col bg-sidebar transition-all duration-300 ease-in-out h-full",
+        !collapsed ? "w-[280px] relative" : "w-0 overflow-hidden"
       )}
-      onMouseLeave={() => {
-        if (collapsed && onHoverChange) {
-          onHoverChange(false)
-        }
-      }}
     >
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
-            onClick={onToggle}
+            onClick={handleBackToProjects}
             className="w-6 h-6 text-sidebar-foreground hover:bg-sidebar-accent"
+            title="Back to Projects"
           >
-            {collapsed ? (
-              <PanelRightClose className="w-4 h-4" />
-            ) : (
-              <PanelLeftClose className="w-4 h-4" />
-            )}
+            <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-sidebar-foreground" />
@@ -66,6 +53,14 @@ export function Sidebar({
             </span>
           </div>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onToggle}
+          className="w-6 h-6 text-sidebar-foreground hover:bg-sidebar-accent"
+        >
+          <PanelLeftClose className="w-4 h-4" />
+        </Button>
       </div>
 
       <div className="p-3">

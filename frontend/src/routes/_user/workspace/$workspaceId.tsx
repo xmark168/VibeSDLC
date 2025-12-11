@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useRef, useState, useCallback } from "react"
 import { ChatPanelWS } from "@/components/chat/chat-panel-ws"
-import { Sidebar } from "@/components/chat/sidebar"
 import { WorkspacePanel } from "@/components/chat/workspace-panel"
 import { requireRole } from "@/utils/auth"
 
@@ -14,11 +13,9 @@ export const Route = createFileRoute("/_user/workspace/$workspaceId")({
 
 function WorkspacePage() {
   const { workspaceId } = Route.useParams()
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const chatWidthRef = useRef(40) // Use ref for smooth drag
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const [chatCollapsed, setChatCollapsed] = useState(false)
-  const [sidebarHovered, setSidebarHovered] = useState(false)
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false)
   const sendMessageRef = useRef<((params: { content: string; author_type?: 'user' | 'agent' }) => boolean) | null>(null)
   const [kanbanData, setKanbanData] = useState<any>(null)
@@ -69,13 +66,6 @@ function WorkspacePage() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-white relative">
-        <Sidebar
-          collapsed={sidebarCollapsed}
-          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-          hovered={sidebarHovered}
-          onHoverChange={setSidebarHovered}
-        />
-
         <div className="flex flex-1 overflow-hidden">
           {/* Always mount ChatPanelWS to keep WebSocket alive, just hide with CSS */}
           <div
@@ -84,10 +74,7 @@ function WorkspacePage() {
             style={{ width: `${chatWidthRef.current}%` }}
           >
             <ChatPanelWS
-              sidebarCollapsed={sidebarCollapsed}
-              onToggleSidebar={() => setSidebarCollapsed(false)}
               onCollapse={() => setChatCollapsed(true)}
-              onSidebarHover={setSidebarHovered}
               projectId={workspaceId}
               onSendMessageReady={(sendFn) => {
                 sendMessageRef.current = sendFn

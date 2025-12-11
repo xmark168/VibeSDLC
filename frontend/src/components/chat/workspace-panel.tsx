@@ -4,7 +4,8 @@ import type React from "react"
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2, ChevronsRight, Download, FileText } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2, ChevronsRight, Download, FileText, Search, Filter, CheckCircle2, AlertCircle, Info, XCircle, Activity } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
@@ -36,15 +37,21 @@ interface WorkspacePanelProps {
   onMessageAgent?: (agentName: string) => void // Callback to @mention agent in chat
 }
 
+// Default avatars by role type
+const DEFAULT_AVATARS: Record<string, string> = {
+  team_leader: "https://api.dicebear.com/7.x/avataaars/svg?seed=TeamLeader&backgroundColor=6366f1",
+  business_analyst: "https://api.dicebear.com/7.x/avataaars/svg?seed=BusinessAnalyst&backgroundColor=3b82f6",
+  developer: "https://api.dicebear.com/7.x/avataaars/svg?seed=Developer&backgroundColor=22c55e",
+  tester: "https://api.dicebear.com/7.x/avataaars/svg?seed=Tester&backgroundColor=f59e0b",
+}
+
 // Generate avatar URL from agent human_name using DiceBear API
-const generateAvatarUrl = (name: string): string => {
-  const initials = name
-    .split(' ')
-    .map(part => part[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
-  // Using DiceBear API for initials-based avatars
+const generateAvatarUrl = (name: string, roleType?: string): string => {
+  // Use default avatar for role if available
+  if (roleType && DEFAULT_AVATARS[roleType]) {
+    return DEFAULT_AVATARS[roleType]
+  }
+  // Fallback to initials-based avatar
   return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&chars=2&backgroundColor=6366f1`
 }
 
@@ -170,11 +177,14 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
       console.log(`[WorkspacePanel] Agent ${agent.human_name}: WS status=${wsStatus?.status}, DB status=${agent.status}, Display=${displayStatus}`)
 
+      // Use persona_avatar if available, otherwise generate from role type
+      const avatarUrl = agent.persona_avatar || generateAvatarUrl(agent.human_name, agent.role_type)
+
       return {
         id: agent.id,
         name: agent.human_name, // Use human name like "Mike"
         designation: getRoleDesignation(agent.role_type),
-        image: generateAvatarUrl(agent.human_name),
+        image: avatarUrl,
         status: displayStatus, // Use WebSocket status (real-time) or fallback to DB
         onClick: () => {
           // Open detail sheet when agent is clicked
@@ -217,6 +227,12 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   const inputRef = useRef<HTMLInputElement>(null)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [selectedWorktree, setSelectedWorktree] = useState<string | undefined>(undefined)
+
+  // Logging state
+  const [logSearchQuery, setLogSearchQuery] = useState("")
+  const [selectedLogAgent, setSelectedLogAgent] = useState<string>("all")
+  const [selectedLogType, setSelectedLogType] = useState<string>("all")
+  const [autoScroll, setAutoScroll] = useState(true)
 
   // Update selectedFile when initialSelectedFile changes from parent
   useEffect(() => {
@@ -329,7 +345,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       window.URL.revokeObjectURL(url)
     } catch (err) {
       console.error('Download failed:', err)
-      alert('Không thể tải file. Vui lòng thử lại.')
+      alert('Failed to download file. Please try again.')
     }
   }
 
@@ -450,10 +466,237 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           </div>
         )
       case "loggings":
-        return (
-          <>
+        // Mock logging data - will be replaced with real data from API/WebSocket
+        const mockLogs = [
+          {
+            id: "1",
+            timestamp: "2024-01-15 10:30:45",
+            agent: "Mike",
+            agentRole: "Team Leader",
+            type: "success",
+            action: "Task Created",
+            message: "Created new task: Implement user authentication system",
+            details: "Priority: High, Assigned to: Sarah"
+          },
+          {
+            id: "2",
+            timestamp: "2024-01-15 10:31:12",
+            agent: "Sarah",
+            agentRole: "Developer",
+            type: "info",
+            action: "Code Generated",
+            message: "Generated authentication middleware component",
+            details: "Files: auth.middleware.ts, 156 lines"
+          },
+          {
+            id: "3",
+            timestamp: "2024-01-15 10:32:05",
+            agent: "Tom",
+            agentRole: "Tester",
+            type: "warning",
+            action: "Test Failed",
+            message: "Unit test failed: Authentication token validation",
+            details: "Expected: valid token, Received: undefined"
+          },
+          {
+            id: "4",
+            timestamp: "2024-01-15 10:33:20",
+            agent: "Sarah",
+            agentRole: "Developer",
+            type: "success",
+            action: "Bug Fixed",
+            message: "Fixed token validation issue in authentication middleware",
+            details: "Updated auth.middleware.ts line 45"
+          },
+          {
+            id: "5",
+            timestamp: "2024-01-15 10:34:01",
+            agent: "Tom",
+            agentRole: "Tester",
+            type: "success",
+            action: "Test Passed",
+            message: "All authentication tests passed successfully",
+            details: "18/18 tests passed, Coverage: 98%"
+          },
+          {
+            id: "6",
+            timestamp: "2024-01-15 10:35:15",
+            agent: "Alex",
+            agentRole: "Business Analyst",
+            type: "info",
+            action: "Requirement Updated",
+            message: "Updated authentication requirements based on security review",
+            details: "Added 2FA requirement, Session timeout: 30 minutes"
+          },
+          {
+            id: "7",
+            timestamp: "2024-01-15 10:36:40",
+            agent: "Mike",
+            agentRole: "Team Leader",
+            type: "error",
+            action: "Deployment Failed",
+            message: "Production deployment failed due to missing environment variables",
+            details: "Missing: JWT_SECRET, DATABASE_URL"
+          },
+          {
+            id: "8",
+            timestamp: "2024-01-15 10:37:25",
+            agent: "Sarah",
+            agentRole: "Developer",
+            type: "info",
+            action: "Environment Configured",
+            message: "Added missing environment variables to deployment config",
+            details: "Updated .env.production"
+          },
+        ]
 
-          </>
+        const getLogIcon = (type: string) => {
+          switch (type) {
+            case "success":
+              return <CheckCircle2 className="w-4 h-4 text-green-400" />
+            case "error":
+              return <XCircle className="w-4 h-4 text-red-400" />
+            case "warning":
+              return <AlertCircle className="w-4 h-4 text-amber-400" />
+            case "info":
+            default:
+              return <Info className="w-4 h-4 text-blue-400" />
+          }
+        }
+
+        const getLogTypeColor = (type: string) => {
+          switch (type) {
+            case "success":
+              return "bg-white border-l-4 border-l-green-400 border-y border-r border-gray-200 dark:border-green-800"
+            case "error":
+              return "bg-white  border-l-4 border-l-red-400 border-y border-r border-gray-200 dark:border-red-800"
+            case "warning":
+              return "bg-white  border-l-4 border-l-amber-400 border-y border-r border-gray-200 dark:border-yellow-800"
+            case "info":
+            default:
+              return "bg-white  border-l-4 border-l-blue-400 border-y border-r border-gray-200 dark:border-blue-800"
+          }
+        }
+
+        // Filter logs based on search query, agent, and type
+        const filteredLogs = mockLogs.filter(log => {
+          const matchesSearch = log.message.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
+            log.action.toLowerCase().includes(logSearchQuery.toLowerCase())
+          const matchesAgent = selectedLogAgent === "all" || log.agent === selectedLogAgent
+          const matchesType = selectedLogType === "all" || log.type === selectedLogType
+          return matchesSearch && matchesAgent && matchesType
+        })
+
+        // Get unique agents for filter
+        const uniqueAgents = Array.from(new Set(mockLogs.map(log => log.agent)))
+
+        return (
+          <div className="flex flex-col h-full bg-gray-50 dark:bg-background">
+            {/* Header with filters */}
+            <div className="flex-shrink-0 p-4 border-b border-border space-y-3 bg-white dark:bg-background">
+              <div className="flex items-center gap-2">
+                <Activity className="w-5 h-5 text-indigo-400 dark:text-primary" />
+                <h2 className="text-lg font-semibold text-gray-700 dark:text-foreground">Agent Activity Logs</h2>
+                <span className="ml-auto text-xs text-gray-400 dark:text-muted-foreground font-medium">
+                  {filteredLogs.length} {filteredLogs.length === 1 ? 'entry' : 'entries'}
+                </span>
+              </div>
+
+              {/* Search and Filters */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search logs..."
+                    value={logSearchQuery}
+                    onChange={(e) => setLogSearchQuery(e.target.value)}
+                    className="pl-9 h-9"
+                  />
+                </div>
+
+                <Select value={selectedLogAgent} onValueChange={setSelectedLogAgent}>
+                  <SelectTrigger className="w-[150px]" size="sm">
+                    <SelectValue placeholder="All Agents" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Agents</SelectItem>
+                    {uniqueAgents.map(agent => (
+                      <SelectItem key={agent} value={agent}>{agent}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={selectedLogType} onValueChange={setSelectedLogType}>
+                  <SelectTrigger className="w-[130px]" size="sm">
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="success">Success</SelectItem>
+                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="error">Error</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Button
+                  variant={autoScroll ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setAutoScroll(!autoScroll)}
+                  className="h-9"
+                >
+                  Auto-scroll {autoScroll ? "On" : "Off"}
+                </Button>
+              </div>
+            </div>
+
+            {/* Logs list */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-background">
+              {filteredLogs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-muted-foreground">
+                  <Activity className="w-12 h-12 mb-3 opacity-40" />
+                  <p className="font-medium">No logs found</p>
+                  {logSearchQuery && (
+                    <p className="text-sm">Try adjusting your search or filters</p>
+                  )}
+                </div>
+              ) : (
+                filteredLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    className={`p-4 rounded-lg shadow-sm hover:shadow-md transition-all ${getLogTypeColor(log.type)}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5">
+                        {getLogIcon(log.type)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs font-medium text-gray-400 dark:text-muted-foreground">
+                            {log.timestamp}
+                          </span>
+                          <span className="text-xs px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-primary/10 text-indigo-600 dark:text-primary font-medium">
+                            {log.agent} - {log.agentRole}
+                          </span>
+                          <span className="text-xs px-2.5 py-1 rounded bg-gray-50 dark:bg-muted text-gray-600 dark:text-foreground font-medium">
+                            {log.action}
+                          </span>
+                        </div>
+                        <p className="text-sm font-medium text-gray-600 dark:text-foreground mb-1.5 leading-relaxed">
+                          {log.message}
+                        </p>
+                        {log.details && (
+                          <p className="text-xs text-gray-400 dark:text-muted-foreground leading-relaxed">
+                            {log.details}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         )
       default:
         return null
@@ -480,7 +723,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
               size="sm"
               onClick={onExpandChat}
               className="h-8 px-2 mr-1"
-              title="Mở lại Chat"
+              title="Reopen Chat"
             >
               <ChevronsRight className="w-4 h-4" />
             </Button>
@@ -511,7 +754,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           </div>
           <div>
             <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
-              Public
+              Publish
             </Button>
           </div>
         </div>

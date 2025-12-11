@@ -1,5 +1,4 @@
 import { Link } from "@tanstack/react-router"
-import { OAuthProvider } from "appwrite"
 import { motion } from "framer-motion"
 import type React from "react"
 import { useState, useEffect } from "react"
@@ -8,9 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import useAuth from "@/hooks/useAuth"
-import { account } from "@/lib/appwrite"
-import { withToast } from "@/utils"
-import { Chrome, Facebook, Github, Loader2 } from "lucide-react"
+import { toast } from "@/lib/toast"
+import { Facebook, Github, Loader2 } from "lucide-react"
 import { FaGooglePlusG } from "react-icons/fa6";
 
 const REMEMBER_EMAIL_KEY = "vibeSDLC_remembered_email"
@@ -24,7 +22,7 @@ export function LoginForm() {
   const [oauthLoading, setOauthLoading] = useState<OAuthLoadingProvider>(null)
   const { loginMutation } = useAuth()
 
-  // Load remembered email on mount
+
   useEffect(() => {
     const rememberedEmail = localStorage.getItem(REMEMBER_EMAIL_KEY)
     if (rememberedEmail) {
@@ -35,35 +33,18 @@ export function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log("Login attempt:", { email, password })
-    const data = { email, password }
-
-    await withToast(
-      new Promise((resolve, reject) => {
-        loginMutation.mutate(
-          {
-            requestBody: {
-              ...data,
-            },
-          },
-          {
-            onSuccess: (result) => {
-              // Save or remove email based on remember me checkbox
-              if (rememberMe) {
-                localStorage.setItem(REMEMBER_EMAIL_KEY, email)
-              } else {
-                localStorage.removeItem(REMEMBER_EMAIL_KEY)
-              }
-              resolve(result)
-            },
-            onError: reject,
-          },
-        )
-      }),
+    loginMutation.mutate(
       {
-        loading: "Đang đăng nhập...",
-        success: <b>Chào mừng quay trở lại!</b>,
-        error: <b>Đăng nhập thất bại. Vui lòng thử lại.</b>,
+        requestBody: { email, password },
+      },
+      {
+        onSuccess: () => {
+          toast.success("Welcome back!")
+          console.log("login2")
+        },
+        onError: () => {
+          toast.error("Login failed. Please try again.")
+        },
       },
     )
   }
@@ -111,7 +92,7 @@ export function LoginForm() {
           transition={{ delay: 0.4 }}
           className="text-3xl font-bold text-foreground"
         >
-          Chào mừng quay trở lại
+          Welcome back
         </motion.h2>
       </div>
 
@@ -125,13 +106,13 @@ export function LoginForm() {
         <div className="relative">
           {/* <div className="relative flex justify-center text-sm"> */}
           <span className="bg-card text-muted-foreground">
-            Đăng nhập để bắt đầu với đội ngũ AI của bạn
+            Sign in to start with your AI team
           </span>
         </div>
         {/* </div> */}
 
         {/* Form Email/Password */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-2">
             <Label htmlFor="email" className="sr-only">
               Email
@@ -139,7 +120,7 @@ export function LoginForm() {
             <Input
               id="email"
               type="email"
-              placeholder="Email của bạn"
+              placeholder="Your email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="h-12"
@@ -154,7 +135,7 @@ export function LoginForm() {
             <Input
               id="password"
               type="password"
-              placeholder="Mật khẩu"
+              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="h-12"
@@ -174,14 +155,14 @@ export function LoginForm() {
                 htmlFor="remember"
                 className="text-sm text-muted-foreground cursor-pointer select-none"
               >
-                Ghi nhớ đăng nhập
+                Remember me
               </Label>
             </div>
             <Link
               to="/forgot-password"
               className="text-sm text-muted-foreground transition-colors underline hover:text-foreground"
             >
-              Quên mật khẩu?
+              Forgot password?
             </Link>
           </div>
 
@@ -190,12 +171,12 @@ export function LoginForm() {
             disabled={loginMutation.isPending}
             className="w-full h-12 text-base font-semibold bg-primary hover:bg-primary/90 transition-all"
           >
-            {loginMutation.isPending ? "Đang đăng nhập..." : "Đăng nhập"}
+            {loginMutation.isPending ? "Signing in..." : "Sign in"}
           </Button>
 
           {loginMutation.error && (
             <div className="text-sm text-red-500 text-center">
-              {loginMutation.error.message || "Đăng nhập thất bại"}
+              {loginMutation.error.message || "Login failed"}
             </div>
           )}
 
@@ -205,7 +186,7 @@ export function LoginForm() {
             </div>
             <div className="relative flex justify-center text-xs uppercase">
               <span className="bg-card px-2 text-muted-foreground">
-                Hoặc tiếp tục với
+                Or continue with
               </span>
             </div>
           </div>
@@ -213,6 +194,7 @@ export function LoginForm() {
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-3">
               <Button
+                type="button"
                 onClick={handleLoginGoogle}
                 variant="outline"
                 disabled={isOAuthDisabled}
@@ -226,6 +208,7 @@ export function LoginForm() {
                 <span className="font-medium">Google</span>
               </Button>
               <Button
+                type="button"
                 onClick={handleLoginGithub}
                 variant="outline"
                 disabled={isOAuthDisabled}
@@ -239,6 +222,7 @@ export function LoginForm() {
                 <span className="font-medium">GitHub</span>
               </Button>
               <Button
+                type="button"
                 onClick={handleLoginFacebook}
                 variant="outline"
                 disabled={isOAuthDisabled}
@@ -254,12 +238,12 @@ export function LoginForm() {
             </div>
           </div>
           <div className="text-center text-sm text-muted-foreground">
-            {"Chưa có tài khoản? "}
+            {"Don't have an account? "}
             <Link
               to="/signup"
               className="text-foreground underline transition-colors"
             >
-              Tạo tài khoản mới
+              Create new account
             </Link>
           </div>
         </form>

@@ -42,7 +42,18 @@ export type {
   CreatePoolRequestExtended,
   UpdatePoolConfigRequest,
   ScalePoolRequest,
-  PoolSuggestion
+  PoolSuggestion,
+  SystemStatus,
+  SystemStatusResponse,
+  EmergencyActionResponse,
+  BulkOperationResponse,
+  ScalingTriggerType,
+  ScalingAction,
+  AutoScalingRule,
+  AutoScalingRuleCreate,
+  AgentTemplate,
+  AgentTemplateCreate,
+  AgentTemplateFromAgent
 } from './agent'
 
 // Backlog types

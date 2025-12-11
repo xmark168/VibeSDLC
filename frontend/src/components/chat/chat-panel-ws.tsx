@@ -1,6 +1,7 @@
 import type React from "react";
 import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,15 +15,14 @@ import {
   ChevronDown,
   ChevronUp,
   ArrowUp,
+  ArrowLeft,
   Copy,
   Check,
   X,
   Moon,
   Sun,
   AtSign,
-  PanelRightClose,
   PanelLeftClose,
-  ChevronsLeft,
   Loader2,
   Crown,
   PaperclipIcon,
@@ -51,10 +51,7 @@ import { PromptInput, PromptInputButton, PromptInputSubmit, PromptInputTextarea,
 import { MentionDropdown, type Agent } from "../ui/mention-dropdown";
 
 interface ChatPanelProps {
-  sidebarCollapsed: boolean;
-  onToggleSidebar: () => void;
   onCollapse: () => void;
-  onSidebarHover: (hovered: boolean) => void;
   projectId?: string;
   onSendMessageReady?: (
     sendFn: (params: { content: string; author_type?: 'user' | 'agent' }) => boolean
@@ -69,16 +66,13 @@ interface ChatPanelProps {
 }
 
 export function ChatPanelWS({
-  sidebarCollapsed,
-  onToggleSidebar,
   onCollapse,
-  onSidebarHover,
   projectId,
   onSendMessageReady,
   onConnectionChange,
   onKanbanDataChange,
   onActiveTabChange,
-  onAgentStatusesChange, // NEW
+  onAgentStatusesChange,
   onOpenArtifact,
   onOpenFile,
   onInsertMentionReady,
@@ -94,6 +88,7 @@ export function ChatPanelWS({
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMessagesLengthRef = useRef(0);
@@ -343,8 +338,8 @@ export function ChatPanelWS({
     // Look for user messages after this card
     const messagesAfterCard = uniqueMessages.slice(cardMsgIndex + 1)
     const keywords = cardType === 'prd' 
-      ? ['Phê duyệt PRD', 'Chỉnh sửa PRD']
-      : ['Phê duyệt Stories', 'Chỉnh sửa Stories']
+      ? ['Approve PRD', 'Edit PRD']
+      : ['Approve Stories', 'Edit Stories']
     
     return messagesAfterCard.some(m => 
       m.author_type === AuthorType.USER && 
@@ -576,7 +571,7 @@ export function ChatPanelWS({
       try {
         await createMessageWithFile({
           project_id: projectId,
-          content: finalMessage || "Phân tích tài liệu này",
+          content: finalMessage || "Analyze this document",
           file: selectedFile,
         });
         setSelectedFile(null);
@@ -585,7 +580,7 @@ export function ChatPanelWS({
         forceScrollRef.current = true;
       } catch (error) {
         console.error("Failed to upload file:", error);
-        alert("Không thể upload file. Vui lòng thử lại.");
+        alert("Failed to upload file. Please try again.");
       }
       return;
     }
@@ -659,9 +654,48 @@ export function ChatPanelWS({
     }
   };
 
-  const getAgentAvatar = (authorType: AuthorType) => {
-    if (authorType === AuthorType.USER) return "👤";
-    if (authorType === AuthorType.AGENT) return "🤖";
+  // Default avatars by role type
+  const DEFAULT_AVATARS: Record<string, string> = {
+    team_leader: "https://api.dicebear.com/7.x/avataaars/svg?seed=TeamLeader&backgroundColor=6366f1",
+    business_analyst: "https://api.dicebear.com/7.x/avataaars/svg?seed=BusinessAnalyst&backgroundColor=3b82f6",
+    developer: "https://api.dicebear.com/7.x/avataaars/svg?seed=Developer&backgroundColor=22c55e",
+    tester: "https://api.dicebear.com/7.x/avataaars/svg?seed=Tester&backgroundColor=f59e0b",
+  };
+
+  const getAgentAvatar = (msg: Message) => {
+    if (msg.author_type === AuthorType.USER) return "👤";
+    if (msg.author_type === AuthorType.AGENT) {
+      // First check if message has persona_avatar directly from API
+      if (msg.persona_avatar) {
+        return (
+          <img 
+            src={msg.persona_avatar} 
+            alt={msg.agent_name || "Agent"}
+            className="w-8 h-8 rounded-full object-cover"
+          />
+        );
+      }
+
+      // Fallback: Try to find the agent and get their avatar from agents list
+      const agentName = msg.agent_name || msg.message_metadata?.agent_name;
+      if (agentName && agentsList.length > 0) {
+        const agent = agentsList.find(a => a.human_name === agentName || a.name === agentName);
+        if (agent) {
+          // Use persona_avatar or role-based default avatar
+          const avatarUrl = agent.persona_avatar || DEFAULT_AVATARS[agent.role_type];
+          if (avatarUrl) {
+            return (
+              <img 
+                src={avatarUrl} 
+                alt={agentName}
+                className="w-8 h-8 rounded-full object-cover"
+              />
+            );
+          }
+        }
+      }
+      return "🤖";
+    }
     return "🤖";
   };
 
@@ -732,48 +766,42 @@ export function ChatPanelWS({
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {sidebarCollapsed && (
-        <div className="flex items-center gap-2 px-3 py-2">
+      <div className="flex items-center justify-between gap-2 px-3 py-2">
+        <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
-            onClick={onToggleSidebar}
-            onMouseEnter={() => onSidebarHover(true)}
+            onClick={() => navigate({ to: "/projects" })}
             className="w-8 h-8 text-foreground hover:bg-accent"
+            title="Back to Projects"
           >
-            <PanelRightClose className="w-5 h-5" />
+            <ArrowLeft className="w-5 h-5" />
           </Button>
 
-          {/* Conversation Owner Display (collapsed sidebar) */}
-          {conversationOwner && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
-              <Crown className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
-              <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
-                {conversationOwner.agentName} đang tiếp nhận câu hỏi
-              </span>
-            </div>
-          )}
-
-          <div className="flex-1" />
           {!isConnected && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="w-3 h-3 animate-spin" />
               Connecting...
             </div>
           )}
-          {/* <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleTheme}
-            className="w-8 h-8 text-foreground hover:bg-accent"
-            title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-          >
-            {theme === "light" ? (
-              <Moon className="w-4 h-4" />
-            ) : (
-              <Sun className="w-4 h-4" />
-            )}
-          </Button> */}
+          {isConnected && (
+            <div className="flex items-center gap-2 text-xs text-green-600">
+              <div className="w-2 h-2 bg-green-600 rounded-full" />
+              Connected
+            </div>
+          )}
+
+          {/* Conversation Owner Display */}
+          {conversationOwner && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
+              <Crown className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
+              <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
+                {conversationOwner.agentName} is receiving questions
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
@@ -781,50 +809,10 @@ export function ChatPanelWS({
             className="w-8 h-8 text-foreground hover:bg-accent"
             title="Hide chat panel"
           >
-            <ChevronsLeft className="w-4 h-4" />
+            <PanelLeftClose className="w-4 h-4" />
           </Button>
         </div>
-      )}
-
-      {!sidebarCollapsed && (
-        <div className="flex items-center justify-between gap-2 px-3 py-2">
-          <div className="flex items-center gap-2">
-            {!isConnected && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Connecting...
-              </div>
-            )}
-            {isConnected && (
-              <div className="flex items-center gap-2 text-xs text-green-600">
-                <div className="w-2 h-2 bg-green-600 rounded-full" />
-                Connected
-              </div>
-            )}
-
-            {/* Conversation Owner Display */}
-            {conversationOwner && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-yellow-500/10 border border-yellow-500/20">
-                <Crown className="w-3.5 h-3.5 text-yellow-600 dark:text-yellow-400" />
-                <span className="text-xs font-medium text-yellow-700 dark:text-yellow-300">
-                  {conversationOwner.agentName} đang tiếp nhận câu hỏi
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onCollapse}
-              className="w-8 h-8 text-foreground hover:bg-accent"
-              title="Hide chat panel"
-            >
-              <PanelLeftClose className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      )}
+      </div>
 
       <div
         ref={messagesContainerRef}
@@ -1007,8 +995,8 @@ export function ChatPanelWS({
 
           return (
             <div key={msg.id} className="flex gap-3">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-                {getAgentAvatar(msg.author_type)}
+              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted overflow-hidden">
+                {getAgentAvatar(msg)}
               </div>
 
               <div className="flex-1 space-y-2">
@@ -1092,10 +1080,10 @@ export function ChatPanelWS({
                         }
                       }}
                       onApprove={() => {
-                        wsSendMessage("Phê duyệt PRD này, hãy tạo user stories")
+                        wsSendMessage("Approve this PRD, please create user stories")
                       }}
                       onEdit={(feedback) => {
-                        wsSendMessage(`Chỉnh sửa PRD: ${feedback}`)
+                        wsSendMessage(`Edit PRD: ${feedback}`)
                       }}
                     />
                   )}
@@ -1116,10 +1104,10 @@ export function ChatPanelWS({
                         }
                       }}
                       onApprove={() => {
-                        wsSendMessage("Phê duyệt Stories")
+                        wsSendMessage("Approve Stories")
                       }}
                       onEdit={(feedback) => {
-                        wsSendMessage(`Chỉnh sửa Stories: ${feedback}`)
+                        wsSendMessage(`Edit Stories: ${feedback}`)
                       }}
                     />
                   )}
@@ -1276,7 +1264,7 @@ export function ChatPanelWS({
             if (file) {
               // Validate size (10MB)
               if (file.size > 10 * 1024 * 1024) {
-                alert("File quá lớn. Giới hạn: 10MB");
+                alert("File too large. Limit: 10MB");
                 e.target.value = "";
                 return;
               }
@@ -1285,7 +1273,7 @@ export function ChatPanelWS({
               const allowedExtensions = ['.docx', '.txt'];
               const hasValidExt = allowedExtensions.some(ext => fileName.endsWith(ext));
               if (!hasValidExt) {
-                alert("Chỉ hỗ trợ file .docx và .txt");
+                alert("Only .docx and .txt files are supported");
                 e.target.value = "";
                 return;
               }
@@ -1304,7 +1292,7 @@ export function ChatPanelWS({
               <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
             )}
             <span className="text-sm truncate flex-1">
-              {isUploading ? "Đang upload..." : selectedFile.name}
+              {isUploading ? "Uploading..." : selectedFile.name}
             </span>
             {!isUploading && (
               <>
@@ -1332,7 +1320,7 @@ export function ChatPanelWS({
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder={selectedFile ? "Thêm mô tả cho file..." : "Type your message..."}
+            placeholder={selectedFile ? "Add description for file..." : "Type your message..."}
           />
           <PromptInputToolbar>
             <PromptInputTools>

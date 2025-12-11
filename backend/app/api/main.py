@@ -17,7 +17,9 @@ from app.api.routes import (
     profile,  # User profile management
     project_rules,  # Project-specific rules and configurations
     projects,
+    sepay,  # SePay payment integration
     stories,  # Story management (Kanban with Todo/InProgress/Review/Done)
+    tech_stacks,  # TechStack management
     two_factor,  # Two-factor authentication
     users,
     utils,
@@ -42,7 +44,9 @@ api_router.include_router(
 api_router.include_router(messages.router)
 api_router.include_router(plans.router)  # Plan management
 api_router.include_router(payments.router)  # Payment and PayOS integration
+api_router.include_router(sepay.router)  # SePay payment integration
 api_router.include_router(personas.router)  # Persona template management
+api_router.include_router(tech_stacks.router)  # TechStack management
 api_router.include_router(
     agent_management.router
 )  # Agent pools and monitoring - MUST be before agents.router

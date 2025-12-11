@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2, CheckCircle, XCircle, ExternalLink, Copy } from "lucide-react"
 import { usePaymentStatus } from "@/queries/payments"
 import type { PaymentLinkResponse } from "@/types/payment"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 interface PaymentDialogProps {
   open: boolean
@@ -59,17 +59,17 @@ export function PaymentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-slate-900 border-slate-800 text-white">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Complete Your Payment</DialogTitle>
-          <DialogDescription className="text-slate-400">
+          <DialogDescription>
             Scan the QR code below using your banking app to complete the payment
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
           {/* QR Code Display */}
-          <div className="flex flex-col items-center justify-center p-6 bg-white rounded-lg">
+          <div className="flex flex-col items-center justify-center p-6 bg-white rounded-lg border">
             {paymentData.qr_code ? (
               <img
                 src={paymentData.qr_code}
@@ -77,8 +77,8 @@ export function PaymentDialog({
                 className="w-64 h-64 object-contain"
               />
             ) : (
-              <div className="w-64 h-64 flex items-center justify-center bg-gray-100 rounded">
-                <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+              <div className="w-64 h-64 flex items-center justify-center bg-muted rounded">
+                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
               </div>
             )}
           </div>
@@ -86,8 +86,8 @@ export function PaymentDialog({
           {/* Payment Details */}
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-slate-400">Amount:</span>
-              <span className="font-semibold text-white">
+              <span className="text-muted-foreground">Amount:</span>
+              <span className="font-semibold">
                 {new Intl.NumberFormat('vi-VN', {
                   style: 'currency',
                   currency: 'VND'
@@ -95,31 +95,31 @@ export function PaymentDialog({
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Description:</span>
-              <span className="font-medium text-white">{paymentData.description}</span>
+              <span className="text-muted-foreground">Description:</span>
+              <span className="font-medium">{paymentData.description}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Order Code:</span>
-              <span className="font-mono text-xs text-white">{paymentData.payos_order_code}</span>
+              <span className="text-muted-foreground">Order Code:</span>
+              <span className="font-mono text-xs">{paymentData.payos_order_code}</span>
             </div>
           </div>
 
           {/* Status Indicator */}
-          <div className="flex items-center justify-center gap-2 p-3 bg-blue-50/10 rounded-lg border border-blue-500/20">
+          <div className="flex items-center justify-center gap-2 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
             {statusLoading || statusData?.status === "pending" ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-                <span className="text-sm text-blue-400">Waiting for payment...</span>
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400" />
+                <span className="text-sm text-blue-600 dark:text-blue-400">Waiting for payment...</span>
               </>
             ) : statusData?.status === "paid" ? (
               <>
-                <CheckCircle className="w-4 h-4 text-green-400" />
-                <span className="text-sm text-green-400">Payment successful!</span>
+                <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                <span className="text-sm text-green-600 dark:text-green-400">Payment successful!</span>
               </>
             ) : statusData?.status === "failed" || statusData?.status === "canceled" ? (
               <>
-                <XCircle className="w-4 h-4 text-red-400" />
-                <span className="text-sm text-red-400">Payment failed</span>
+                <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                <span className="text-sm text-red-600 dark:text-red-400">Payment failed</span>
               </>
             ) : null}
           </div>
@@ -129,14 +129,14 @@ export function PaymentDialog({
             <Button
               variant="outline"
               onClick={handleCopyQRCode}
-              className="flex-1 bg-slate-800 border-slate-700 text-white hover:bg-slate-700"
+              className="flex-1"
             >
               <Copy className="w-4 h-4 mr-2" />
               {copiedQR ? "Copied!" : "Copy Link"}
             </Button>
             <Button
               onClick={handleOpenCheckoutUrl}
-              className="flex-1 bg-primary hover:bg-primary/90"
+              className="flex-1"
             >
               <ExternalLink className="w-4 h-4 mr-2" />
               Open in Browser
@@ -144,7 +144,7 @@ export function PaymentDialog({
           </div>
 
           {/* Help Text */}
-          <p className="text-xs text-center text-slate-500">
+          <p className="text-xs text-center text-muted-foreground">
             Having trouble? Contact support for assistance.
           </p>
         </div>

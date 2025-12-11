@@ -464,3 +464,329 @@ export function useScalePool() {
     },
   })
 }
+
+// ===== Emergency Controls =====
+
+/**
+ * Fetch system status including emergency state
+ */
+export function useSystemStatus(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: [...agentQueryKeys.all, "system-status"] as const,
+    queryFn: () => agentsApi.getSystemStatus(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 10000, // Poll every 10s for status
+    staleTime: 5000,
+  })
+}
+
+/**
+ * Emergency PAUSE: Stop all agents from accepting new tasks
+ */
+export function useEmergencyPause() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => agentsApi.emergencyPause(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
+    },
+  })
+}
+
+/**
+ * Resume all agents after pause or maintenance
+ */
+export function useEmergencyResume() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => agentsApi.emergencyResume(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
+    },
+  })
+}
+
+/**
+ * Emergency STOP: Terminate all agents
+ */
+export function useEmergencyStop() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (force: boolean = false) => agentsApi.emergencyStop(force),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
+    },
+  })
+}
+
+/**
+ * Enter maintenance mode with custom message
+ */
+export function useEnterMaintenanceMode() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (message?: string) => agentsApi.enterMaintenanceMode(message),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
+    },
+  })
+}
+
+/**
+ * Restart all agents in a specific pool
+ */
+export function useRestartPool() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (poolName: string) => agentsApi.restartPool(poolName),
+    onSuccess: (_, poolName) => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pool(poolName) })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.health() })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
+    },
+  })
+}
+
+// ===== Bulk Operations =====
+
+/**
+ * Bulk terminate multiple agents
+ */
+export function useBulkTerminate() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ agentIds, graceful = true }: { agentIds: string[]; graceful?: boolean }) =>
+      agentsApi.bulkTerminate(agentIds, graceful),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
+    },
+  })
+}
+
+/**
+ * Bulk set multiple agents to idle
+ */
+export function useBulkSetIdle() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (agentIds: string[]) => agentsApi.bulkSetIdle(agentIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
+    },
+  })
+}
+
+/**
+ * Bulk restart multiple agents
+ */
+export function useBulkRestart() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (agentIds: string[]) => agentsApi.bulkRestart(agentIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
+    },
+  })
+}
+
+/**
+ * Bulk spawn multiple agents
+ */
+export function useBulkSpawn() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (params: {
+      role_type: string
+      count: number
+      project_id: string
+      pool_name?: string
+    }) => agentsApi.bulkSpawn(params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
+    },
+  })
+}
+
+// ===== Auto-scaling Rules =====
+
+export const scalingQueryKeys = {
+  all: ["scaling"] as const,
+  rules: () => [...scalingQueryKeys.all, "rules"] as const,
+  rule: (id: string) => [...scalingQueryKeys.rules(), id] as const,
+}
+
+export function useScalingRules(params?: { poolName?: string; enabledOnly?: boolean }) {
+  return useQuery({
+    queryKey: [...scalingQueryKeys.rules(), params],
+    queryFn: () => agentsApi.listScalingRules(params),
+  })
+}
+
+export function useScalingRule(ruleId: string) {
+  return useQuery({
+    queryKey: scalingQueryKeys.rule(ruleId),
+    queryFn: () => agentsApi.getScalingRule(ruleId),
+    enabled: !!ruleId,
+  })
+}
+
+export function useCreateScalingRule() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: agentsApi.createScalingRule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: scalingQueryKeys.rules() })
+    },
+  })
+}
+
+export function useUpdateScalingRule() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ ruleId, rule }: { ruleId: string; rule: Parameters<typeof agentsApi.updateScalingRule>[1] }) =>
+      agentsApi.updateScalingRule(ruleId, rule),
+    onSuccess: (_, { ruleId }) => {
+      queryClient.invalidateQueries({ queryKey: scalingQueryKeys.rule(ruleId) })
+      queryClient.invalidateQueries({ queryKey: scalingQueryKeys.rules() })
+    },
+  })
+}
+
+export function useDeleteScalingRule() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: agentsApi.deleteScalingRule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: scalingQueryKeys.rules() })
+    },
+  })
+}
+
+export function useToggleScalingRule() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: agentsApi.toggleScalingRule,
+    onSuccess: (_, ruleId) => {
+      queryClient.invalidateQueries({ queryKey: scalingQueryKeys.rule(ruleId) })
+      queryClient.invalidateQueries({ queryKey: scalingQueryKeys.rules() })
+    },
+  })
+}
+
+export function useTriggerScalingRule() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: agentsApi.triggerScalingRule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
+    },
+  })
+}
+
+// ===== Agent Templates =====
+
+export const templateQueryKeys = {
+  all: ["templates"] as const,
+  list: () => [...templateQueryKeys.all, "list"] as const,
+  detail: (id: string) => [...templateQueryKeys.all, id] as const,
+}
+
+export function useTemplates(params?: { roleType?: string; tag?: string }) {
+  return useQuery({
+    queryKey: [...templateQueryKeys.list(), params],
+    queryFn: () => agentsApi.listTemplates(params),
+  })
+}
+
+export function useTemplate(templateId: string) {
+  return useQuery({
+    queryKey: templateQueryKeys.detail(templateId),
+    queryFn: () => agentsApi.getTemplate(templateId),
+    enabled: !!templateId,
+  })
+}
+
+export function useCreateTemplate() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: agentsApi.createTemplate,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: templateQueryKeys.list() })
+    },
+  })
+}
+
+export function useCreateTemplateFromAgent() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: agentsApi.createTemplateFromAgent,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: templateQueryKeys.list() })
+    },
+  })
+}
+
+export function useUpdateTemplate() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ templateId, template }: { templateId: string; template: Parameters<typeof agentsApi.updateTemplate>[1] }) =>
+      agentsApi.updateTemplate(templateId, template),
+    onSuccess: (_, { templateId }) => {
+      queryClient.invalidateQueries({ queryKey: templateQueryKeys.detail(templateId) })
+      queryClient.invalidateQueries({ queryKey: templateQueryKeys.list() })
+    },
+  })
+}
+
+export function useDeleteTemplate() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: agentsApi.deleteTemplate,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: templateQueryKeys.list() })
+    },
+  })
+}
+
+export function useSpawnFromTemplate() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ templateId, projectId, count }: { templateId: string; projectId: string; count?: number }) =>
+      agentsApi.spawnFromTemplate(templateId, projectId, count),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
+      queryClient.invalidateQueries({ queryKey: templateQueryKeys.list() })
+    },
+  })
+}
+
+export function useDuplicateTemplate() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ templateId, newName }: { templateId: string; newName: string }) =>
+      agentsApi.duplicateTemplate(templateId, newName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: templateQueryKeys.list() })
+    },
+  })
+}

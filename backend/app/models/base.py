@@ -125,6 +125,7 @@ class OrderStatus(str, Enum):
     PAID = "paid"
     FAILED = "failed"
     CANCELED = "canceled"
+    EXPIRED = "expired"
 
 
 class InvoiceStatus(str, Enum):

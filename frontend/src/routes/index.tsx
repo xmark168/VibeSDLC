@@ -21,31 +21,31 @@ const features = [
   {
     icon: <Workflow className="h-4 w-4 text-primary" />,
     title: "Lean Kanban Workflow",
-    description: "Quản lý công việc theo mô hình Kanban với WIP limits, giúp team tập trung và tránh overload.",
+    description: "Manage tasks using Kanban model with WIP limits, helping teams focus and avoid overload.",
     area: "md:[grid-area:1/1/2/7] xl:[grid-area:1/1/2/5]",
   },
   {
     icon: <MessageSquare className="h-4 w-4 text-primary" />,
-    title: "Chat tự nhiên bằng Tiếng Việt",
-    description: "Giao tiếp với AI agents như đồng nghiệp thật, không cần học cú pháp phức tạp.",
+    title: "Natural Language Chat",
+    description: "Communicate with AI agents like real colleagues, no complex syntax to learn.",
     area: "md:[grid-area:1/7/2/13] xl:[grid-area:2/1/3/5]",
   },
   {
     icon: <GitBranch className="h-4 w-4 text-primary" />,
     title: "Smart Task Routing",
-    description: "Team Leader tự động phân tích yêu cầu và chuyển đến agent phù hợp nhất, đảm bảo hiệu quả tối ưu.",
+    description: "Team Leader automatically analyzes requests and routes to the most suitable agent for optimal efficiency.",
     area: "md:[grid-area:2/1/3/7] xl:[grid-area:1/5/3/8]",
   },
   {
     icon: <BarChart3 className="h-4 w-4 text-primary" />,
     title: "Flow Metrics & Analytics",
-    description: "Theo dõi cycle time, throughput và bottlenecks để liên tục cải thiện quy trình.",
+    description: "Track cycle time, throughput and bottlenecks to continuously improve processes.",
     area: "md:[grid-area:2/7/3/13] xl:[grid-area:1/8/2/13]",
   },
   {
     icon: <Zap className="h-4 w-4 text-primary" />,
-    title: "Tăng tốc 10x Development",
-    description: "Từ idea đến PRD, User Stories, Code và Test - tất cả được AI hỗ trợ song song.",
+    title: "10x Development Speed",
+    description: "From idea to PRD, User Stories, Code and Test - all supported by AI in parallel.",
     area: "md:[grid-area:3/1/4/13] xl:[grid-area:2/8/3/13]",
   },
 ]
@@ -94,7 +94,7 @@ const agents = [
     icon: Users,
     title: "Team Leader",
     subtitle: "Routing Coordinator",
-    description: "Điều phối công việc và tư vấn Agile/Kanban cho team",
+    description: "Coordinate work and provide Agile/Kanban consulting for the team",
     image: "/assets/images/agent/1.webp",
     gradient: "from-amber-500 to-orange-600",
     bgGradient: "from-amber-500/10 to-orange-500/5",
@@ -104,7 +104,7 @@ const agents = [
     icon: Code,
     title: "Developer",
     subtitle: "Software Engineer",
-    description: "Implement features, code review và technical solutions",
+    description: "Implement features, code review and technical solutions",
     image: "/assets/images/agent/2.png",
     gradient: "from-violet-500 to-purple-600",
     bgGradient: "from-violet-500/10 to-purple-500/5",
@@ -114,7 +114,7 @@ const agents = [
     icon: FileText,
     title: "Business Analyst",
     subtitle: "Requirements Specialist",
-    description: "Phân tích requirements, tạo PRD và viết user stories",
+    description: "Analyze requirements, create PRD and write user stories",
     image: "/assets/images/agent/3.png",
     gradient: "from-cyan-500 to-blue-600",
     bgGradient: "from-cyan-500/10 to-blue-500/5",
@@ -124,7 +124,7 @@ const agents = [
     icon: Shield,
     title: "Tester",
     subtitle: "QA Engineer",
-    description: "Tạo test plans, thực hiện QA và đảm bảo chất lượng",
+    description: "Create test plans, perform QA and ensure quality",
     image: "/assets/images/agent/4.webp",
     gradient: "from-rose-500 to-red-600",
     bgGradient: "from-rose-500/10 to-red-500/5",
@@ -239,7 +239,7 @@ function AgentFlipCard({ agent }: { agent: typeof agents[0] }) {
               "transition-all duration-300 cursor-pointer group/cta"
             )}>
               <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200 group-hover/cta:text-zinc-900 dark:group-hover/cta:text-white transition-colors">
-                Chat với {agent.title}
+                Chat with {agent.title}
               </span>
               <ArrowRight className={`w-4 h-4 text-zinc-400 group-hover/cta:translate-x-1 transition-all bg-gradient-to-r ${agent.gradient} bg-clip-text`} />
             </div>
@@ -264,11 +264,11 @@ function RouteComponent() {
                 href: "#agents",
               },
             }}
-            title="VibeSDLC - Vibe coding cùng AI Agents"
-            description="Hệ thống multi-agent thông minh với Lean Kanban workflow. Team Leader, Developer, Business Analyst và Tester - sẵn sàng hỗ trợ bạn trong toàn bộ vòng đời phát triển phần mềm."
+            title="VibeSDLC - Vibe coding with AI Agents"
+            description="Intelligent multi-agent system with Lean Kanban workflow. Team Leader, Developer, Business Analyst and Tester - ready to support you throughout the entire software development lifecycle."
             actions={[
               {
-                text: "Bắt đầu ngay",
+                text: "Get started",
                 href: "/login",
                 variant: "glow",
               },
@@ -289,11 +289,11 @@ function RouteComponent() {
                   AI-Powered Team
                 </div>
                 <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
-                  Gặp gỡ đội ngũ AI Agents
+                  Meet the AI Agents Team
                 </h2>
                 <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                  4 AI agents chuyên biệt, phối hợp nhịp nhàng theo mô hình Lean Kanban
-                  để đưa dự án của bạn từ ý tưởng đến sản phẩm hoàn chỉnh.
+                  4 specialized AI agents, working seamlessly with Lean Kanban model
+                  to take your project from idea to finished product.
                 </p>
               </div>
 
@@ -310,7 +310,7 @@ function RouteComponent() {
                   </div>
                   <div>
                     <p className="font-semibold text-foreground">Smart Routing</p>
-                    <p className="text-sm">Tự động phân công</p>
+                    <p className="text-sm">Auto assignment</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-muted-foreground">
@@ -319,7 +319,7 @@ function RouteComponent() {
                   </div>
                   <div>
                     <p className="font-semibold text-foreground">WIP Limits</p>
-                    <p className="text-sm">Kiểm soát luồng công việc</p>
+                    <p className="text-sm">Workflow control</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-muted-foreground">
@@ -328,7 +328,7 @@ function RouteComponent() {
                   </div>
                   <div>
                     <p className="font-semibold text-foreground">Conversational</p>
-                    <p className="text-sm">Giao tiếp tiếng Việt</p>
+                    <p className="text-sm">Natural language</p>
                   </div>
                 </div>
               </div>
@@ -341,14 +341,14 @@ function RouteComponent() {
               <div className="text-center mb-10">
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
                   <CheckCircle2 className="w-4 h-4" />
-                  Tính năng nổi bật
+                  Key Features
                 </div>
                 <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
-                  Tại sao chọn VibeSDLC?
+                  Why choose VibeSDLC?
                 </h2>
                 <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                  Kết hợp sức mạnh AI với quy trình Agile/Kanban để tối ưu hóa
-                  toàn bộ vòng đời phát triển phần mềm.
+                  Combining AI power with Agile/Kanban processes to optimize
+                  the entire software development lifecycle.
                 </p>
               </div>
 
@@ -372,13 +372,13 @@ function RouteComponent() {
               <div className="text-center mb-10 px-4">
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
                   <Quote className="w-4 h-4" />
-                  Đánh giá từ cộng đồng
+                  Community Reviews
                 </div>
                 <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
-                  Developers nói gì về VibeSDLC?
+                  What developers say about VibeSDLC?
                 </h2>
                 <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                  Phản hồi từ các beta testers và early adopters trong cộng đồng tech Việt Nam.
+                  Feedback from beta testers and early adopters in the tech community.
                 </p>
               </div>
               <StaggerTestimonials />

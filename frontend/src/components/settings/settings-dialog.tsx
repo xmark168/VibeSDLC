@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { User, CreditCard, LogOut, Pencil, Info, Sun, Moon, Monitor, AlertTriangle, RefreshCw, ShieldCheck, Camera, Check, X, Loader2 } from "lucide-react"
+import { User, CreditCard, LogOut, Pencil, Info, Sun, Moon, Monitor, AlertTriangle, ShieldCheck, Camera, Check, X, Loader2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -45,7 +45,6 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
     }
   }, [defaultTab, open])
   const [isCanceling, setIsCanceling] = useState(false)
-  const [isTogglingAutoRenew, setIsTogglingAutoRenew] = useState(false)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false)
   const [isEditingName, setIsEditingName] = useState(false)
@@ -108,7 +107,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
         },
       })
     } catch (error: any) {
-      toast.error(error?.body?.detail || 'Không thể hủy subscription', {
+      toast.error(error?.body?.detail || 'Failed to cancel subscription', {
         style: {
           background: '#1e293b',
           color: '#fff',
@@ -117,35 +116,6 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
       })
     } finally {
       setIsCanceling(false)
-    }
-  }
-
-  const handleToggleAutoRenew = async (enabled: boolean) => {
-    setIsTogglingAutoRenew(true)
-    try {
-      const result = await subscriptionApi.updateAutoRenew(enabled)
-
-      // Invalidate subscription query to refetch
-      queryClient.invalidateQueries({ queryKey: ['subscription', 'current'] })
-
-      toast.success(result.message, {
-        duration: 3000,
-        style: {
-          background: '#1e293b',
-          color: '#fff',
-          border: '1px solid #334155',
-        },
-      })
-    } catch (error: any) {
-      toast.error(error?.body?.detail || 'Không thể cập nhật auto-renew', {
-        style: {
-          background: '#1e293b',
-          color: '#fff',
-          border: '1px solid #334155',
-        },
-      })
-    } finally {
-      setIsTogglingAutoRenew(false)
     }
   }
 
@@ -170,8 +140,6 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
     ? format(new Date(subscriptionData.credit_wallet.period_end), 'MMM dd')
     : null
 
-  // Get auto-renew status (default to false for FREE plan)
-  const autoRenew = subscriptionData?.subscription?.auto_renew || false
   const isPaidSubscription = subscriptionData?.subscription && currentPlanName !== "Free"
 
   return (
@@ -403,32 +371,6 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                     )}
                   </div>
 
-                  {/* Auto-renew Toggle - Only show for paid subscriptions */}
-                  {isPaidSubscription && (
-                    <div className="px-8">
-                      <div className="bg-secondary/20 border border-border/50 rounded-lg p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <RefreshCw className="h-5 w-5 text-primary" />
-                            <div>
-                              <p className="text-sm font-medium text-foreground">Auto-renew</p>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {autoRenew
-                                  ? "Your subscription will automatically renew"
-                                  : "Your subscription will not renew automatically"}
-                              </p>
-                            </div>
-                          </div>
-                          <Switch
-                            checked={autoRenew}
-                            onCheckedChange={handleToggleAutoRenew}
-                            disabled={isTogglingAutoRenew}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Action Buttons */}
                   <div className="px-8 py-6">
                     {/* FREE plan: Only show Upgrade button */}
@@ -452,7 +394,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                           className="flex-1 h-12 text-base border-destructive/50 text-destructive hover:bg-destructive/10"
                         >
                           <AlertTriangle className="h-4 w-4 mr-2" />
-                          {isCanceling ? "Đang hủy..." : "Cancel Subscription"}
+                          {isCanceling ? "Canceling..." : "Cancel Subscription"}
                         </Button>
 
                         {/* Upgrade button on the right */}
@@ -553,7 +495,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Bạn có chắc muốn hủy subscription? Gói dịch vụ sẽ vẫn hoạt động đến hết thời hạn hiện tại.
+              Are you sure you want to cancel your subscription? The plan will remain active until the end of the current period.
             </p>
             <div className="flex gap-3 justify-end">
               <Button
@@ -561,14 +503,14 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                 onClick={() => setShowCancelDialog(false)}
                 disabled={isCanceling}
               >
-                Hủy bỏ
+                Cancel
               </Button>
               <Button
                 variant="destructive"
                 onClick={handleCancelSubscription}
                 disabled={isCanceling}
               >
-                {isCanceling ? "Đang hủy..." : "Xác nhận"}
+                {isCanceling ? "Canceling..." : "Confirm"}
               </Button>
             </div>
           </div>

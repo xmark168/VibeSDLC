@@ -2,6 +2,7 @@ export interface PersonaTemplate {
   id: string
   name: string
   role_type: string
+  avatar?: string | null
   personality_traits: string[]
   communication_style: string
   persona_metadata: Record<string, any>
@@ -14,6 +15,7 @@ export interface PersonaTemplate {
 export interface PersonaCreate {
   name: string
   role_type: string
+  avatar?: string | null
   personality_traits: string[]
   communication_style: string
   persona_metadata?: Record<string, any>
@@ -23,6 +25,7 @@ export interface PersonaCreate {
 export interface PersonaUpdate {
   name?: string
   role_type?: string
+  avatar?: string | null
   personality_traits?: string[]
   communication_style?: string
   persona_metadata?: Record<string, any>

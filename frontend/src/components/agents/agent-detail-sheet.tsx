@@ -32,7 +32,7 @@ import {
   Calendar,
   Heart,
 } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 interface AgentDetailSheetProps {
   agent: AgentHealth | null

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { usersApi, type UserAdminCreate, type UserAdminUpdate } from "@/apis/users"
-import { toast } from "sonner"
+import { toast } from "@/lib/toast"
 
 // Query Keys
 export const userQueryKeys = {

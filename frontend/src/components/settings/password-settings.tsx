@@ -25,9 +25,9 @@ export function PasswordSettings() {
   const isSubmitting = changePasswordMutation.isPending || setPasswordMutation.isPending
 
   const passwordRequirements = [
-    { label: "Ít nhất 8 ký tự", met: newPassword.length >= 8 },
-    { label: "Chứa chữ cái", met: /[a-zA-Z]/.test(newPassword) },
-    { label: "Chứa số", met: /[0-9]/.test(newPassword) },
+    { label: "At least 8 characters", met: newPassword.length >= 8 },
+    { label: "Contains letters", met: /[a-zA-Z]/.test(newPassword) },
+    { label: "Contains numbers", met: /[0-9]/.test(newPassword) },
   ]
 
   const allRequirementsMet = passwordRequirements.every((r) => r.met)
@@ -45,19 +45,19 @@ export function PasswordSettings() {
 
   const handleSubmit = async () => {
     if (!allRequirementsMet) {
-      toast.error("Mật khẩu chưa đáp ứng yêu cầu")
+      toast.error("Password does not meet requirements")
       return
     }
 
     if (!passwordsMatch) {
-      toast.error("Mật khẩu xác nhận không khớp")
+      toast.error("Passwords do not match")
       return
     }
 
     try {
       if (hasPassword) {
         if (!currentPassword) {
-          toast.error("Vui lòng nhập mật khẩu hiện tại")
+          toast.error("Please enter current password")
           return
         }
         await changePasswordMutation.mutateAsync({
@@ -65,17 +65,17 @@ export function PasswordSettings() {
           new_password: newPassword,
           confirm_password: confirmPassword,
         })
-        toast.success("Đổi mật khẩu thành công")
+        toast.success("Password changed successfully")
       } else {
         await setPasswordMutation.mutateAsync({
           new_password: newPassword,
           confirm_password: confirmPassword,
         })
-        toast.success("Tạo mật khẩu thành công")
+        toast.success("Password created successfully")
       }
       resetForm()
     } catch (error: any) {
-      toast.error(error?.body?.detail || error?.message || "Có lỗi xảy ra")
+      toast.error(error?.body?.detail || error?.message || "An error occurred")
     }
   }
 
@@ -85,7 +85,7 @@ export function PasswordSettings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Key className="h-5 w-5" />
-            Mật khẩu
+            Password
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center py-8">
@@ -104,8 +104,8 @@ export function PasswordSettings() {
         </CardTitle>
         <CardDescription>
           {hasPassword
-            ? "Thay đổi mật khẩu đăng nhập của bạn"
-            : "Tạo mật khẩu để có thể đăng nhập bằng email"}
+            ? "Change your login password"
+            : "Create a password to login with email"}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -117,33 +117,33 @@ export function PasswordSettings() {
               </div>
               <div>
                 <p className="font-medium">
-                  {hasPassword ? "Mật khẩu đã được thiết lập" : "Chưa có mật khẩu"}
+                  {hasPassword ? "Password is set" : "No password set"}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {hasPassword
-                    ? "Bạn có thể đăng nhập bằng email và mật khẩu"
+                    ? "You can login with email and password"
                     : passwordStatus?.login_provider
-                    ? `Bạn đang đăng nhập qua ${passwordStatus.login_provider}`
-                    : "Tạo mật khẩu để có thêm cách đăng nhập"}
+                    ? `You are logged in via ${passwordStatus.login_provider}`
+                    : "Create a password for another login method"}
                 </p>
               </div>
             </div>
             <Button variant="outline" onClick={() => setIsEditing(true)}>
-              {hasPassword ? "Đổi mật khẩu" : "Tạo mật khẩu"}
+              {hasPassword ? "Change password" : "Create password"}
             </Button>
           </div>
         ) : (
           <div className="space-y-4">
             {hasPassword && (
               <div className="space-y-2">
-                <Label htmlFor="current-password">Mật khẩu hiện tại</Label>
+                <Label htmlFor="current-password">Current password</Label>
                 <div className="relative">
                   <Input
                     id="current-password"
                     type={showCurrentPassword ? "text" : "password"}
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
-                    placeholder="Nhập mật khẩu hiện tại"
+                    placeholder="Enter current password"
                     className="pr-10"
                     disabled={isSubmitting}
                   />
@@ -159,14 +159,14 @@ export function PasswordSettings() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="new-password">Mật khẩu mới</Label>
+              <Label htmlFor="new-password">New password</Label>
               <div className="relative">
                 <Input
                   id="new-password"
                   type={showNewPassword ? "text" : "password"}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Nhập mật khẩu mới"
+                  placeholder="Enter new password"
                   className="pr-10"
                   disabled={isSubmitting}
                 />
@@ -197,14 +197,14 @@ export function PasswordSettings() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="confirm-password">Xác nhận mật khẩu</Label>
+              <Label htmlFor="confirm-password">Confirm password</Label>
               <div className="relative">
                 <Input
                   id="confirm-password"
                   type={showConfirmPassword ? "text" : "password"}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Nhập lại mật khẩu mới"
+                  placeholder="Re-enter new password"
                   className={`pr-10 ${
                     confirmPassword && !passwordsMatch ? "border-red-500" : ""
                   } ${passwordsMatch ? "border-green-500" : ""}`}
@@ -221,20 +221,20 @@ export function PasswordSettings() {
               {confirmPassword && !passwordsMatch && (
                 <p className="text-sm text-red-500 flex items-center gap-1">
                   <X className="h-3.5 w-3.5" />
-                  Mật khẩu không khớp
+                  Passwords do not match
                 </p>
               )}
               {passwordsMatch && (
                 <p className="text-sm text-green-500 flex items-center gap-1">
                   <Check className="h-3.5 w-3.5" />
-                  Mật khẩu khớp
+                  Passwords match
                 </p>
               )}
             </div>
 
             <div className="flex gap-3 pt-2">
               <Button variant="outline" onClick={resetForm} disabled={isSubmitting}>
-                Hủy
+                Cancel
               </Button>
               <Button
                 onClick={handleSubmit}
@@ -243,12 +243,12 @@ export function PasswordSettings() {
                 {isSubmitting ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Đang xử lý...
+                    Processing...
                   </>
                 ) : hasPassword ? (
-                  "Đổi mật khẩu"
+                  "Change password"
                 ) : (
-                  "Tạo mật khẩu"
+                  "Create password"
                 )}
               </Button>
             </div>

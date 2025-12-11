@@ -1,16 +1,16 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Loader2, Receipt, Calendar, CreditCard, RefreshCw } from "lucide-react"
+import { Loader2, Receipt, Calendar, CreditCard, Coins } from "lucide-react"
 import type { Plan } from "@/types/plan"
-import { useState } from "react"
 
 interface InvoiceConfirmDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   plan: Plan | null
   billingCycle: 'monthly' | 'yearly'
-  onConfirm: (autoRenew: boolean) => void
+  onConfirm: () => void
   isProcessing: boolean
+  isPurchasingCredit?: boolean
 }
 
 export function InvoiceConfirmDialog({
@@ -19,74 +19,92 @@ export function InvoiceConfirmDialog({
   plan,
   billingCycle,
   onConfirm,
-  isProcessing
+  isProcessing,
+  isPurchasingCredit = false
 }: InvoiceConfirmDialogProps) {
-  const [autoRenew, setAutoRenew] = useState(true)
-
   if (!plan) return null
 
   const amount = billingCycle === 'monthly' ? plan.monthly_price : plan.yearly_price
   const period = billingCycle === 'monthly' ? '1 tháng' : '1 năm'
-  const discount = billingCycle === 'yearly' && plan.yearly_discount_percentage
+  const discount = !isPurchasingCredit && billingCycle === 'yearly' && plan.yearly_discount_percentage
     ? plan.yearly_discount_percentage
     : 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-slate-900 border-slate-800 text-white">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Receipt className="h-5 w-5 text-primary" />
-            Xác nhận hóa đơn
+            {isPurchasingCredit ? (
+              <Coins className="h-5 w-5 text-primary" />
+            ) : (
+              <Receipt className="h-5 w-5 text-primary" />
+            )}
+            {isPurchasingCredit ? 'Xác nhận mua credits' : 'Xác nhận hóa đơn'}
           </DialogTitle>
-          <DialogDescription className="text-slate-400">
+          <DialogDescription>
             Vui lòng kiểm tra thông tin trước khi thanh toán
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Plan Info */}
-          <div className="bg-secondary/30 rounded-lg p-4 space-y-3">
+          {/* Plan/Credit Info */}
+          <div className="bg-muted rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-400">Gói dịch vụ</span>
-              <span className="font-semibold text-white">{plan.name}</span>
+              <span className="text-sm text-muted-foreground">
+                {isPurchasingCredit ? 'Mua credits' : 'Gói dịch vụ'}
+              </span>
+              <span className="font-semibold">{plan.name}</span>
             </div>
 
             {plan.description && (
-              <p className="text-xs text-slate-500">{plan.description}</p>
+              <p className="text-xs text-muted-foreground">{plan.description}</p>
             )}
           </div>
 
           {/* Billing Details */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-400 flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                Chu kỳ thanh toán
-              </span>
-              <span className="font-medium text-white capitalize">
-                {billingCycle === 'monthly' ? 'Hàng tháng' : 'Hàng năm'}
-              </span>
-            </div>
+            {!isPurchasingCredit && (
+              <>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    Chu kỳ thanh toán
+                  </span>
+                  <span className="font-medium capitalize">
+                    {billingCycle === 'monthly' ? 'Hàng tháng' : 'Hàng năm'}
+                  </span>
+                </div>
 
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-400">Thời hạn sử dụng</span>
-              <span className="font-medium text-white">{period}</span>
-            </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Thời hạn sử dụng</span>
+                  <span className="font-medium">{period}</span>
+                </div>
+              </>
+            )}
 
-            {plan.monthly_credits !== null && (
+            {isPurchasingCredit && plan.monthly_credits !== null && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">Credits / tháng</span>
-                <span className="font-medium text-white">
+                <span className="text-muted-foreground">Số lượng credits</span>
+                <span className="font-medium">
+                  {plan.monthly_credits.toLocaleString()} credits
+                </span>
+              </div>
+            )}
+
+            {!isPurchasingCredit && plan.monthly_credits !== null && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Credits / tháng</span>
+                <span className="font-medium">
                   {plan.monthly_credits === -1 ? 'Không giới hạn' : plan.monthly_credits.toLocaleString()}
                 </span>
               </div>
             )}
 
-            {plan.available_project !== null && (
+            {!isPurchasingCredit && plan.available_project !== null && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">Số dự án</span>
-                <span className="font-medium text-white">
+                <span className="text-muted-foreground">Số dự án</span>
+                <span className="font-medium">
                   {plan.available_project === -1 ? 'Không giới hạn' : plan.available_project}
                 </span>
               </div>
@@ -97,8 +115,8 @@ export function InvoiceConfirmDialog({
           <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 space-y-3">
             {discount > 0 && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-400">Giá gốc</span>
-                <span className="text-slate-400 line-through">
+                <span className="text-muted-foreground">Giá gốc</span>
+                <span className="text-muted-foreground line-through">
                   {plan.monthly_price
                     ? new Intl.NumberFormat('vi-VN', {
                         style: 'currency',
@@ -111,8 +129,8 @@ export function InvoiceConfirmDialog({
 
             {discount > 0 && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-green-400">Giảm giá ({discount}%)</span>
-                <span className="text-green-400 font-medium">
+                <span className="text-green-600">Giảm giá ({discount}%)</span>
+                <span className="text-green-600 font-medium">
                   -{new Intl.NumberFormat('vi-VN', {
                     style: 'currency',
                     currency: plan.currency
@@ -122,7 +140,7 @@ export function InvoiceConfirmDialog({
             )}
 
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-white">Tổng thanh toán</span>
+              <span className="font-semibold">Tổng thanh toán</span>
               <span className="text-2xl font-bold text-primary">
                 {new Intl.NumberFormat('vi-VN', {
                   style: 'currency',
@@ -132,30 +150,12 @@ export function InvoiceConfirmDialog({
             </div>
           </div>
 
-          {/* Auto-renew Option */}
-          <div className="bg-secondary/20 border border-border/50 rounded-lg p-4">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoRenew}
-                onChange={(e) => setAutoRenew(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-              />
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <RefreshCw className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium text-white">Tự động gia hạn</span>
-                </div>
-                <p className="text-xs text-slate-400 mt-1">
-                  Gói dịch vụ sẽ được tự động gia hạn {billingCycle === 'monthly' ? 'hàng tháng' : 'hàng năm'} cho đến khi bạn hủy
-                </p>
-              </div>
-            </label>
-          </div>
-
           {/* Notice */}
-          <p className="text-xs text-center text-slate-500">
-            Sau khi thanh toán, gói dịch vụ sẽ được kích hoạt tự động
+          <p className="text-xs text-center text-muted-foreground">
+            {isPurchasingCredit 
+              ? 'Credits sẽ được thêm vào tài khoản ngay sau khi thanh toán thành công'
+              : 'Sau khi thanh toán, gói dịch vụ sẽ được kích hoạt tự động'
+            }
           </p>
         </div>
 
@@ -164,14 +164,14 @@ export function InvoiceConfirmDialog({
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={isProcessing}
-            className="flex-1 bg-slate-800 border-slate-700 text-white hover:bg-slate-700"
+            className="flex-1"
           >
             Hủy
           </Button>
           <Button
-            onClick={() => onConfirm(autoRenew)}
+            onClick={() => onConfirm()}
             disabled={isProcessing}
-            className="flex-1 bg-primary hover:bg-primary/90"
+            className="flex-1"
           >
             {isProcessing ? (
               <>
