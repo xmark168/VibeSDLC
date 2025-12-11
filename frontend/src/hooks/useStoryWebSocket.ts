@@ -20,6 +20,7 @@ interface UseStoryWebSocketReturn {
   messages: StoryMessage[]
   isConnected: boolean
   isLoading: boolean
+  isAgentThinking: boolean
   clearMessages: () => void
 }
 
@@ -40,6 +41,7 @@ export function useStoryWebSocket(
 ): UseStoryWebSocketReturn {
   const [messages, setMessages] = useState<StoryMessage[]>(initialMessages)
   const [isLoading, setIsLoading] = useState(true)
+  const [isAgentThinking, setIsAgentThinking] = useState(false)
   const storyIdRef = useRef(storyId)
   const prevStoryIdRef = useRef<string | null>(null)
 
@@ -105,6 +107,11 @@ export function useStoryWebSocket(
     
     const msg = lastJsonMessage as any
     
+    // Handle agent state changes for thinking indicator
+    if (msg.type === 'story_state_changed' && msg.story_id === storyIdRef.current) {
+      setIsAgentThinking(msg.agent_state === 'processing')
+    }
+    
     // Only handle story_message events for this story
     // Skip 'log' message_type - those go to Logs tab via story_log event
     if (msg.type === 'story_message' && msg.story_id === storyIdRef.current) {
@@ -142,6 +149,7 @@ export function useStoryWebSocket(
     messages,
     isConnected,
     isLoading,
+    isAgentThinking,
     clearMessages,
   }
 }

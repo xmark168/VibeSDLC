@@ -28,6 +28,7 @@ interface FileExplorerProps {
   storyId?: string
   onFileSelect: (path: string, worktree?: string) => void
   onViewDiff?: (path: string) => void
+  onWorktreeChange?: (worktree: string | null) => void
   selectedFile: string | null
   initialWorktree?: string
 }
@@ -37,6 +38,7 @@ export function FileExplorer({
   storyId,
   onFileSelect,
   onViewDiff,
+  onWorktreeChange,
   selectedFile,
   initialWorktree,
 }: FileExplorerProps) {
@@ -55,6 +57,7 @@ export function FileExplorer({
 
   // Set worktree when initialWorktree prop changes
   useEffect(() => {
+    console.log("[FileExplorer] initialWorktree changed:", initialWorktree)
     if (initialWorktree) {
       setSelectedWorktree(initialWorktree)
     }
@@ -401,7 +404,10 @@ export function FileExplorer({
         <div className="px-2 py-2 border-b border-border">
           <Select 
             value={selectedWorktree || branches.worktrees[0]?.path || ""} 
-            onValueChange={(path) => setSelectedWorktree(path)}
+            onValueChange={(path) => {
+              setSelectedWorktree(path)
+              onWorktreeChange?.(path)
+            }}
           >
             <SelectTrigger className="h-8 text-xs">
               <div className="flex items-center gap-2">

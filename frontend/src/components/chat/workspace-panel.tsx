@@ -397,7 +397,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     switch (activeView) {
       case "app-preview":
         return (
-          <AppViewer />
+          <AppViewer projectId={projectId} />
         )
       case "kanban":
         // KanbanBoard is rendered separately to keep it always mounted
@@ -408,7 +408,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
             <div className="w-64 flex-shrink-0">
               <FileExplorer
                 projectId={projectId}
-                storyId={activeStoryId || undefined}
                 onFileSelect={(path, worktree) => {
                   setSelectedFile(path)
                   setSelectedWorktree(worktree)
@@ -416,6 +415,9 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
                 }}
                 onViewDiff={(path) => {
                   setDiffFilePath(path)
+                }}
+                onWorktreeChange={(worktree) => {
+                  setSelectedWorktree(worktree || undefined)
                 }}
                 selectedFile={selectedFile}
                 initialWorktree={selectedWorktree}
