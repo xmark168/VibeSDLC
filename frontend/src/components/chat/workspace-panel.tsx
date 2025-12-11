@@ -393,6 +393,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
                   setSelectedWorktree(worktree)
                 }}
                 selectedFile={selectedFile}
+                initialWorktree={selectedWorktree}
               />
             </div>
             <div className="flex-1">
@@ -520,7 +521,16 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           {/* Keep KanbanBoard always mounted for real-time updates */}
           <div className={activeView === "kanban" ? "h-full" : "hidden"}>
             <div className="flex-1 overflow-hidden h-full">
-              <KanbanBoard kanbanData={kanbanData} projectId={projectId} />
+              <KanbanBoard 
+                kanbanData={kanbanData} 
+                projectId={projectId}
+                onViewFiles={(worktreePath) => {
+                  setSelectedWorktree(worktreePath)
+                  // Find the file tab and switch to it
+                  const fileTab = tabs.find(t => t.view === "file")
+                  if (fileTab) setActiveTabId(fileTab.id)
+                }}
+              />
             </div>
           </div>
           {/* Other views render conditionally */}

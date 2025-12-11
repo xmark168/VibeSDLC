@@ -48,6 +48,7 @@ import { useQueryClient } from "@tanstack/react-query"
 interface KanbanBoardProps {
   kanbanData?: any
   projectId?: string
+  onViewFiles?: (worktreePath: string) => void
 }
 
 type ColumnId = "todo" | "inprogress" | "review" | "done" | "archived"
@@ -210,7 +211,7 @@ function DroppableColumn({
   )
 }
 
-export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
+export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardProps) {
   const [cards, setCards] = useState<KanbanCardData[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [clonedCards, setClonedCards] = useState<KanbanCardData[] | null>(null)
@@ -1074,6 +1075,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         //allStories={columns.flatMap(col => col.cards)}
         projectId={projectId}
         allStories={cards}
+        onViewFiles={onViewFiles}
       />
 
       <FlowMetricsDashboard projectId={projectId} open={showFlowMetrics} onOpenChange={setShowFlowMetrics} />

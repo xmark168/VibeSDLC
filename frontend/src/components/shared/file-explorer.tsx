@@ -26,12 +26,14 @@ interface FileExplorerProps {
   projectId?: string
   onFileSelect: (path: string, worktree?: string) => void
   selectedFile: string | null
+  initialWorktree?: string
 }
 
 export function FileExplorer({
   projectId,
   onFileSelect,
   selectedFile,
+  initialWorktree,
 }: FileExplorerProps) {
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
@@ -43,7 +45,14 @@ export function FileExplorer({
   
   // Branch/worktree state
   const [branches, setBranches] = useState<BranchesResponse | null>(null)
-  const [selectedWorktree, setSelectedWorktree] = useState<string | null>(null)
+  const [selectedWorktree, setSelectedWorktree] = useState<string | null>(initialWorktree || null)
+
+  // Set worktree when initialWorktree prop changes
+  useEffect(() => {
+    if (initialWorktree) {
+      setSelectedWorktree(initialWorktree)
+    }
+  }, [initialWorktree])
 
   // Fetch file tree when projectId or selectedWorktree changes
   useEffect(() => {

@@ -1,5 +1,5 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye, Trash2, FolderOpen } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
