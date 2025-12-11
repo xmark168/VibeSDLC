@@ -333,14 +333,14 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     if (!card?.id) return
     
     const handleStoryLog = (event: CustomEvent) => {
-      const { story_id, content, message_type, details } = event.detail
-      if (story_id === card.id && message_type === 'log') {
+      const { story_id, content, level, node, timestamp } = event.detail
+      if (story_id === card.id) {
         setStoryLogs(prev => [...prev, {
           id: `${Date.now()}-${Math.random()}`,
-          content,
-          level: details?.level || 'info',
-          timestamp: details?.timestamp || new Date().toISOString(),
-          node: details?.node || ''
+          content: content || '',
+          level: level || 'info',
+          timestamp: timestamp || new Date().toISOString(),
+          node: node || ''
         }])
       }
     }
@@ -652,7 +652,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   }, [open, card?.id, fetchMessages])
 
   // WebSocket for real-time messages
-  const { messages: chatMessages, isConnected, clearMessages } = useStoryWebSocket(
+  const { messages: chatMessages, isConnected, isAgentThinking, clearMessages } = useStoryWebSocket(
     open ? card?.id ?? null : null,
     projectId ?? null,
     token ?? undefined,
@@ -986,7 +986,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                     className="border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700 dark:hover:bg-purple-950"
                   >
                     {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    Regenerate
+                    Enhance
                   </Button>
                 </div>
               )}
@@ -1416,8 +1416,35 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   )
                 ))}
 
-                {/* Empty State */}
-                {!isLoadingMessages && chatMessages.length === 0 && (
+                {/* Thinking Indicator - show when agent is processing */}
+                {isAgentThinking && (
+                  <Message from="assistant">
+                    <MessageAvatar
+                      name="Developer"
+                      fallback="🤖"
+                      className="bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                    />
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-semibold text-foreground">Developer</span>
+                        <Badge variant="outline" className="text-[10px] h-4 px-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
+                          Agent
+                        </Badge>
+                      </div>
+                      <MessageContent className="bg-blue-500/10 border border-blue-500/20">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                          <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                          <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" />
+                          <span className="ml-2 text-muted-foreground text-sm">Đang xử lý...</span>
+                        </div>
+                      </MessageContent>
+                    </div>
+                  </Message>
+                )}
+
+                {/* Empty State - only show when not loading, no messages, and not thinking */}
+                {!isLoadingMessages && chatMessages.length === 0 && !isAgentThinking && (
                   <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-12">
                     <MessageSquare className="w-12 h-12 mb-3 opacity-30" />
                     <p className="text-sm font-medium">No messages yet</p>

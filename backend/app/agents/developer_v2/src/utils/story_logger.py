@@ -138,17 +138,25 @@ class StoryLogger:
         try:
             if isinstance(story_id, str):
                 story_id = UUID(story_id)
-            return cls(story_id=story_id, agent=agent)
+            
+            # Also store project_id from state for fallback
+            instance = cls(story_id=story_id, agent=agent)
+            instance._state_project_id = state.get("project_id")
+            return instance
         except Exception:
             return cls.noop()
     
     def with_node(self, node_name: str) -> "StoryLogger":
         """Create a new logger with node context."""
-        return StoryLogger(
+        new_logger = StoryLogger(
             story_id=self.story_id,
             agent=self.agent,
             node_name=node_name
         )
+        # Preserve state project_id
+        if hasattr(self, '_state_project_id'):
+            new_logger._state_project_id = self._state_project_id
+        return new_logger
     
     async def _send_log(
         self,
@@ -212,9 +220,20 @@ class StoryLogger:
     # =========================================================================
     
     def _get_project_id(self) -> Optional[UUID]:
-        """Get project_id from agent."""
+        """Get project_id from agent or state."""
+        # Try agent first
         if self.agent and hasattr(self.agent, 'project_id'):
             return self.agent.project_id
+        # Fallback to state project_id
+        if hasattr(self, '_state_project_id') and self._state_project_id:
+            pid = self._state_project_id
+            if isinstance(pid, str):
+                try:
+                    return UUID(pid)
+                except:
+                    pass
+            elif isinstance(pid, UUID):
+                return pid
         return None
     
     async def task(self, message: str, progress: float = None) -> None:

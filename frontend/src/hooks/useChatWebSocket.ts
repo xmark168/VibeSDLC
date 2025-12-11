@@ -230,6 +230,10 @@ export function useChatWebSocket(
         handleBranchChanged(msg)
         break
       
+      case 'project_dev_server':
+        handleProjectDevServer(msg)
+        break
+      
       default:
         console.warn('[WebSocket] ⚠️ Unknown message type:', msg.type)
     }
@@ -716,6 +720,19 @@ export function useChatWebSocket(
       detail: { 
         project_id: msg.project_id, 
         branch: msg.branch
+      }
+    }))
+  }
+  
+  const handleProjectDevServer = (msg: any) => {
+    console.log('[WS] 🖥️ Project dev server:', msg.project_id, msg.running_port)
+    
+    // Dispatch custom event for AppViewer to listen
+    window.dispatchEvent(new CustomEvent('project_dev_server', {
+      detail: { 
+        project_id: msg.project_id, 
+        running_port: msg.running_port,
+        running_pid: msg.running_pid,
       }
     }))
   }
