@@ -69,6 +69,8 @@ export function useChatWebSocket(
   } | null>(null)
   // Track individual agent statuses for avatar display
   const [agentStatuses, setAgentStatuses] = useState<Map<string, { status: string; lastUpdate: string }>>(new Map())
+  // Trigger for refetching messages (increments when new_message received)
+  const [refetchTrigger, setRefetchTrigger] = useState(0)
   
   // Refs
   const projectIdRef = useRef(projectId)
@@ -131,6 +133,12 @@ export function useChatWebSocket(
     switch (msg.type) {
       case 'connected':
         console.log('[WS] ✅ Server confirmed connection')
+        break
+      
+      case 'messages_updated':
+        // Trigger refetch messages (for file uploads via REST API)
+        console.log('[WS] 🔄 Messages updated, triggering refetch')
+        handleMessagesUpdated()
         break
       
       case 'user_message':
@@ -206,6 +214,14 @@ export function useChatWebSocket(
         handleStoryMessage(msg)
         break
       
+      case 'story_state_changed':
+        handleStoryStateChanged(msg)
+        break
+      
+      case 'branch_changed':
+        handleBranchChanged(msg)
+        break
+      
       default:
         console.warn('[WebSocket] ⚠️ Unknown message type:', msg.type)
     }
@@ -214,6 +230,11 @@ export function useChatWebSocket(
   // ========================================================================
   // Message Handlers
   // ========================================================================
+  
+  const handleMessagesUpdated = () => {
+    // Trigger refetch - component using this hook should react to refetchTrigger
+    setRefetchTrigger(prev => prev + 1)
+  }
   
   const handleUserMessage = (msg: any) => {
     console.log('[WS] 📤 User message confirmed:', msg.message_id)
@@ -389,7 +410,7 @@ export function useChatWebSocket(
       case 'notification':
         // Show as toast
         const stepInfo = details.step ? ` (${details.step}/${details.total})` : ''
-        toast.info(`${msg.agent_name}${stepInfo}: ${msg.content}`)
+        toast.success(`${msg.agent_name}${stepInfo}: ${msg.content}`)
         break
       
       case 'none':
@@ -612,12 +633,27 @@ export function useChatWebSocket(
   }
   
   const handleStoryMessage = (msg: any) => {
-    console.log('[WS] 📋 Story message:', msg.story_id, msg.content)
+    console.log('[WS] 📋 Story message:', msg.story_id, msg.content, msg.message_type)
     
-    // Show toast notification
-    toast(msg.content, {
-      description: msg.message_type === 'system' ? 'System' : undefined,
-    })
+    // Dispatch log event for log messages (to show in Logs tab)
+    if (msg.message_type === 'log') {
+      window.dispatchEvent(new CustomEvent('story-log', {
+        detail: { 
+          story_id: msg.story_id, 
+          content: msg.content,
+          message_type: msg.message_type,
+          details: msg.details
+        }
+      }))
+      return // Don't show toast for log messages
+    }
+    
+    // Show toast notification for other messages
+    if (msg.message_type === 'system') {
+      toast.info(msg.content)
+    } else {
+      toast.success(msg.content)
+    }
     
     // Dispatch custom event for story state updates
     if (msg.agent_state) {
@@ -625,6 +661,33 @@ export function useChatWebSocket(
         detail: { story_id: msg.story_id, agent_state: msg.agent_state }
       }))
     }
+  }
+  
+  const handleStoryStateChanged = (msg: any) => {
+    console.log('[WS] 🔄 Story state changed:', msg.story_id, msg)
+    
+    // Dispatch custom event for components to listen
+    window.dispatchEvent(new CustomEvent('story-state-changed', {
+      detail: { 
+        story_id: msg.story_id, 
+        agent_state: msg.agent_state,
+        old_state: msg.old_state,
+        running_port: msg.running_port,
+        running_pid: msg.running_pid,
+      }
+    }))
+  }
+  
+  const handleBranchChanged = (msg: any) => {
+    console.log('[WS] 🌿 Branch changed:', msg.project_id, msg.branch)
+    
+    // Dispatch custom event for FileExplorer to listen
+    window.dispatchEvent(new CustomEvent('branch-changed', {
+      detail: { 
+        project_id: msg.project_id, 
+        branch: msg.branch
+      }
+    }))
   }
   
   const handleQuestionAnswerReceived = (msg: any) => {
@@ -826,6 +889,7 @@ export function useChatWebSocket(
     backgroundTasks,  // NEW
     answeredBatchIds,  // Track batches that have been answered
     conversationOwner,
+    refetchTrigger,  // Trigger for refetching messages (file uploads)
     sendMessage,
     sendQuestionAnswer,
     sendBatchAnswers,

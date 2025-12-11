@@ -137,9 +137,9 @@ class DeveloperV2(BaseAgent):
                 story.agent_state = state
                 session.commit()
 
-            logger.info(f"[{self.name}] Story {story_id} state: {old_state} → {state}")
+            logger.info(f"[{self.name}] Story {story_id} agent_state: {old_state} → {state}")
             
-            # Broadcast state change to frontend (best effort, don't fail if broadcast fails)
+            # Broadcast state change to frontend
             if project_id:
                 try:
                     await connection_manager.broadcast_to_project({
@@ -148,6 +148,7 @@ class DeveloperV2(BaseAgent):
                         "agent_state": state.value if state else None,
                         "old_state": old_state.value if old_state else None,
                     }, project_id)
+                    logger.info(f"[{self.name}] Broadcasted agent_state change: {state.value}")
                 except Exception as broadcast_err:
                     logger.warning(f"[{self.name}] Failed to broadcast state change: {broadcast_err}")
             
@@ -155,7 +156,6 @@ class DeveloperV2(BaseAgent):
 
         except Exception as e:
             logger.error(f"[{self.name}] Failed to update story state: {e}", exc_info=True)
-            # Broadcast error to frontend
             if project_id:
                 try:
                     await connection_manager.broadcast_to_project({
@@ -599,8 +599,8 @@ class DeveloperV2(BaseAgent):
                     logger.error(f"[{self.name}] Failed to load checkpoint_thread_id: {e}")
                     raise
             else:
-                # Generate and persist thread_id for new story
-                thread_id = f"story_{story_id}"
+                # Generate and persist thread_id for new story (unique per agent)
+                thread_id = f"{self.agent_id}_{story_id}"
                 try:
                     with Session(engine) as session:
                         story = session.get(Story, UUID(story_id))
@@ -757,12 +757,20 @@ class DeveloperV2(BaseAgent):
             try:
                 story_uuid = UUID(story_id)
                 total_files = len(files_created) + len(files_modified)
-                await self.message_story(
-                    story_uuid,
-                    f"✅ Hoàn thành! Đã tạo/sửa {total_files} files. Branch: {final_state.get('branch_name', 'N/A')}",
-                    message_type="update",
-                    details={"files_created": files_created, "files_modified": files_modified}
-                )
+                if run_status == "PASS":
+                    await self.message_story(
+                        story_uuid,
+                        f"✅ Story hoàn thành! Đã tạo/sửa {total_files} files.",
+                        message_type="text",
+                        details={"files_created": files_created, "files_modified": files_modified, "branch_name": final_state.get('branch_name')}
+                    )
+                else:
+                    await self.message_story(
+                        story_uuid,
+                        f"❌ Story chưa hoàn thành. Build failed.",
+                        message_type="text",
+                        details={"files_created": files_created, "files_modified": files_modified, "error": final_state.get("run_stderr", "")[:200]}
+                    )
             except Exception:
                 pass
             

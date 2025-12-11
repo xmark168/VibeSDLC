@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.project import Project
     from app.models.user import User
     from app.models.agent import Agent
+    from app.models.story_log import StoryLog
 
 
 class Epic(BaseModel, table=True):
@@ -119,6 +120,9 @@ class Story(BaseModel, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
     activities: list["IssueActivity"] = Relationship(
+        back_populates="story", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    logs: list["StoryLog"] = Relationship(
         back_populates="story", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 

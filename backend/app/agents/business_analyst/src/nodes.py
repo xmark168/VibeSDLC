@@ -21,6 +21,7 @@ from .schemas import (
     FullStoriesOutput,
     VerifyStoryOutput,
     DocumentFeedbackOutput,
+    SingleStoryEditOutput,
 )
 from app.agents.core.prompt_utils import (
     load_prompts_yaml,
@@ -150,6 +151,40 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {}
 
 
+def _is_single_story_edit(user_msg_lower: str) -> bool:
+    """Detect if user wants to edit a SINGLE specific story.
+    
+    Returns True if message contains:
+    1. Story edit keywords (sửa story, edit story, etc.)
+    2. Specific story identifier (quoted title OR story ID pattern)
+    3. Specific field change (requirements, acceptance criteria, etc.)
+    """
+    # Must have edit keyword
+    edit_keywords = ["sửa story", "edit story", "chỉnh story", "update story", "thay đổi story"]
+    has_edit = any(kw in user_msg_lower for kw in edit_keywords)
+    if not has_edit:
+        return False
+    
+    # Must have specific story identifier
+    # Check for quoted story title (e.g., 'sửa story "As an administrator..."')
+    import re
+    has_quoted_title = bool(re.search(r'["\']as\s+a[n]?\s+', user_msg_lower))
+    has_story_id = bool(re.search(r'epic-\d+-us-\d+', user_msg_lower))
+    has_specific_story = has_quoted_title or has_story_id
+    
+    if not has_specific_story:
+        return False
+    
+    # Must have specific field change
+    field_keywords = [
+        "requirement", "acceptance", "criteria", "bỏ", "xóa", "thêm", "add", "remove",
+        "delete", "loại bỏ", "thay đổi", "change", "sửa đổi"
+    ]
+    has_field_change = any(kw in user_msg_lower for kw in field_keywords)
+    
+    return has_field_change
+
+
 def _sys_prompt(agent, task: str) -> str:
     """Build system prompt with agent personality.
     
@@ -265,6 +300,10 @@ async def analyze_intent(state: BAState, agent=None) -> dict:
     elif any(kw in user_msg_lower for kw in ["phê duyệt prd", "prd ok", "tạo story", "tạo stories", "extract story"]):
         fallback_intent = "extract_stories"
         fallback_reason = "Keyword-based: extract stories from PRD"
+    # Detect SINGLE story edit: mentions specific story + specific field change
+    elif _is_single_story_edit(user_msg_lower):
+        fallback_intent = "story_edit_single"
+        fallback_reason = "Keyword-based: single story edit (specific story + specific change)"
     elif any(kw in user_msg_lower for kw in ["sửa story", "update story", "chỉnh story", "thay đổi story"]):
         fallback_intent = "stories_update"
         fallback_reason = "Keyword-based: update stories"
@@ -477,12 +516,18 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
     """
     logger.info(f"[BA] Generating interview questions...")
     
+    # Get conversation context from Team Leader delegation
+    conversation_context = state.get("conversation_context", "")
+    if conversation_context:
+        logger.info(f"[BA] Using conversation context ({len(conversation_context)} chars) for question generation")
+    
     system_prompt = _sys_prompt(agent, "interview_requirements")
     user_prompt = _user_prompt(
         "interview_requirements",
         user_message=state["user_message"],
         collected_info=json.dumps(state.get("collected_info", {}), ensure_ascii=False),
-        has_prd="Yes" if state.get("existing_prd") else "No"
+        has_prd="Yes" if state.get("existing_prd") else "No",
+        conversation_context=conversation_context
     )
     
     messages = [
@@ -1267,6 +1312,266 @@ async def update_stories(state: BAState, agent=None) -> dict:
     }
 
 
+async def edit_single_story(state: BAState, agent=None) -> dict:
+    """Node: Edit a SINGLE specific story based on user request.
+    
+    This is a FAST targeted update - finds the story by title/ID and applies only the requested change.
+    Much faster than update_stories which regenerates everything.
+    """
+    logger.info(f"[BA] Editing single story (targeted mode)...")
+    
+    epics = state.get("epics", [])
+    stories = state.get("stories", [])
+    user_message = state.get("user_message", "")
+    
+    if not epics and not stories:
+        logger.warning("[BA] No existing stories to edit")
+        return {"error": "No existing stories to edit"}
+    
+    # Step 1: Find the target story from user message
+    # Search by title match or ID match
+    target_story = None
+    target_epic_idx = None
+    target_story_idx = None
+    user_msg_lower = user_message.lower()
+    
+    # Flatten stories if not already
+    if not stories:
+        stories = []
+        for epic in epics:
+            for story in epic.get("stories", []):
+                story["epic_id"] = epic.get("id")
+                story["epic_title"] = epic.get("title")
+                stories.append(story)
+    
+    # Search for story by title or ID - use BEST MATCH strategy
+    best_match_story = None
+    best_match_idx = None
+    best_match_score = 0
+    
+    for i, story in enumerate(stories):
+        story_title = story.get("title", "").lower()
+        story_id = story.get("id", "").lower()
+        
+        # Check if story ID is mentioned in user message (exact match)
+        if story_id and story_id in user_msg_lower:
+            target_story = story
+            target_story_idx = i
+            logger.info(f"[BA] Found story by ID: {story_id}")
+            break
+        
+        # Calculate match score based on KEY WORDS in story title
+        # Focus on unique/distinctive words, not common ones like "want", "administrator"
+        common_words = {"as", "a", "an", "i", "want", "to", "so", "that", "can", "the", "for", "and", "or", "in", "on", "is", "be", "user", "administrator", "customer"}
+        title_words = [w for w in story_title.split() if len(w) > 2 and w not in common_words]
+        
+        # Count how many KEY words from title appear in user message
+        match_count = sum(1 for w in title_words if w in user_msg_lower)
+        
+        # Calculate score as percentage of key words matched
+        if title_words:
+            score = match_count / len(title_words)
+            logger.debug(f"[BA] Story '{story_title[:40]}...' score: {score:.2f} ({match_count}/{len(title_words)} key words)")
+            
+            # Keep track of best match
+            if score > best_match_score:
+                best_match_score = score
+                best_match_story = story
+                best_match_idx = i
+    
+    # Use best match if score is good enough (at least 40% key words match)
+    if not target_story and best_match_story and best_match_score >= 0.4:
+        target_story = best_match_story
+        target_story_idx = best_match_idx
+        logger.info(f"[BA] Found story by best title match (score={best_match_score:.2f}): {target_story.get('title')[:50]}...")
+    
+    if not target_story:
+        logger.warning(f"[BA] Could not find target story in message: {user_message[:100]}...")
+        # Fallback: Let LLM try to find it
+        return await _edit_story_with_llm_search(state, agent, epics, stories)
+    
+    # Step 2: Use LLM to apply the specific change
+    logger.info(f"[BA] Applying changes to story: {target_story.get('id')} - {target_story.get('title')[:50]}...")
+    
+    system_prompt = _sys_prompt(agent, "edit_single_story")
+    user_prompt = _user_prompt(
+        "edit_single_story",
+        user_message=user_message,
+        target_story=json.dumps(target_story, ensure_ascii=False, indent=2)
+    )
+    
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    result = await _invoke_structured(
+        llm=_fast_llm,  # Use fast LLM since it's a simple edit
+        schema=SingleStoryEditOutput,
+        messages=messages,
+        config=_cfg(state, "edit_single_story"),
+        fallback_data={
+            "story_id": target_story.get("id", ""),
+            "found": True,
+            "updated_story": target_story,
+            "change_summary": "Không thể áp dụng thay đổi",
+            "message": "⚠️ Không thể xử lý yêu cầu. Bạn thử lại nhé!"
+        }
+    )
+    
+    # Check if edit was successful
+    updated_story = result.get("updated_story")
+    if not updated_story:
+        logger.warning("[BA] LLM could not process the edit - no updated_story returned")
+        error_message = result.get("message", "⚠️ Không thể áp dụng thay đổi. Bạn thử lại nhé!")
+        # Send error message to user directly
+        if agent:
+            await agent.message_user("response", error_message)
+        return {
+            "error": error_message,
+            "is_complete": True  # Mark complete so graph ends
+        }
+    
+    # Step 3: Apply the updated story back to epics/stories
+    if hasattr(updated_story, "model_dump"):
+        updated_story = updated_story.model_dump()
+    
+    # Update in stories list
+    stories[target_story_idx] = updated_story
+    
+    # Update in epics structure
+    for epic in epics:
+        epic_stories = epic.get("stories", [])
+        for j, s in enumerate(epic_stories):
+            if s.get("id") == updated_story.get("id"):
+                epic_stories[j] = updated_story
+                break
+    
+    change_summary = result.get("change_summary", "Đã cập nhật story")
+    message = result.get("message", f"✅ Đã cập nhật story '{updated_story.get('title', '')[:50]}...'")
+    
+    logger.info(f"[BA] Single story edit complete: {change_summary}")
+    
+    return {
+        "epics": epics,
+        "stories": stories,
+        "change_summary": change_summary,
+        "stories_message": message,
+        "stories_approval_message": f"✅ Đã lưu thay đổi cho story!"
+    }
+
+
+async def _edit_story_with_llm_search(state: BAState, agent, epics: list, stories: list) -> dict:
+    """Fallback: Let LLM search for the story when we can't find it by keyword matching."""
+    logger.info("[BA] Using LLM to search for target story...")
+    
+    # Create a summary of all stories for LLM to search
+    stories_summary = []
+    for story in stories:
+        stories_summary.append({
+            "id": story.get("id"),
+            "title": story.get("title"),
+            "epic_id": story.get("epic_id")
+        })
+    
+    # Ask LLM to identify which story and what change
+    system_prompt = """You identify which story the user wants to edit.
+Return JSON: {"story_id": "EPIC-XXX-US-XXX", "found": true/false}
+If you can't identify, set found=false."""
+    
+    user_prompt = f"""User request: "{state.get('user_message', '')}"
+
+Available stories:
+{json.dumps(stories_summary, ensure_ascii=False, indent=2)}
+
+Which story does the user want to edit?"""
+    
+    try:
+        response = await _fast_llm.ainvoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ])
+        
+        # Parse response
+        import re
+        match = re.search(r'"story_id"\s*:\s*"([^"]+)"', response.content)
+        if match:
+            story_id = match.group(1)
+            # Find the story
+            for i, story in enumerate(stories):
+                if story.get("id") == story_id:
+                    # Now edit this story
+                    state_copy = dict(state)
+                    state_copy["target_story_idx"] = i
+                    # Recursively call with found story
+                    return await _apply_edit_to_story(state_copy, agent, epics, stories, i)
+    except Exception as e:
+        logger.warning(f"[BA] LLM search failed: {e}")
+    
+    # Could not find - fall back to full update
+    logger.warning("[BA] Could not find specific story, falling back to full update_stories")
+    return await update_stories(state, agent)
+
+
+async def _apply_edit_to_story(state: BAState, agent, epics: list, stories: list, story_idx: int) -> dict:
+    """Apply edit to a specific story after it's been found."""
+    target_story = stories[story_idx]
+    user_message = state.get("user_message", "")
+    
+    system_prompt = _sys_prompt(agent, "edit_single_story")
+    user_prompt = _user_prompt(
+        "edit_single_story",
+        user_message=user_message,
+        target_story=json.dumps(target_story, ensure_ascii=False, indent=2)
+    )
+    
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    result = await _invoke_structured(
+        llm=_fast_llm,
+        schema=SingleStoryEditOutput,
+        messages=messages,
+        config=_cfg(state, "edit_single_story"),
+        fallback_data={
+            "story_id": target_story.get("id", ""),
+            "found": True,
+            "updated_story": target_story,
+            "change_summary": "Không thể áp dụng thay đổi",
+            "message": "⚠️ Không thể xử lý yêu cầu."
+        }
+    )
+    
+    updated_story = result.get("updated_story")
+    if not updated_story:
+        logger.warning("[BA] _apply_edit_to_story: LLM could not process the edit")
+        error_message = result.get("message", "⚠️ Không thể áp dụng thay đổi. Bạn thử lại nhé!")
+        if agent:
+            await agent.message_user("response", error_message)
+        return {"error": error_message, "is_complete": True}
+    if hasattr(updated_story, "model_dump"):
+        updated_story = updated_story.model_dump()
+    
+    stories[story_idx] = updated_story
+    
+    for epic in epics:
+        epic_stories = epic.get("stories", [])
+        for j, s in enumerate(epic_stories):
+            if s.get("id") == updated_story.get("id"):
+                epic_stories[j] = updated_story
+                break
+    
+    return {
+        "epics": epics,
+        "stories": stories,
+        "change_summary": result.get("change_summary", "Đã cập nhật"),
+        "stories_message": result.get("message", "✅ Đã cập nhật story!"),
+        "stories_approval_message": "✅ Đã lưu thay đổi!"
+    }
+
+
 async def approve_stories(state: BAState, agent=None) -> dict:
     """Node: Approve stories and save them to database (batch operation)."""
     logger.info(f"[BA] Approving stories and saving to database...")
@@ -1304,6 +1609,32 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         story_id_map = {}  # Map string ID (EPIC-001-US-001) to actual UUID
         
         with Session(engine) as session:
+            # 0. Delete existing epics and stories for this project to avoid duplicates
+            # This handles the case when user updates PRD and regenerates stories
+            existing_stories = session.exec(
+                select(Story).where(Story.project_id == agent.project_id)
+            ).all()
+            existing_epics = session.exec(
+                select(Epic).where(Epic.project_id == agent.project_id)
+            ).all()
+            
+            if existing_stories or existing_epics:
+                # Log story_codes being deleted for debugging
+                existing_codes = [s.story_code for s in existing_stories if s.story_code]
+                logger.info(
+                    f"[BA] Deleting {len(existing_stories)} existing stories "
+                    f"(codes: {existing_codes[:5]}{'...' if len(existing_codes) > 5 else ''}) "
+                    f"and {len(existing_epics)} existing epics for project {agent.project_id}"
+                )
+                for story in existing_stories:
+                    session.delete(story)
+                for epic in existing_epics:
+                    session.delete(epic)
+                # Must COMMIT (not just flush) to ensure DELETEs are persisted
+                # before INSERTs with same story_code values
+                session.commit()
+                logger.info(f"[BA] DELETE committed successfully, proceeding with INSERT")
+            
             # 1. Create all Epics at once
             epic_objects = []
             for epic_data in epics_data:
@@ -1633,7 +1964,7 @@ async def _save_stories_artifact(state: BAState, agent, project_files) -> dict:
     stories_data = state.get("stories", [])
     is_stories_approved = state.get("stories_approved", False) or bool(state.get("created_epics"))
     intent = state.get("intent", "")
-    is_story_intent = intent in ["extract_stories", "stories_update", "update_stories"]
+    is_story_intent = intent in ["extract_stories", "stories_update", "update_stories", "story_edit_single"]
     
     if not (epics_data or stories_data) or not project_files or is_stories_approved or not is_story_intent:
         return result
@@ -1941,13 +2272,25 @@ async def _send_verify_message(agent, story, result: dict, project_id=None) -> N
     from app.kafka.event_schemas import AgentEvent
     from app.models import Message, AuthorType
     
+    # Extract all fields from result
     is_duplicate = result.get("is_duplicate", False)
     duplicate_of = result.get("duplicate_of")
+    duplicate_reason = result.get("duplicate_reason")
     invest_score = result.get("invest_score", 6)
     invest_issues = result.get("invest_issues", [])
+    
+    # Story content suggestions (all in English)
     suggested_title = result.get("suggested_title")
+    suggested_description = result.get("suggested_description")
     suggested_requirements = result.get("suggested_requirements")
     suggested_ac = result.get("suggested_acceptance_criteria")
+    
+    # Additional suggestions
+    suggested_story_point = result.get("suggested_story_point")
+    suggested_priority = result.get("suggested_priority")
+    should_split = result.get("should_split", False)
+    split_suggestions = result.get("split_suggestions")
+    
     summary = result.get("summary", "")
     
     # Build natural message based on result
@@ -1960,18 +2303,38 @@ async def _send_verify_message(agent, story, result: dict, project_id=None) -> N
     else:
         content = f"Story \"{story.title}\" cần được cải thiện khá nhiều. Mình có một số gợi ý cho bạn!"
     
+    # Check if we have any suggestions
+    has_suggestions = bool(
+        suggested_title or suggested_description or 
+        suggested_requirements or suggested_ac or
+        suggested_story_point or suggested_priority or
+        should_split
+    )
+    
     details = {
         "message_type": "story_review",
         "story_id": str(story.id),
         "story_title": story.title,
+        # Duplicate info
         "is_duplicate": is_duplicate,
         "duplicate_of": duplicate_of,
+        "duplicate_reason": duplicate_reason,
+        # INVEST evaluation
         "invest_score": invest_score,
         "invest_issues": invest_issues,
+        # Story content suggestions (English)
         "suggested_title": suggested_title,
+        "suggested_description": suggested_description,
         "suggested_requirements": suggested_requirements,
         "suggested_acceptance_criteria": suggested_ac,
-        "has_suggestions": bool(suggested_title or suggested_requirements or suggested_ac)
+        # Additional suggestions
+        "suggested_story_point": suggested_story_point,
+        "suggested_priority": suggested_priority,
+        "should_split": should_split,
+        "split_suggestions": split_suggestions,
+        # Meta
+        "has_suggestions": has_suggestions,
+        "summary": summary,
     }
     
     # Get agent info (agent.name is already human_name from base_agent)

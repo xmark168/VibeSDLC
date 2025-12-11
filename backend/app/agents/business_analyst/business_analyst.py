@@ -468,6 +468,17 @@ class BusinessAnalyst(BaseAgent):
         existing_epics, existing_stories, existing_approval_message = self._load_existing_epics_and_stories()
         logger.info(f"[{self.name}] Initial state: existing_epics={len(existing_epics)}, existing_stories={len(existing_stories)}")
         
+        # Get conversation context - prefer from Team Leader delegation if available
+        conversation_context = ""
+        if task.context and task.context.get("conversation_history"):
+            # Use conversation history passed from Team Leader (more complete context)
+            conversation_context = task.context.get("conversation_history", "")
+            logger.info(f"[{self.name}] Using conversation history from Team Leader ({len(conversation_context)} chars)")
+        else:
+            # Fallback to local memory
+            conversation_context = self.context.format_memory()
+            logger.info(f"[{self.name}] Using local conversation context ({len(conversation_context)} chars)")
+        
         # Setup Langfuse tracing (1 trace for entire graph - same as Team Leader)
         langfuse_handler = None
         langfuse_span = None
@@ -508,7 +519,7 @@ class BusinessAnalyst(BaseAgent):
             "document_type": document_type,  # For routing: partial_requirements -> interview
             "collected_info": pre_collected_info,  # Pre-populated from document analysis
             "existing_prd": existing_prd,
-            "conversation_context": self.context.format_memory(),
+            "conversation_context": conversation_context,  # From Team Leader or local memory
             "intent": "",
             "reasoning": "",
             "questions": [],

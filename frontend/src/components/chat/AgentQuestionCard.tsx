@@ -136,7 +136,7 @@ export function AgentQuestionCard({
   }
   
   return (
-    <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20 shadow-md">
+    <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20 shadow-md transition-all duration-300">
       <CardHeader>
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">

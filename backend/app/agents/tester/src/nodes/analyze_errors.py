@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.core_nodes import send_message
+from app.agents.tester.src.core_nodes import send_message, generate_user_message
 from app.agents.tester.src.utils.token_utils import truncate_error_logs
 from app.agents.tester.src._llm import analyze_llm
 from app.agents.tester.src.config import MAX_DEBUG_ATTEMPTS
@@ -488,12 +488,25 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     3. Creates fix plan (update test_plan for re-implementation)
     4. Increments debug_count
     
+    Includes interrupt signal check for pause/cancel support.
+    
     Output:
     - error_analysis: Description of what went wrong
     - test_plan: Updated with fix steps
     - debug_count: Incremented
     - debug_history: Append current analysis
     """
+    from langgraph.types import interrupt
+    from app.agents.tester.src.graph import check_interrupt_signal
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[analyze_errors] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "analyze_errors"})
+    
     debug_count = state.get("debug_count", 0)
     max_debug = state.get("max_debug", 3)
     
@@ -501,7 +514,11 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     
     # Check if max retries reached
     if debug_count >= max_debug:
-        msg = f"⚠️ Đã thử sửa {max_debug} lần nhưng tests vẫn fail. Dừng debug loop."
+        msg = await generate_user_message(
+            "max_retries",
+            f"tried {max_debug} times, tests still failing",
+            agent
+        )
         logger.warning(f"[analyze_errors] Max debug attempts ({max_debug}) reached")
         await send_message(state, agent, msg, "error")
         return {
@@ -663,10 +680,13 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
         new_history = debug_history.copy()
         new_history.append(root_cause)
         
-        # Message
-        msg = f"🔍 Phân tích lỗi (lần {debug_count + 1}):\n"
-        msg += f"Root cause: {root_cause}\n"
-        msg += f"Fix plan: {len(fix_steps)} steps"
+        # Message (persona-driven intro + technical details)
+        intro = await generate_user_message(
+            "analyzing",
+            f"attempt {debug_count + 1}, found {len(fix_steps)} fix steps",
+            agent
+        )
+        msg = f"{intro}\nRoot cause: {root_cause}\nFix plan: {len(fix_steps)} steps"
         
         await send_message(state, agent, msg, "progress")
         
@@ -690,8 +710,12 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
                 "action": "IMPLEMENT",
             }
         else:
-            # No fix possible
-            msg = f"⚠️ Không thể xác định cách fix. Root cause: {root_cause}"
+            # No fix possible (persona message)
+            msg = await generate_user_message(
+                "max_retries",
+                f"cannot determine fix for: {root_cause}",
+                agent
+            )
             await send_message(state, agent, msg, "error")
             return {
                 "error_analysis": root_cause,
@@ -703,7 +727,11 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
         
     except Exception as e:
         logger.error(f"[analyze_errors] Error: {e}", exc_info=True)
-        error_msg = f"Lỗi khi phân tích errors: {str(e)}"
+        error_msg = await generate_user_message(
+            "default",
+            f"Error analyzing: {str(e)[:100]}",
+            agent
+        )
         await send_message(state, agent, error_msg, "error")
         return {
             "error": str(e),

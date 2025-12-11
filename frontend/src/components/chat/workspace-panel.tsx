@@ -235,6 +235,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   const [isEditingName, setIsEditingName] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [selectedWorktree, setSelectedWorktree] = useState<string | undefined>(undefined)
 
   // Logging state
   const [logSearchQuery, setLogSearchQuery] = useState("")
@@ -289,15 +290,15 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   // Fetch file content when selectedFile changes
   useEffect(() => {
     if (selectedFile && projectId) {
-      fetchFileContent(selectedFile)
+      fetchFileContent(selectedFile, selectedWorktree)
     } else {
       setFileContent("")
       setFileError(null)
       setIsFileBinary(false)
     }
-  }, [selectedFile, projectId])
+  }, [selectedFile, projectId, selectedWorktree])
 
-  const fetchFileContent = async (path: string) => {
+  const fetchFileContent = async (path: string, worktree?: string) => {
     if (!projectId) return
 
     setIsLoadingFile(true)
@@ -305,7 +306,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     setIsFileBinary(false)
 
     try {
-      const response = await filesApi.getFileContent(projectId, path)
+      const response = await filesApi.getFileContent(projectId, path, worktree)
       setFileContent(response.content)
       setIsFileBinary(response.is_binary || false)
     } catch (err: any) {
@@ -412,8 +413,12 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
             <div className="w-64 flex-shrink-0">
               <FileExplorer
                 projectId={projectId}
-                onFileSelect={setSelectedFile}
+                onFileSelect={(path, worktree) => {
+                  setSelectedFile(path)
+                  setSelectedWorktree(worktree)
+                }}
                 selectedFile={selectedFile}
+                initialWorktree={selectedWorktree}
               />
             </div>
             <div className="flex-1">
@@ -770,7 +775,16 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           {/* Keep KanbanBoard always mounted for real-time updates */}
           <div className={activeView === "kanban" ? "h-full" : "hidden"}>
             <div className="flex-1 overflow-hidden h-full">
-              <KanbanBoard kanbanData={kanbanData} projectId={projectId} />
+              <KanbanBoard 
+                kanbanData={kanbanData} 
+                projectId={projectId}
+                onViewFiles={(worktreePath) => {
+                  setSelectedWorktree(worktreePath)
+                  // Find the file tab and switch to it
+                  const fileTab = tabs.find(t => t.view === "file")
+                  if (fileTab) setActiveTabId(fileTab.id)
+                }}
+              />
             </div>
           </div>
           {/* Other views render conditionally */}

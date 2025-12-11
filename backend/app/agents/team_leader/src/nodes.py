@@ -1,12 +1,13 @@
 """Team Leader graph nodes."""
 
 import logging
+import os
 import re
 from pathlib import Path
 from uuid import UUID
 
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 from app.agents.core.prompt_utils import (
     build_system_prompt as _build_system_prompt,
@@ -27,8 +28,20 @@ logger = logging.getLogger(__name__)
 
 _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 _DEFAULTS = {"name": "Team Leader", "role": "Team Leader & Project Coordinator", "personality": "Professional and helpful"}
-_fast_llm = ChatOpenAI(model="gpt-5", temperature=0.1, timeout=60)
-_chat_llm = ChatOpenAI(model="gpt-5", temperature=0.3, timeout=90)
+
+# LLM config - uses ChatAnthropic with v98 proxy (same as Tester agent)
+_base_url = os.getenv("TESTER_ANTHROPIC_BASE_URL") or os.getenv("ANTHROPIC_API_BASE")
+_api_key = os.getenv("TESTER_ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+_model = os.getenv("TEAM_LEADER_MODEL", "claude-sonnet-4-5-20250929")
+
+_llm_kwargs = {"model": _model, "max_tokens": 8192, "max_retries": 3}
+if _base_url:
+    _llm_kwargs["base_url"] = _base_url
+if _api_key:
+    _llm_kwargs["api_key"] = _api_key
+
+_fast_llm = ChatAnthropic(**_llm_kwargs, temperature=0.1, timeout=60)
+_chat_llm = ChatAnthropic(**_llm_kwargs, temperature=0.3, timeout=90)
 
 ROLE_WIP_MAP = {"developer": "InProgress", "tester": "Review", "business_analyst": None}
 
@@ -364,19 +377,31 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                             "wip_blocked": False
                                         }
                                     else:
-                                        # Same domain → PRD already exists, ask what to do
-                                        logger.info(
-                                            f"[router] Same domain detected: '{existing_prd.title}'. "
-                                            f"Asking user what to do with existing project."
-                                        )
+                                        # Same domain - check if user explicitly wants to UPDATE
+                                        is_update_request = result.get("is_update_request", False)
+                                        
+                                        if is_update_request:
+                                            # User explicitly wants to update/edit something
+                                            # Skip CONFIRM_EXISTING and delegate directly to BA
+                                            logger.info(
+                                                f"[router] Same domain with explicit UPDATE request. "
+                                                f"Delegating directly to BA without confirmation."
+                                            )
+                                            # Continue to normal delegation (don't return here)
+                                        else:
+                                            # Vague request on same domain → ask what to do
+                                            logger.info(
+                                                f"[router] Same domain detected: '{existing_prd.title}'. "
+                                                f"Asking user what to do with existing project."
+                                            )
 
-                                        return {
-                                            **state,
-                                            "action": "CONFIRM_EXISTING",
-                                            "existing_prd_title": existing_prd.title,
-                                            "existing_stories_count": len(stories_count),
-                                            "wip_blocked": False
-                                        }
+                                            return {
+                                                **state,
+                                                "action": "CONFIRM_EXISTING",
+                                                "existing_prd_title": existing_prd.title,
+                                                "existing_stories_count": len(stories_count),
+                                                "wip_blocked": False
+                                            }
                     except Exception as e:
                         logger.error(f"[router] Error checking domain change: {e}", exc_info=True)
 
@@ -395,11 +420,16 @@ async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         msg = state.get("message") or f"Chuyển cho @{state['target_role']} nhé!"
         await agent.message_user("response", msg)
 
-        # Build context with attachments if present
+        # Build context with attachments and conversation history
         task_context = {}
         if state.get("attachments"):
             task_context["attachments"] = state["attachments"]
             logger.info(f"[delegate] Passing {len(state['attachments'])} attachment(s) to {state['target_role']}")
+        
+        # Pass conversation history to specialist agent for context
+        if state.get("conversation_history"):
+            task_context["conversation_history"] = state["conversation_history"]
+            logger.info(f"[delegate] Passing conversation history ({len(state['conversation_history'])} chars) to {state['target_role']}")
 
         task = TaskContext(
             task_id=UUID(state["task_id"]), task_type=AgentTaskType.MESSAGE, priority="high",
@@ -585,11 +615,9 @@ async def check_cancel_intent(user_message: str, agent=None) -> bool:
         True if user wants to cancel, False if they want to proceed
     """
     try:
-        system_prompt, user_prompt = _get_task_prompts(
-            _PROMPTS, "cancel_intent_check",
-            agent_info=_DEFAULTS,
-            user_message=user_message
-        )
+        prompts = _get_task_prompts(_PROMPTS, "cancel_intent_check")
+        system_prompt = prompts["system_prompt"]
+        user_prompt = prompts["user_prompt"].replace("{user_message}", user_message)
 
         response = await _fast_llm.ainvoke([
             SystemMessage(content=system_prompt),

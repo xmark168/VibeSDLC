@@ -23,7 +23,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.skills import SkillRegistry
 from app.agents.tester.src.state import TesterState
-from app.agents.tester.src.core_nodes import send_message
+from app.agents.tester.src.core_nodes import send_message, generate_user_message
 from app.agents.tester.src.utils.token_utils import truncate_to_tokens
 from app.agents.tester.src._llm import (
     implement_llm, 
@@ -39,6 +39,70 @@ from app.agents.tester.src.config import (
 logger = logging.getLogger(__name__)
 
 _llm = implement_llm
+
+
+# =============================================================================
+# Git Helper Functions (aligned with Developer V2)
+# =============================================================================
+
+def git_commit_tests(workspace_path: str, description: str, files: List[str] = None) -> bool:
+    """Commit test files after successful implementation (aligned with Developer V2).
+    
+    Args:
+        workspace_path: Path to git repository
+        description: Brief description of changes
+        files: Specific files to commit, or None for all changes
+    
+    Returns:
+        True if commit succeeded, False otherwise
+    """
+    import subprocess
+    
+    try:
+        # Stage files
+        if files:
+            for f in files:
+                try:
+                    subprocess.run(
+                        ["git", "add", f],
+                        cwd=workspace_path,
+                        capture_output=True,
+                        timeout=30
+                    )
+                except Exception:
+                    pass
+        else:
+            subprocess.run(
+                ["git", "add", "-A"],
+                cwd=workspace_path,
+                capture_output=True,
+                timeout=30
+            )
+        
+        # Check if there are staged changes
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=workspace_path,
+            capture_output=True,
+            timeout=30
+        )
+        if result.returncode == 0:
+            logger.debug(f"[git] No changes to commit")
+            return True
+        
+        # Commit with WIP message
+        msg = f"wip(test): {description[:50]}"
+        subprocess.run(
+            ["git", "commit", "-m", msg, "--no-verify"],
+            cwd=workspace_path,
+            capture_output=True,
+            timeout=30
+        )
+        logger.info(f"[git] Committed tests: {description[:50]}")
+        return True
+    except Exception as e:
+        logger.warning(f"[git] Commit error: {e}")
+        return False
 
 
 # =============================================================================
@@ -538,11 +602,25 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
     2. Runs all implementations in parallel (IT + UT simultaneously)
     3. Collects results and writes all files
     4. Returns all modified files for parallel review
+    5. Git commits test files after each successful implementation
+
+    Includes interrupt signal check for pause/cancel support.
 
     Benefits:
     - 50% faster: IT and UT run at the same time
     - Same quality: Each step gets full context
     """
+    from langgraph.types import interrupt
+    from app.agents.tester.src.graph import check_interrupt_signal
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[implement_tests] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "implement_tests"})
+    
     test_plan = state.get("test_plan", [])
     total_steps = len(test_plan)
     workspace_path = state.get("workspace_path", "") or state.get("project_path", "")
@@ -626,8 +704,26 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
                     except Exception as e:
                         logger.warning(f"[implement_tests] Failed to refresh {file_path}: {e}")
     
-    # Progress message
-    msg = f"✅ Implemented {success_count}/{len(tasks)} test files in parallel"
+    # Git commit test files after successful implementation (aligned with Developer V2)
+    if workspace_path and files_modified:
+        test_desc = f"{len(files_modified)} test files"
+        git_commit_tests(workspace_path, test_desc, files_modified)
+    
+    # Check for interrupt after implementation
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[implement_tests] Interrupt after implementation: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "implement_tests"})
+    
+    # Progress message (persona-driven intro + file list)
+    intro = await generate_user_message(
+        "implement_done",
+        f"{success_count}/{len(tasks)} test files created",
+        agent
+    )
+    msg = intro
     for result in implementation_results:
         if result.get("success"):
             test_icon = "🧩" if result.get("test_type") == "unit" else "🔧"

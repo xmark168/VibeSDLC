@@ -13,12 +13,14 @@ interface StoryMessage {
   author_type: 'user' | 'agent'
   content: string
   timestamp: string
+  message_type?: 'text' | 'task' | 'system' | 'log'
 }
 
 interface UseStoryWebSocketReturn {
   messages: StoryMessage[]
   isConnected: boolean
   isLoading: boolean
+  clearMessages: () => void
 }
 
 function getWebSocketUrl(projectId: string, token: string): string {
@@ -111,6 +113,7 @@ export function useStoryWebSocket(
         author_type: msg.author_type === 'agent' ? 'agent' : 'user',
         content: msg.content || '',
         timestamp: msg.timestamp || new Date().toISOString(),
+        message_type: msg.message_type || 'text',
       }
 
       setMessages(prev => {
@@ -124,10 +127,15 @@ export function useStoryWebSocket(
   }, [lastJsonMessage])
 
   const isConnected = readyState === ReadyState.OPEN
+  
+  const clearMessages = () => {
+    setMessages([])
+  }
 
   return {
     messages,
     isConnected,
     isLoading,
+    clearMessages,
   }
 }
