@@ -1,12 +1,13 @@
 """Team Leader graph nodes."""
 
 import logging
+import os
 import re
 from pathlib import Path
 from uuid import UUID
 
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 from app.agents.core.prompt_utils import (
     build_system_prompt as _build_system_prompt,
@@ -27,8 +28,20 @@ logger = logging.getLogger(__name__)
 
 _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 _DEFAULTS = {"name": "Team Leader", "role": "Team Leader & Project Coordinator", "personality": "Professional and helpful"}
-_fast_llm = ChatOpenAI(model="gpt-5", temperature=0.1, timeout=60)
-_chat_llm = ChatOpenAI(model="gpt-5", temperature=0.3, timeout=90)
+
+# LLM config - uses ChatAnthropic with v98 proxy (same as Tester agent)
+_base_url = os.getenv("TESTER_ANTHROPIC_BASE_URL") or os.getenv("ANTHROPIC_API_BASE")
+_api_key = os.getenv("TESTER_ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+_model = os.getenv("TEAM_LEADER_MODEL", "claude-sonnet-4-5-20250929")
+
+_llm_kwargs = {"model": _model, "max_tokens": 8192, "max_retries": 3}
+if _base_url:
+    _llm_kwargs["base_url"] = _base_url
+if _api_key:
+    _llm_kwargs["api_key"] = _api_key
+
+_fast_llm = ChatAnthropic(**_llm_kwargs, temperature=0.1, timeout=60)
+_chat_llm = ChatAnthropic(**_llm_kwargs, temperature=0.3, timeout=90)
 
 ROLE_WIP_MAP = {"developer": "InProgress", "tester": "Review", "business_analyst": None}
 
