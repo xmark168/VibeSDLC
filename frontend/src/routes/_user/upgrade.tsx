@@ -133,6 +133,13 @@ function RouteComponent() {
   }, [searchParams, queryClient])
 
   const handleUpgradeClick = (plan: Plan) => {
+    // Free plan - navigate to projects directly
+    if (plan.tier === 'free' || plan.code === 'FREE') {
+      navigate({ to: '/projects' })
+      return
+    }
+
+    // Paid plans - show payment dialog
     setSelectedPlan(plan)
     setIsPurchasingCredit(false)
     setInvoiceDialogOpen(true)
@@ -695,9 +702,11 @@ function RouteComponent() {
                           </div>
                           <div>
                             <h4 className="font-semibold text-foreground mb-1">
-                              {order.plan_code && order.billing_cycle
-                                ? `${order.plan_code} Plan - ${order.billing_cycle === 'monthly' ? 'Monthly' : 'Yearly'}`
-                                : 'Purchase'
+                              {order.order_type === 'credit' || order.order_type === 'CREDIT'
+                                ? `Credit Purchase - ${order.credit_amount || 0} credits`
+                                : order.plan_code && order.billing_cycle
+                                  ? `${order.plan_code} Plan - ${order.billing_cycle === 'monthly' ? 'Monthly' : 'Yearly'}`
+                                  : 'Purchase'
                               }
                             </h4>
                             <p className="text-sm text-muted-foreground">

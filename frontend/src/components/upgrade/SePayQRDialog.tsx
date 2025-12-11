@@ -32,6 +32,24 @@ export function SePayQRDialog({
   const [isPolling, setIsPolling] = useState(false)
   const [timeLeft, setTimeLeft] = useState<number>(0)
 
+  // Reset state when qrData changes (new payment) or dialog closes
+  useEffect(() => {
+    if (qrData) {
+      // New QR data - reset status to start fresh
+      setStatus(null)
+      setIsPolling(false)
+    }
+  }, [qrData?.order_id])
+
+  // Reset state when dialog closes
+  useEffect(() => {
+    if (!open) {
+      setStatus(null)
+      setIsPolling(false)
+      setTimeLeft(0)
+    }
+  }, [open])
+
   const checkPaymentStatus = useCallback(async () => {
     if (!qrData) return
     

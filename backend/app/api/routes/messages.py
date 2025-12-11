@@ -108,6 +108,13 @@ async def create_message(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # Deduct credit for user messages
+    if message_in.author_type == AuthorType.USER:
+        from app.services.credit_service import CreditService
+        credit_service = CreditService(session)
+        if not credit_service.deduct_credit(current_user.id):
+            raise HTTPException(status_code=402, detail="Insufficient credits")
+
     data = message_in.model_dump()
 
     # Resolve author
@@ -180,6 +187,12 @@ async def create_message_with_file(
     project = session.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Deduct credit for user message
+    from app.services.credit_service import CreditService
+    credit_service = CreditService(session)
+    if not credit_service.deduct_credit(current_user.id):
+        raise HTTPException(status_code=402, detail="Insufficient credits")
     
     attachment = None
     

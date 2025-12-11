@@ -1,6 +1,6 @@
-import { ProjectPublic, ProjectsService } from "@/client"
+import { ProjectPublic, ProjectsService, AgentsService } from "@/client"
 import { ProjectCard } from "./project-card-v2"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient, useQueries } from "@tanstack/react-query"
 import { motion } from "framer-motion"
 import { formatDistanceToNow } from "date-fns"
 import { vi } from "date-fns/locale"
@@ -23,6 +23,26 @@ export const ProjectList = ({ projects, onCreateProject }: ProjectListProps) => 
   const queryClient = useQueryClient()
   const user = useAppStore((state) => state.user)
   const naviagate = useNavigate()
+
+  // Fetch agents for all projects in parallel
+  const agentQueries = useQueries({
+    queries: projects.map((project) => ({
+      queryKey: ["agents", "project", project.id],
+      queryFn: async () => {
+        const response = await AgentsService.getProjectAgents({ projectId: project.id })
+        return { projectId: project.id, agents: response || [] }
+      },
+      staleTime: 30000,
+    })),
+  })
+
+  // Create a map of projectId -> agents
+  const agentsByProject = agentQueries.reduce((acc, query) => {
+    if (query.data) {
+      acc[query.data.projectId] = query.data.agents
+    }
+    return acc
+  }, {} as Record<string, any[]>)
 
   const handleClickProject = (project: ProjectPublic) => {
     naviagate({ to: "/workspace/$workspaceId", params: { workspaceId: project.id } })
@@ -205,7 +225,12 @@ export const ProjectList = ({ projects, onCreateProject }: ProjectListProps) => 
             projectId={project.id}
             status={project.is_init ? "in-progress" : "planning"}
             techStack={project.tech_stack || []}
-            agents={["Team Leader", "Developer"]}
+            agents={(agentsByProject[project.id] || []).map((agent: any) => ({
+              id: agent.id,
+              human_name: agent.human_name,
+              role_type: agent.role_type,
+              persona_avatar: agent.persona_avatar,
+            }))}
             lastUpdated={formatDistanceToNow(new Date(project.updated_at), { addSuffix: true, locale: vi })}
             githubUrl={project.repository_url || undefined}
             onDelete={handleDeleteProject}

@@ -40,13 +40,26 @@ class SubscriptionService:
         Returns: (Subscription, CreditWallet, Invoice)
         """
         # Cancel all existing active subscriptions for this user (upgrade/downgrade scenario)
+        # and calculate remaining credits to transfer
         existing_subscriptions = self.session.exec(
             select(Subscription)
             .where(Subscription.user_id == user_id)
             .where(Subscription.status == "active")
         ).all()
 
+        remaining_credits = 0
         for old_sub in existing_subscriptions:
+            # Get old wallet and calculate remaining credits
+            old_wallet = self.session.exec(
+                select(CreditWallet)
+                .where(CreditWallet.subscription_id == old_sub.id)
+            ).first()
+            if old_wallet:
+                old_remaining = (old_wallet.total_credits or 0) - (old_wallet.used_credits or 0)
+                if old_remaining > 0:
+                    remaining_credits += old_remaining
+                    logger.info(f"Transferring {old_remaining} remaining credits from subscription {old_sub.id}")
+
             old_sub.status = "canceled"
             old_sub.auto_renew = False
             self.session.add(old_sub)
@@ -73,17 +86,21 @@ class SubscriptionService:
         self.session.add(subscription)
         self.session.flush()
 
-        # Create CreditWallet
+        # Create CreditWallet with plan credits + remaining credits from old subscription
+        new_total_credits = (plan.monthly_credits or 0) + remaining_credits
         wallet = CreditWallet(
             user_id=user_id,
             wallet_type="subscription",
             subscription_id=subscription.id,
             period_start=start_at,
             period_end=end_at,
-            total_credits=plan.monthly_credits or 0,
+            total_credits=new_total_credits,
             used_credits=0
         )
         self.session.add(wallet)
+        
+        if remaining_credits > 0:
+            logger.info(f"Created wallet with {new_total_credits} credits ({plan.monthly_credits} from plan + {remaining_credits} transferred)")
 
         # Generate Invoice
         invoice = self._generate_invoice(order, subscription)
