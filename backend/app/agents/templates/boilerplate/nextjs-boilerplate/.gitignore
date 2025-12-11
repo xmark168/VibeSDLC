@@ -24,8 +24,8 @@
 .DS_Store
 *.pem
 
-# env files
-.env
+# env files (keep .env for project config, ignore local overrides)
+# .env
 .env.local
 .env.*.local
 
@@ -57,3 +57,6 @@ next-env.d.ts
 /src/generated
 
 .swc
+
+# git worktrees (managed by VibeSDLC)
+.worktrees/

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
 
+from pydantic import computed_field
 from sqlmodel import Field, SQLModel
 
 from app.models import StoryStatus, StoryType, StoryAgentState
@@ -58,9 +59,24 @@ class StoryPublic(StoryBase):
     agent_state: Optional[StoryAgentState] = None
     assigned_agent_id: Optional[UUID] = None
     branch_name: Optional[str] = None
+    worktree_path: Optional[str] = None
+    running_port: Optional[int] = None
+    running_pid: Optional[int] = None
+    pr_url: Optional[str] = None
+    merge_status: Optional[str] = None
+    started_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
+    
+    @computed_field
+    @property
+    def worktree_path_display(self) -> Optional[str]:
+        """Return relative worktree path for display (last 2 segments)."""
+        if not self.worktree_path:
+            return None
+        parts = self.worktree_path.replace('\\', '/').split('/')
+        return '/'.join(parts[-2:]) if len(parts) >= 2 else self.worktree_path
     # Epic info for display
     epic_code: Optional[str] = None
     epic_title: Optional[str] = None

@@ -160,6 +160,11 @@ class StoryEventType(str, Enum):
     STATUS_CHANGED = "story.status.changed"
     ASSIGNED = "story.assigned"
     DELETED = "story.deleted"
+    # Task control events
+    CANCEL = "story.cancel"
+    PAUSE = "story.pause"
+    RESUME = "story.resume"
+    REVIEW_ACTION = "story.review_action"
 
 
 class StoryEvent(BaseKafkaEvent):
@@ -419,6 +424,10 @@ EVENT_TYPE_TO_SCHEMA = {
     StoryEventType.STATUS_CHANGED.value: StoryEvent,
     StoryEventType.ASSIGNED.value: StoryEvent,
     StoryEventType.DELETED.value: StoryEvent,
+    StoryEventType.CANCEL.value: StoryEvent,
+    StoryEventType.PAUSE.value: StoryEvent,
+    StoryEventType.RESUME.value: StoryEvent,
+    StoryEventType.REVIEW_ACTION.value: StoryEvent,
     "story.message.created": StoryMessageEvent,
     "story.agent_state.changed": StoryAgentStateEvent,
     "story.review_action": StoryReviewActionEvent,

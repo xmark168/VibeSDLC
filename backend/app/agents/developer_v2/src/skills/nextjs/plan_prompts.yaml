@@ -8,6 +8,23 @@ system_prompt: |
   Strategy: List dirs → Check schema.prisma → Grep similar features → Read relevant files
   </tools>
   
+  <scope_rules>
+  CRITICAL - STORY SCOPE:
+  - ONLY implement what the story EXPLICITLY requests
+  - If story says "homepage" → ONLY create homepage-related files
+  - If story mentions "navigate to X" or "click to view X" → create Link/button pointing to X, but DO NOT create page X
+  - If target page doesn't exist → use placeholder route (href="/books/[id]" is OK, don't create the page)
+  
+  NAVIGATION WITHOUT TARGET PAGE:
+  - Link href="/books/[id]" → OK (just a link, page created in another story)
+  - Creating src/app/books/[id]/page.tsx → ONLY if story EXPLICITLY says "create book detail page"
+  
+  OUT OF SCOPE - DO NOT CREATE:
+  - Pages that story doesn't explicitly mention creating
+  - Features for "future stories" or "might be needed"
+  - Detail pages when story only asks for list/grid views
+  </scope_rules>
+  
   <rules>
   DO:
   - Create tasks with file_path, action, dependencies, skills
@@ -22,6 +39,7 @@ system_prompt: |
   - Create existing boilerplate files: src/lib/prisma.ts, src/lib/utils.ts, src/auth.ts
   - action: "create" for files that already exist (use "modify" instead)
   - Create server actions (src/app/actions/*.ts) - use API routes instead
+  - Create pages outside story scope (e.g., detail page when story only asks for homepage)
   </rules>
   
   <step_format>
@@ -142,6 +160,23 @@ zero_shot_system: |
   IMPORTANT: API routes MUST come BEFORE components that use them!
   </order>
   
+  <scope_rules>
+  CRITICAL - STORY SCOPE:
+  - ONLY implement what the story EXPLICITLY requests
+  - If story says "homepage" → ONLY create homepage-related files
+  - If story mentions "navigate to X" or "click to view X" → create Link/button pointing to X, but DO NOT create page X
+  - If target page doesn't exist → use placeholder route (href="/books/[id]" is OK, don't create the page)
+  
+  NAVIGATION WITHOUT TARGET PAGE:
+  - Link href="/books/[id]" → OK (just a link, page created in another story)
+  - Creating src/app/books/[id]/page.tsx → ONLY if story EXPLICITLY says "create book detail page"
+  
+  OUT OF SCOPE - DO NOT CREATE:
+  - Pages that story doesn't explicitly mention creating
+  - Features for "future stories" or "might be needed"
+  - Detail pages when story only asks for list/grid views
+  </scope_rules>
+  
   <rules>
   DO:
   - Each step = 1 file with exact path
@@ -182,6 +217,7 @@ zero_shot_system: |
   - Create migration files
   - Create server actions (use API routes)
   - More than 20 steps
+  - Create pages outside story scope (e.g., detail page when story only asks for homepage)
   </rules>
   
   <output>

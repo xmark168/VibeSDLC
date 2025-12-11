@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.project import Project
     from app.models.user import User
     from app.models.agent import Agent
+    from app.models.story_log import StoryLog
 
 
 class Epic(BaseModel, table=True):
@@ -49,7 +50,7 @@ class Story(BaseModel, table=True):
         default=None, foreign_key="stories.id", ondelete="SET NULL"
     )
 
-    story_code: str | None = Field(default=None)  # e.g., "EPIC-001-US-001"
+    story_code: str | None = Field(default=None, unique=True, index=True)  # e.g., "EPIC-001-US-001" - unique per project
     type: StoryType = Field(default=StoryType.USER_STORY)
     title: str
     description: str | None = Field(default=None, sa_column=Column(Text))
@@ -87,6 +88,22 @@ class Story(BaseModel, table=True):
     
     # Git worktree - each story has its own branch
     branch_name: str | None = Field(default=None, max_length=255)
+    worktree_path: str | None = Field(default=None, max_length=500)
+    
+    # Database container for this story (testcontainers)
+    db_container_id: str | None = Field(default=None, max_length=100)
+    db_port: int | None = Field(default=None)
+    
+    # Dev server running port
+    running_port: int | None = Field(default=None)
+    running_pid: int | None = Field(default=None)
+    
+    # PR and merge tracking
+    pr_url: str | None = Field(default=None, max_length=500)
+    merge_status: str | None = Field(default=None, max_length=50)  # "not_merged", "merged", "conflict"
+    
+    # LangGraph checkpoint for pause/resume
+    checkpoint_thread_id: str | None = Field(default=None, max_length=100)
 
     project: "Project" = Relationship(back_populates="stories")
     epic: Optional["Epic"] = Relationship(back_populates="stories")
@@ -103,6 +120,9 @@ class Story(BaseModel, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
     activities: list["IssueActivity"] = Relationship(
+        back_populates="story", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    logs: list["StoryLog"] = Relationship(
         back_populates="story", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 

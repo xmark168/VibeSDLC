@@ -13,12 +13,14 @@ interface StoryMessage {
   author_type: 'user' | 'agent'
   content: string
   timestamp: string
+  message_type?: 'text' | 'task' | 'system' | 'log'
 }
 
 interface UseStoryWebSocketReturn {
   messages: StoryMessage[]
   isConnected: boolean
   isLoading: boolean
+  clearMessages: () => void
 }
 
 function getWebSocketUrl(projectId: string, token: string): string {
@@ -73,16 +75,26 @@ export function useStoryWebSocket(
     socketUrl,
     {
       shouldReconnect: (closeEvent) => {
+        // Don't reconnect on normal closure (1000) or policy violation (1008)
         if (closeEvent.code === 1000 || closeEvent.code === 1008) {
           return false
         }
         return true
       },
-      reconnectAttempts: 5,
+      reconnectAttempts: 10,  // Increased from 5 for better resilience
       reconnectInterval: (attemptNumber) => 
-        Math.min(1000 * Math.pow(2, attemptNumber), 10000),
+        Math.min(1000 * Math.pow(2, attemptNumber), 30000),  // Max 30s between attempts
       share: true,
       retryOnError: true,
+      onReconnectStop: (numAttempts) => {
+        console.warn(`[WebSocket] Reconnection stopped after ${numAttempts} attempts for story ${storyIdRef.current}`)
+      },
+      onOpen: () => {
+        console.log(`[WebSocket] Connected for story ${storyIdRef.current}`)
+      },
+      onClose: (event) => {
+        console.log(`[WebSocket] Closed (code: ${event.code}) for story ${storyIdRef.current}`)
+      },
     },
     !!socketUrl
   )
@@ -101,6 +113,7 @@ export function useStoryWebSocket(
         author_type: msg.author_type === 'agent' ? 'agent' : 'user',
         content: msg.content || '',
         timestamp: msg.timestamp || new Date().toISOString(),
+        message_type: msg.message_type || 'text',
       }
 
       setMessages(prev => {
@@ -114,10 +127,15 @@ export function useStoryWebSocket(
   }, [lastJsonMessage])
 
   const isConnected = readyState === ReadyState.OPEN
+  
+  const clearMessages = () => {
+    setMessages([])
+  }
 
   return {
     messages,
     isConnected,
     isLoading,
+    clearMessages,
   }
 }

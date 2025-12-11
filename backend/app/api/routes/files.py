@@ -24,6 +24,7 @@ def list_project_files(
     session: SessionDep,
     current_user: CurrentUser,
     depth: int = Query(default=3, ge=1, le=10, description="Maximum depth to traverse"),
+    worktree: str = Query(default=None, description="Worktree path to view (optional)"),
 ) -> FileTreeResponse:
     """
     Get file tree for a project.
@@ -33,6 +34,7 @@ def list_project_files(
         session: Database session
         current_user: Current authenticated user
         depth: Maximum depth to traverse (default 3)
+        worktree: Optional worktree path to view instead of main project
 
     Returns:
         FileTreeResponse: File tree structure
@@ -53,16 +55,33 @@ def list_project_files(
             detail="You don't have access to this project",
         )
 
-    # Get project path
-    project_path = project.project_path
-    if not project_path:
-        # Auto-generate if not exists
-        project_path = f"projects/{project_id}"
-        project.project_path = project_path
-        session.commit()
+    # Get project path - use worktree path if provided
+    if worktree:
+        project_folder = Path(worktree)
+        project_path = worktree  # Set project_path for response
+        # Verify worktree belongs to this project (security check)
+        project_base = Path(project.project_path or f"projects/{project_id}")
+        try:
+            # Worktree should be in same parent directory or subdirectory
+            if not (project_folder.exists() and project_folder.is_dir()):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid worktree path",
+                )
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid worktree path",
+            )
+    else:
+        project_path = project.project_path
+        if not project_path:
+            project_path = f"projects/{project_id}"
+            project.project_path = project_path
+            session.commit()
+        project_folder = Path(project_path)
 
     # Ensure project folder exists
-    project_folder = Path(project_path)
     if not project_folder.exists():
         project_folder.mkdir(parents=True, exist_ok=True)
         logger.info(f"Created project folder: {project_folder}")
@@ -83,6 +102,7 @@ def get_file_content(
     session: SessionDep,
     current_user: CurrentUser,
     path: str = Query(..., description="Relative path to the file"),
+    worktree: str = Query(default=None, description="Worktree path to use instead of main project"),
 ) -> FileContentResponse:
     """
     Get content of a specific file.
@@ -92,6 +112,7 @@ def get_file_content(
         session: Database session
         current_user: Current authenticated user
         path: Relative path to the file
+        worktree: Optional worktree path to use instead of main project
 
     Returns:
         FileContentResponse: File content and metadata
@@ -112,15 +133,18 @@ def get_file_content(
             detail="You don't have access to this project",
         )
 
-    # Build full path
-    project_path = project.project_path or f"projects/{project_id}"
-    full_path = Path(project_path) / path
+    # Build full path - use worktree if provided
+    if worktree:
+        base_path = worktree
+    else:
+        base_path = project.project_path or f"projects/{project_id}"
+    full_path = Path(base_path) / path
 
-    # Security check: ensure path is within project folder
+    # Security check: ensure path is within base folder
     try:
         full_path = full_path.resolve()
-        project_folder = Path(project_path).resolve()
-        if not str(full_path).startswith(str(project_folder)):
+        base_folder = Path(base_path).resolve()
+        if not str(full_path).startswith(str(base_folder)):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid path: path traversal not allowed",
@@ -384,6 +408,88 @@ def get_git_status(
         is_git_repo=True,
         files=files,
     )
+
+
+@router.get("/branches")
+def get_branches(
+    project_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> dict:
+    """
+    Get branches and worktrees for project repository.
+    
+    Returns:
+        current: Current active branch name in main repo
+        branches: List of local branch names
+        worktrees: List of worktrees with their branches and paths
+    """
+    from git import Repo, InvalidGitRepositoryError
+    import subprocess
+    
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
+    
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    
+    if current_user.role != Role.ADMIN and project.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    project_path = project.project_path or f"projects/{project_id}"
+    project_folder = Path(project_path)
+    
+    if not project_folder.exists():
+        return {"current": None, "branches": [], "worktrees": []}
+    
+    try:
+        repo = Repo(project_folder)
+    except InvalidGitRepositoryError:
+        return {"current": None, "branches": [], "worktrees": []}
+    
+    # Get current branch
+    try:
+        current = repo.active_branch.name
+    except TypeError:
+        current = repo.head.commit.hexsha[:7]
+    
+    # Get local branches
+    branches = [b.name for b in repo.branches]
+    
+    # Get worktrees using git command
+    worktrees = []
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=project_folder,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            current_worktree = {}
+            for line in result.stdout.strip().split("\n"):
+                if line.startswith("worktree "):
+                    if current_worktree:
+                        worktrees.append(current_worktree)
+                    current_worktree = {"path": line[9:]}
+                elif line.startswith("HEAD "):
+                    current_worktree["head"] = line[5:]
+                elif line.startswith("branch "):
+                    # refs/heads/branch_name -> branch_name
+                    current_worktree["branch"] = line[7:].replace("refs/heads/", "")
+                elif line == "bare":
+                    current_worktree["bare"] = True
+            if current_worktree:
+                worktrees.append(current_worktree)
+    except Exception as e:
+        logger.warning(f"Failed to get worktrees: {e}")
+    
+    return {
+        "current": current,
+        "branches": branches,
+        "worktrees": worktrees
+    }
 
 
 # ============= Helper Functions =============

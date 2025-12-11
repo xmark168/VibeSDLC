@@ -59,7 +59,7 @@ def list_messages(
     
     logger.info(f"[list_messages] project_id={project_id}, found {len(rows)} messages (total={count}, skip={skip}, limit={limit}, order={order})")
     
-    # Populate agent_name for each message
+    # Populate agent_name and persona_avatar for each message
     result = []
     for msg in rows:
         msg_dict = {
@@ -69,6 +69,7 @@ def list_messages(
             "user_id": msg.user_id,
             "agent_id": msg.agent_id,
             "agent_name": None,
+            "persona_avatar": None,
             "content": msg.content,
             "message_type": msg.message_type,
             "structured_data": msg.structured_data,
@@ -78,11 +79,14 @@ def list_messages(
             "updated_at": msg.updated_at,
         }
         
-        # Get agent name if agent_id exists
+        # Get agent name and persona_avatar if agent_id exists
         if msg.agent_id:
             agent = session.get(AgentModel, msg.agent_id)
             if agent:
                 msg_dict["agent_name"] = agent.human_name or agent.name
+                # Get persona avatar from persona_template
+                if agent.persona_template:
+                    msg_dict["persona_avatar"] = agent.persona_template.avatar
         
         # Also check message_metadata for agent_name (fallback)
         if not msg_dict["agent_name"] and msg.message_metadata:

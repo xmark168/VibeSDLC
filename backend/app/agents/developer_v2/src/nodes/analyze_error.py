@@ -132,7 +132,23 @@ class ErrorAnalysisAndPlan(BaseModel):
 
 async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
     """Zero-shot error analysis with preloaded context."""
-    logger.info("[NODE] analyze_error")
+    from langgraph.types import interrupt
+    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    
+    # Create story logger
+    story_logger = StoryLogger.from_state(state, agent).with_node("analyze_error")
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            await story_logger.info(f"Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "analyze_error"})
+    
+    await story_logger.info("Analyzing build errors...")
+    await story_logger.message("🔍 Đang phân tích lỗi...")
     
     try:
         error_logs = state.get("run_stderr", "") or state.get("run_stdout", "")
@@ -141,29 +157,24 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         debug_count = state.get("debug_count", 0)
         debug_history = state.get("debug_history", [])
         
-        # Auto-fix: Prisma/npm errors
+        # Improved auto-fix: Analyze error type first, then decide fix strategy
+        from app.agents.developer_v2.src.utils.story_logger import analyze_error_type, try_auto_fix
+        
         if workspace_path and error_logs:
-            auto_fixed = False
-            prisma_errors = ["Cannot find module '@prisma/client'", "PrismaClient is unable to run", "Error: P1001", "Error: P2021"]
-            if any(e in error_logs for e in prisma_errors):
-                try:
-                    subprocess.run("pnpm exec prisma generate", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-                    subprocess.run("pnpm exec prisma db push --accept-data-loss", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-                    auto_fixed = True
-                except:
-                    pass
+            error_analysis = analyze_error_type(error_logs)
+            await story_logger.info(f"Error type: {error_analysis['error_type']}, auto_fixable: {error_analysis['auto_fixable']}")
             
-            if not auto_fixed and any(e in error_logs for e in ["Cannot find module", "Module not found"]):
-                local_pattern = r"(?:Cannot find module|Can't resolve) ['\"](@/[^'\"]+|\.{1,2}/[^'\"]+)['\"]"
-                if not re.findall(local_pattern, error_logs):
-                    try:
-                        subprocess.run("pnpm install --frozen-lockfile", cwd=workspace_path, shell=True, capture_output=True, timeout=120)
-                        auto_fixed = True
-                    except:
-                        pass
-            
-            if auto_fixed:
-                return {**state, "action": "VALIDATE", "run_status": None, "error_analysis": {"auto_fixed": True}}
+            if error_analysis["auto_fixable"]:
+                await story_logger.info(f"Attempting auto-fix: {error_analysis['fix_strategy']}")
+                
+                import asyncio
+                auto_fixed = asyncio.get_event_loop().run_until_complete(
+                    try_auto_fix(error_analysis, workspace_path, story_logger)
+                )
+                
+                if auto_fixed:
+                    await story_logger.success("Auto-fix successful, revalidating...")
+                    return {**state, "action": "VALIDATE", "run_status": None, "error_analysis": {"auto_fixed": True, "fix_strategy": error_analysis["fix_strategy"]}}
         
         if debug_count >= MAX_DEBUG_ATTEMPTS:
             return {**state, "action": "RESPOND", "error": f"Max debug attempts ({MAX_DEBUG_ATTEMPTS}) reached"}
@@ -182,7 +193,8 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         file_context = _preload_error_context(workspace_path, parsed_errors, files_modified)
         cleaned_logs = _clean_logs(error_logs)
         
-        logger.info(f"[analyze_error] Parsed {len(parsed_errors)} errors, preloaded {file_context.count('###')} files")
+        await story_logger.info(f"Found {len(parsed_errors)} errors to analyze")
+        await story_logger.task(f"Analyzing {len(parsed_errors)} errors...")
         
         # History context
         history = ""
@@ -239,10 +251,16 @@ Analyze the error and respond with JSON in <result> tags:
             fix_steps=valid_steps
         )
         
-        logger.info(f"[analyze_error] {result.error_type}: {result.root_cause[:60]}")
+        await story_logger.info(f"Analysis: {result.error_type} - {result.root_cause[:100]}")
         
         if not result.should_continue or not result.fix_steps:
+            await story_logger.warning("Error cannot be auto-fixed, requires manual intervention")
+            await story_logger.message("⚠️ Lỗi không thể tự động sửa, cần can thiệp thủ công")
             return {**state, "error_analysis": {"error_type": result.error_type, "root_cause": result.root_cause}, "action": "RESPOND"}
+        
+        debug_count = state.get("debug_count", 0)
+        await story_logger.success(f"Generated {len(result.fix_steps)} fix steps, attempting repair...")
+        await story_logger.message(f"🔧 Đã tìm ra lỗi, đang thử sửa (lần {debug_count + 1})...")
         
         return {
             **state,
@@ -254,9 +272,12 @@ Analyze the error and respond with JSON in <result> tags:
             "total_steps": len(result.fix_steps),
             "current_step": 0,
             "action": "IMPLEMENT",
-            "skill_registry": skill_registry,
             "debug_count": debug_count + 1,
         }
     except Exception as e:
-        logger.error(f"[analyze_error] Error: {e}", exc_info=True)
+        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        from langgraph.errors import GraphInterrupt
+        if isinstance(e, GraphInterrupt):
+            raise
+        await story_logger.error(f"Error analysis failed: {str(e)}", exc=e)
         return {**state, "action": "RESPOND", "error": str(e)}

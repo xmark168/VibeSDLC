@@ -1,16 +1,27 @@
 import { useState } from "react";
-import { ExternalLink, Github, MoreHorizontal, Clock, Zap, GitBranch } from "lucide-react";
+import { ExternalLink, Github, MoreHorizontal, Clock, Zap, GitBranch, Trash2, FolderX } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { DeleteProjectDialog } from "./delete-project-dialog";
 
 interface ProjectCardProps {
     title: string;
     code: string;
+    projectId?: string;
     status: "in-progress" | "completed" | "planning" | "on-hold";
     techStack: string[];
     agents: string[];
     lastUpdated: string;
     href?: string;
     githubUrl?: string;
+    onDelete?: (projectId: string) => void;
+    onCleanup?: (projectId: string) => void;
 }
 
 const statusConfig = {
@@ -56,15 +67,41 @@ const techIcons: Record<string, string> = {
 export function ProjectCard({
     title,
     code,
+    projectId,
     status,
     techStack,
     agents,
     lastUpdated,
     href,
     githubUrl,
+    onDelete,
+    onCleanup,
 }: ProjectCardProps) {
     const [isHovered, setIsHovered] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const statusInfo = statusConfig[status];
+    
+    const handleDeleteClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (projectId) {
+            setDeleteDialogOpen(true);
+        }
+    };
+    
+    const handleDeleteConfirm = async () => {
+        if (projectId && onDelete) {
+            await onDelete(projectId);
+        }
+    };
+    
+    const handleCleanup = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (projectId && onCleanup) {
+            if (confirm(`Clean up all worktrees for "${title}"?`)) {
+                onCleanup(projectId);
+            }
+        }
+    };
 
     return (
         <div
@@ -153,9 +190,38 @@ export function ProjectCard({
                             <ExternalLink className="h-3.5 w-3.5" />
                         </a>
                     )}
-                    <button className="rounded-lg bg-background/90 p-1.5 backdrop-blur-md transition-all hover:bg-background hover:scale-110">
-                        <MoreHorizontal className="h-3.5 w-3.5" />
-                    </button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button 
+                                className="rounded-lg bg-background/90 p-1.5 backdrop-blur-md transition-all hover:bg-background hover:scale-110"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <MoreHorizontal className="h-3.5 w-3.5" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuItem onClick={handleCleanup} className="text-amber-600">
+                                <FolderX className="mr-2 h-4 w-4" />
+                                Clean Worktrees
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={handleDeleteClick} className="text-destructive">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete Project
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    
+                    {/* Delete Confirmation Dialog */}
+                    {projectId && (
+                        <DeleteProjectDialog
+                            projectId={projectId}
+                            projectName={title}
+                            open={deleteDialogOpen}
+                            onOpenChange={setDeleteDialogOpen}
+                            onConfirm={handleDeleteConfirm}
+                        />
+                    )}
                 </div>
             </div>
 

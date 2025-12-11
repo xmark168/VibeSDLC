@@ -1,8 +1,10 @@
 """Developer V2 LangGraph - Story Implementation Workflow."""
 
 from functools import partial
-from typing import Literal
+from typing import Literal, Optional, Any
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
@@ -42,19 +44,75 @@ def route_after_test(state: DeveloperState) -> Literal["analyze_error", "__end__
     return "analyze_error" if state.get("debug_count", 0) < 5 else "__end__"
 
 
+def route_after_parallel(state: DeveloperState) -> Literal["run_code", "implement"]:
+    """Route after parallel implement - fallback to sequential if errors."""
+    parallel_errors = state.get("parallel_errors")
+    
+    # If parallel had errors, fallback to sequential implement
+    if parallel_errors and len(parallel_errors) > 0:
+        # Check if we haven't already tried sequential fallback
+        if not state.get("_tried_sequential_fallback"):
+            import logging
+            logging.getLogger(__name__).warning(
+                f"[graph] Parallel implement had {len(parallel_errors)} errors, falling back to sequential"
+            )
+            return "implement"
+    
+    return "run_code"
+
+
 def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__end__"]:
     return "implement" if state.get("action") == "IMPLEMENT" else "__end__"
+
+
+_postgres_checkpointer: Optional[AsyncPostgresSaver] = None
+_connection_pool = None
+
+
+async def get_postgres_checkpointer() -> AsyncPostgresSaver:
+    """Get or create a PostgresSaver checkpointer for persistent state."""
+    global _postgres_checkpointer, _connection_pool
+    
+    if _postgres_checkpointer is None:
+        from app.core.config import settings
+        from psycopg_pool import AsyncConnectionPool
+        
+        # Convert SQLAlchemy URI to standard PostgreSQL connection string
+        db_uri = str(settings.SQLALCHEMY_DATABASE_URI)
+        if "+psycopg" in db_uri:
+            db_uri = db_uri.replace("+psycopg", "")
+        
+        # Create async connection pool (required for proper checkpoint saving)
+        _connection_pool = AsyncConnectionPool(
+            conninfo=db_uri,
+            min_size=1,
+            max_size=3,
+            open=False,
+            kwargs={"autocommit": True},
+        )
+        await _connection_pool.open(wait=True)
+        
+        _postgres_checkpointer = AsyncPostgresSaver(_connection_pool)
+        # Create tables if they don't exist
+        await _postgres_checkpointer.setup()
+    
+    return _postgres_checkpointer
 
 
 class DeveloperGraph:
     """LangGraph state machine for story-driven code generation.
     Parallel: setup -> plan -> implement_parallel -> run_code -> END
     Sequential: setup -> plan -> implement <-> review -> run_code -> END
+    
+    Supports checkpointing for pause/resume functionality.
+    Uses PostgresSaver for persistent checkpoints across restarts.
     """
     
-    def __init__(self, agent=None, parallel=True):
+    def __init__(self, agent=None, parallel=True, checkpointer: Optional[Any] = None):
         self.agent = agent
         self.parallel = parallel
+        self.checkpointer = checkpointer  # Will be set async if None
+        self._graph_compiled = False
         g = StateGraph(DeveloperState)
         
         g.add_node("setup_workspace", partial(setup_workspace, agent=agent))
@@ -70,8 +128,9 @@ class DeveloperGraph:
         
         if parallel:
             g.add_edge("plan", "implement_parallel")
-            g.add_edge("implement_parallel", "run_code")
-            g.add_edge("implement", "run_code")
+            # Parallel → run_code, but fallback to sequential if errors
+            g.add_conditional_edges("implement_parallel", route_after_parallel)
+            g.add_edge("implement", "run_code")  # Sequential fallback path
         else:
             g.add_edge("plan", "implement")
             g.add_conditional_edges("implement", route_after_implement)
@@ -80,4 +139,31 @@ class DeveloperGraph:
         g.add_conditional_edges("run_code", route_after_test)
         g.add_conditional_edges("analyze_error", route_after_analyze_error)
         
-        self.graph = g.compile()
+        self._state_graph = g
+        self.graph = None  # Will be compiled with checkpointer
+    
+    async def setup(self) -> None:
+        """Setup the graph with PostgresSaver checkpointer."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if self.graph is not None:
+            return  # Already setup
+        
+        if self.checkpointer is None:
+            try:
+                self.checkpointer = await get_postgres_checkpointer()
+                logger.info(f"PostgresSaver setup OK: {type(self.checkpointer).__name__}")
+            except Exception as e:
+                logger.warning(f"Failed to setup PostgresSaver, using MemorySaver: {e}", exc_info=True)
+                self.checkpointer = MemorySaver()
+        
+        self.graph = self._state_graph.compile(checkpointer=self.checkpointer)
+        logger.info(f"Graph compiled with checkpointer: {type(self.checkpointer).__name__}")
+    
+    def setup_sync(self) -> None:
+        """Setup the graph with MemorySaver (sync fallback)."""
+        if self.graph is not None:
+            return
+        self.checkpointer = self.checkpointer or MemorySaver()
+        self.graph = self._state_graph.compile(checkpointer=self.checkpointer)
