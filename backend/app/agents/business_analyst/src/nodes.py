@@ -2246,13 +2246,25 @@ async def _send_verify_message(agent, story, result: dict, project_id=None) -> N
     from app.kafka.event_schemas import AgentEvent
     from app.models import Message, AuthorType
     
+    # Extract all fields from result
     is_duplicate = result.get("is_duplicate", False)
     duplicate_of = result.get("duplicate_of")
+    duplicate_reason = result.get("duplicate_reason")
     invest_score = result.get("invest_score", 6)
     invest_issues = result.get("invest_issues", [])
+    
+    # Story content suggestions (all in English)
     suggested_title = result.get("suggested_title")
+    suggested_description = result.get("suggested_description")
     suggested_requirements = result.get("suggested_requirements")
     suggested_ac = result.get("suggested_acceptance_criteria")
+    
+    # Additional suggestions
+    suggested_story_point = result.get("suggested_story_point")
+    suggested_priority = result.get("suggested_priority")
+    should_split = result.get("should_split", False)
+    split_suggestions = result.get("split_suggestions")
+    
     summary = result.get("summary", "")
     
     # Build natural message based on result
@@ -2265,18 +2277,38 @@ async def _send_verify_message(agent, story, result: dict, project_id=None) -> N
     else:
         content = f"Story \"{story.title}\" cần được cải thiện khá nhiều. Mình có một số gợi ý cho bạn!"
     
+    # Check if we have any suggestions
+    has_suggestions = bool(
+        suggested_title or suggested_description or 
+        suggested_requirements or suggested_ac or
+        suggested_story_point or suggested_priority or
+        should_split
+    )
+    
     details = {
         "message_type": "story_review",
         "story_id": str(story.id),
         "story_title": story.title,
+        # Duplicate info
         "is_duplicate": is_duplicate,
         "duplicate_of": duplicate_of,
+        "duplicate_reason": duplicate_reason,
+        # INVEST evaluation
         "invest_score": invest_score,
         "invest_issues": invest_issues,
+        # Story content suggestions (English)
         "suggested_title": suggested_title,
+        "suggested_description": suggested_description,
         "suggested_requirements": suggested_requirements,
         "suggested_acceptance_criteria": suggested_ac,
-        "has_suggestions": bool(suggested_title or suggested_requirements or suggested_ac)
+        # Additional suggestions
+        "suggested_story_point": suggested_story_point,
+        "suggested_priority": suggested_priority,
+        "should_split": should_split,
+        "split_suggestions": split_suggestions,
+        # Meta
+        "has_suggestions": has_suggestions,
+        "summary": summary,
     }
     
     # Get agent info (agent.name is already human_name from base_agent)

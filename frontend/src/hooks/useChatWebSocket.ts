@@ -410,7 +410,7 @@ export function useChatWebSocket(
       case 'notification':
         // Show as toast
         const stepInfo = details.step ? ` (${details.step}/${details.total})` : ''
-        toast.info(`${msg.agent_name}${stepInfo}: ${msg.content}`)
+        toast.success(`${msg.agent_name}${stepInfo}: ${msg.content}`)
         break
       
       case 'none':
@@ -649,9 +649,7 @@ export function useChatWebSocket(
     }
     
     // Show toast notification for other messages
-    toast(msg.content, {
-      description: msg.message_type === 'system' ? 'System' : undefined,
-    })
+    toast.success(msg.content)
     
     // Dispatch custom event for story state updates
     if (msg.agent_state) {

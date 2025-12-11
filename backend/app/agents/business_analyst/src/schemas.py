@@ -163,20 +163,65 @@ class FullStoriesOutput(BaseModel):
 class INVESTIssue(BaseModel):
     """Single INVEST criterion issue."""
     code: Literal["I", "N", "V", "E", "S", "T"] = Field(description="INVEST criterion code")
+    criterion: str = Field(description="Full criterion name in English (Independent/Negotiable/Valuable/Estimable/Small/Testable)")
     issue: str = Field(description="Issue description in Vietnamese")
+    suggestion: str = Field(default="", description="How to fix this issue (Vietnamese)")
 
 
 class VerifyStoryOutput(BaseModel):
-    """Output schema for verify_story_simple."""
+    """Output schema for verify_story_simple.
+    
+    All suggested content (title, description, requirements, acceptance_criteria) 
+    MUST be in ENGLISH following standard user story format.
+    Only summary and issue descriptions are in Vietnamese.
+    """
+    # Duplicate check
     is_duplicate: bool = Field(default=False)
     duplicate_of: Optional[str] = Field(default=None, description="Title of similar story if duplicate")
-    duplicate_reason: Optional[str] = Field(default=None, description="Explanation if duplicate")
-    invest_score: int = Field(ge=1, le=6, description="1-6 INVEST score")
-    invest_issues: List[INVESTIssue] = Field(default=[], description="INVEST issues found")
-    suggested_title: Optional[str] = Field(default=None)
-    suggested_description: Optional[str] = Field(default=None)
-    suggested_requirements: Optional[List[str]] = Field(default=None)
-    suggested_acceptance_criteria: Optional[List[str]] = Field(default=None)
+    duplicate_reason: Optional[str] = Field(default=None, description="Explanation if duplicate (Vietnamese)")
+    
+    # INVEST evaluation (1-6 score, 6 = all criteria passed)
+    invest_score: int = Field(ge=1, le=6, description="Number of INVEST criteria passed (1-6)")
+    invest_issues: List[INVESTIssue] = Field(default=[], description="INVEST issues found with suggestions")
+    
+    # Story content suggestions (ALL IN ENGLISH)
+    suggested_title: Optional[str] = Field(
+        default=None, 
+        description="Suggested title in ENGLISH format: 'As a [user], I want [goal] so that [benefit]'"
+    )
+    suggested_description: Optional[str] = Field(
+        default=None,
+        description="Suggested description in ENGLISH - business-focused, not technical"
+    )
+    suggested_requirements: Optional[List[str]] = Field(
+        default=None,
+        description="Suggested requirements in ENGLISH - 5-8 specific, actionable items"
+    )
+    suggested_acceptance_criteria: Optional[List[str]] = Field(
+        default=None,
+        description="Suggested acceptance criteria in ENGLISH - Given/When/Then format"
+    )
+    
+    # Additional suggestions for story quality
+    suggested_story_point: Optional[int] = Field(
+        default=None,
+        description="Suggested story points (Fibonacci: 1, 2, 3, 5, 8, 13). Only suggest if story is too large or unclear."
+    )
+    suggested_priority: Optional[int] = Field(
+        default=None,
+        ge=1, le=3,
+        description="Suggested priority: 1=High, 2=Medium, 3=Low. Only suggest if priority seems wrong."
+    )
+    should_split: bool = Field(
+        default=False,
+        description="True if story is too large and should be split into smaller stories"
+    )
+    split_suggestions: Optional[List[str]] = Field(
+        default=None,
+        description="If should_split=True, list of suggested smaller story titles (in ENGLISH)"
+    )
+    
+    # Summary (Vietnamese for user-friendly display)
     summary: str = Field(description="Brief review summary in Vietnamese")
 
 

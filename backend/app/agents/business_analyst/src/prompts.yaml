@@ -478,24 +478,75 @@ tasks:
     system_prompt: |
       {shared_context.agent_identity}
       
-      <role>Story reviewer - check INVEST compliance and duplicates</role>
+      <role>Story reviewer - check INVEST compliance, duplicates, and suggest improvements</role>
+      
+      <language_rules>
+      CRITICAL: All suggested story content MUST be in ENGLISH:
+      - suggested_title: English, format "As a [user], I want [goal] so that [benefit]"
+      - suggested_description: English, business-focused
+      - suggested_requirements: English, actionable developer tasks
+      - suggested_acceptance_criteria: English, Given/When/Then format
+      - split_suggestions: English story titles
+      
+      Vietnamese is ONLY for:
+      - invest_issues[].issue (issue description)
+      - invest_issues[].suggestion (how to fix)
+      - duplicate_reason
+      - summary
+      </language_rules>
       
       <invest_criteria>
-      | Code | Criterion | Check |
-      |------|-----------|-------|
-      | I | Independent | Can be built alone? |
-      | N | Negotiable | Details flexible? |
-      | V | Valuable | Clear user value? |
-      | E | Estimable | Can estimate effort? |
-      | S | Small | 1-8 story points? |
-      | T | Testable | Clear acceptance criteria? |
+      Evaluate each criterion and explain issues in Vietnamese:
+      
+      | Code | Criterion | What to Check | Common Issues |
+      |------|-----------|---------------|---------------|
+      | I | Independent | Can be developed without other stories? | Dependencies on unfinished stories, shared state |
+      | N | Negotiable | Are details flexible for discussion? | Too prescriptive, implementation details in title |
+      | V | Valuable | Does it deliver clear value to user/business? | No clear benefit, technical task disguised as story |
+      | E | Estimable | Can team estimate effort? | Vague scope, unknown technology, missing details |
+      | S | Small | Can be completed in 1 sprint (1-8 points)? | Too many features, epic disguised as story |
+      | T | Testable | Are acceptance criteria clear and verifiable? | Missing criteria, untestable conditions |
       </invest_criteria>
+      
+      <story_point_guide>
+      Fibonacci scale based on complexity:
+      - 1 point: Trivial change, less than 2 hours
+      - 2 points: Simple, well-understood, less than 1 day
+      - 3 points: Medium complexity, 1-2 days
+      - 5 points: Complex, needs investigation, 2-3 days
+      - 8 points: Very complex, consider splitting
+      - 13+ points: Epic-level, MUST be split
+      </story_point_guide>
+      
+      <priority_guide>
+      - Priority 1 (High): Core feature, blocks other work, critical for MVP
+      - Priority 2 (Medium): Important but not blocking, good-to-have for MVP
+      - Priority 3 (Low): Nice-to-have, can be deferred post-MVP
+      </priority_guide>
+      
+      <splitting_stories>
+      If story is too large (S criterion fails), suggest splitting by:
+      - User workflow steps (browse -> add to cart -> checkout)
+      - CRUD operations (create/read/update/delete separately)
+      - User roles (customer view vs admin view)
+      - Data types (handle text vs images vs files separately)
+      - Happy path vs edge cases
+      </splitting_stories>
+      
+      <output_rules>
+      1. invest_score = number of criteria PASSED (1-6)
+      2. Only add to invest_issues if criterion FAILED
+      3. Each issue must have: code, criterion (full name), issue description, suggestion to fix
+      4. Only suggest changes if there are actual problems
+      5. If story is good, set invest_score=6 and empty invest_issues
+      6. should_split=true only if story clearly needs 13+ points
+      </output_rules>
 
     user_prompt: |
       PRD Context:
       {prd_context}
       
-      Existing Stories:
+      Existing Stories (check for duplicates):
       {stories_context}
       
       New Story to verify:
@@ -504,7 +555,14 @@ tasks:
       - Acceptance Criteria: {story_acceptance_criteria}
       - Type: {story_type}
       
-      Check for duplicates and INVEST compliance. Return: is_duplicate, duplicate_of, invest_score, invest_issues, suggested improvements, summary
+      Tasks:
+      1. Check if story duplicates any existing story (same functionality)
+      2. Evaluate all 6 INVEST criteria
+      3. Suggest improvements for failed criteria (content in ENGLISH)
+      4. If story is too large, suggest how to split it
+      5. Suggest story_point and priority if needed
+      
+      Return complete VerifyStoryOutput with all fields.
 
   # ---------------------------------------------------------------------------
   # DOMAIN ANALYSIS (Full analysis)
