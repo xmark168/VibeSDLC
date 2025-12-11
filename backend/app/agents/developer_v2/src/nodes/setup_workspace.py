@@ -467,22 +467,27 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
     """Setup git workspace/branch for code modification."""
     from langgraph.types import interrupt
     from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    
+    # Create story logger for detailed logging to frontend
+    story_logger = StoryLogger.from_state(state, agent).with_node("setup_workspace")
     
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")
     if story_id:
         signal = check_interrupt_signal(story_id)
         if signal:
-            logger.info(f"[setup_workspace] Interrupt signal received: {signal}")
+            await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "setup_workspace"})
     
-    logger.debug("[NODE] setup_workspace")
+    await story_logger.info("Starting workspace setup...")
+    await story_logger.message("🔧 Đang chuẩn bị workspace...")
     try:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
         story_code = state.get("story_code", f"STORY-{story_id[:8]}")
         
         if state.get("workspace_ready"):
-            logger.debug("[setup_workspace] Workspace ready, checking dependencies...")
+            await story_logger.debug("Workspace ready, checking dependencies...")
         
         # Use story_code for branch name (sanitized)
         safe_code = story_code.replace('/', '-').replace('\\', '-')
@@ -491,7 +496,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         # Check if workspace_path already exists and is valid (reuse mode)
         existing_workspace = state.get("workspace_path", "")
         if existing_workspace and Path(existing_workspace).exists():
-            logger.debug(f"[setup_workspace] Reusing existing workspace: {existing_workspace}")
+            await story_logger.info(f"Reusing existing workspace")
             workspace_info = {
                 "workspace_path": existing_workspace,
                 "branch_name": branch_name,
@@ -499,14 +504,14 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 "workspace_ready": True,
             }
         else:
-            logger.debug(f"[setup_workspace] Setting up workspace for branch '{branch_name}'")
+            await story_logger.info(f"Creating git worktree for branch: {branch_name}")
             
             if hasattr(agent, 'main_workspace'):
                 main_workspace = agent.main_workspace
             elif hasattr(agent, 'workspace_path'):
                 main_workspace = agent.workspace_path
             else:
-                logger.warning("[setup_workspace] Agent has no workspace path attribute")
+                await story_logger.error("Agent has no workspace path attribute")
                 return {**state, "workspace_ready": False, "index_ready": False}
             
             workspace_info = setup_git_worktree(
@@ -531,8 +536,9 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             try:
                 agents_md = get_agents_md(workspace_path)
                 project_context = get_project_context(workspace_path)
+                await story_logger.debug("Loaded project context")
             except Exception as ctx_err:
-                logger.warning(f"[setup_workspace] Failed to load project context: {ctx_err}")
+                await story_logger.warning(f"Failed to load project context: {ctx_err}")
         
         # Load skill registry (fast, sync)
         tech_stack = state.get("tech_stack", "nextjs")
@@ -545,6 +551,8 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if workspace_path and pkg_json and os.path.exists(pkg_json):
+            await story_logger.info("Installing dependencies (pnpm install)...")
+            await story_logger.task("Installing dependencies...")
             loop = asyncio.get_event_loop()
             from functools import partial
             db_future = loop.run_in_executor(_executor, partial(_start_database, workspace_path, story_id))
@@ -556,26 +564,38 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             database_ready = db_result.get("ready", False)
             database_url = db_result.get("url", "")
             
-            # Run prisma generate AFTER pnpm install completes
             if pnpm_success:
-                await loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
+                await story_logger.success("Dependencies installed")
+            else:
+                await story_logger.warning("pnpm install failed, continuing...")
+            
+            # Run prisma generate and db push AFTER pnpm install completes
+            schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
+            if pnpm_success and os.path.exists(schema_path):
+                await story_logger.info("Running prisma generate...")
+                gen_success = await loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
+                
+                if gen_success:
+                    await story_logger.success("Prisma client generated")
+                    # Run db push to create/update tables
+                    if database_ready:
+                        await story_logger.info("Running prisma db push...")
+                        push_success = await loop.run_in_executor(_executor, _run_prisma_db_push, workspace_path)
+                        if push_success:
+                            await story_logger.success("Database schema synced")
+                        else:
+                            await story_logger.warning("prisma db push failed, tables may not be created")
+                else:
+                    await story_logger.warning("prisma generate failed")
         
         # Build project config with tech stack
         project_config = _build_project_config(tech_stack)
         
         # Notify user workspace is ready
-        if agent and workspace_info.get("workspace_ready"):
-            try:
-                from uuid import UUID
-                story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
-                db_status = "DB ready" if database_ready else "No DB"
-                await agent.message_story(
-                    story_uuid,
-                    f"📁 Workspace ready. Branch: {workspace_info.get('branch_name')} | {db_status}",
-                    message_type="progress"
-                )
-            except Exception:
-                pass
+        if workspace_info.get("workspace_ready"):
+            db_status = "DB ready" if database_ready else "No DB"
+            await story_logger.success(f"Workspace ready | Branch: {workspace_info.get('branch_name')} | {db_status}")
+            await story_logger.message("✅ Workspace đã sẵn sàng!")
         
         return {
             **state,
@@ -598,7 +618,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise
-        logger.error(f"[setup_workspace] Error: {e}", exc_info=True)
+        await story_logger.error(f"Workspace setup failed: {str(e)}", exc=e)
         return {
             **state,
             "workspace_ready": False,

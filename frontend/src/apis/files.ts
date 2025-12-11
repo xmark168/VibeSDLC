@@ -16,22 +16,22 @@ export const filesApi = {
   /**
    * Get file tree for a project
    */
-  getFileTree: async (projectId: string, depth: number = 3): Promise<FileTreeResponse> => {
+  getFileTree: async (projectId: string, depth: number = 3, worktree?: string): Promise<FileTreeResponse> => {
     return __request<FileTreeResponse>(OpenAPI, {
       method: "GET",
       url: `/api/v1/projects/${projectId}/files/`,
-      query: { depth },
+      query: { depth, ...(worktree && { worktree }) },
     })
   },
 
   /**
    * Get content of a specific file
    */
-  getFileContent: async (projectId: string, path: string): Promise<FileContentResponse> => {
+  getFileContent: async (projectId: string, path: string, worktree?: string): Promise<FileContentResponse> => {
     return __request<FileContentResponse>(OpenAPI, {
       method: "GET",
       url: `/api/v1/projects/${projectId}/files/content`,
-      query: { path },
+      query: { path, ...(worktree && { worktree }) },
     })
   },
 
@@ -44,4 +44,28 @@ export const filesApi = {
       url: `/api/v1/projects/${projectId}/files/git-status`,
     })
   },
+
+  /**
+   * Get branches and worktrees in project repository
+   */
+  getBranches: async (projectId: string): Promise<BranchesResponse> => {
+    return __request<BranchesResponse>(OpenAPI, {
+      method: "GET",
+      url: `/api/v1/projects/${projectId}/files/branches`,
+    })
+  },
+}
+
+// Types for branch operations
+export interface Worktree {
+  path: string
+  branch?: string
+  head?: string
+  bare?: boolean
+}
+
+export interface BranchesResponse {
+  current: string | null
+  branches: string[]
+  worktrees: Worktree[]
 }

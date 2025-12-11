@@ -383,20 +383,26 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
     1. Format all services (prettier)
     2. Lint fix all services (eslint)
     3. Build all services (install → typecheck → build)
-    4. Start dev server if build passes
+    
+    Note: Dev server is NOT auto-started. User starts it manually via frontend.
     """
     from langgraph.types import interrupt
     from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    
+    # Create story logger
+    story_logger = StoryLogger.from_state(state, agent).with_node("run_code")
     
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")
     if story_id:
         signal = check_interrupt_signal(story_id)
         if signal:
-            logger.info(f"[run_code] Interrupt signal received: {signal}")
+            await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "run_code"})
     
-    logger.debug("[NODE] run_code")
+    await story_logger.info("Running build validation...")
+    await story_logger.message("🧪 Đang chạy validation...")
     
     workspace_path = state.get("workspace_path", "")
     project_id = state.get("project_id", "default")
@@ -426,6 +432,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         logger.debug(f"[run_code] Services: {[s.get('name', 'app') for s in services]}")
         
         # Run seed + format/lint in PARALLEL (optimization: saves ~5s)
+        await story_logger.task("Running format and lint...")
         loop = asyncio.get_event_loop()
         seed_task = loop.run_in_executor(_executor, _run_seed, workspace_path)
         format_lint_task = _run_format_lint_parallel(services, workspace_path)
@@ -433,6 +440,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         logger.debug("[run_code] Running seed + format/lint in parallel...")
         await asyncio.gather(seed_task, format_lint_task, return_exceptions=True)
         
+        await story_logger.task("Running typecheck and build...")
         # Build all services
         all_stdout = ""
         all_stderr = ""
@@ -455,40 +463,20 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         run_status = "PASS" if all_passed else "FAIL"
         summary = ", ".join(summaries)
         
-        # Notify user of build result
+        # Log build result
         story_id = state.get("story_id", "")
-        dev_server_info = {}
         
-        if agent:
-            try:
-                from uuid import UUID
-                if story_id:
-                    story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
-                    icon = "✅" if all_passed else "❌"
-                    await agent.message_story(
-                        story_uuid,
-                        f"{icon} Build: {summary}",
-                        message_type="update" if all_passed else "error"
-                    )
-            except Exception:
-                pass
+        if all_passed:
+            await story_logger.success(f"Build PASSED: {summary}")
+            await story_logger.message("✅ Build passed!")
+        else:
+            await story_logger.error(f"Build FAILED: {summary}")
+            await story_logger.message(f"❌ Build failed: {summary}")
+            if all_stderr:
+                await story_logger.info(f"Errors: {all_stderr[:500]}...")
         
-        # Start dev server if build passed
-        if all_passed and workspace_path and story_id:
-            loop = asyncio.get_event_loop()
-            dev_server_info = await loop.run_in_executor(_executor, _start_dev_server, workspace_path, story_id)
-            
-            if dev_server_info.get("port") and agent:
-                try:
-                    from uuid import UUID
-                    story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
-                    await agent.message_story(
-                        story_uuid,
-                        f"🚀 Dev server: http://localhost:{dev_server_info['port']}",
-                        message_type="update"
-                    )
-                except Exception:
-                    pass
+        # Dev server is started manually via API, not auto-started here
+        # User can start it via the frontend after agent completes
         
         if run_code_span:
             run_code_span.end(output={"status": run_status, "summary": summary})
@@ -499,8 +487,6 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
             "run_stdout": all_stdout,
             "run_stderr": all_stderr,
             "run_result": {"status": run_status, "summary": summary, "services": summaries},
-            "dev_server_port": dev_server_info.get("port"),
-            "dev_server_pid": dev_server_info.get("pid"),
         }
         
     except Exception as e:
@@ -508,7 +494,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise
-        logger.error(f"[run_code] Error: {e}", exc_info=True)
+        await story_logger.error(f"Build validation failed: {str(e)}", exc=e)
         if run_code_span:
             run_code_span.end(output={"error": str(e)})
         return {**state, "run_status": "PASS", "run_result": {"status": "PASS", "summary": f"Error: {e}"}}

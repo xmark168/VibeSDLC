@@ -237,18 +237,26 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute implementation step with preloaded skills."""
     from langgraph.types import interrupt
     from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    
+    # Create story logger
+    story_logger = StoryLogger.from_state(state, agent).with_node("implement")
     
     # Check for pause/cancel signal (triggers LangGraph interrupt)
     story_id = state.get("story_id", "")
     if story_id:
         signal = check_interrupt_signal(story_id)
         if signal:
-            logger.info(f"[implement] Interrupt signal received: {signal}")
+            await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
     
     reset_modified_files()
     current_step, total_steps = state.get("current_step", 0), state.get("total_steps", 0)
-    logger.debug(f"[NODE] implement {current_step + 1}/{total_steps}")
+    await story_logger.info(f"Implementing step {current_step + 1}/{total_steps}...")
+    
+    # Send user-visible task message
+    if current_step == 0:
+        await story_logger.message("🔨 Bắt đầu implement code...")
     
     debug_count = state.get("debug_count", 0)
     is_debug = state.get("task_type") == "bug_fix" or debug_count > 0
@@ -280,21 +288,10 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         step_deps = step.get("dependencies", [])
         step_skills = step.get("skills", [])
         
-        # Notify user - starting step
-        if agent and file_path:
-            try:
-                from uuid import UUID
-                story_id = state.get("story_id", "")
-                if story_id:
-                    story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
-                    task_short = task[:80] + "..." if len(task) > 80 else task
-                    await agent.message_story(
-                        story_uuid,
-                        f"⚙️ [{current_step + 1}/{len(plan_steps)}] {action.upper()} `{file_path}`\n   → {task_short}",
-                        message_type="progress"
-                    )
-            except Exception:
-                pass
+        # Log step details
+        task_short = task[:80] + "..." if len(task) > 80 else task
+        await story_logger.info(f"[{current_step + 1}/{len(plan_steps)}] {action.upper()} `{file_path}` → {task_short}")
+        await story_logger.task(f"[{current_step + 1}/{len(plan_steps)}] {action.upper()} {file_path}", progress=(current_step + 1) / len(plan_steps))
         
         if "frontend-design" in step_skills and "frontend-component" not in step_skills:
             step_skills = step_skills + ["frontend-component"]
@@ -338,7 +335,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         if story_id:
             signal = check_interrupt_signal(story_id)
             if signal:
-                logger.info(f"[implement] Interrupt after LLM: {signal}")
+                await story_logger.info(f"Interrupt after LLM: {signal}")
                 interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
         
         output = _parse_implement_output(response.content or "")
@@ -348,7 +345,8 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
             with open(fp, 'w', encoding='utf-8') as f:
                 f.write(output.content)
             _modified_files.add(file_path)
-            logger.debug(f"[implement] {action.upper()} {file_path}")
+            await story_logger.success(f"Created/modified: {file_path}")
+            await story_logger.task(f"✓ {file_path}")
         elif not output and response.content and file_path:
             match = re.search(r'```(?:typescript|tsx|javascript|jsx|python|prisma)?\s*([\s\S]*?)\s*```', response.content)
             if match:
@@ -395,7 +393,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise
-        logger.error(f"[implement] Error: {e}", exc_info=True)
+        await story_logger.error(f"Implementation failed: {str(e)}", exc=e)
         return {**state, "error": str(e), "action": "RESPOND"}
 
 
@@ -453,16 +451,20 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
     """Execute steps in parallel by layer."""
     from langgraph.types import interrupt
     from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    
+    # Create story logger
+    story_logger = StoryLogger.from_state(state, agent).with_node("implement_parallel")
     
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")
     if story_id:
         signal = check_interrupt_signal(story_id)
         if signal:
-            logger.info(f"[implement_parallel] Interrupt signal received: {signal}")
+            await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "implement_parallel"})
     
-    logger.debug("[NODE] implement_parallel")
+    await story_logger.info("Starting parallel implementation...")
     try:
         plan_steps = state.get("implementation_plan", [])
         workspace_path = state.get("workspace_path", "")
@@ -490,28 +492,17 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             if story_id:
                 signal = check_interrupt_signal(story_id)
                 if signal:
-                    logger.info(f"[implement_parallel] Interrupt at layer {layer_idx}/{total_layers}: {signal}")
+                    await story_logger.info(f"Interrupt at layer {layer_idx}/{total_layers}: {signal}")
                     interrupt({"reason": signal, "story_id": story_id, "node": "implement_parallel", "layer": layer_idx})
             
             layer_steps = layers[layer_num]
             is_parallel = len(layer_steps) > 1 and layer_num >= 5
             
-            # Notify user - layer starting
-            if agent:
-                try:
-                    from uuid import UUID
-                    story_id = state.get("story_id", "")
-                    if story_id:
-                        story_uuid = UUID(story_id) if isinstance(story_id, str) else story_id
-                        files_list = ", ".join([s.get("file_path", "").split("/")[-1] for s in layer_steps[:3]])
-                        more = f" +{len(layer_steps)-3}" if len(layer_steps) > 3 else ""
-                        await agent.message_story(
-                            story_uuid,
-                            f"⚙️ Layer {layer_idx}/{total_layers}: {files_list}{more}",
-                            message_type="progress"
-                        )
-                except Exception:
-                    pass
+            # Log layer progress
+            files_list = ", ".join([s.get("file_path", "").split("/")[-1] for s in layer_steps[:3]])
+            more = f" +{len(layer_steps)-3}" if len(layer_steps) > 3 else ""
+            mode = "parallel" if is_parallel else "sequential"
+            await story_logger.info(f"Layer {layer_idx}/{total_layers} ({mode}): {files_list}{more}")
             
             if is_parallel:
                 results = await run_layer_parallel(layer_steps, lambda s, c=created_components: _implement_single_step(s, state, skill_registry, workspace_path, deps_content, c), state, MAX_CONCURRENT)
@@ -568,11 +559,15 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                 layer_desc = f"layer {layer_num} - {len(layer_files)} files"
                 git_commit_step(workspace_path, layer_num, layer_desc, layer_files)
         
+        await story_logger.success(f"Implementation complete: {len(all_modified)} files in {len(layers)} layers")
+        if all_errors:
+            await story_logger.warning(f"Errors encountered: {len(all_errors)}")
+        
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:
         # Re-raise GraphInterrupt - it's expected for pause/cancel
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise
-        logger.error(f"[implement_parallel] Error: {e}", exc_info=True)
+        await story_logger.error(f"Parallel implementation failed: {str(e)}", exc=e)
         return {**state, "error": str(e), "action": "RESPOND"}
