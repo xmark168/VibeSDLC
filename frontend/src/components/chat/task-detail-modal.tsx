@@ -986,7 +986,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                     className="border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700 dark:hover:bg-purple-950"
                   >
                     {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    Regenerate
+                    Enhance
                   </Button>
                 </div>
               )}

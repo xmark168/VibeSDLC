@@ -31,7 +31,10 @@ class Question(BaseModel):
     type: Literal["open", "multichoice"] = Field(default="multichoice", description="Question type")
     options: Optional[List[str]] = Field(default=None, description="Options for multichoice")
     allow_multiple: bool = Field(default=False, description="Allow multiple selections")
-    category: Optional[str] = Field(default=None, description="Category: target_users, main_features, risks, etc.")
+    category: Optional[str] = Field(
+        default=None, 
+        description="Category: target_users, core_actions, search_browse, transaction_flow, post_action, admin_features"
+    )
 
 
 class QuestionsOutput(BaseModel):
@@ -108,11 +111,11 @@ class UserStory(BaseModel):
     id: str = Field(description="Unique ID, e.g., EPIC-001-US-001")
     epic_id: str = Field(description="Parent epic ID")
     title: str = Field(description="As a [user], I want [goal] so that [benefit]")
-    description: str = Field(description="Business-focused description")
-    requirements: List[str] = Field(default=[], description="5-8 requirements")
-    acceptance_criteria: List[str] = Field(default=[], description="4-6 Given/When/Then scenarios")
+    description: str = Field(description="Business-focused description (1-2 sentences)")
+    requirements: List[str] = Field(default=[], description="3-5 requirements (small scope)")
+    acceptance_criteria: List[str] = Field(default=[], description="2-4 Given/When/Then scenarios")
     priority: int = Field(default=2, ge=1, le=3, description="1=High, 2=Medium, 3=Low")
-    story_point: int = Field(default=3, description="Fibonacci: 1,2,3,5,8,13")
+    story_point: int = Field(default=3, ge=1, le=5, description="1-5 points only (split larger stories)")
     dependencies: List[str] = Field(default=[], description="Story IDs that must complete first")
 
 
@@ -205,7 +208,8 @@ class VerifyStoryOutput(BaseModel):
     # Additional suggestions for story quality
     suggested_story_point: Optional[int] = Field(
         default=None,
-        description="Suggested story points (Fibonacci: 1, 2, 3, 5, 8, 13). Only suggest if story is too large or unclear."
+        ge=1, le=5,
+        description="Suggested story points (1-5 only). If larger, set should_split=True instead."
     )
     suggested_priority: Optional[int] = Field(
         default=None,
