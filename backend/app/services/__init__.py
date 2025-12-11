@@ -12,6 +12,7 @@ from .persona_service import PersonaService
 from .plan_service import PlanService
 from .order_service import OrderService
 from .subscription_service import SubscriptionService
+from .credit_service import CreditService
 from .kanban_service import KanbanService
 from .two_factor_service import TwoFactorService
 from .linked_account_service import LinkedAccountService
@@ -29,6 +30,7 @@ __all__ = [
     "PlanService",
     "OrderService",
     "SubscriptionService",
+    "CreditService",
     "KanbanService",
     "TwoFactorService",
     "LinkedAccountService",

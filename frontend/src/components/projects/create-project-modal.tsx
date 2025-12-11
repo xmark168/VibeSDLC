@@ -273,25 +273,31 @@ export function CreateProjectModal({
 
     setIsLoading(true)
     try {
+      // Build persona selections if custom mode
+      const agentPersonas = agentMode === "custom"
+        ? Object.fromEntries(
+            agentSelections
+              .filter(a => a.personaId)
+              .map(a => [a.role, a.personaId as string])
+          )
+        : undefined
+
       const dataProjectCreate: ProjectCreate = {
         name: projectName,
         tech_stack: techStack ? [techStack] : null,
+        agent_personas: agentPersonas && Object.keys(agentPersonas).length > 0 ? agentPersonas : null,
       }
 
-      await withToast(
-        createProjectMutation.mutateAsync(dataProjectCreate),
-        {
-          loading: "Creating project...",
-          success: <b>Project created successfully!</b>,
-          error: <b>Project creation failed. Please try again.</b>,
-        },
-      )
-    } catch (error) {
-      console.error("Error creating project:", error)
-      toast.error("Failed to create project. Please try again.")
-    } finally {
+      await createProjectMutation.mutateAsync(dataProjectCreate)
+      toast.success("Project created successfully!")
       resetForm()
       setIsOpen(false)
+    } catch (error: any) {
+      console.error("Error creating project:", error)
+      // Extract error message from API response
+      const errorMessage = error?.body?.detail || error?.message || "Failed to create project. Please try again."
+      toast.error(errorMessage, { duration: 5000 })
+      setIsLoading(false)
     }
   }
 
