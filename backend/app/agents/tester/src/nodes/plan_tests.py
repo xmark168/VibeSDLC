@@ -678,13 +678,26 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
     3. Decides test scenarios for each story
     4. Creates a step-by-step test plan
     
+    Includes interrupt signal check for pause/cancel support.
+    
     Output:
     - test_plan: List of test steps
     - testing_context: Auth patterns, ORM, existing mocks
     - total_steps: Number of steps
     - current_step: 0 (starting)
     """
+    from langgraph.types import interrupt
+    from app.agents.tester.src.graph import check_interrupt_signal
+    
     print("[NODE] plan_tests")
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[plan_tests] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "plan_tests"})
     
     stories = state.get("stories", [])
     project_id = state.get("project_id", "")

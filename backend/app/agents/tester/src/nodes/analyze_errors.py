@@ -488,12 +488,25 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     3. Creates fix plan (update test_plan for re-implementation)
     4. Increments debug_count
     
+    Includes interrupt signal check for pause/cancel support.
+    
     Output:
     - error_analysis: Description of what went wrong
     - test_plan: Updated with fix steps
     - debug_count: Incremented
     - debug_history: Append current analysis
     """
+    from langgraph.types import interrupt
+    from app.agents.tester.src.graph import check_interrupt_signal
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[analyze_errors] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "analyze_errors"})
+    
     debug_count = state.get("debug_count", 0)
     max_debug = state.get("max_debug", 3)
     

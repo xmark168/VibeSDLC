@@ -1,4 +1,7 @@
-"""Tester State Schema (aligned with Developer V2)."""
+"""Tester State Schema (aligned with Developer V2).
+
+Updated with checkpoint/interrupt support for pause/resume functionality.
+"""
 
 from typing import TypedDict, Any, Literal, Dict, Optional, List
 
@@ -8,7 +11,10 @@ Action = Literal["PLAN_TESTS", "TEST_STATUS", "CONVERSATION"]
 
 
 class TesterState(TypedDict, total=False):
-    """State for Tester LangGraph (MetaGPT-style)."""
+    """State for Tester LangGraph (MetaGPT-style).
+    
+    Aligned with Developer V2 for checkpoint/interrupt support.
+    """
     
     # ==========================================================================
     # Input
@@ -17,13 +23,22 @@ class TesterState(TypedDict, total=False):
     user_id: str
     project_id: str
     task_id: str
+    story_id: str  # Primary story ID for checkpoint (aligned with dev_v2)
+    story_code: str  # Story code for branch naming
     task_type: str  # AgentTaskType value
     story_ids: List[str]
     is_auto: bool  # Auto-triggered (no user message)
-    langfuse_handler: Any
+    # NOTE: langfuse_handler removed from state - not serializable for checkpointing
     
     # Router output
     action: Action
+    
+    # ==========================================================================
+    # Checkpoint/Interrupt support (aligned with Developer V2)
+    # ==========================================================================
+    checkpoint_thread_id: str  # Thread ID for PostgresSaver checkpoint
+    is_resume: bool  # True if resuming from checkpoint
+    base_branch: str  # Base branch for git operations (default: main)
     
     # ==========================================================================
     # Workspace context (aligned with Developer V2)
@@ -131,3 +146,9 @@ class TesterState(TypedDict, total=False):
     # ==========================================================================
     message: str
     error: Optional[str]
+    
+    # ==========================================================================
+    # Git operations (aligned with Developer V2)
+    # ==========================================================================
+    git_committed: bool  # Whether changes have been committed
+    git_commit_hash: str  # Last commit hash

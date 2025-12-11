@@ -195,13 +195,26 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     3. Executes integration tests
     4. Parses results
     
+    Includes interrupt signal check for pause/cancel support.
+    
     Output:
     - run_status: "PASS" | "FAIL" | "ERROR"
     - run_result: Parsed test results
     - run_stdout: Raw stdout
     - run_stderr: Raw stderr
     """
+    from langgraph.types import interrupt
+    from app.agents.tester.src.graph import check_interrupt_signal
+    
     print("[NODE] run_tests")
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[run_tests] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "run_tests"})
     
     # Use workspace_path (worktree) where files are written, not project_path from DB
     project_path = _get_workspace_path(state)

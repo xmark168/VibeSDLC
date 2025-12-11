@@ -1,8 +1,8 @@
-"""add new db
+"""add db
 
-Revision ID: d2912015720e
+Revision ID: fa47567ab765
 Revises: 
-Create Date: 2025-12-10 11:47:25.407504
+Create Date: 2025-12-11 13:51:51.133856
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision = 'd2912015720e'
+revision = 'fa47567ab765'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -50,6 +50,7 @@ def upgrade():
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.Column('name', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('role_type', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+    sa.Column('avatar', sa.Text(), nullable=True),
     sa.Column('personality_traits', sa.JSON(), nullable=True),
     sa.Column('communication_style', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('persona_metadata', sa.JSON(), nullable=True),
@@ -94,6 +95,20 @@ def upgrade():
     sa.Column('features_text', sa.Text(), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_table('tech_stacks',
+    sa.Column('id', sa.Uuid(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('code', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=False),
+    sa.Column('name', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=False),
+    sa.Column('description', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
+    sa.Column('image', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
+    sa.Column('stack_config', sa.JSON(), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('display_order', sa.Integer(), nullable=False),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_tech_stacks_code'), 'tech_stacks', ['code'], unique=True)
     op.create_table('users',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
@@ -333,7 +348,7 @@ def upgrade():
     sa.Column('order_type', sa.Enum('SUBSCRIPTION', 'CREDIT', name='ordertype'), nullable=False),
     sa.Column('subscription_id', sa.Uuid(), nullable=True),
     sa.Column('amount', sa.Float(), nullable=False),
-    sa.Column('status', sa.Enum('PENDING', 'PAID', 'FAILED', 'CANCELED', name='orderstatus'), nullable=False),
+    sa.Column('status', sa.Enum('PENDING', 'PAID', 'FAILED', 'CANCELED', 'EXPIRED', name='orderstatus'), nullable=False),
     sa.Column('paid_at', sa.DateTime(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('payos_order_code', sa.BigInteger(), nullable=True),
@@ -341,6 +356,8 @@ def upgrade():
     sa.Column('payment_link_id', sa.Text(), nullable=True),
     sa.Column('qr_code', sa.Text(), nullable=True),
     sa.Column('checkout_url', sa.Text(), nullable=True),
+    sa.Column('sepay_transaction_code', sa.Text(), nullable=True),
+    sa.Column('sepay_transaction_id', sa.Text(), nullable=True),
     sa.Column('billing_cycle', sa.Text(), nullable=True),
     sa.Column('plan_code', sa.Text(), nullable=True),
     sa.Column('auto_renew', sa.Boolean(), nullable=False),
@@ -350,6 +367,7 @@ def upgrade():
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_orders_payos_order_code'), 'orders', ['payos_order_code'], unique=True)
+    op.create_index(op.f('ix_orders_sepay_transaction_code'), 'orders', ['sepay_transaction_code'], unique=True)
     op.create_table('projects',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
@@ -478,9 +496,17 @@ def upgrade():
     sa.Column('started_at', sa.DateTime(), nullable=True),
     sa.Column('review_started_at', sa.DateTime(), nullable=True),
     sa.Column('token_used', sa.Integer(), nullable=True),
-    sa.Column('agent_state', sa.Enum('PENDING', 'PROCESSING', 'CANCELED', 'FINISHED', name='storyagentstate'), nullable=True),
+    sa.Column('agent_state', sa.Enum('PENDING', 'PROCESSING', 'PAUSED', 'CANCELED', 'FINISHED', name='storyagentstate'), nullable=True),
     sa.Column('assigned_agent_id', sa.Uuid(), nullable=True),
     sa.Column('branch_name', sqlmodel.sql.sqltypes.AutoString(length=255), nullable=True),
+    sa.Column('worktree_path', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
+    sa.Column('db_container_id', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=True),
+    sa.Column('db_port', sa.Integer(), nullable=True),
+    sa.Column('running_port', sa.Integer(), nullable=True),
+    sa.Column('running_pid', sa.Integer(), nullable=True),
+    sa.Column('pr_url', sqlmodel.sql.sqltypes.AutoString(length=500), nullable=True),
+    sa.Column('merge_status', sqlmodel.sql.sqltypes.AutoString(length=50), nullable=True),
+    sa.Column('checkpoint_thread_id', sqlmodel.sql.sqltypes.AutoString(length=100), nullable=True),
     sa.ForeignKeyConstraint(['assigned_agent_id'], ['agents.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['assignee_id'], ['users.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['epic_id'], ['epics.id'], ondelete='SET NULL'),
@@ -490,6 +516,7 @@ def upgrade():
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_stories_project_id'), 'stories', ['project_id'], unique=False)
+    op.create_index(op.f('ix_stories_story_code'), 'stories', ['story_code'], unique=True)
     op.create_table('workflow_policies',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
@@ -550,6 +577,18 @@ def upgrade():
     sa.ForeignKeyConstraint(['issue_id'], ['stories.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
+    op.create_table('story_logs',
+    sa.Column('id', sa.Uuid(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('story_id', sa.UUID(), nullable=False),
+    sa.Column('content', sa.Text(), nullable=False),
+    sa.Column('level', sa.Enum('debug', 'info', 'warning', 'error', 'success', name='loglevel'), nullable=False),
+    sa.Column('node', sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+    sa.ForeignKeyConstraint(['story_id'], ['stories.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_story_logs_story_id'), 'story_logs', ['story_id'], unique=False)
     op.create_table('story_messages',
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
@@ -575,11 +614,14 @@ def downgrade():
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_index(op.f('ix_story_messages_story_id'), table_name='story_messages')
     op.drop_table('story_messages')
+    op.drop_index(op.f('ix_story_logs_story_id'), table_name='story_logs')
+    op.drop_table('story_logs')
     op.drop_table('issue_activities')
     op.drop_index(op.f('ix_agent_conversations_project_id'), table_name='agent_conversations')
     op.drop_table('agent_conversations')
     op.drop_index(op.f('ix_workflow_policies_project_id'), table_name='workflow_policies')
     op.drop_table('workflow_policies')
+    op.drop_index(op.f('ix_stories_story_code'), table_name='stories')
     op.drop_index(op.f('ix_stories_project_id'), table_name='stories')
     op.drop_table('stories')
     op.drop_table('projectrules')
@@ -590,6 +632,7 @@ def downgrade():
     op.drop_index(op.f('ix_agent_executions_project_id'), table_name='agent_executions')
     op.drop_table('agent_executions')
     op.drop_table('projects')
+    op.drop_index(op.f('ix_orders_sepay_transaction_code'), table_name='orders')
     op.drop_index(op.f('ix_orders_payos_order_code'), table_name='orders')
     op.drop_table('orders')
     op.drop_index(op.f('ix_messages_project_id'), table_name='messages')
@@ -616,6 +659,8 @@ def downgrade():
     op.drop_table('agent_pools')
     op.drop_index(op.f('ix_users_email'), table_name='users')
     op.drop_table('users')
+    op.drop_index(op.f('ix_tech_stacks_code'), table_name='tech_stacks')
+    op.drop_table('tech_stacks')
     op.drop_table('plans')
     op.drop_table('epics')
     op.drop_index(op.f('ix_agent_persona_templates_role_type'), table_name='agent_persona_templates')
