@@ -405,6 +405,8 @@ _git_locks_lock = threading.Lock()
 def _get_git_lock(cwd: str) -> threading.Lock:
     """Get or create a lock for a specific git working directory."""
     # Normalize path to avoid duplicate locks for same dir
+    if not cwd:
+        cwd = "."
     cwd_normalized = str(Path(cwd).resolve())
     
     with _git_locks_lock:
@@ -437,7 +439,19 @@ def git_with_retry(
     
     Raises:
         subprocess.CalledProcessError: If all retries fail
+        OSError: If cwd is invalid
     """
+    # Validate and normalize cwd
+    if not cwd:
+        raise OSError("Working directory (cwd) cannot be empty")
+    
+    cwd_path = Path(cwd)
+    if not cwd_path.exists():
+        raise OSError(f"Working directory does not exist: {cwd}")
+    
+    # Normalize path for Windows compatibility
+    cwd = str(cwd_path.resolve())
+    
     lock = _get_git_lock(cwd)
     last_error = None
     

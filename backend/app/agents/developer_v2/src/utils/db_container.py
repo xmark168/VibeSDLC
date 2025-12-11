@@ -127,6 +127,10 @@ def stop_container_by_id(container_id: str) -> bool:
 
 def update_story_db_info(story_id: str, worktree_path: str, branch_name: str = None) -> bool:
     """Update story in DB with container and workspace info."""
+    if not story_id or story_id == "unknown":
+        logger.warning(f"[db_container] Invalid story_id: {story_id}")
+        return False
+    
     info = get_connection_info(story_id)
     
     try:
@@ -134,8 +138,15 @@ def update_story_db_info(story_id: str, worktree_path: str, branch_name: str = N
         from app.core.db import engine
         from app.models import Story
         
+        # Validate UUID format
+        try:
+            story_uuid = UUID(story_id)
+        except ValueError:
+            logger.error(f"[db_container] Invalid UUID format: {story_id}")
+            return False
+        
         with Session(engine) as session:
-            story = session.get(Story, UUID(story_id))
+            story = session.get(Story, story_uuid)
             if story:
                 story.worktree_path = worktree_path
                 if branch_name:
@@ -145,7 +156,10 @@ def update_story_db_info(story_id: str, worktree_path: str, branch_name: str = N
                     story.db_port = int(info.get("port", 0))
                 session.add(story)
                 session.commit()
+                logger.info(f"[db_container] Updated story {story_id}: worktree_path={worktree_path}, branch_name={branch_name}")
                 return True
+            else:
+                logger.warning(f"[db_container] Story not found: {story_id}")
     except Exception as e:
-        logger.error(f"[db_container] Failed to update story: {e}")
+        logger.error(f"[db_container] Failed to update story {story_id}: {e}")
     return False

@@ -260,13 +260,13 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
     
-    await story_logger.task("📋 Đang phân tích yêu cầu...")
+    await story_logger.info("📋 Analyzing requirements...")
     workspace_path = state.get("workspace_path", "")
     tech_stack = state.get("tech_stack", "nextjs")
     set_tool_context(root_dir=workspace_path, project_id=state.get("project_id", ""), task_id=state.get("task_id") or state.get("story_id", ""))
     
     try:
-        await story_logger.task("📂 Scanning project files...", progress=0.2)
+        await story_logger.info("📂 Scanning project files...")
         repo = FileRepository(workspace_path)
         context = repo.to_context()
         
@@ -287,7 +287,7 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
 
 Create implementation plan. Output JSON steps directly."""
 
-        await story_logger.task("🤖 Generating implementation plan...", progress=0.5)
+        await story_logger.info("🤖 Generating implementation plan...")
         structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
         result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "plan_zero_shot"))
         flush_langfuse(state)

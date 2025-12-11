@@ -519,8 +519,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "setup_workspace"})
     
-    await story_logger.info("Starting workspace setup...")
-    await story_logger.task("🔧 Đang chuẩn bị workspace...")
+    await story_logger.info("🔧 Starting workspace setup...")
     try:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
         story_code = state.get("story_code", f"STORY-{story_id[:8]}")
@@ -566,7 +565,11 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         # Update story in DB with workspace info and branch name
         if story_id and workspace_path:
             from app.agents.developer_v2.src.utils.db_container import update_story_db_info
-            update_story_db_info(story_id, workspace_path, branch_name)
+            update_success = update_story_db_info(story_id, workspace_path, branch_name)
+            if update_success:
+                await story_logger.debug(f"Updated story DB: worktree_path={workspace_path}, branch={branch_name}")
+            else:
+                await story_logger.warning(f"Failed to update story DB for story_id={story_id}")
         
         # Load context (fast, sync)
         project_context = ""
@@ -590,7 +593,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if workspace_path and pkg_json and os.path.exists(pkg_json):
-            await story_logger.task("📦 Installing dependencies...", progress=0.3)
+            await story_logger.info("📦 Installing dependencies (pnpm install)...")
             loop = asyncio.get_event_loop()
             from functools import partial
             db_future = loop.run_in_executor(_executor, partial(_start_database, workspace_path, story_id))
@@ -608,13 +611,13 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             # Run prisma generate and db push AFTER pnpm install completes
             schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
             if pnpm_success and os.path.exists(schema_path):
-                await story_logger.task("🗄️ Generating Prisma client...", progress=0.6)
+                await story_logger.info("🗄️ Generating Prisma client...")
                 gen_success = await loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
                 
                 if gen_success:
                     # Run db push to create/update tables
                     if database_ready:
-                        await story_logger.task("🗄️ Syncing database schema...", progress=0.8)
+                        await story_logger.info("🗄️ Syncing database schema (prisma db push)...")
                         push_success = await loop.run_in_executor(_executor, _run_prisma_db_push, workspace_path)
                         if not push_success:
                             await story_logger.warning("prisma db push failed, tables may not be created")
