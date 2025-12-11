@@ -18,6 +18,81 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Standalone log_to_story function (for use in nodes without StoryLogger class)
+# =============================================================================
+
+async def log_to_story(
+    story_id: str,
+    project_id: str,
+    message: str,
+    level: str = "info",
+    node: str = "",
+) -> None:
+    """Log message to story - saves to DB and broadcasts via WebSocket.
+    
+    This is a standalone function that can be used in nodes without
+    needing to create a StoryLogger instance.
+    
+    Args:
+        story_id: Story UUID as string
+        project_id: Project UUID as string  
+        message: Log message content
+        level: Log level (debug, info, warning, error, success)
+        node: Node name for context (e.g., "run_code", "implement")
+    
+    Usage:
+        await log_to_story(
+            story_id=state.get("story_id"),
+            project_id=state.get("project_id"),
+            message="Starting build...",
+            level="info",
+            node="run_code"
+        )
+    """
+    from app.websocket.connection_manager import connection_manager
+    from app.models.story_log import StoryLog, LogLevel as DBLogLevel
+    from sqlmodel import Session
+    from app.core.db import engine
+    
+    try:
+        # Format message with node prefix
+        formatted_content = f"[{node}] {message}" if node else message
+        
+        # 1. Save to database (story_logs table)
+        try:
+            with Session(engine) as session:
+                log_entry = StoryLog(
+                    story_id=UUID(story_id),
+                    content=formatted_content,
+                    level=DBLogLevel(level) if level in ["debug", "info", "warning", "error"] else DBLogLevel.INFO,
+                    node=node or "agent"
+                )
+                session.add(log_entry)
+                session.commit()
+        except Exception as e:
+            logger.debug(f"[log_to_story] Failed to save log to DB: {e}")
+        
+        # 2. Broadcast via WebSocket (use story_log type, not story_message)
+        await connection_manager.broadcast_to_project({
+            "type": "story_log",
+            "story_id": story_id,
+            "content": formatted_content,
+            "level": level,
+            "node": node,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }, UUID(project_id))
+        
+        # 3. Also log to standard logger for debugging
+        log_func = getattr(logger, level if level in ["debug", "info", "warning", "error"] else "info")
+        log_func(f"[Story:{story_id[:8]}] {formatted_content}")
+        
+    except Exception as e:
+        logger.debug(f"[log_to_story] Failed: {e}")
+        # Fallback to standard logging
+        logger.info(f"[Fallback] [{node}] {message}")
+
+
 class LogLevel(str, Enum):
     DEBUG = "debug"
     INFO = "info"
@@ -82,7 +157,7 @@ class StoryLogger:
         details: Optional[Dict[str, Any]] = None,
         exc: Optional[Exception] = None
     ) -> None:
-        """Send log entry to story."""
+        """Send log entry to story (logs tab, not chat)."""
         try:
             # Format message with node prefix
             formatted_msg = f"[{self.node_name}] {message}" if self.node_name else message
@@ -91,22 +166,21 @@ class StoryLogger:
             if exc:
                 formatted_msg += f"\n  Error: {type(exc).__name__}: {str(exc)}"
             
-            # Send to story via agent's message_story method
-            await self.agent.message_story(
-                story_id=self.story_id,
-                content=formatted_msg,
-                message_type="log",
-                details={
-                    "level": level.value,
-                    "node": self.node_name,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    **(details or {})
-                }
-            )
-            
-            # Also log to standard logger for debugging
-            log_func = getattr(logger, level.value if level.value != "success" else "info")
-            log_func(f"[Story:{str(self.story_id)[:8]}] {formatted_msg}")
+            # Get project_id from agent
+            project_id = self._get_project_id()
+            if project_id:
+                # Use log_to_story (saves to story_logs, broadcasts story_log event)
+                await log_to_story(
+                    story_id=str(self.story_id),
+                    project_id=str(project_id),
+                    message=formatted_msg,
+                    level=level.value,
+                    node=self.node_name
+                )
+            else:
+                # Fallback to standard logging
+                log_func = getattr(logger, level.value if level.value != "success" else "info")
+                log_func(f"[Story:{str(self.story_id)[:8]}] {formatted_msg}")
             
         except Exception as e:
             # Fallback to standard logging if story logging fails
@@ -137,29 +211,52 @@ class StoryLogger:
     # Chat Tab Messages (for user visibility)
     # =========================================================================
     
+    def _get_project_id(self) -> Optional[UUID]:
+        """Get project_id from agent."""
+        if self.agent and hasattr(self.agent, 'project_id'):
+            return self.agent.project_id
+        return None
+    
     async def task(self, message: str, progress: float = None) -> None:
-        """Send task progress to Chat tab (shown as Task component).
+        """Send transient task update via WebSocket - NOT saved to DB.
         
         Use for: step-by-step progress, actions being performed.
+        Frontend displays this in shadcn/ai Task component (ephemeral).
+        
+        Args:
+            message: Task description (e.g., "Installing dependencies...")
+            progress: Optional progress 0.0-1.0 for progress bar
         """
         try:
-            await self.agent.message_story(
-                self.story_id,
-                message,
-                message_type="task",
-                details={
-                    "node": self.node_name,
-                    "progress": progress,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
-            )
+            from app.websocket.connection_manager import connection_manager
+            
+            project_id = self._get_project_id()
+            if not project_id:
+                logger.debug(f"[StoryLogger] task() skipped: no project_id")
+                return
+            
+            # Broadcast directly via WebSocket - NOT through message_story (no DB save)
+            await connection_manager.broadcast_to_project({
+                "type": "story_task",
+                "story_id": str(self.story_id),
+                "content": message,
+                "node": self.node_name,
+                "progress": progress,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }, project_id)
+            
+            # Also log to standard logger for debugging
+            progress_str = f" ({int(progress * 100)}%)" if progress is not None else ""
+            logger.debug(f"[Story:{str(self.story_id)[:8]}] [TASK] {message}{progress_str}")
+            
         except Exception as e:
             logger.debug(f"[StoryLogger] task() failed: {e}")
     
     async def message(self, message: str) -> None:
-        """Send user-friendly message to Chat tab.
+        """Send milestone message to Chat tab - SAVED to DB.
         
         Use for: important updates, milestone completions, errors.
+        This appears in chat history and persists.
         """
         try:
             await self.agent.message_story(
@@ -202,6 +299,9 @@ class NoOpLogger(StoryLogger):
         self.node_name = ""
         self._buffer = []
     
+    def _get_project_id(self) -> Optional[UUID]:
+        return None
+    
     async def _send_log(self, level: LogLevel, message: str, details=None, exc=None) -> None:
         # Just log to standard logger
         formatted_msg = f"[{self.node_name}] {message}" if self.node_name else message
@@ -209,12 +309,13 @@ class NoOpLogger(StoryLogger):
         log_func(formatted_msg)
     
     async def task(self, message: str, progress: float = None) -> None:
-        # Just log to standard logger
-        formatted_msg = f"[{self.node_name}] [TASK] {message}" if self.node_name else f"[TASK] {message}"
+        # Just log to standard logger (no WebSocket)
+        progress_str = f" ({int(progress * 100)}%)" if progress is not None else ""
+        formatted_msg = f"[{self.node_name}] [TASK] {message}{progress_str}" if self.node_name else f"[TASK] {message}{progress_str}"
         logger.info(formatted_msg)
     
     async def message(self, message: str) -> None:
-        # Just log to standard logger
+        # Just log to standard logger (no DB save)
         formatted_msg = f"[{self.node_name}] {message}" if self.node_name else message
         logger.info(formatted_msg)
     

@@ -698,6 +698,135 @@ async def resume_story_task(
     return {"success": True, "message": "Task resumed"}
 
 
+def _cleanup_worktree_sync(
+    worktree_path: str,
+    branch_name: str,
+    main_workspace: str,
+    checkpoint_thread_id: str,
+    story_id: str,
+) -> None:
+    """Synchronous cleanup - runs in thread pool."""
+    from pathlib import Path
+    import subprocess
+    import shutil
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # 1. Git worktree remove
+    if worktree_path:
+        worktree = Path(worktree_path)
+        try:
+            if main_workspace and Path(main_workspace).exists():
+                subprocess.run(
+                    ["git", "worktree", "remove", str(worktree), "--force"],
+                    cwd=main_workspace,
+                    capture_output=True,
+                    timeout=30
+                )
+        except Exception as e:
+            logger.debug(f"Git worktree remove failed: {e}")
+        
+        # 2. Force delete directory if still exists
+        if worktree.exists():
+            try:
+                shutil.rmtree(worktree)
+            except Exception:
+                # Windows long path workaround
+                import platform
+                import tempfile
+                if platform.system() == "Windows":
+                    try:
+                        empty_dir = tempfile.mkdtemp()
+                        subprocess.run(
+                            ["robocopy", empty_dir, str(worktree), "/mir", "/njh", "/njs", "/nc", "/ns", "/np"],
+                            capture_output=True,
+                            timeout=60,
+                        )
+                        shutil.rmtree(empty_dir, ignore_errors=True)
+                        shutil.rmtree(worktree, ignore_errors=True)
+                    except Exception:
+                        pass
+    
+    # 3. Delete branch
+    if branch_name and main_workspace and Path(main_workspace).exists():
+        try:
+            subprocess.run(
+                ["git", "branch", "-D", branch_name],
+                cwd=main_workspace,
+                capture_output=True,
+                timeout=10
+            )
+        except Exception:
+            pass
+    
+    # 4. Delete checkpoint data (separate DB session)
+    if checkpoint_thread_id:
+        try:
+            from sqlmodel import Session
+            from sqlalchemy import text
+            from app.core.db import engine
+            
+            with Session(engine) as db:
+                db.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
+                db.execute(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
+                db.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
+                db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to delete checkpoint data: {e}")
+    
+    # Note: We don't clear story_logs or story_messages on restart
+    # to preserve history for user reference
+
+
+async def _cleanup_and_trigger_agent(
+    worktree_path: str,
+    branch_name: str,
+    main_workspace: str,
+    checkpoint_thread_id: str,
+    story_id: str,
+    project_id: str,
+    user_id: str,
+    story_title: str,
+) -> None:
+    """Background task: cleanup worktree then trigger agent."""
+    import asyncio
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    loop = asyncio.get_event_loop()
+    
+    # Run sync cleanup in thread pool (non-blocking)
+    await loop.run_in_executor(
+        None,
+        _cleanup_worktree_sync,
+        worktree_path,
+        branch_name,
+        main_workspace,
+        checkpoint_thread_id,
+        story_id,
+    )
+    
+    logger.info(f"[restart] Cleanup complete for {story_id}, triggering agent...")
+    
+    # Now trigger agent AFTER cleanup is done
+    from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+    
+    producer = await get_kafka_producer()
+    event = StoryEvent(
+        event_type="story.status.changed",
+        project_id=project_id,
+        user_id=user_id,
+        story_id=story_id,
+        old_status="Todo",
+        new_status="InProgress",
+        title=story_title,
+    )
+    await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+    
+    logger.info(f"[restart] Agent triggered for {story_id}")
+
+
 @router.post("/{story_id}/restart")
 async def restart_story_task(
     *,
@@ -705,12 +834,17 @@ async def restart_story_task(
     current_user: CurrentUser,
     story_id: uuid.UUID
 ) -> Any:
-    """Restart agent task for story (re-publish Kafka event)."""
+    """Restart agent task for story (re-publish Kafka event).
+    
+    Flow:
+    1. Reset state in DB immediately
+    2. Broadcast "pending" state to UI
+    3. Return response immediately
+    4. Background: cleanup worktree -> then trigger agent
+    """
+    import asyncio
     from app.models.base import StoryAgentState
-    from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
     from pathlib import Path
-    import subprocess
-    import shutil
     import os
     import signal
     
@@ -718,131 +852,75 @@ async def restart_story_task(
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     
-    # Stop dev server if running
+    # Stop dev server if running and notify UI
     if story.running_pid:
+        old_port = story.running_port
         try:
             os.kill(story.running_pid, signal.SIGTERM)
         except (ProcessLookupError, OSError):
             pass
+        
+        # Broadcast dev server stopped
+        from app.websocket.connection_manager import connection_manager
+        await connection_manager.broadcast_to_project({
+            "type": "story_state_changed",
+            "story_id": str(story_id),
+            "running_port": None,
+            "running_pid": None,
+            "old_port": old_port,
+        }, story.project_id)
     
-    # Get main workspace from Project (required for git operations)
+    # Get main workspace from Project
     from app.models import Project
     project = session.get(Project, story.project_id)
     main_workspace = None
     if project and project.project_path:
         backend_root = Path(__file__).resolve().parent.parent.parent.parent
-        main_workspace = (backend_root / project.project_path).resolve()
+        main_workspace = str((backend_root / project.project_path).resolve())
     
-    # DELETE worktree completely (fresh start)
-    if story.worktree_path:
-        worktree_path = Path(story.worktree_path)
-        
-        try:
-            # 1. Git worktree remove
-            if main_workspace and main_workspace.exists():
-                subprocess.run(
-                    ["git", "worktree", "remove", str(worktree_path), "--force"],
-                    cwd=str(main_workspace),
-                    capture_output=True,
-                    timeout=30
-                )
-        except Exception:
-            pass
-        
-        # 2. Force delete directory if still exists
-        if worktree_path.exists():
-            try:
-                shutil.rmtree(worktree_path)
-            except Exception:
-                # Windows long path workaround: use robocopy to delete
-                import platform
-                import tempfile
-                if platform.system() == "Windows":
-                    try:
-                        empty_dir = tempfile.mkdtemp()
-                        subprocess.run(
-                            ["robocopy", empty_dir, str(worktree_path), "/mir", "/njh", "/njs", "/nc", "/ns", "/np"],
-                            capture_output=True,
-                            timeout=60,
-                        )
-                        shutil.rmtree(empty_dir, ignore_errors=True)
-                        shutil.rmtree(worktree_path, ignore_errors=True)
-                    except Exception:
-                        pass
+    # Capture values before clearing in DB
+    worktree_path = story.worktree_path
+    branch_name = story.branch_name
+    checkpoint_thread_id = story.checkpoint_thread_id
+    project_id = story.project_id
+    story_title = story.title
     
-    # 3. Delete branch (always try, even if worktree_path is None)
-    if story.branch_name and main_workspace and main_workspace.exists():
-        try:
-            subprocess.run(
-                ["git", "branch", "-D", story.branch_name],
-                cwd=str(main_workspace),
-                capture_output=True,
-                timeout=10
-            )
-        except Exception:
-            pass
-    
-    # 4. Delete checkpoint data from PostgreSQL (LangGraph tables)
-    if story.checkpoint_thread_id:
-        try:
-            from sqlalchemy import text
-            thread_id = story.checkpoint_thread_id
-            # Delete from LangGraph checkpoint tables
-            session.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), {"tid": thread_id})
-            session.execute(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), {"tid": thread_id})
-            session.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": thread_id})
-            session.commit()
-        except Exception as e:
-            import logging
-            logging.warning(f"Failed to delete checkpoint data for {story_id}: {e}")
-    
-    # 5. Clear old logs for fresh start
-    try:
-        from sqlalchemy import text
-        session.execute(text("DELETE FROM story_logs WHERE story_id = :sid"), {"sid": str(story_id)})
-        session.commit()
-    except Exception as e:
-        import logging
-        logging.warning(f"Failed to clear logs for {story_id}: {e}")
-    
-    # Reset state and clear checkpoint (start fresh, not resume)
+    # Reset state immediately
     story.agent_state = StoryAgentState.PENDING
     story.running_pid = None
     story.running_port = None
-    story.worktree_path = None  # Clear worktree path
-    story.branch_name = None    # Clear branch name
-    story.checkpoint_thread_id = None  # Clear checkpoint to start fresh
+    story.worktree_path = None
+    story.branch_name = None
+    story.checkpoint_thread_id = None
     session.add(story)
     session.commit()
     
-    # Clear any leftover cancel/pause signals from previous run
+    # Clear signals
     from app.agents.core.task_registry import clear_signals
     clear_signals(str(story_id))
     
-    # Broadcast WebSocket notification
+    # Broadcast "pending" state to UI immediately
     from app.websocket.connection_manager import connection_manager
     await connection_manager.broadcast_to_project({
-        "type": "story_message",
+        "type": "story_state_changed",
         "story_id": str(story_id),
-        "content": f"🔄 Đang chạy lại task...",
-        "message_type": "system",
         "agent_state": "pending",
-    }, story.project_id)
+        "old_state": None,
+    }, project_id)
     
-    # Publish event to trigger agent
-    producer = await get_kafka_producer()
-    event = StoryEvent(
-        event_type="story.status.changed",
-        project_id=str(story.project_id),
-        user_id=str(current_user.id),
-        story_id=str(story.id),
-        old_status="Todo",
-        new_status="InProgress",
-        title=story.title,
-    )
-    await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+    # Schedule background task: cleanup THEN trigger agent
+    asyncio.create_task(_cleanup_and_trigger_agent(
+        worktree_path,
+        branch_name,
+        main_workspace,
+        checkpoint_thread_id,
+        str(story_id),
+        str(project_id),
+        str(current_user.id),
+        story_title,
+    ))
     
-    return {"success": True, "message": "Task restarted"}
+    return {"success": True, "message": "Task restarting..."}
 
 
 @router.post("/{story_id}/dev-server/start")
@@ -886,13 +964,14 @@ async def start_dev_server(
         except Exception as e:
             print(f"Failed to save log to DB: {e}")
         
-        # Broadcast via WebSocket
+        # Broadcast via WebSocket (use story_log type, not story_message)
         await connection_manager.broadcast_to_project({
-            "type": "story_message",
+            "type": "story_log",
             "story_id": str(story_id),
             "content": f"[dev-server] {message}",
-            "message_type": "log",
-            "details": {"level": level, "node": "dev-server", "timestamp": datetime.now(timezone.utc).isoformat()}
+            "level": level,
+            "node": "dev-server",
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, story.project_id)
     
     is_windows = sys.platform == 'win32'
@@ -1099,13 +1178,14 @@ async def stop_dev_server(
         except Exception as e:
             print(f"Failed to save log to DB: {e}")
         
-        # Broadcast via WebSocket
+        # Broadcast via WebSocket (use story_log type, not story_message)
         await connection_manager.broadcast_to_project({
-            "type": "story_message",
+            "type": "story_log",
             "story_id": str(story_id),
             "content": f"[dev-server] {message}",
-            "message_type": "log",
-            "details": {"level": level, "node": "dev-server", "timestamp": datetime.now(timezone.utc).isoformat()}
+            "level": level,
+            "node": "dev-server",
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }, story.project_id)
     
     if not story.running_pid and not story.running_port:
@@ -1113,8 +1193,6 @@ async def stop_dev_server(
         return {"success": True, "message": "No dev server running"}
     
     is_windows = sys.platform == 'win32'
-    
-    await log_to_story(f"Stopping dev server (PID: {story.running_pid}, Port: {story.running_port})...")
     
     # Kill process
     if story.running_pid:
