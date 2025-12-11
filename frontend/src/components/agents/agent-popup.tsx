@@ -27,9 +27,17 @@ interface AgentPopupProps {
   onMessage?: (agentName: string) => void
 }
 
-// Generate avatar URL from agent human_name using DiceBear API
-const generateAvatarUrl = (name: string): string => {
-  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&chars=2&backgroundColor=6366f1`
+// Generate fallback avatar URL from agent human_name using DiceBear API
+const generateFallbackAvatarUrl = (name: string, roleType?: string): string => {
+  // Role-based colors for visual distinction
+  const roleColors: Record<string, string> = {
+    team_leader: "6366f1",
+    business_analyst: "3b82f6",
+    developer: "22c55e",
+    tester: "f59e0b",
+  }
+  const bgColor = roleColors[roleType || ""] || "6366f1"
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&chars=2&backgroundColor=${bgColor}`
 }
 
 // Map role_type to user-friendly designation
@@ -100,26 +108,49 @@ export function AgentPopup({
     onMessage?.(agent.human_name)
   }
 
+  // Get avatar URL - prefer persona_avatar, fallback to generated
+  const avatarUrl = agent.persona_avatar || generateFallbackAvatarUrl(agent.human_name, agent.role_type)
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm p-0 gap-0 overflow-hidden">
-        {/* Header */}
-        <div className="p-4 bg-gradient-to-br from-primary/5 to-primary/10">
-          <div className="flex items-start gap-3">
-            <img
-              src={generateAvatarUrl(agent.human_name)}
-              alt={agent.human_name}
-              className="w-14 h-14 rounded-xl shadow-md"
-            />
-            <div className="flex-1 min-w-0">
+      <DialogContent className="max-w-sm p-0 gap-0 overflow-hidden rounded-2xl border shadow-2xl">
+        {/* Header with theme-aware gradient */}
+        <div className="p-5 bg-gradient-to-br from-primary/10 via-primary/5 to-background border-b">
+          <div className="flex items-start gap-4">
+            {/* Avatar with status indicator */}
+            <div className="relative flex-shrink-0">
+              <img
+                src={avatarUrl}
+                alt={agent.human_name}
+                className="w-16 h-16 rounded-2xl shadow-lg ring-2 ring-background object-cover"
+                onError={(e) => {
+                  // Fallback if persona_avatar fails to load
+                  e.currentTarget.src = generateFallbackAvatarUrl(agent.human_name, agent.role_type)
+                }}
+              />
+              {/* Status dot overlay */}
+              <span 
+                className={cn(
+                  "absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-background",
+                  getStatusColor(activity?.status || agent.status)
+                )} 
+              />
+            </div>
+            
+            <div className="flex-1 min-w-0 pt-0.5">
               <h3 className="font-semibold text-lg truncate">{agent.human_name}</h3>
               <p className="text-sm text-muted-foreground">{getRoleDesignation(agent.role_type)}</p>
-              <div className="flex items-center gap-2 mt-1.5">
-                <span className={cn("w-2 h-2 rounded-full", getStatusColor(activity?.status || agent.status))} />
-                <span className="text-xs text-muted-foreground capitalize">
-                  {activity?.status || agent.status}
-                </span>
-              </div>
+              <Badge 
+                variant="outline" 
+                className={cn(
+                  "mt-2 text-xs capitalize",
+                  (activity?.status || agent.status) === "busy" && "border-yellow-500 text-yellow-600",
+                  (activity?.status || agent.status) === "idle" && "border-green-500 text-green-600",
+                  (activity?.status || agent.status) === "error" && "border-red-500 text-red-600"
+                )}
+              >
+                {activity?.status || agent.status}
+              </Badge>
             </div>
           </div>
         </div>
@@ -153,10 +184,11 @@ export function AgentPopup({
         </div>
 
         {/* Tab Content */}
-        <div className="min-h-[180px]">
+        <div className="min-h-[200px]">
           {activeTab === "description" ? (
-            <div className="p-4 space-y-4">
-              <p className="text-base font-medium mb-2">Description</p>
+            <div className="p-5 space-y-4">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-2">About</p>
               {/* Status Message / Description */}
               {isLoading ? (
                 <div className="space-y-2">
@@ -164,16 +196,17 @@ export function AgentPopup({
                   <Skeleton className="h-4 w-3/4" />
                 </div>
               ) : activity?.status_message ? (
-                <p className="text-sm leading-relaxed">
+                <p className="text-sm leading-relaxed text-foreground">
                   {activity.status_message}
                 </p>
               ) : (
-                <p className="text-sm italic">Chưa có mô tả</p>
+                <p className="text-sm text-muted-foreground italic">No description available</p>
               )}
+              </div>
 
               {/* Skills */}
               <div>
-                <p className="text-base font-medium mb-2">Skills</p>
+                <p className="text-sm font-medium text-muted-foreground mb-2">Skills</p>
                 {isLoading ? (
                   <div className="flex gap-1.5 flex-wrap">
                     <Skeleton className="h-6 w-16 rounded-full" />
@@ -181,33 +214,36 @@ export function AgentPopup({
                     <Skeleton className="h-6 w-14 rounded-full" />
                   </div>
                 ) : activity?.skills && activity.skills.length > 0 ? (
-                  <div className="flex gap-1.5 flex-wrap">
+                  <div className="flex gap-2 flex-wrap">
                     {activity.skills.map((skill, index) => (
-                      <Badge key={index} variant="secondary" className="text-xs">
+                      <Badge key={index} variant="secondary" className="text-xs px-2.5 py-0.5">
                         {skill}
                       </Badge>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground italic">Chưa có thông tin</p>
+                  <p className="text-sm text-muted-foreground italic">No skills listed</p>
                 )}
               </div>
             </div>
           ) : (
-            <div className="p-4">
+            <div className="p-5">
               {/* Recent Activity */}
               {isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-8 w-full" />
-                  <Skeleton className="h-8 w-full" />
-                  <Skeleton className="h-8 w-5/6" />
+                <div className="space-y-3">
+                  <Skeleton className="h-10 w-full rounded-lg" />
+                  <Skeleton className="h-10 w-full rounded-lg" />
+                  <Skeleton className="h-10 w-5/6 rounded-lg" />
                 </div>
               ) : activity?.recent_activities && activity.recent_activities.length > 0 ? (
-                <div className="space-y-2 max-h-[160px] overflow-y-auto">
+                <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
                   {activity.recent_activities.map((item) => (
-                    <div key={item.id} className="flex items-start gap-2 text-sm">
+                    <div 
+                      key={item.id} 
+                      className="flex items-start gap-3 p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                    >
                       <span className="mt-0.5 flex-shrink-0">{getActivityIcon(item.activity_type)}</span>
-                      <span className="flex-1 min-w-0 text-muted-foreground line-clamp-1">{item.content}</span>
+                      <span className="flex-1 min-w-0 text-sm text-foreground line-clamp-2">{item.content}</span>
                       <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
                         {formatDistanceToNow(new Date(item.created_at), { addSuffix: false, locale: vi })}
                       </span>
@@ -215,19 +251,20 @@ export function AgentPopup({
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground italic text-center py-8">
-                  Chưa có hoạt động nào
-                </p>
+                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                  <Activity className="w-8 h-8 mb-2 opacity-50" />
+                  <p className="text-sm">No recent activity</p>
+                </div>
               )}
             </div>
           )}
         </div>
 
         {/* Action Button */}
-        <div className="p-4 border-t">
-          <Button onClick={handleMessage} className="w-full gap-2">
+        <div className="p-4 border-t bg-muted/30">
+          <Button onClick={handleMessage} className="w-full gap-2 h-10">
             <MessageCircle className="w-4 h-4" />
-            Nhắn tin
+            Send Message
           </Button>
         </div>
       </DialogContent>

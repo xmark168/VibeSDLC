@@ -1,6 +1,6 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye, Trash2 } from "lucide-react"
-import { toast } from "sonner"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye, Trash2, Activity } from "lucide-react"
+import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -27,8 +27,14 @@ import {
   PromptInputButton,
   PromptInputSubmit,
 } from "@/components/ui/ai/prompt-input"
+import {
+  Task,
+  TaskTrigger,
+  TaskContent,
+  TaskItem,
+} from "@/components/ui/ai/task"
 import type { KanbanCardData } from "./kanban-card"
-import React, { useState, useRef, useEffect, useCallback } from "react"
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useStoryWebSocket } from "@/hooks/useStoryWebSocket"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 
@@ -245,6 +251,7 @@ interface ChatMessage {
   content: string
   timestamp: string
   avatar?: string
+  message_type?: 'text' | 'task' | 'system' | 'log'
 }
 
 // Epic info for popup
@@ -309,6 +316,17 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   const [storyLogs, setStoryLogs] = useState<Array<{id: string, content: string, level: string, timestamp: string, node: string}>>([])
   const logsScrollRef = useRef<HTMLDivElement>(null)
   const token = getToken()
+  
+  // Group logs by node for Task component display
+  const groupedLogs = useMemo(() => {
+    const groups: Record<string, typeof storyLogs> = {}
+    storyLogs.forEach(log => {
+      const node = log.node || 'General'
+      if (!groups[node]) groups[node] = []
+      groups[node].push(log)
+    })
+    return groups
+  }, [storyLogs])
   
   // Listen for story log messages from WebSocket
   useEffect(() => {
@@ -610,8 +628,6 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     token ?? undefined,
     initialMessages
   )
-
-
 
   if (!card) return null
 
@@ -1295,40 +1311,63 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   </div>
                 )}
 
-                {/* Messages */}
+                {/* Messages - render based on message_type */}
                 {!isLoadingMessages && chatMessages.map((msg) => (
-                  <Message 
-                    key={msg.id} 
-                    from={msg.author_type === 'agent' ? 'assistant' : 'user'}
-                  >
-                    <MessageAvatar
-                      name={msg.author}
-                      fallback={msg.author_type === 'agent' ? '🤖' : msg.author.charAt(0).toUpperCase()}
-                      className={msg.author_type === 'agent' 
-                        ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' 
-                        : 'bg-primary/10 text-primary'
-                      }
-                    />
-                    <div className="flex flex-col gap-1 max-w-[85%]">
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="font-semibold text-foreground">{msg.author}</span>
-                        {msg.author_type === 'agent' && (
-                          <Badge variant="outline" className="text-[10px] h-4 px-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
-                            Agent
-                          </Badge>
-                        )}
-                        <span className="text-muted-foreground">{formatTimestamp(msg.timestamp)}</span>
-                      </div>
-                      <MessageContent
-                        className={msg.author_type === 'agent'
-                          ? 'bg-blue-500/10 border border-blue-500/20'
-                          : ''
-                        }
-                      >
-                        <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                      </MessageContent>
+                  msg.message_type === 'task' ? (
+                    // Task progress - show as Task component
+                    <div key={msg.id} className="py-2">
+                      <Task defaultOpen={true}>
+                        <TaskTrigger 
+                          title={msg.author}
+                          icon={<Activity className="size-4 text-blue-500" />}
+                        />
+                        <TaskContent>
+                          <TaskItem className="text-foreground">
+                            <div className="flex items-start gap-2">
+                              <span className="text-xs text-muted-foreground shrink-0">
+                                {formatTimestamp(msg.timestamp)}
+                              </span>
+                              <span className="whitespace-pre-wrap break-words">{msg.content}</span>
+                            </div>
+                          </TaskItem>
+                        </TaskContent>
+                      </Task>
                     </div>
-                  </Message>
+                  ) : (
+                    // Regular message - show as Message component
+                    <Message 
+                      key={msg.id} 
+                      from={msg.author_type === 'agent' ? 'assistant' : 'user'}
+                    >
+                      <MessageAvatar
+                        name={msg.author}
+                        fallback={msg.author_type === 'agent' ? '🤖' : msg.author.charAt(0).toUpperCase()}
+                        className={msg.author_type === 'agent' 
+                          ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' 
+                          : 'bg-primary/10 text-primary'
+                        }
+                      />
+                      <div className="flex flex-col gap-1 max-w-[85%]">
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="font-semibold text-foreground">{msg.author}</span>
+                          {msg.author_type === 'agent' && (
+                            <Badge variant="outline" className="text-[10px] h-4 px-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
+                              Agent
+                            </Badge>
+                          )}
+                          <span className="text-muted-foreground">{formatTimestamp(msg.timestamp)}</span>
+                        </div>
+                        <MessageContent
+                          className={msg.author_type === 'agent'
+                            ? 'bg-blue-500/10 border border-blue-500/20'
+                            : ''
+                          }
+                        >
+                          <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                        </MessageContent>
+                      </div>
+                    </Message>
+                  )
                 ))}
 
                 {/* Empty State */}
@@ -1368,7 +1407,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
 
           {/* Logs Tab */}
           <TabsContent value="logs" className="flex-1 overflow-y-auto mt-4 min-h-0">
-            <div ref={logsScrollRef} className="space-y-1 font-mono text-xs">
+            <div ref={logsScrollRef} className="space-y-3 px-1">
               {storyLogs.length === 0 ? (
                 <div className="text-center text-muted-foreground py-8">
                   <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -1376,31 +1415,31 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   <p className="text-xs mt-1">Logs will appear here when actions are performed</p>
                 </div>
               ) : (
-                storyLogs.map((log) => (
-                  <div 
-                    key={log.id} 
-                    className={`px-3 py-1.5 rounded ${
-                      log.level === 'error' ? 'bg-red-500/10 text-red-500' :
-                      log.level === 'warning' ? 'bg-yellow-500/10 text-yellow-600' :
-                      log.level === 'success' ? 'bg-green-500/10 text-green-600' :
-                      'bg-muted/50 text-foreground'
-                    }`}
-                  >
-                    <span className="text-muted-foreground">
-                      {new Date(log.timestamp).toLocaleTimeString('vi-VN')}
-                    </span>
-                    {' '}
-                    <span className={`font-semibold uppercase ${
-                      log.level === 'error' ? 'text-red-500' :
-                      log.level === 'warning' ? 'text-yellow-600' :
-                      log.level === 'success' ? 'text-green-600' :
-                      'text-blue-500'
-                    }`}>
-                      [{log.level}]
-                    </span>
-                    {' '}
-                    {log.content}
-                  </div>
+                Object.entries(groupedLogs).map(([node, logs]) => (
+                  <Task key={node} defaultOpen={true}>
+                    <TaskTrigger 
+                      title={`${node} (${logs.length})`}
+                      icon={<Activity className="size-4" />}
+                    />
+                    <TaskContent>
+                      {logs.map((log) => (
+                        <TaskItem 
+                          key={log.id}
+                          className={
+                            log.level === 'error' ? 'text-red-500' :
+                            log.level === 'warning' ? 'text-yellow-600' :
+                            log.level === 'success' ? 'text-green-600' :
+                            'text-muted-foreground'
+                          }
+                        >
+                          <span className="text-xs text-muted-foreground/70 mr-2">
+                            {new Date(log.timestamp).toLocaleTimeString('vi-VN')}
+                          </span>
+                          {log.content}
+                        </TaskItem>
+                      ))}
+                    </TaskContent>
+                  </Task>
                 ))
               )}
             </div>

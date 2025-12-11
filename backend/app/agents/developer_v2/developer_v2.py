@@ -599,8 +599,8 @@ class DeveloperV2(BaseAgent):
                     logger.error(f"[{self.name}] Failed to load checkpoint_thread_id: {e}")
                     raise
             else:
-                # Generate and persist thread_id for new story
-                thread_id = f"story_{story_id}"
+                # Generate and persist thread_id for new story (unique per agent)
+                thread_id = f"{self.agent_id}_{story_id}"
                 try:
                     with Session(engine) as session:
                         story = session.get(Story, UUID(story_id))
@@ -757,12 +757,20 @@ class DeveloperV2(BaseAgent):
             try:
                 story_uuid = UUID(story_id)
                 total_files = len(files_created) + len(files_modified)
-                await self.message_story(
-                    story_uuid,
-                    f"✅ Hoàn thành! Đã tạo/sửa {total_files} files. Branch: {final_state.get('branch_name', 'N/A')}",
-                    message_type="update",
-                    details={"files_created": files_created, "files_modified": files_modified}
-                )
+                if run_status == "PASS":
+                    await self.message_story(
+                        story_uuid,
+                        f"✅ Story hoàn thành! Đã tạo/sửa {total_files} files.",
+                        message_type="text",
+                        details={"files_created": files_created, "files_modified": files_modified, "branch_name": final_state.get('branch_name')}
+                    )
+                else:
+                    await self.message_story(
+                        story_uuid,
+                        f"❌ Story chưa hoàn thành. Build failed.",
+                        message_type="text",
+                        details={"files_created": files_created, "files_modified": files_modified, "error": final_state.get("run_stderr", "")[:200]}
+                    )
             except Exception:
                 pass
             

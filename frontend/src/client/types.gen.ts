@@ -14,6 +14,11 @@ export type AgentPublic = {
     role_type: string;
     agent_type?: (string | null);
     status: AgentStatus;
+    persona_template_id?: (string | null);
+    persona_avatar?: (string | null);
+    personality_traits?: string[];
+    communication_style?: (string | null);
+    persona_metadata?: (Record<string, any> | null);
     created_at: string;
     updated_at: string;
 };

@@ -402,6 +402,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
             interrupt({"reason": signal, "story_id": story_id, "node": "run_code"})
     
     await story_logger.info("Running build validation...")
+    await story_logger.message("🧪 Đang chạy validation...")
     
     workspace_path = state.get("workspace_path", "")
     project_id = state.get("project_id", "default")
@@ -431,6 +432,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         logger.debug(f"[run_code] Services: {[s.get('name', 'app') for s in services]}")
         
         # Run seed + format/lint in PARALLEL (optimization: saves ~5s)
+        await story_logger.task("Running format and lint...")
         loop = asyncio.get_event_loop()
         seed_task = loop.run_in_executor(_executor, _run_seed, workspace_path)
         format_lint_task = _run_format_lint_parallel(services, workspace_path)
@@ -438,6 +440,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         logger.debug("[run_code] Running seed + format/lint in parallel...")
         await asyncio.gather(seed_task, format_lint_task, return_exceptions=True)
         
+        await story_logger.task("Running typecheck and build...")
         # Build all services
         all_stdout = ""
         all_stderr = ""
@@ -465,8 +468,10 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         if all_passed:
             await story_logger.success(f"Build PASSED: {summary}")
+            await story_logger.message("✅ Build passed!")
         else:
             await story_logger.error(f"Build FAILED: {summary}")
+            await story_logger.message(f"❌ Build failed: {summary}")
             if all_stderr:
                 await story_logger.info(f"Errors: {all_stderr[:500]}...")
         

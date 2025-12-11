@@ -148,6 +148,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             interrupt({"reason": signal, "story_id": story_id, "node": "analyze_error"})
     
     await story_logger.info("Analyzing build errors...")
+    await story_logger.message("🔍 Đang phân tích lỗi...")
     
     try:
         error_logs = state.get("run_stderr", "") or state.get("run_stdout", "")
@@ -193,6 +194,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         cleaned_logs = _clean_logs(error_logs)
         
         await story_logger.info(f"Found {len(parsed_errors)} errors to analyze")
+        await story_logger.task(f"Analyzing {len(parsed_errors)} errors...")
         
         # History context
         history = ""
@@ -253,9 +255,12 @@ Analyze the error and respond with JSON in <result> tags:
         
         if not result.should_continue or not result.fix_steps:
             await story_logger.warning("Error cannot be auto-fixed, requires manual intervention")
+            await story_logger.message("⚠️ Lỗi không thể tự động sửa, cần can thiệp thủ công")
             return {**state, "error_analysis": {"error_type": result.error_type, "root_cause": result.root_cause}, "action": "RESPOND"}
         
+        debug_count = state.get("debug_count", 0)
         await story_logger.success(f"Generated {len(result.fix_steps)} fix steps, attempting repair...")
+        await story_logger.message(f"🔧 Đã tìm ra lỗi, đang thử sửa (lần {debug_count + 1})...")
         
         return {
             **state,

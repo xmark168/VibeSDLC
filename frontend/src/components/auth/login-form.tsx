@@ -1,5 +1,4 @@
 import { Link } from "@tanstack/react-router"
-import { OAuthProvider } from "appwrite"
 import { motion } from "framer-motion"
 import type React from "react"
 import { useState, useEffect } from "react"
@@ -8,9 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import useAuth from "@/hooks/useAuth"
-import { account } from "@/lib/appwrite"
-import { withToast } from "@/utils"
-import { Chrome, Facebook, Github, Loader2 } from "lucide-react"
+import { toast } from "@/lib/toast"
+import { Facebook, Github, Loader2 } from "lucide-react"
 import { FaGooglePlusG } from "react-icons/fa6";
 
 const REMEMBER_EMAIL_KEY = "vibeSDLC_remembered_email"
@@ -24,7 +22,7 @@ export function LoginForm() {
   const [oauthLoading, setOauthLoading] = useState<OAuthLoadingProvider>(null)
   const { loginMutation } = useAuth()
 
-  // Load remembered email on mount
+
   useEffect(() => {
     const rememberedEmail = localStorage.getItem(REMEMBER_EMAIL_KEY)
     if (rememberedEmail) {
@@ -35,35 +33,18 @@ export function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log("Login attempt:", { email, password })
-    const data = { email, password }
-
-    await withToast(
-      new Promise((resolve, reject) => {
-        loginMutation.mutate(
-          {
-            requestBody: {
-              ...data,
-            },
-          },
-          {
-            onSuccess: (result) => {
-              // Save or remove email based on remember me checkbox
-              if (rememberMe) {
-                localStorage.setItem(REMEMBER_EMAIL_KEY, email)
-              } else {
-                localStorage.removeItem(REMEMBER_EMAIL_KEY)
-              }
-              resolve(result)
-            },
-            onError: reject,
-          },
-        )
-      }),
+    loginMutation.mutate(
       {
-        loading: "Signing in...",
-        success: <b>Welcome back!</b>,
-        error: <b>Login failed. Please try again.</b>,
+        requestBody: { email, password },
+      },
+      {
+        onSuccess: () => {
+          toast.success("Welcome back!")
+          console.log("login2")
+        },
+        onError: () => {
+          toast.error("Login failed. Please try again.")
+        },
       },
     )
   }
@@ -131,7 +112,7 @@ export function LoginForm() {
         {/* </div> */}
 
         {/* Form Email/Password */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-2">
             <Label htmlFor="email" className="sr-only">
               Email
@@ -213,6 +194,7 @@ export function LoginForm() {
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-3">
               <Button
+                type="button"
                 onClick={handleLoginGoogle}
                 variant="outline"
                 disabled={isOAuthDisabled}
@@ -226,6 +208,7 @@ export function LoginForm() {
                 <span className="font-medium">Google</span>
               </Button>
               <Button
+                type="button"
                 onClick={handleLoginGithub}
                 variant="outline"
                 disabled={isOAuthDisabled}
@@ -239,6 +222,7 @@ export function LoginForm() {
                 <span className="font-medium">GitHub</span>
               </Button>
               <Button
+                type="button"
                 onClick={handleLoginFacebook}
                 variant="outline"
                 disabled={isOAuthDisabled}

@@ -261,12 +261,14 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
     
     await story_logger.info("Starting planning phase...")
+    await story_logger.message("📋 Đang phân tích yêu cầu và tạo kế hoạch...")
     workspace_path = state.get("workspace_path", "")
     tech_stack = state.get("tech_stack", "nextjs")
     set_tool_context(root_dir=workspace_path, project_id=state.get("project_id", ""), task_id=state.get("task_id") or state.get("story_id", ""))
     
     try:
         await story_logger.info("Scanning project files...")
+        await story_logger.task("Reading project structure...")
         repo = FileRepository(workspace_path)
         context = repo.to_context()
         await story_logger.debug(f"Found {len(repo.file_tree)} files in project")
@@ -289,6 +291,7 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
 Create implementation plan. Output JSON steps directly."""
 
         await story_logger.info("Generating implementation plan with AI...")
+        await story_logger.task("Analyzing requirements and creating plan...")
         structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
         result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "plan_zero_shot"))
         flush_langfuse(state)
@@ -339,6 +342,7 @@ Create implementation plan. Output JSON steps directly."""
         if steps:
             step_list = "\n".join([f"  {i+1}. {s.get('file_path', '')} ({s.get('action', 'modify')})" for i, s in enumerate(steps)])
             await story_logger.success(f"Plan ready ({len(steps)} steps, {len(layers)} layers):\n{step_list}")
+            await story_logger.message(f"✅ Đã tạo kế hoạch: {len(steps)} steps")
         
         return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
     except Exception as e:
