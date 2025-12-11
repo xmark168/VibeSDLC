@@ -1485,6 +1485,83 @@ async def get_story_diffs(
         raise HTTPException(status_code=500, detail=f"Failed to get diffs: {str(e)}")
 
 
+@router.get("/{story_id}/file-diff")
+async def get_file_diff(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID,
+    file_path: str = Query(..., description="Path to file relative to worktree")
+) -> Any:
+    """Get git diff for a specific file in story worktree."""
+    import subprocess
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    if not story.worktree_path:
+        return {"file_path": file_path, "diff": "", "has_changes": False, "error": "No worktree"}
+    
+    # Helper: Detect default branch
+    def get_default_branch(cwd: str) -> str:
+        for branch in ['master', 'main']:
+            result = subprocess.run(
+                ["git", "rev-parse", "--verify", branch],
+                cwd=cwd, capture_output=True, timeout=5
+            )
+            if result.returncode == 0:
+                return branch
+        return 'master'
+    
+    try:
+        base_branch = get_default_branch(story.worktree_path)
+        
+        # Try diff against base branch first
+        result = subprocess.run(
+            ["git", "diff", f"{base_branch}...HEAD", "--", file_path],
+            cwd=story.worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        diff_output = result.stdout if result.returncode == 0 else ""
+        
+        # If no diff against branch, check uncommitted changes
+        if not diff_output.strip():
+            result = subprocess.run(
+                ["git", "diff", "--", file_path],
+                cwd=story.worktree_path,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            diff_output = result.stdout if result.returncode == 0 else ""
+        
+        # Also check staged changes if still no diff
+        if not diff_output.strip():
+            result = subprocess.run(
+                ["git", "diff", "--cached", "--", file_path],
+                cwd=story.worktree_path,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            diff_output = result.stdout if result.returncode == 0 else ""
+        
+        return {
+            "file_path": file_path,
+            "diff": diff_output,
+            "has_changes": bool(diff_output.strip()),
+            "base_branch": base_branch
+        }
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Git command timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get file diff: {str(e)}")
+
+
 @router.get("/{story_id}/preview-files")
 async def get_preview_files(
     story_id: uuid.UUID,

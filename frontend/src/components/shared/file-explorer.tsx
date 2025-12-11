@@ -9,6 +9,7 @@ import {
   RefreshCw,
   GitBranch,
   Circle,
+  GitCompare,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
@@ -24,19 +25,24 @@ import {
 
 interface FileExplorerProps {
   projectId?: string
+  storyId?: string
   onFileSelect: (path: string, worktree?: string) => void
+  onViewDiff?: (path: string) => void
   selectedFile: string | null
   initialWorktree?: string
 }
 
 export function FileExplorer({
   projectId,
+  storyId,
   onFileSelect,
+  onViewDiff,
   selectedFile,
   initialWorktree,
 }: FileExplorerProps) {
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  const [loadingFolders, setLoadingFolders] = useState<Set<string>>(new Set())
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -56,6 +62,7 @@ export function FileExplorer({
 
   // Fetch file tree when projectId or selectedWorktree changes
   useEffect(() => {
+    console.log("[FileExplorer] useEffect triggered, projectId:", projectId, "selectedWorktree:", selectedWorktree)
     if (projectId) {
       fetchFileTree()
       fetchGitStatus()
@@ -129,7 +136,8 @@ export function FileExplorer({
     if (!projectId) return
 
     try {
-      const response = await filesApi.getGitStatus(projectId)
+      const response = await filesApi.getGitStatus(projectId, selectedWorktree || undefined)
+      console.log("[FileExplorer] Git status:", response)
       setGitStatus(response)
     } catch (err: any) {
       console.error("Failed to fetch git status:", err)
@@ -148,20 +156,72 @@ export function FileExplorer({
     }
   }
 
-  const toggleFolder = (path: string) => {
+  const toggleFolder = async (path: string, node: FileNode) => {
     const newExpanded = new Set(expandedFolders)
     if (newExpanded.has(path)) {
       newExpanded.delete(path)
+      setExpandedFolders(newExpanded)
     } else {
       newExpanded.add(path)
+      setExpandedFolders(newExpanded)
+      
+      // Lazy load children if not already loaded
+      if (node.children === null || node.children === undefined) {
+        await loadFolderChildren(path, node)
+      }
     }
-    setExpandedFolders(newExpanded)
+  }
+
+  // Lazy load folder children
+  const loadFolderChildren = async (path: string, node: FileNode) => {
+    if (!projectId) return
+    
+    setLoadingFolders(prev => new Set(prev).add(path))
+    
+    try {
+      const response = await filesApi.getFolderChildren(projectId, path, selectedWorktree || undefined, 2)
+      
+      // Update the tree with loaded children
+      setFileTree(prev => updateNodeChildren(prev, path, response.children))
+    } catch (err) {
+      console.error("Failed to load folder children:", err)
+    } finally {
+      setLoadingFolders(prev => {
+        const next = new Set(prev)
+        next.delete(path)
+        return next
+      })
+    }
+  }
+
+  // Helper to update node children in tree
+  const updateNodeChildren = (nodes: FileNode[], targetPath: string, children: FileNode[]): FileNode[] => {
+    return nodes.map(node => {
+      if (node.path === targetPath) {
+        return { ...node, children }
+      }
+      if (node.children && node.type === "folder") {
+        return { ...node, children: updateNodeChildren(node.children, targetPath, children) }
+      }
+      return node
+    })
   }
 
   // Get git status for a file
   const getFileChangeType = (filePath: string): string | null => {
-    if (!gitStatus?.is_git_repo || !gitStatus.files) return null
-    return gitStatus.files[filePath] || null
+    if (!gitStatus?.is_git_repo) return null
+    
+    // Check if file path matches (support both full path and relative path)
+    const matchPath = (files: string[] | undefined, path: string) => {
+      if (!files) return false
+      return files.some(f => f === path || path.endsWith(f) || f.endsWith(path))
+    }
+    
+    if (matchPath(gitStatus.modified_files, filePath)) return 'M'
+    if (matchPath(gitStatus.staged_files, filePath)) return 'A'
+    if (matchPath(gitStatus.untracked_files, filePath)) return 'U'
+    
+    return null
   }
 
   // Get color/icon for change type
@@ -188,16 +248,19 @@ export function FileExplorer({
   const renderNode = (node: FileNode, depth = 0) => {
     const isExpanded = expandedFolders.has(node.path)
     const isSelected = selectedFile === node.path
+    const isLoadingFolder = loadingFolders.has(node.path)
 
     if (node.type === "folder") {
       return (
         <div key={node.path}>
           <button
-            onClick={() => toggleFolder(node.path)}
+            onClick={() => toggleFolder(node.path, node)}
             className="w-full flex items-center gap-1.5 px-2 py-1 text-sm hover:bg-accent/50 transition-colors"
             style={{ paddingLeft: `${depth * 12 + 8}px` }}
           >
-            {isExpanded ? (
+            {isLoadingFolder ? (
+              <Loader2 className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 animate-spin" />
+            ) : isExpanded ? (
               <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
             ) : (
               <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
@@ -218,29 +281,48 @@ export function FileExplorer({
       )
     }
 
+    const changeType = getFileChangeType(node.path)
+    
     return (
-      <button
+      <div
         key={node.path}
-        onClick={() => onFileSelect(node.path, selectedWorktree || undefined)}
         className={cn(
           "w-full flex items-center gap-1.5 px-2 py-1 text-sm hover:bg-accent/50 transition-colors group",
           isSelected && "bg-accent",
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
-        <div className="w-3.5 flex-shrink-0 flex items-center justify-center">
-          {getChangeIndicator(getFileChangeType(node.path))}
-        </div>
-        <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-        <span className="text-foreground truncate flex-1 text-left">
-          {node.name}
-        </span>
+        <button
+          onClick={() => onFileSelect(node.path, selectedWorktree || undefined)}
+          className="flex items-center gap-1.5 flex-1 min-w-0"
+        >
+          <div className="w-3.5 flex-shrink-0 flex items-center justify-center">
+            {getChangeIndicator(changeType)}
+          </div>
+          <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          <span className="text-foreground truncate flex-1 text-left">
+            {node.name}
+          </span>
+        </button>
+        {/* View diff button - show for files with changes */}
+        {changeType && onViewDiff && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onViewDiff(node.path)
+            }}
+            className="p-1 rounded hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity"
+            title="View diff"
+          >
+            <GitCompare className="w-3.5 h-3.5 text-muted-foreground" />
+          </button>
+        )}
         {node.size && (
           <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
             {formatFileSize(node.size)}
           </span>
         )}
-      </button>
+      </div>
     )
   }
 

@@ -333,14 +333,14 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     if (!card?.id) return
     
     const handleStoryLog = (event: CustomEvent) => {
-      const { story_id, content, message_type, details } = event.detail
-      if (story_id === card.id && message_type === 'log') {
+      const { story_id, content, level, node, timestamp } = event.detail
+      if (story_id === card.id) {
         setStoryLogs(prev => [...prev, {
           id: `${Date.now()}-${Math.random()}`,
-          content,
-          level: details?.level || 'info',
-          timestamp: details?.timestamp || new Date().toISOString(),
-          node: details?.node || ''
+          content: content || '',
+          level: level || 'info',
+          timestamp: timestamp || new Date().toISOString(),
+          node: node || ''
         }])
       }
     }
