@@ -133,6 +133,44 @@ class StoryLogger:
         """Log success message."""
         await self._send_log(LogLevel.SUCCESS, message, details)
     
+    # =========================================================================
+    # Chat Tab Messages (for user visibility)
+    # =========================================================================
+    
+    async def task(self, message: str, progress: float = None) -> None:
+        """Send task progress to Chat tab (shown as Task component).
+        
+        Use for: step-by-step progress, actions being performed.
+        """
+        try:
+            await self.agent.message_story(
+                self.story_id,
+                message,
+                message_type="task",
+                details={
+                    "node": self.node_name,
+                    "progress": progress,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+        except Exception as e:
+            logger.debug(f"[StoryLogger] task() failed: {e}")
+    
+    async def message(self, message: str) -> None:
+        """Send user-friendly message to Chat tab.
+        
+        Use for: important updates, milestone completions, errors.
+        """
+        try:
+            await self.agent.message_story(
+                self.story_id,
+                message,
+                message_type="text",
+                details={"node": self.node_name}
+            )
+        except Exception as e:
+            logger.debug(f"[StoryLogger] message() failed: {e}")
+    
     # Sync versions for non-async code (buffers and flushes later)
     def debug_sync(self, message: str, **details) -> None:
         """Sync version - logs immediately to standard logger."""
@@ -169,6 +207,16 @@ class NoOpLogger(StoryLogger):
         formatted_msg = f"[{self.node_name}] {message}" if self.node_name else message
         log_func = getattr(logger, level.value if level.value != "success" else "info")
         log_func(formatted_msg)
+    
+    async def task(self, message: str, progress: float = None) -> None:
+        # Just log to standard logger
+        formatted_msg = f"[{self.node_name}] [TASK] {message}" if self.node_name else f"[TASK] {message}"
+        logger.info(formatted_msg)
+    
+    async def message(self, message: str) -> None:
+        # Just log to standard logger
+        formatted_msg = f"[{self.node_name}] {message}" if self.node_name else message
+        logger.info(formatted_msg)
     
     def with_node(self, node_name: str) -> "NoOpLogger":
         noop = NoOpLogger()

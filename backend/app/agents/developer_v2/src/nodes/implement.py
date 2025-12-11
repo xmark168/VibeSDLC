@@ -254,6 +254,10 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     current_step, total_steps = state.get("current_step", 0), state.get("total_steps", 0)
     await story_logger.info(f"Implementing step {current_step + 1}/{total_steps}...")
     
+    # Send user-visible task message
+    if current_step == 0:
+        await story_logger.message("🔨 Bắt đầu implement code...")
+    
     debug_count = state.get("debug_count", 0)
     is_debug = state.get("task_type") == "bug_fix" or debug_count > 0
     prev_step = state.get("_last_implement_step", -1)
@@ -287,6 +291,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         # Log step details
         task_short = task[:80] + "..." if len(task) > 80 else task
         await story_logger.info(f"[{current_step + 1}/{len(plan_steps)}] {action.upper()} `{file_path}` → {task_short}")
+        await story_logger.task(f"[{current_step + 1}/{len(plan_steps)}] {action.upper()} {file_path}", progress=(current_step + 1) / len(plan_steps))
         
         if "frontend-design" in step_skills and "frontend-component" not in step_skills:
             step_skills = step_skills + ["frontend-component"]
@@ -341,6 +346,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                 f.write(output.content)
             _modified_files.add(file_path)
             await story_logger.success(f"Created/modified: {file_path}")
+            await story_logger.task(f"✓ {file_path}")
         elif not output and response.content and file_path:
             match = re.search(r'```(?:typescript|tsx|javascript|jsx|python|prisma)?\s*([\s\S]*?)\s*```', response.content)
             if match:

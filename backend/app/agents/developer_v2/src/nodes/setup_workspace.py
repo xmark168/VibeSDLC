@@ -481,6 +481,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             interrupt({"reason": signal, "story_id": story_id, "node": "setup_workspace"})
     
     await story_logger.info("Starting workspace setup...")
+    await story_logger.message("🔧 Đang chuẩn bị workspace...")
     try:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
         story_code = state.get("story_code", f"STORY-{story_id[:8]}")
@@ -551,6 +552,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if workspace_path and pkg_json and os.path.exists(pkg_json):
             await story_logger.info("Installing dependencies (pnpm install)...")
+            await story_logger.task("Installing dependencies...")
             loop = asyncio.get_event_loop()
             from functools import partial
             db_future = loop.run_in_executor(_executor, partial(_start_database, workspace_path, story_id))
@@ -593,6 +595,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         if workspace_info.get("workspace_ready"):
             db_status = "DB ready" if database_ready else "No DB"
             await story_logger.success(f"Workspace ready | Branch: {workspace_info.get('branch_name')} | {db_status}")
+            await story_logger.message("✅ Workspace đã sẵn sàng!")
         
         return {
             **state,
