@@ -247,7 +247,7 @@ export function BatchQuestionsCard({
   const hasOther = currentAnswer ? Array.from(currentAnswer.selectedOptions).some(isOtherOption) : false
   
   return (
-    <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20">
+    <Card className="border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 transition-all duration-300">
       <CardContent className="p-4 space-y-4">
         {/* Header with progress */}
         <div className="flex items-center justify-between">

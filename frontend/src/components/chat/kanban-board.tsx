@@ -641,10 +641,7 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
           incompleteDeps: incompleteDeps.map(d => d.content)
         })
         if (isBlocked) {
-          toast.error(`Cannot move story`, {
-            description: `${incompleteDeps.length} incomplete dependencies: ${incompleteDeps.map(d => d.content).slice(0, 2).join(', ')}${incompleteDeps.length > 2 ? '...' : ''}`,
-            duration: 4000,
-          })
+          toast.error(`Cannot move story: ${incompleteDeps.length} incomplete dependencies`)
           // Revert to original state
           if (savedClonedCards) {
             setCards(savedClonedCards)
@@ -660,18 +657,45 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       })
 
       // Update local state with columnId and ranks
-      setCards(prev => prev.map(card => {
-        if (card.id === active.id) {
-          // Move card to new column with new rank
+      setCards(prev => {
+        // First pass: update columnId and ranks
+        const updatedCards = prev.map(card => {
+          if (card.id === active.id) {
+            const newRank = newRanks.get(card.id)
+            return { ...card, columnId: overContainer, rank: newRank ?? card.rank }
+          }
           const newRank = newRanks.get(card.id)
-          return { ...card, columnId: overContainer, rank: newRank ?? card.rank }
-        }
-        const newRank = newRanks.get(card.id)
-        if (newRank !== undefined) {
-          return { ...card, rank: newRank }
-        }
-        return card
-      }))
+          if (newRank !== undefined) {
+            return { ...card, rank: newRank }
+          }
+          return card
+        })
+        
+        // Second pass: recalculate isBlocked for cards that depend on the moved card
+        const movedCardId = active.id as string
+        return updatedCards.map(card => {
+          // Only recalculate if this card depends on the moved card
+          if (!card.dependencies?.includes(movedCardId)) {
+            return card
+          }
+          // Calculate new blocked state
+          const newIsBlocked = card.columnId !== 'done' && card.columnId !== 'archived' &&
+            card.dependencies.some(depId => {
+              const dep = updatedCards.find(c => c.id === depId)
+              return dep && dep.columnId !== 'done' && dep.columnId !== 'archived'
+            })
+          const newBlockedByCount = card.dependencies.filter(depId => {
+            const dep = updatedCards.find(c => c.id === depId)
+            return dep && dep.columnId !== 'done' && dep.columnId !== 'archived'
+          }).length
+          
+          // Only create new object if values changed
+          if (card.isBlocked === newIsBlocked && card.blockedByCount === newBlockedByCount) {
+            return card
+          }
+          return { ...card, isBlocked: newIsBlocked, blockedByCount: newBlockedByCount }
+        })
+      })
 
       // Save to backend
       try {
@@ -854,17 +878,37 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
     if (targetColumnId !== 'todo' && targetColumnId !== 'archived') {
       const { isBlocked, incompleteDeps } = checkDependenciesCompleted(card)
       if (isBlocked) {
-        toast.error(`Không thể di chuyển story`, {
-          description: `${incompleteDeps.length} dependencies chưa hoàn thành: ${incompleteDeps.map(d => d.content).slice(0, 2).join(', ')}${incompleteDeps.length > 2 ? '...' : ''}`,
-          duration: 4000,
-        })
+        toast.error(`Không thể di chuyển story: ${incompleteDeps.length} dependencies chưa hoàn thành`)
         return
       }
     }
 
-    setCards(prev => prev.map(c =>
-      c.id === cardId ? { ...c, columnId: targetColumnId } : c
-    ))
+    setCards(prev => {
+      // First pass: update columnId
+      const updatedCards = prev.map(c =>
+        c.id === cardId ? { ...c, columnId: targetColumnId } : c
+      )
+      // Second pass: recalculate isBlocked only for cards that depend on the moved card
+      return updatedCards.map(c => {
+        if (!c.dependencies?.includes(cardId)) {
+          return c
+        }
+        const newIsBlocked = c.columnId !== 'done' && c.columnId !== 'archived' &&
+          c.dependencies.some(depId => {
+            const dep = updatedCards.find(card => card.id === depId)
+            return dep && dep.columnId !== 'done' && dep.columnId !== 'archived'
+          })
+        const newBlockedByCount = c.dependencies.filter(depId => {
+          const dep = updatedCards.find(card => card.id === depId)
+          return dep && dep.columnId !== 'done' && dep.columnId !== 'archived'
+        }).length
+        
+        if (c.isBlocked === newIsBlocked && c.blockedByCount === newBlockedByCount) {
+          return c
+        }
+        return { ...c, isBlocked: newIsBlocked, blockedByCount: newBlockedByCount }
+      })
+    })
 
     try {
       const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {

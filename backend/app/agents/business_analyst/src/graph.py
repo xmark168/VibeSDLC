@@ -19,6 +19,7 @@ from .nodes import (
     update_prd,
     extract_stories,
     update_stories,
+    edit_single_story,
     approve_stories,
     analyze_domain,
     save_artifacts,
@@ -28,7 +29,7 @@ from .nodes import (
 logger = logging.getLogger(__name__)
 
 
-def route_by_intent(state: BAState) -> Literal["conversational", "interview", "prd_create", "prd_update", "extract_stories", "stories_update", "stories_approve"]:
+def route_by_intent(state: BAState) -> Literal["conversational", "interview", "prd_create", "prd_update", "extract_stories", "stories_update", "story_edit_single", "stories_approve"]:
     """Router: Direct flow based on classified intent."""
     intent = state.get("intent", "interview")
     reasoning = state.get("reasoning", "")
@@ -77,14 +78,19 @@ def route_by_intent(state: BAState) -> Literal["conversational", "interview", "p
         )
         return "interview"
     
-    # For stories_update, we need existing epics
+    # For stories_update and story_edit_single, we need existing epics
     # For stories_approve, let the node handle loading from artifact
-    if intent == "stories_update" and not epics:
+    if intent in ("stories_update", "story_edit_single") and not epics:
         logger.warning(
-            f"[BA Graph] Overriding 'stories_update' -> 'extract_stories': "
+            f"[BA Graph] Overriding '{intent}' -> 'extract_stories': "
             f"No existing stories found, need to create stories first"
         )
         return "extract_stories"
+    
+    # story_edit_single: route to dedicated fast edit node
+    if intent == "story_edit_single":
+        logger.info("[BA Graph] Routing to 'story_edit_single' (targeted single story edit)")
+        return "story_edit_single"
     
     # stories_approve: always route to approve_stories, it will load from artifact if needed
     if intent == "stories_approve":
@@ -202,6 +208,7 @@ class BusinessAnalystGraph:
         graph.add_node("update_prd", partial(update_prd, agent=agent))
         graph.add_node("extract_stories", partial(extract_stories, agent=agent))
         graph.add_node("update_stories", partial(update_stories, agent=agent))
+        graph.add_node("edit_single_story", partial(edit_single_story, agent=agent))
         graph.add_node("approve_stories", partial(approve_stories, agent=agent))
         graph.add_node("analyze_domain", partial(analyze_domain, agent=agent))
         graph.add_node("save_artifacts", partial(save_artifacts, agent=agent))
@@ -221,6 +228,7 @@ class BusinessAnalystGraph:
                 "prd_update": "update_prd",
                 "extract_stories": "extract_stories",
                 "stories_update": "update_stories",
+                "story_edit_single": "edit_single_story",
                 "stories_approve": "approve_stories",
             }
         )
@@ -290,6 +298,9 @@ class BusinessAnalystGraph:
         
         # Story update -> save
         graph.add_edge("update_stories", "save_artifacts")
+        
+        # Single story edit -> save (fast targeted edit)
+        graph.add_edge("edit_single_story", "save_artifacts")
         
         # Story approve -> save
         graph.add_edge("approve_stories", "save_artifacts")

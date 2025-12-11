@@ -1,5 +1,5 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye, Trash2, Activity } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye, Trash2, Activity, Sparkles } from "lucide-react"
 import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -439,6 +439,36 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
       }
     } catch (error) {
       toast.error('Failed to restart task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Review story handler - triggers BA agent to verify and suggest improvements
+  const handleReviewStory = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/review`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Đang phân tích story...')
+        onOpenChange(false) // Close the modal
+      } else {
+        const error = await response.json().catch(() => ({}))
+        toast.error(error.detail || 'Failed to review story')
+      }
+    } catch (error) {
+      toast.error('Failed to review story')
     } finally {
       setIsActionLoading(false)
     }
@@ -942,6 +972,22 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                       Restart
                     </Button>
                   )}
+                </div>
+              )}
+              
+              {/* Review Story Button - Only visible in Todo column */}
+              {card.status === 'Todo' && (
+                <div className="mt-3">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleReviewStory} 
+                    disabled={isActionLoading}
+                    className="border-purple-500 text-purple-600 hover:bg-purple-50 hover:text-purple-700 dark:hover:bg-purple-950"
+                  >
+                    {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    Regenerate
+                  </Button>
                 </div>
               )}
             </div>

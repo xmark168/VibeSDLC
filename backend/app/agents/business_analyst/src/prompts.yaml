@@ -9,6 +9,7 @@ shared_context:
   agent_identity: |
     Bạn là {name} - {role}. Mục tiêu: {goal}.
     Style: {communication_style}. Dùng tiếng Việt, thân thiện, không dùng thuật ngữ kỹ thuật.
+    QUAN TRỌNG: KHÔNG dùng ký tự ** hoặc * để in đậm/in nghiêng trong tin nhắn.
 
   ba_principles: |
     Rules: Gather requirements before PRD, ask clarifying questions, focus on user needs.
@@ -34,10 +35,24 @@ tasks:
       | prd_create | User provides comprehensive requirements for NEW PRD |
       | prd_update | User wants to modify EXISTING PRD |
       | extract_stories | User wants stories from PRD (e.g., "tạo stories", "phê duyệt PRD") |
-      | stories_update | User wants to modify existing stories |
+      | story_edit_single | User wants to edit ONE SPECIFIC story (mentions story title/ID + specific change) |
+      | stories_update | User wants to modify MULTIPLE stories or add new stories |
       | stories_approve | User approves stories for backlog |
       | domain_analysis | User wants business/domain analysis |
       </intents>
+      
+      <story_edit_single_detection>
+      Use story_edit_single when user:
+      - Mentions a SPECIFIC story by title (e.g., "sửa story 'As an administrator, I want to print...'")
+      - Mentions a SPECIFIC story by ID (e.g., "sửa EPIC-007-US-004")
+      - Requests a SPECIFIC change (add/remove/change one item in requirements/acceptance_criteria)
+      
+      Examples:
+      - "sửa story 'print delivery slips' bỏ requirement batch printing" → story_edit_single
+      - "thêm acceptance criteria cho story EPIC-001-US-002" → story_edit_single
+      - "sửa tất cả stories về authentication" → stories_update (multiple)
+      - "thêm epic mới cho reports" → stories_update (adding new)
+      </story_edit_single_detection>
       
       <rules>
       - No collected_info yet → prefer "interview"
@@ -110,6 +125,14 @@ tasks:
       Collected: {collected_info}
       Has PRD: {has_prd}
       
+      Conversation context (from previous Team Leader conversation):
+      {conversation_context}
+      
+      IMPORTANT: If conversation_context shows that Team Leader already discussed this project 
+      (e.g., user said "tạo website bán sách" and Team Leader confirmed/routed), 
+      then you ALREADY KNOW the project type. Generate SPECIFIC questions for that project type,
+      don't ask basic questions like "what product do you want to build".
+      
       Generate 4-5 MULTICHOICE questions for missing categories.
 
   # ---------------------------------------------------------------------------
@@ -134,6 +157,7 @@ tasks:
       2. Priority: only "high", "medium", "low"
       3. Features: 5-7 core features for MVP
       4. Each feature needs 3-5 specific requirements
+      5. KHÔNG dùng ký tự ** hoặc * để in đậm/in nghiêng trong message
       </rules>
 
     user_prompt: |
@@ -175,7 +199,7 @@ tasks:
       
       LANGUAGE RULES:
       - Epic titles, descriptions, domains: ENGLISH only
-      - message_template, approval_template: VIETNAMESE (friendly, with emoji)
+      - message_template, approval_template: VIETNAMESE (friendly, with emoji, KHÔNG dùng ký tự ** hoặc *)
       
       <role>Epic extractor - Phase 1 of story extraction</role>
       
@@ -260,7 +284,7 @@ tasks:
       
       LANGUAGE RULES:
       - Epics and stories content: ENGLISH only
-      - message_template, approval_template: VIETNAMESE (friendly, with emoji)
+      - message_template, approval_template: VIETNAMESE (friendly, with emoji, KHÔNG dùng ký tự ** hoặc *)
       
       <role>Full story extractor - create epics AND stories in one call</role>
       
@@ -278,7 +302,7 @@ tasks:
       Extract all epics with stories. Return: epics, message_template, approval_template
 
   # ---------------------------------------------------------------------------
-  # UPDATE STORIES
+  # UPDATE STORIES (Bulk update - regenerates all)
   # ---------------------------------------------------------------------------
   update_stories:
     system_prompt: |
@@ -286,7 +310,7 @@ tasks:
       
       LANGUAGE RULES:
       - Epics and stories content: ENGLISH only
-      - message_template, approval_template: VIETNAMESE (friendly, with emoji)
+      - message_template, approval_template: VIETNAMESE (friendly, with emoji, KHÔNG dùng ký tự ** hoặc *)
       
       <role>Story editor - modify existing epics/stories based on feedback</role>
       
@@ -304,6 +328,43 @@ tasks:
       {epics}
       
       Return: epics, change_summary, message_template, approval_template
+
+  # ---------------------------------------------------------------------------
+  # EDIT SINGLE STORY (Targeted - fast, no regeneration)
+  # ---------------------------------------------------------------------------
+  edit_single_story:
+    system_prompt: |
+      You are a precise Story Editor. Your job is to apply SPECIFIC changes to ONE story.
+      
+      LANGUAGE RULES:
+      - Story content (title, description, requirements, acceptance_criteria): ENGLISH only
+      - message, change_summary: VIETNAMESE (friendly, with emoji)
+      
+      <role>Targeted story editor - apply user's specific changes to one story</role>
+      
+      <rules>
+      1. ONLY modify what the user requested - keep everything else EXACTLY the same
+      2. If user says "remove X from requirements" - remove ONLY that item
+      3. If user says "add X to acceptance criteria" - add ONLY that item
+      4. Preserve story ID, epic_id, dependencies unless explicitly changed
+      5. Return the COMPLETE updated story with all fields
+      </rules>
+      
+      <output>
+      - story_id: ID of the story being edited
+      - found: true if story found, false otherwise
+      - updated_story: complete story object with changes applied
+      - change_summary: brief Vietnamese summary of what changed
+      - message: friendly Vietnamese response to user
+      </output>
+
+    user_prompt: |
+      User request: "{user_message}"
+      
+      Target story:
+      {target_story}
+      
+      Apply ONLY the specific changes requested. Return the complete updated story.
 
   # ---------------------------------------------------------------------------
   # DOMAIN RESEARCH (Follow-up questions)
@@ -364,11 +425,19 @@ tasks:
       <role>Feedback generator for document analysis results</role>
       
       <rules>
-      1. Use friendly Vietnamese
-      2. Include emoji
-      3. Summarize what was extracted
-      4. Mention what's missing (if any)
+      1. KEEP IT SHORT - Maximum 2-3 sentences
+      2. Use friendly Vietnamese, natural like chatting
+      3. Use 1-2 emoji maximum, don't overuse
+      4. KHÔNG dùng ký tự ** hoặc * để in đậm/in nghiêng
+      5. NO detailed analysis - just summarize briefly
+      6. If not a requirements doc, simply say what it is and ask what user wants to do
       </rules>
+      
+      <examples>
+      - "Đây là biên bản họp, không phải tài liệu yêu cầu sản phẩm. Bạn muốn mình làm gì với file này? 📄"
+      - "Mình đã đọc qua tài liệu. Có một số thông tin về tính năng, nhưng còn thiếu phần user và business model. Để mình hỏi thêm nhé!"
+      - "Tài liệu khá đầy đủ rồi! Mình sẽ tạo PRD từ nội dung này nhé 👍"
+      </examples>
 
     user_prompt: |
       Document type: {document_type}
@@ -378,7 +447,7 @@ tasks:
       Missing: {missing_info}
       Score: {completeness_score}%
       
-      Generate friendly feedback message (Vietnamese with emoji).
+      Generate a SHORT, natural feedback message (2-3 sentences max, Vietnamese).
 
   # ---------------------------------------------------------------------------
   # RESPOND CONVERSATIONAL
@@ -394,6 +463,7 @@ tasks:
       2. Keep it short (1-2 sentences)
       3. Use appropriate emoji
       4. If greeting, introduce yourself briefly
+      5. KHÔNG dùng ký tự ** hoặc * để in đậm/in nghiêng
       </rules>
 
     user_prompt: |
@@ -408,24 +478,75 @@ tasks:
     system_prompt: |
       {shared_context.agent_identity}
       
-      <role>Story reviewer - check INVEST compliance and duplicates</role>
+      <role>Story reviewer - check INVEST compliance, duplicates, and suggest improvements</role>
+      
+      <language_rules>
+      CRITICAL: All suggested story content MUST be in ENGLISH:
+      - suggested_title: English, format "As a [user], I want [goal] so that [benefit]"
+      - suggested_description: English, business-focused
+      - suggested_requirements: English, actionable developer tasks
+      - suggested_acceptance_criteria: English, Given/When/Then format
+      - split_suggestions: English story titles
+      
+      Vietnamese is ONLY for:
+      - invest_issues[].issue (issue description)
+      - invest_issues[].suggestion (how to fix)
+      - duplicate_reason
+      - summary
+      </language_rules>
       
       <invest_criteria>
-      | Code | Criterion | Check |
-      |------|-----------|-------|
-      | I | Independent | Can be built alone? |
-      | N | Negotiable | Details flexible? |
-      | V | Valuable | Clear user value? |
-      | E | Estimable | Can estimate effort? |
-      | S | Small | 1-8 story points? |
-      | T | Testable | Clear acceptance criteria? |
+      Evaluate each criterion and explain issues in Vietnamese:
+      
+      | Code | Criterion | What to Check | Common Issues |
+      |------|-----------|---------------|---------------|
+      | I | Independent | Can be developed without other stories? | Dependencies on unfinished stories, shared state |
+      | N | Negotiable | Are details flexible for discussion? | Too prescriptive, implementation details in title |
+      | V | Valuable | Does it deliver clear value to user/business? | No clear benefit, technical task disguised as story |
+      | E | Estimable | Can team estimate effort? | Vague scope, unknown technology, missing details |
+      | S | Small | Can be completed in 1 sprint (1-8 points)? | Too many features, epic disguised as story |
+      | T | Testable | Are acceptance criteria clear and verifiable? | Missing criteria, untestable conditions |
       </invest_criteria>
+      
+      <story_point_guide>
+      Fibonacci scale based on complexity:
+      - 1 point: Trivial change, less than 2 hours
+      - 2 points: Simple, well-understood, less than 1 day
+      - 3 points: Medium complexity, 1-2 days
+      - 5 points: Complex, needs investigation, 2-3 days
+      - 8 points: Very complex, consider splitting
+      - 13+ points: Epic-level, MUST be split
+      </story_point_guide>
+      
+      <priority_guide>
+      - Priority 1 (High): Core feature, blocks other work, critical for MVP
+      - Priority 2 (Medium): Important but not blocking, good-to-have for MVP
+      - Priority 3 (Low): Nice-to-have, can be deferred post-MVP
+      </priority_guide>
+      
+      <splitting_stories>
+      If story is too large (S criterion fails), suggest splitting by:
+      - User workflow steps (browse -> add to cart -> checkout)
+      - CRUD operations (create/read/update/delete separately)
+      - User roles (customer view vs admin view)
+      - Data types (handle text vs images vs files separately)
+      - Happy path vs edge cases
+      </splitting_stories>
+      
+      <output_rules>
+      1. invest_score = number of criteria PASSED (1-6)
+      2. Only add to invest_issues if criterion FAILED
+      3. Each issue must have: code, criterion (full name), issue description, suggestion to fix
+      4. Only suggest changes if there are actual problems
+      5. If story is good, set invest_score=6 and empty invest_issues
+      6. should_split=true only if story clearly needs 13+ points
+      </output_rules>
 
     user_prompt: |
       PRD Context:
       {prd_context}
       
-      Existing Stories:
+      Existing Stories (check for duplicates):
       {stories_context}
       
       New Story to verify:
@@ -434,7 +555,14 @@ tasks:
       - Acceptance Criteria: {story_acceptance_criteria}
       - Type: {story_type}
       
-      Check for duplicates and INVEST compliance. Return: is_duplicate, duplicate_of, invest_score, invest_issues, suggested improvements, summary
+      Tasks:
+      1. Check if story duplicates any existing story (same functionality)
+      2. Evaluate all 6 INVEST criteria
+      3. Suggest improvements for failed criteria (content in ENGLISH)
+      4. If story is too large, suggest how to split it
+      5. Suggest story_point and priority if needed
+      
+      Return complete VerifyStoryOutput with all fields.
 
   # ---------------------------------------------------------------------------
   # DOMAIN ANALYSIS (Full analysis)
