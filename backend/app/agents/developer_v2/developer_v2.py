@@ -599,8 +599,8 @@ class DeveloperV2(BaseAgent):
                     logger.error(f"[{self.name}] Failed to load checkpoint_thread_id: {e}")
                     raise
             else:
-                # Generate and persist thread_id for new story
-                thread_id = f"story_{story_id}"
+                # Generate and persist thread_id for new story (unique per agent)
+                thread_id = f"{self.agent_id}_{story_id}"
                 try:
                     with Session(engine) as session:
                         story = session.get(Story, UUID(story_id))

@@ -97,6 +97,7 @@ class StoryHandler(BaseEventHandler):
                 "content": event_data.get("content", ""),
                 "message_type": event_data.get("message_type", "update"),
                 "structured_data": event_data.get("structured_data"),
+                "details": event_data.get("structured_data"),  # Alias for frontend
                 "timestamp": self._get_timestamp(event_data),
             }
 

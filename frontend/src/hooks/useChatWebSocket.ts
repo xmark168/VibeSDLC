@@ -636,9 +636,11 @@ export function useChatWebSocket(
     }
     
     // Show toast notification for other messages
-    toast(msg.content, {
-      description: msg.message_type === 'system' ? 'System' : undefined,
-    })
+    if (msg.message_type === 'system') {
+      toast.info(msg.content)
+    } else {
+      toast.success(msg.content)
+    }
     
     // Dispatch custom event for story state updates
     if (msg.agent_state) {

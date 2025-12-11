@@ -44,8 +44,13 @@ def route_after_test(state: DeveloperState) -> Literal["analyze_error", "__end__
     return "analyze_error" if state.get("debug_count", 0) < 5 else "__end__"
 
 
-def route_after_parallel(state: DeveloperState) -> Literal["run_code", "implement"]:
+def route_after_parallel(state: DeveloperState) -> Literal["run_code", "implement", "pause_checkpoint"]:
     """Route after parallel implement - fallback to sequential if errors."""
+    
+    # Handle pause - route to checkpoint node
+    if state.get("action") == "PAUSED":
+        return "pause_checkpoint"
+    
     parallel_errors = state.get("parallel_errors")
     
     # If parallel had errors, fallback to sequential implement
@@ -63,6 +68,14 @@ def route_after_parallel(state: DeveloperState) -> Literal["run_code", "implemen
 
 def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__end__"]:
     return "implement" if state.get("action") == "IMPLEMENT" else "__end__"
+
+
+async def pause_checkpoint(state: DeveloperState, agent=None) -> DeveloperState:
+    """Checkpoint node for pause - calls interrupt() and resumes to implement_parallel."""
+    from langgraph.types import interrupt
+    interrupt({"reason": "pause", "node": "pause_checkpoint", "current_layer": state.get("current_layer", 0)})
+    # After resume, clear PAUSED action to continue
+    return {**state, "action": "IMPLEMENT"}
 
 
 _postgres_checkpointer: Optional[AsyncPostgresSaver] = None
@@ -119,6 +132,7 @@ class DeveloperGraph:
         g.add_node("plan", partial(plan, agent=agent))
         g.add_node("implement", partial(implement, agent=agent))
         g.add_node("implement_parallel", partial(implement_parallel, agent=agent))
+        g.add_node("pause_checkpoint", partial(pause_checkpoint, agent=agent))
         g.add_node("review", partial(review, agent=agent))
         g.add_node("run_code", partial(run_code, agent=agent))
         g.add_node("analyze_error", partial(analyze_error, agent=agent))
@@ -128,8 +142,9 @@ class DeveloperGraph:
         
         if parallel:
             g.add_edge("plan", "implement_parallel")
-            # Parallel → run_code, but fallback to sequential if errors
+            # Parallel → run_code, but fallback to sequential if errors, or pause_checkpoint
             g.add_conditional_edges("implement_parallel", route_after_parallel)
+            g.add_edge("pause_checkpoint", "implement_parallel")  # Resume from pause
             g.add_edge("implement", "run_code")  # Sequential fallback path
         else:
             g.add_edge("plan", "implement")

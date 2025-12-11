@@ -487,13 +487,29 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         sorted_layer_keys = sorted(layers.keys())
         total_layers = len(sorted_layer_keys)
         
+        # Read completed layer from state (for resume support)
+        start_layer = state.get("current_layer", 0)
+        if start_layer > 0:
+            await story_logger.info(f"Resuming from layer {start_layer + 1}/{total_layers}")
+        
         for layer_idx, layer_num in enumerate(sorted_layer_keys, 1):
-            # Check for interrupt before each layer
+            # Skip already completed layers (resume support)
+            if layer_idx <= start_layer:
+                await story_logger.info(f"Skipping completed layer {layer_idx}/{total_layers}")
+                continue
+            
+            # Check for interrupt BEFORE starting layer - return state to save checkpoint
             if story_id:
                 signal = check_interrupt_signal(story_id)
                 if signal:
-                    await story_logger.info(f"Interrupt at layer {layer_idx}/{total_layers}: {signal}")
-                    interrupt({"reason": signal, "story_id": story_id, "node": "implement_parallel", "layer": layer_idx})
+                    await story_logger.info(f"Pausing before layer {layer_idx}/{total_layers}: {signal}")
+                    return {
+                        **state,
+                        "current_layer": layer_idx - 1,
+                        "files_modified": list(set(all_modified)),
+                        "dependencies_content": deps_content,
+                        "action": "PAUSED",
+                    }
             
             layer_steps = layers[layer_num]
             is_parallel = len(layer_steps) > 1 and layer_num >= 5
@@ -558,12 +574,14 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             if layer_files:
                 layer_desc = f"layer {layer_num} - {len(layer_files)} files"
                 git_commit_step(workspace_path, layer_num, layer_desc, layer_files)
+            
+
         
         await story_logger.success(f"Implementation complete: {len(all_modified)} files in {len(layers)} layers")
         if all_errors:
             await story_logger.warning(f"Errors encountered: {len(all_errors)}")
         
-        return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
+        return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "current_layer": total_layers, "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:
         # Re-raise GraphInterrupt - it's expected for pause/cancel
         from langgraph.errors import GraphInterrupt
