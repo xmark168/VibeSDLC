@@ -38,6 +38,7 @@ class AgentPublic(SQLModel):
     status: AgentStatus
     
     persona_template_id: Optional[UUID] = None
+    persona_avatar: Optional[str] = None
     personality_traits: list[str] = []
     communication_style: Optional[str] = None
     persona_metadata: Optional[dict] = None

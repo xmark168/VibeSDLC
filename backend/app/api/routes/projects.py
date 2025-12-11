@@ -19,6 +19,7 @@ from app.schemas import (
     ProjectsPublic,
 )
 from app.services.persona_service import PersonaService
+from app.utils.seed_techstacks import copy_boilerplate_to_project, init_git_repo
 
 logger = logging.getLogger(__name__)
 
@@ -148,10 +149,18 @@ async def create_project(
         # Auto-generate project_path: projects/{project_id}
         project.project_path = f"projects/{project.id}"
 
-        # Create the project folder if it doesn't exist
-        project_folder = Path(project.project_path)
-        project_folder.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Created project folder: {project_folder}")
+        # Copy boilerplate based on tech_stack
+        tech_stack = project.tech_stack or "nodejs-react"
+        backend_root = Path(__file__).resolve().parent.parent.parent.parent
+        project_path = backend_root / "projects" / str(project.id)
+        
+        if copy_boilerplate_to_project(tech_stack, project_path):
+            init_git_repo(project_path)
+            logger.info(f"Copied boilerplate '{tech_stack}' to {project_path}")
+        else:
+            # Fallback: just create empty folder
+            project_path.mkdir(parents=True, exist_ok=True)
+            logger.warning(f"No boilerplate for '{tech_stack}', created empty folder")
 
         # Auto-create default agents for the project with diverse personas
         persona_service = PersonaService(session)
@@ -197,38 +206,39 @@ async def create_project(
         )
         
         # Auto-spawn agents after project creation
-        from app.api.routes.agent_management import _manager_registry, get_role_class_map
+        from app.api.routes.agent_management import get_available_pool, get_role_class_map
         
-        universal_pool = _manager_registry.get("universal_pool")
+        role_class_map = get_role_class_map()
+        spawned_count = 0
         
-        if universal_pool:
-            role_class_map = get_role_class_map()
-            spawned_count = 0
+        for agent in created_agents:
+            # Get pool for this agent's role (role-specific > universal > any)
+            pool_manager = get_available_pool(role_type=agent.role_type)
+            if not pool_manager:
+                logger.warning(f"No pool available for {agent.role_type}, skipping spawn")
+                continue
             
-            for agent in created_agents:
-                role_class = role_class_map.get(agent.role_type)
-                if not role_class:
-                    logger.warning(f"No role class found for {agent.role_type}, skipping spawn")
-                    continue
-                
-                try:
-                    success = await universal_pool.spawn_agent(
-                        agent_id=agent.id,
-                        role_class=role_class,
-                        heartbeat_interval=30,
-                        max_idle_time=300,
-                    )
-                    if success:
-                        spawned_count += 1
-                        logger.info(f"✓ Spawned agent {agent.human_name} ({agent.role_type})")
-                    else:
-                        logger.warning(f"Failed to spawn agent {agent.human_name}")
-                except Exception as e:
-                    logger.error(f"Error spawning agent {agent.human_name}: {e}")
+            role_class = role_class_map.get(agent.role_type)
+            if not role_class:
+                logger.warning(f"No role class found for {agent.role_type}, skipping spawn")
+                continue
             
-            logger.info(f"Auto-spawned {spawned_count}/{len(created_agents)} agents for project {project.code}")
-        else:
-            logger.warning("Universal pool not found, agents created but not spawned")
+            try:
+                success = await pool_manager.spawn_agent(
+                    agent_id=agent.id,
+                    role_class=role_class,
+                    heartbeat_interval=30,
+                    max_idle_time=300,
+                )
+                if success:
+                    spawned_count += 1
+                    logger.info(f"✓ Spawned agent {agent.human_name} ({agent.role_type}) in {pool_manager.pool_name}")
+                else:
+                    logger.warning(f"Failed to spawn agent {agent.human_name}")
+            except Exception as e:
+                logger.error(f"Error spawning agent {agent.human_name}: {e}")
+        
+        logger.info(f"Auto-spawned {spawned_count}/{len(created_agents)} agents for project {project.code}")
         
         return ProjectPublic.model_validate(project)
 
@@ -297,13 +307,13 @@ def update_project(
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project(
+async def delete_project(
     project_id: UUID,
     session: SessionDep,
     current_user: CurrentUser,
 ) -> None:
     """
-    Delete a project.
+    Delete a project and clean up all associated files (workspace + worktrees).
 
     Args:
         project_id: UUID of the project to delete
@@ -335,5 +345,131 @@ def delete_project(
         )
 
     logger.info(f"Deleting project {project.code} (ID: {project_id})")
+    
+    # Stop any running agents for this project
+    from app.api.routes.agent_management import get_available_pool
+    agents = session.query(Agent).filter(Agent.project_id == project_id).all()
+    for agent in agents:
+        pool_manager = get_available_pool(role_type=agent.role_type)
+        if pool_manager:
+            try:
+                await pool_manager.terminate_agent(agent.id)
+                logger.info(f"Stopped agent {agent.human_name}")
+            except Exception as e:
+                logger.warning(f"Failed to stop agent {agent.human_name}: {e}")
+    
+    # Clean up project files (workspace + worktrees)
+    project_service.delete_with_cleanup(project_id)
+
+
+@router.post("/{project_id}/cleanup", status_code=status.HTTP_200_OK)
+def cleanup_project_worktrees(
+    project_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> dict:
+    """
+    Clean up all worktrees for a project (without deleting the project).
+
+    Args:
+        project_id: UUID of the project
+        session: Database session
+        current_user: Current authenticated user
+
+    Returns:
+        dict: Cleanup result with count of deleted worktrees
+    """
     project_service = ProjectService(session)
-    project_service.delete(project_id)
+    project = project_service.get_by_id(project_id)
+
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    if current_user.role != Role.ADMIN and project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this project",
+        )
+
+    deleted_count = project_service.cleanup_worktrees(project_id)
+    
+    return {
+        "message": f"Cleaned up {deleted_count} worktrees",
+        "deleted_count": deleted_count,
+        "project_id": str(project_id),
+    }
+
+
+@router.get("/{project_id}/deletion-preview", status_code=status.HTTP_200_OK)
+def preview_project_deletion(
+    project_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> dict:
+    """
+    Preview what data will be deleted when deleting a project.
+    
+    Returns counts of all related entities that will be cascade deleted.
+    """
+    from sqlmodel import select, func
+    from app.models import Story, Message, Artifact, Epic
+    from app.models.execution import AgentExecution
+    
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+    
+    if current_user.role != Role.ADMIN and project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this project",
+        )
+    
+    # Count all related data
+    agents_count = session.exec(
+        select(func.count(Agent.id)).where(Agent.project_id == project_id)
+    ).one()
+    
+    stories_count = session.exec(
+        select(func.count(Story.id)).where(Story.project_id == project_id)
+    ).one()
+    
+    messages_count = session.exec(
+        select(func.count(Message.id)).where(Message.project_id == project_id)
+    ).one()
+    
+    epics_count = session.exec(
+        select(func.count(Epic.id)).where(Epic.project_id == project_id)
+    ).one()
+    
+    executions_count = session.exec(
+        select(func.count(AgentExecution.id)).where(AgentExecution.project_id == project_id)
+    ).one()
+    
+    artifacts_count = session.exec(
+        select(func.count(Artifact.id)).where(Artifact.project_id == project_id)
+    ).one()
+    
+    return {
+        "project_id": str(project_id),
+        "project_name": project.name,
+        "project_code": project.code,
+        "counts": {
+            "agents": agents_count,
+            "stories": stories_count,
+            "epics": epics_count,
+            "messages": messages_count,
+            "executions": executions_count,
+            "artifacts": artifacts_count,
+        },
+        "has_workspace": bool(project.project_path),
+        "workspace_path": project.project_path,
+    }

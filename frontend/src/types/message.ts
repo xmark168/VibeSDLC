@@ -47,6 +47,7 @@ export type Message = {
   user_id?: string
   agent_id?: string
   agent_name?: string    // "Team Leader" | "Business Analyst" | "Developer" | "Tester"
+  persona_avatar?: string // Agent's persona avatar URL
   content: string
   message_type?: string  // "text" | "artifact_created" (PRD, analysis, etc.) | "stories_created" | "agent_question" | "document_upload" | etc.
   structured_data?: ArtifactData | StoriesCreatedData | AgentQuestionData | any  // JSON data for cards/previews

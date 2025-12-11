@@ -108,8 +108,8 @@ function PlansAdminPage() {
         active: plansData.data.filter((p) => p.is_active).length,
         featured: plansData.data.filter((p) => p.is_featured).length,
         totalRevenue: plansData.data
-          .filter((p) => p.is_active)
-          .reduce((sum, p) => sum + (p.price || 0), 0),
+          .filter((p) => p.is_active && !p.is_custom_price)
+          .reduce((sum, p) => sum + (p.monthly_price || 0), 0),
       }
     : { total: 0, active: 0, featured: 0, totalRevenue: 0 }
 
@@ -165,7 +165,7 @@ function PlansAdminPage() {
               <div className="text-2xl font-bold">{stats.featured}</div>
             </CardContent>
           </Card>
-          <Card>
+          {/* <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <div className="text-sm font-medium">Total Value</div>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -173,7 +173,7 @@ function PlansAdminPage() {
             <CardContent>
               <div className="text-2xl font-bold">{formatPrice(stats.totalRevenue)}</div>
             </CardContent>
-          </Card>
+          </Card> */}
         </div>
 
         {/* Filters */}

@@ -49,7 +49,7 @@ async function main() {
       title: faker.commerce.productName(),
       author: faker.person.fullName(),
       price: faker.number.float({ min: 9.99, max: 49.99, fractionDigits: 2 }),
-      coverImage: faker.image.urlPicsumPhotos({ width: 200, height: 300 }),
+      coverImage: `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/400/600`,
       categoryId: faker.helpers.arrayElement(categories).id,
     }))
   });
@@ -77,7 +77,10 @@ main()
 | Paragraph | `faker.lorem.paragraph()` |
 | Price | `faker.number.float({ min: 10, max: 100, fractionDigits: 2 })` |
 | Integer | `faker.number.int({ min: 1, max: 100 })` |
-| Image | `faker.image.urlPicsumPhotos({ width: 200, height: 300 })` |
+| Image (cover) | `` `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/400/600` `` |
+| Image (banner) | `` `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/1200/600` `` |
+| Image (card) | `` `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/800/600` `` |
+| Image (thumb) | `` `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/300/300` `` |
 | Avatar | `faker.image.avatar()` |
 | Slug | `faker.helpers.slugify(name).toLowerCase()` |
 | UUID | `faker.string.uuid()` |
@@ -100,6 +103,7 @@ main()
 | `faker.random.alphaNumeric()` | `faker.string.alphanumeric()` |
 | `faker.random.word()` | `faker.lorem.word()` |
 | `faker.image.imageUrl()` | `faker.image.url()` |
+| `faker.image.urlPicsumPhotos()` | `` `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/W/H` `` |
 
 ## Rules
 

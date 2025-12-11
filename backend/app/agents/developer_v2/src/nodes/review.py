@@ -40,6 +40,17 @@ def _smart_truncate(content: str, max_tokens: int = MAX_REVIEW_TOKENS) -> tuple[
 
 async def review(state: DeveloperState, agent=None) -> DeveloperState:
     """Review implemented code with LGTM/LBTM decision."""
+    from langgraph.types import interrupt
+    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[review] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "review"})
+    
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
     logger.info(f"[NODE] review step {current_step}/{total_steps}")
@@ -153,6 +164,10 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         }
         
     except Exception as e:
+        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        from langgraph.errors import GraphInterrupt
+        if isinstance(e, GraphInterrupt):
+            raise
         logger.error(f"[review] Error: {e}")
         return {**state, "review_result": "LGTM", "review_feedback": "", "error": str(e)}
 

@@ -32,7 +32,9 @@ class FileContentResponse(BaseModel):
 
 class GitStatusResponse(BaseModel):
     project_id: UUID
-    branch: str
-    modified: list[str]
-    untracked: list[str]
-    staged: list[str]
+    is_git_repo: bool = True
+    branch: str = ""
+    files: dict[str, str] = {}
+    modified: list[str] = []
+    untracked: list[str] = []
+    staged: list[str] = []

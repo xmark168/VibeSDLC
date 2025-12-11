@@ -4,7 +4,12 @@
 import subprocess
 import sys
 import os
+import asyncio
 from pathlib import Path
+
+# On Windows, use SelectorEventLoop for psycopg compatibility
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Ensure we're in the backend directory
 os.chdir(Path(__file__).parent)
@@ -16,7 +21,7 @@ if __name__ == "__main__":
     print()
     print("📁 Working directory:", os.getcwd())
     print("🔍 Watching for changes in: app/")
-    print("🚫 Excluded from reload: logs/, .venv/, __pycache__, alembic/")
+    print("🚫 Excluded from reload: everything outside app/ (including projects/)")
     print()
     print("📝 Logs:")
     print("   - Console: All requests + application logs")
@@ -29,11 +34,12 @@ if __name__ == "__main__":
     print()
 
     # Run uvicorn with comprehensive settings
+    # Note: --reload-dir app ensures only app/ is watched, projects/ is ignored
     cmd = [
         sys.executable, "-m", "uvicorn",
         "app.main:app",
         "--reload",
-        "--reload-dir", "app",  # Only watch app directory
+        "--reload-dir", "app",  # Only watch app directory (excludes projects/)
         "--host", "0.0.0.0",  # Listen on all interfaces
         "--port", "8000",
         "--log-level", "info",  # Uvicorn log level

@@ -202,6 +202,10 @@ export function useChatWebSocket(
         handleOwnershipReleased(msg)
         break
       
+      case 'story_message':
+        handleStoryMessage(msg)
+        break
+      
       default:
         console.warn('[WebSocket] ⚠️ Unknown message type:', msg.type)
     }
@@ -605,6 +609,22 @@ export function useChatWebSocket(
     setConversationOwner(prev => 
       prev?.agentId === msg.agent_id ? null : prev
     )
+  }
+  
+  const handleStoryMessage = (msg: any) => {
+    console.log('[WS] 📋 Story message:', msg.story_id, msg.content)
+    
+    // Show toast notification
+    toast(msg.content, {
+      description: msg.message_type === 'system' ? 'System' : undefined,
+    })
+    
+    // Dispatch custom event for story state updates
+    if (msg.agent_state) {
+      window.dispatchEvent(new CustomEvent('story-state-changed', {
+        detail: { story_id: msg.story_id, agent_state: msg.agent_state }
+      }))
+    }
   }
   
   const handleQuestionAnswerReceived = (msg: any) => {
