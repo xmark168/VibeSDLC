@@ -737,38 +737,109 @@ async def restart_story_task(
     """Restart agent task for story (re-publish Kafka event)."""
     from app.models.base import StoryAgentState
     from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
+    from pathlib import Path
     import subprocess
+    import shutil
+    import os
+    import signal
     
     story = session.get(Story, story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     
-    # Discard old changes in worktree (if exists)
-    if story.worktree_path:
+    # Stop dev server if running
+    if story.running_pid:
         try:
-            # Reset all changes to HEAD
+            os.kill(story.running_pid, signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+    
+    # Get main workspace from Project (required for git operations)
+    from app.models import Project
+    project = session.get(Project, story.project_id)
+    main_workspace = None
+    if project and project.project_path:
+        backend_root = Path(__file__).resolve().parent.parent.parent.parent
+        main_workspace = (backend_root / project.project_path).resolve()
+    
+    # DELETE worktree completely (fresh start)
+    if story.worktree_path:
+        worktree_path = Path(story.worktree_path)
+        
+        try:
+            # 1. Git worktree remove
+            if main_workspace and main_workspace.exists():
+                subprocess.run(
+                    ["git", "worktree", "remove", str(worktree_path), "--force"],
+                    cwd=str(main_workspace),
+                    capture_output=True,
+                    timeout=30
+                )
+        except Exception:
+            pass
+        
+        # 2. Force delete directory if still exists
+        if worktree_path.exists():
+            try:
+                shutil.rmtree(worktree_path)
+            except Exception:
+                # Windows long path workaround: use robocopy to delete
+                import platform
+                import tempfile
+                if platform.system() == "Windows":
+                    try:
+                        empty_dir = tempfile.mkdtemp()
+                        subprocess.run(
+                            ["robocopy", empty_dir, str(worktree_path), "/mir", "/njh", "/njs", "/nc", "/ns", "/np"],
+                            capture_output=True,
+                            timeout=60,
+                        )
+                        shutil.rmtree(empty_dir, ignore_errors=True)
+                        shutil.rmtree(worktree_path, ignore_errors=True)
+                    except Exception:
+                        pass
+    
+    # 3. Delete branch (always try, even if worktree_path is None)
+    if story.branch_name and main_workspace and main_workspace.exists():
+        try:
             subprocess.run(
-                ["git", "checkout", "--", "."],
-                cwd=story.worktree_path,
+                ["git", "branch", "-D", story.branch_name],
+                cwd=str(main_workspace),
                 capture_output=True,
-                timeout=30
+                timeout=10
             )
-            # Remove untracked files
-            subprocess.run(
-                ["git", "clean", "-fd"],
-                cwd=story.worktree_path,
-                capture_output=True,
-                timeout=30
-            )
+        except Exception:
+            pass
+    
+    # 4. Delete checkpoint data from PostgreSQL (LangGraph tables)
+    if story.checkpoint_thread_id:
+        try:
+            from sqlalchemy import text
+            thread_id = story.checkpoint_thread_id
+            # Delete from LangGraph checkpoint tables
+            session.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), {"tid": thread_id})
+            session.execute(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), {"tid": thread_id})
+            session.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": thread_id})
+            session.commit()
         except Exception as e:
-            # Log but don't fail - worktree might not exist
             import logging
-            logging.warning(f"Failed to cleanup worktree for story {story_id}: {e}")
+            logging.warning(f"Failed to delete checkpoint data for {story_id}: {e}")
+    
+    # 5. Clear old logs for fresh start
+    try:
+        from sqlalchemy import text
+        session.execute(text("DELETE FROM story_logs WHERE story_id = :sid"), {"sid": str(story_id)})
+        session.commit()
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to clear logs for {story_id}: {e}")
     
     # Reset state and clear checkpoint (start fresh, not resume)
     story.agent_state = StoryAgentState.PENDING
     story.running_pid = None
     story.running_port = None
+    story.worktree_path = None  # Clear worktree path
+    story.branch_name = None    # Clear branch name
     story.checkpoint_thread_id = None  # Clear checkpoint to start fresh
     session.add(story)
     session.commit()

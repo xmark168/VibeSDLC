@@ -1,19 +1,45 @@
-"""Tester Agent - LangGraph Implementation."""
+"""Tester Agent - LangGraph Implementation.
 
+Updated with pause/resume/cancel support (aligned with Developer V2).
+Uses PostgresSaver for persistent checkpoints.
+"""
+
+import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Set
+
 from uuid import UUID
 
 from sqlmodel import Session
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+from app.agents.core.task_registry import (
+    request_pause,
+    request_cancel,
+    check_interrupt_signal,
+    clear_signals,
+)
 from app.agents.tester.src.graph import TesterGraph
 from app.core.db import engine
 from app.core.langfuse_client import flush_langfuse
 from app.models import Agent as AgentModel, Project
+from app.models.base import StoryAgentState
 
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Exception for Story Stop (aligned with Developer V2)
+# =============================================================================
+
+class StoryStoppedException(Exception):
+    """Raised when story processing should stop (paused or cancelled)."""
+    def __init__(self, story_id: str, state: StoryAgentState, message: str = ""):
+        self.story_id = story_id
+        self.state = state
+        self.message = message or f"Story {story_id} stopped with state: {state.value}"
+        super().__init__(self.message)
 
 
 def _get_project_workspace(project_id) -> str:
@@ -31,10 +57,12 @@ def _get_project_workspace(project_id) -> str:
 class Tester(BaseAgent):
     """Tester agent - creates test plans and ensures software quality.
 
-    NEW ARCHITECTURE:
+    NEW ARCHITECTURE (aligned with Developer V2):
     - No more separate Consumer/Role layers
     - Handles tasks via handle_task() method
     - Router sends tasks via @Tester mentions
+    - Supports pause/resume/cancel via TaskRegistry signals
+    - Uses PostgresSaver for persistent checkpoints
     """
 
     def __init__(self, agent_model: AgentModel, **kwargs):
@@ -48,7 +76,199 @@ class Tester(BaseAgent):
         self._is_auto_task = False
         self._current_story_ids: list[str] = []
         
+        # Task control: track running story tasks for cancel/pause (aligned with Developer V2)
+        self._running_tasks: Dict[str, asyncio.Task] = {}  # story_id -> Task
+        self._paused_stories: Set[str] = set()  # story_ids that are paused (local cache)
+        self._cancelled_stories: Set[str] = set()  # story_ids that should be cancelled (local cache)
+        
         logger.info(f"[{self.name}] Tester initialized, workspace: {self.main_workspace}")
+
+    # =========================================================================
+    # Story State Management (aligned with Developer V2)
+    # =========================================================================
+    
+    def get_story_state_from_db(self, story_id: str) -> Optional[StoryAgentState]:
+        """Get current story agent_state from database.
+        
+        This is the source of truth for pause/cancel detection.
+        """
+        try:
+            from app.models import Story
+            with Session(engine) as session:
+                story = session.get(Story, UUID(story_id))
+                if story:
+                    return story.agent_state
+                return None
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to get story state from DB: {e}")
+            return None
+    
+    def check_should_stop(self, story_id: str) -> None:
+        """Check if story should stop processing. Raises StoryStoppedException if so.
+        
+        Call this periodically during graph execution to detect pause/cancel.
+        """
+        state = self.get_story_state_from_db(story_id)
+        if state == StoryAgentState.CANCELED:
+            self._cancelled_stories.add(story_id)
+            raise StoryStoppedException(story_id, state, "Story was cancelled")
+        elif state == StoryAgentState.PAUSED:
+            self._paused_stories.add(story_id)
+            raise StoryStoppedException(story_id, state, "Story was paused")
+    
+    def is_story_paused(self, story_id: str) -> bool:
+        """Check if story has been paused (from DB, not just local cache)."""
+        if story_id in self._paused_stories:
+            return True
+        state = self.get_story_state_from_db(story_id)
+        if state == StoryAgentState.PAUSED:
+            self._paused_stories.add(story_id)
+            return True
+        return False
+    
+    def is_story_cancelled(self, story_id: str) -> bool:
+        """Check if story has been cancelled (from DB, not just local cache)."""
+        if story_id in self._cancelled_stories:
+            return True
+        state = self.get_story_state_from_db(story_id)
+        if state == StoryAgentState.CANCELED:
+            self._cancelled_stories.add(story_id)
+            return True
+        return False
+
+    async def _update_story_state(self, story_id: str, state: StoryAgentState) -> bool:
+        """Update story agent_state in database with WebSocket broadcast.
+
+        Returns:
+            bool: True if successful, False if failed
+        """
+        from app.models import Story
+        from app.websocket.connection_manager import connection_manager
+        
+        project_id = None
+        old_state = None
+        
+        try:
+            with Session(engine) as session:
+                story = session.get(Story, UUID(story_id))
+                if not story:
+                    logger.error(f"[{self.name}] Story {story_id} not found")
+                    return False
+
+                old_state = story.agent_state
+                project_id = story.project_id
+                story.agent_state = state
+                session.commit()
+
+            logger.info(f"[{self.name}] Story {story_id} agent_state: {old_state} → {state}")
+            
+            # Broadcast state change to frontend
+            if project_id:
+                try:
+                    await connection_manager.broadcast_to_project({
+                        "type": "story_state_changed",
+                        "story_id": story_id,
+                        "agent_state": state.value if state else None,
+                        "old_state": old_state.value if old_state else None,
+                    }, project_id)
+                    logger.info(f"[{self.name}] Broadcasted agent_state change: {state.value}")
+                except Exception as broadcast_err:
+                    logger.warning(f"[{self.name}] Failed to broadcast state change: {broadcast_err}")
+            
+            return True
+
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to update story state: {e}", exc_info=True)
+            return False
+
+    # =========================================================================
+    # Task Control: Cancel/Pause/Resume (aligned with Developer V2)
+    # =========================================================================
+    
+    async def cancel_story(self, story_id: str) -> bool:
+        """Cancel a running story task.
+
+        Args:
+            story_id: Story UUID string
+
+        Returns:
+            True if task was cancelled, False if not found
+        """
+        logger.info(f"[{self.name}] Cancelling story: {story_id}")
+        self._cancelled_stories.add(story_id)
+
+        task = self._running_tasks.get(story_id)
+        if task and not task.done():
+            task.cancel()
+            await self._cleanup_story(story_id)
+            return True
+
+        return False
+    
+    async def pause_story(self, story_id: str) -> bool:
+        """Pause a running story task at current checkpoint.
+
+        Args:
+            story_id: Story UUID string
+
+        Returns:
+            True if task was paused, False if not found or invalid state
+        """
+        logger.info(f"[{self.name}] Pausing story: {story_id}")
+        self._paused_stories.add(story_id)
+
+        task = self._running_tasks.get(story_id)
+        if task and not task.done():
+            task.cancel()  # Will save checkpoint before exit
+            return True
+
+        return False
+    
+    async def resume_story(self, story_id: str) -> bool:
+        """Check if story can be resumed from pause.
+
+        The actual resume happens via Kafka event triggering handle_task again.
+
+        Args:
+            story_id: Story UUID string
+
+        Returns:
+            True if story can be resumed (has checkpoint_thread_id)
+        """
+        try:
+            from app.models import Story
+
+            with Session(engine) as session:
+                story = session.get(Story, UUID(story_id))
+                if not story:
+                    logger.error(f"Story {story_id} not found")
+                    return False
+
+                # Check if has checkpoint (required for resume)
+                if not story.checkpoint_thread_id:
+                    logger.warning(f"Cannot resume: no checkpoint for {story_id}")
+                    return False
+                    
+                # Clear from paused cache since we're resuming
+                self._paused_stories.discard(story_id)
+                
+                logger.info(f"[{self.name}] Story {story_id} ready to resume from checkpoint: {story.checkpoint_thread_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to validate resume state: {e}")
+            return False
+    
+    async def _cleanup_story(self, story_id: str):
+        """Cleanup resources for a cancelled/finished story."""
+        try:
+            # Remove from tracking
+            self._running_tasks.pop(story_id, None)
+            self._cancelled_stories.discard(story_id)
+            self._paused_stories.discard(story_id)
+            
+        except Exception as e:
+            logger.error(f"[{self.name}] Cleanup error for story {story_id}: {e}")
 
     async def message_user(self, event_type: str, content: str, details=None, **kwargs):
         """Override to redirect messages to story channel when auto-triggered."""
@@ -78,82 +298,175 @@ class Tester(BaseAgent):
         return await super().message_user(event_type, content, details, **kwargs)
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
-        """Handle task using LangGraph."""
+        """Handle task using LangGraph with checkpoint support (aligned with Developer V2)."""
         logger.info(f"[{self.name}] Task: type={task.task_type.value}, reason={task.routing_reason}")
         
-        # Setup Langfuse tracing - DISABLED TEMPORARILY
-        langfuse_handler = None
-        langfuse_span = None
+        # Get story_id for checkpoint (use first story_id or task_id)
+        context = task.context or {}
+        story_ids = context.get("story_ids", [])
+        story_id = story_ids[0] if story_ids else str(task.task_id)
+        is_resume = context.get("resume", False)
+        
+        # Clear any leftover signals from previous runs (important for restart)
+        clear_signals(story_id)
+        logger.info(f"[{self.name}] Cleared signals for story {story_id}")
+        
         langfuse_ctx = None
-        # try:
-        #     from langfuse import get_client
-        #     from langfuse.langchain import CallbackHandler
-        #     
-        #     langfuse = get_client()
-        #     # Create parent span for entire graph execution
-        #     langfuse_ctx = langfuse.start_as_current_observation(
-        #         as_type="span",
-        #         name="tester_graph"
-        #     )
-        #     # Enter context and get span object
-        #     langfuse_span = langfuse_ctx.__enter__()
-        #     # Update trace with metadata
-        #     langfuse_span.update_trace(
-        #         user_id=str(task.user_id) if task.user_id else None,
-        #         session_id=str(self.project_id),
-        #         input={"message": task.content[:200] if task.content else ""},
-        #         tags=["tester", self.role_type],
-        #         metadata={"agent": self.name, "task_id": str(task.task_id)}
-        #     )
-        #     # Handler inherits trace context automatically
-        #     langfuse_handler = CallbackHandler()
-        # except Exception as e:
-        #     logger.debug(f"[{self.name}] Langfuse setup: {e}")
+        langfuse_span = None
         
         try:
             # Determine if auto-triggered and set instance flags for message_user override
-            is_auto = task.context.get("trigger_type") == "status_review"
+            is_auto = context.get("trigger_type") == "status_review"
             self._is_auto_task = is_auto
-            self._current_story_ids = task.context.get("story_ids", [])
+            self._current_story_ids = story_ids
             
-            # Build initial state
+            # Setup graph with PostgresSaver for persistent checkpoints
+            logger.info(f"[{self.name}] Setting up graph with PostgresSaver...")
+            await self.graph_engine.setup()
+            logger.info(f"[{self.name}] Graph setup complete, checkpointer: {type(self.graph_engine.checkpointer).__name__}")
+            
+            # Track current task for cancel/pause
+            current_task = asyncio.current_task()
+            if current_task:
+                self._running_tasks[story_id] = current_task
+            
+            # Build initial state (NOTE: langfuse_handler removed - not serializable)
             initial_state = {
                 "project_id": str(self.project_id),
                 "user_id": str(task.user_id) if task.user_id else None,
                 "task_id": str(task.task_id),
-                "task_type": task.task_type.value,  # For _should_message_user check
-                "story_ids": task.context.get("story_ids", []),
+                "story_id": story_id,
+                "task_type": task.task_type.value,
+                "story_ids": story_ids,
                 "user_message": task.content or "",
                 "is_auto": is_auto,
-                "langfuse_handler": langfuse_handler,
+                "is_resume": is_resume,
                 # Workspace context (will be populated by setup_workspace node)
                 "main_workspace": self.main_workspace,
                 "workspace_path": "",
                 "branch_name": "",
                 "workspace_ready": False,
                 "merged": False,
+                "base_branch": "main",
             }
             
-            # Invoke graph with increased recursion limit
-            recursion_limit = getattr(self.graph_engine, "recursion_limit", 50)
-            final_state = await self.graph_engine.graph.ainvoke(
-                initial_state,
-                config={"recursion_limit": recursion_limit}
-            )
+            # Thread ID for checkpointing (enables pause/resume)
+            from app.models import Story
             
-            # Update trace output and close span
-            if langfuse_span and langfuse_ctx:
+            if is_resume:
+                # Load thread_id from database for resume
                 try:
-                    langfuse_span.update_trace(output=final_state.get("result", {}))
-                    langfuse_ctx.__exit__(None, None, None)
-                    flush_langfuse()
-                except Exception:
-                    pass
+                    with Session(engine) as session:
+                        story = session.get(Story, UUID(story_id))
+                        if not story:
+                            raise ValueError(f"Story {story_id} not found")
+                        if not story.checkpoint_thread_id:
+                            raise ValueError(f"Cannot resume: no checkpoint_thread_id for story {story_id}")
+                        thread_id = story.checkpoint_thread_id
+                        logger.info(f"[{self.name}] Loaded checkpoint_thread_id from DB: {thread_id}")
+                except Exception as e:
+                    logger.error(f"[{self.name}] Failed to load checkpoint_thread_id: {e}")
+                    raise
+            else:
+                # Generate and persist thread_id for new task
+                thread_id = f"tester_{story_id}"
+                try:
+                    with Session(engine) as session:
+                        story = session.get(Story, UUID(story_id))
+                        if story:
+                            story.checkpoint_thread_id = thread_id
+                            session.commit()
+                            logger.info(f"[{self.name}] Saved checkpoint_thread_id: {thread_id}")
+                except Exception as e:
+                    logger.warning(f"[{self.name}] Failed to save checkpoint_thread_id: {e}")
+            
+            config = {
+                "configurable": {"thread_id": thread_id},
+                "recursion_limit": getattr(self.graph_engine, "recursion_limit", 50)
+            }
+            
+            # Check if resuming from pause
+            if is_resume:
+                logger.info(f"[{self.name}] Resuming story {story_id} from checkpoint")
+                final_state = None
+                
+                try:
+                    # Check checkpoint exists
+                    checkpoint = await self.graph_engine.checkpointer.aget(config)
+                    if checkpoint:
+                        from langgraph.types import Command
+                        logger.info(f"[{self.name}] Checkpoint found, resuming with Command(resume=True)")
+                        try:
+                            final_state = await self.graph_engine.graph.ainvoke(Command(resume=True), config)
+                        except Exception as resume_err:
+                            logger.warning(f"[{self.name}] Resume failed: {resume_err}, falling back to fresh start")
+                            final_state = None
+                except Exception as e:
+                    logger.error(f"[{self.name}] Checkpoint check failed: {e}")
+                    final_state = None
+                
+                # Fallback: start fresh if resume failed
+                if final_state is None:
+                    logger.warning(f"[{self.name}] Auto-restarting from beginning")
+                    is_resume = False
+                    final_state = await self.graph_engine.graph.ainvoke(initial_state, config)
+            else:
+                # Start fresh
+                final_state = await self.graph_engine.graph.ainvoke(initial_state, config)
+            
+            # Check for LangGraph interrupt (pause/cancel signal was caught by a node)
+            from langgraph.types import Interrupt
+            interrupt_info = final_state.get("__interrupt__")
+            if interrupt_info:
+                interrupt_value = interrupt_info[0].value if interrupt_info else {}
+                reason = interrupt_value.get("reason", "unknown") if isinstance(interrupt_value, dict) else "unknown"
+                node = interrupt_value.get("node", "unknown") if isinstance(interrupt_value, dict) else "unknown"
+                
+                logger.info(f"[{self.name}] Graph interrupted: reason={reason}, node={node}")
+                
+                # Remove from local tracking
+                self._running_tasks.pop(story_id, None)
+                
+                # Notify user
+                if story_ids:
+                    try:
+                        if reason == "pause":
+                            await self.message_story(
+                                UUID(story_ids[0]),
+                                f"⏸️ Tests đã tạm dừng tại node '{node}'. Checkpoint đã được lưu.",
+                                message_type="system"
+                            )
+                        elif reason == "cancel":
+                            await self.message_story(
+                                UUID(story_ids[0]),
+                                f"🛑 Tests đã bị hủy tại node '{node}'.",
+                                message_type="system"
+                            )
+                    except Exception:
+                        pass
+                
+                # Cleanup
+                if langfuse_ctx:
+                    try:
+                        langfuse_ctx.__exit__(None, None, None)
+                    except Exception:
+                        pass
+                
+                return TaskResult(
+                    success=False,
+                    output="",
+                    error_message=f"Tests {reason}ed at node {node}"
+                )
             
             # Return result
             error = final_state.get("error")
             if error:
+                # Remove from tracking
+                self._running_tasks.pop(story_id, None)
                 return TaskResult(success=False, output="", error_message=error)
+            
+            # Remove from tracking on success
+            self._running_tasks.pop(story_id, None)
             
             # Reset flags
             self._is_auto_task = False
@@ -173,11 +486,73 @@ class Tester(BaseAgent):
                 }
             )
             
+        except asyncio.CancelledError:
+            # Task was cancelled (user clicked Cancel or Pause)
+            logger.info(f"[{self.name}] Story {story_id} was cancelled/paused (CancelledError)")
+            
+            # Remove from local tracking
+            self._running_tasks.pop(story_id, None)
+            
+            # Cleanup langfuse if needed
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
+            
+            return TaskResult(
+                success=False,
+                output="",
+                error_message="Tests were cancelled or paused"
+            )
+        
+        except StoryStoppedException as e:
+            # Story was stopped via DB state check (pause or cancel detected)
+            logger.info(f"[{self.name}] Story {story_id} stopped: {e.message}")
+            
+            # Remove from local tracking
+            self._running_tasks.pop(story_id, None)
+            
+            # Notify user
+            if story_ids:
+                try:
+                    story_uuid = UUID(story_ids[0])
+                    if e.state == StoryAgentState.PAUSED:
+                        await self.message_story(
+                            story_uuid,
+                            f"⏸️ Tests đã tạm dừng. Checkpoint đã được lưu.",
+                            message_type="system"
+                        )
+                    elif e.state == StoryAgentState.CANCELED:
+                        await self.message_story(
+                            story_uuid,
+                            f"🛑 Tests đã bị hủy.",
+                            message_type="system"
+                        )
+                except Exception:
+                    pass
+            
+            # Cleanup langfuse
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
+            
+            return TaskResult(
+                success=False,
+                output="",
+                error_message=e.message
+            )
+            
         except Exception as e:
             # Reset flags on error
             self._is_auto_task = False
             self._current_story_ids = []
+            self._running_tasks.pop(story_id, None)
+            
             logger.error(f"[{self.name}] Error: {e}", exc_info=True)
+            
             # Cleanup langfuse on error
             if langfuse_ctx:
                 try:

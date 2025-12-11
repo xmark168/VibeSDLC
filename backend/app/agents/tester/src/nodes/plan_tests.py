@@ -18,7 +18,7 @@ from sqlmodel import Session
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.core_nodes import detect_testing_context, send_message
+from app.agents.tester.src.core_nodes import detect_testing_context, send_message, generate_user_message
 from app.agents.tester.src._llm import plan_llm
 from app.agents.tester.src.config import MAX_SCENARIOS_UNIT, MAX_SCENARIOS_INTEGRATION
 from app.agents.tester.src.utils.file_repository import FileRepository
@@ -678,13 +678,26 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
     3. Decides test scenarios for each story
     4. Creates a step-by-step test plan
     
+    Includes interrupt signal check for pause/cancel support.
+    
     Output:
     - test_plan: List of test steps
     - testing_context: Auth patterns, ORM, existing mocks
     - total_steps: Number of steps
     - current_step: 0 (starting)
     """
+    from langgraph.types import interrupt
+    from app.agents.tester.src.graph import check_interrupt_signal
+    
     print("[NODE] plan_tests")
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            logger.info(f"[plan_tests] Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "plan_tests"})
     
     stories = state.get("stories", [])
     project_id = state.get("project_id", "")
@@ -942,8 +955,14 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         
         # component_context already created before LLM call (used for scenario planning)
         
-        # Build message
-        msg = f"📋 **Test Plan** ({total_steps} bước)\n"
+        # Build message (persona-driven intro + technical details)
+        intro = await generate_user_message(
+            "plan_created",
+            f"{total_steps} test steps planned",
+            agent,
+            f"{len([s for s in test_plan if s['type']=='unit'])} unit, {len([s for s in test_plan if s['type']=='integration'])} integration"
+        )
+        msg = f"{intro}\n"
         for step in test_plan:
             test_icon = "🧩 Unit" if step["type"] == "unit" else "🔧 Integration"
             msg += f"\n{step['order']}. {test_icon}: {step.get('description', 'N/A')}"
@@ -970,7 +989,11 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         
     except Exception as e:
         logger.error(f"[plan_tests] Error: {e}", exc_info=True)
-        error_msg = f"Lỗi khi tạo test plan: {str(e)}"
+        error_msg = await generate_user_message(
+            "default",
+            f"Error creating test plan: {str(e)[:100]}",
+            agent
+        )
         await send_message(state, agent, error_msg, "error")
         return {
             "test_plan": [],

@@ -42,7 +42,23 @@ def cleanup_old_worktree(main_workspace: Path, branch_name: str, worktree_path: 
             try:
                 shutil.rmtree(worktree_path)
             except Exception as e:
-                logger.error(f"[{agent_name}] Failed to remove directory: {e}")
+                # Windows long path workaround: use robocopy to delete
+                import platform
+                if platform.system() == "Windows":
+                    try:
+                        import tempfile
+                        empty_dir = tempfile.mkdtemp()
+                        subprocess.run(
+                            ["robocopy", empty_dir, str(worktree_path), "/mir", "/njh", "/njs", "/nc", "/ns", "/np"],
+                            capture_output=True,
+                            timeout=60,
+                        )
+                        shutil.rmtree(empty_dir, ignore_errors=True)
+                        shutil.rmtree(worktree_path, ignore_errors=True)
+                    except Exception:
+                        pass
+                else:
+                    logger.error(f"[{agent_name}] Failed to remove directory: {e}")
     
     try:
         subprocess.run(
@@ -109,6 +125,29 @@ def setup_git_worktree(
     
     # Clean up old worktree
     cleanup_old_worktree(main_workspace, branch_name, worktree_path, agent_name)
+    
+    # Auto-commit uncommitted files so worktree has them
+    try:
+        # Check for uncommitted changes
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(main_workspace),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if status.returncode == 0 and status.stdout.strip():
+            # Add all files and commit
+            subprocess.run(["git", "add", "-A"], cwd=str(main_workspace), capture_output=True, timeout=30)
+            subprocess.run(
+                ["git", "commit", "-m", "Auto-commit before worktree creation"],
+                cwd=str(main_workspace),
+                capture_output=True,
+                timeout=30,
+            )
+            logger.debug(f"[{agent_name}] Auto-committed uncommitted files")
+    except Exception as e:
+        logger.warning(f"[{agent_name}] Auto-commit failed: {e}")
     
     logger.debug(f"[{agent_name}] Creating worktree '{branch_name}' at: {worktree_path}")
     

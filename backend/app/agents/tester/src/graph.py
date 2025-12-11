@@ -7,13 +7,17 @@ Optimized flow (no summarize):
  conversation
       ↓
      END
+
+Updated with PostgresSaver for checkpoint/pause/resume support (aligned with Developer V2).
 """
 
 import logging
 from functools import partial
-from typing import Literal
+from typing import Literal, Optional, Any
 
 from langgraph.graph import END, StateGraph
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agents.tester.src.core_nodes import (
     conversation,
@@ -30,6 +34,70 @@ from app.agents.tester.src.nodes.setup_workspace import setup_workspace
 from app.agents.tester.src.state import TesterState
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# PostgresSaver Singleton (aligned with Developer V2)
+# =============================================================================
+
+_postgres_checkpointer: Optional[AsyncPostgresSaver] = None
+_connection_pool = None
+
+
+async def get_postgres_checkpointer() -> AsyncPostgresSaver:
+    """Get or create a PostgresSaver checkpointer for persistent state.
+    
+    Aligned with Developer V2 implementation for consistent checkpoint handling.
+    """
+    global _postgres_checkpointer, _connection_pool
+    
+    if _postgres_checkpointer is None:
+        from app.core.config import settings
+        from psycopg_pool import AsyncConnectionPool
+        
+        # Convert SQLAlchemy URI to standard PostgreSQL connection string
+        db_uri = str(settings.SQLALCHEMY_DATABASE_URI)
+        if "+psycopg" in db_uri:
+            db_uri = db_uri.replace("+psycopg", "")
+        
+        # Create async connection pool (required for proper checkpoint saving)
+        _connection_pool = AsyncConnectionPool(
+            conninfo=db_uri,
+            min_size=1,
+            max_size=3,
+            open=False,
+            kwargs={"autocommit": True},
+        )
+        await _connection_pool.open(wait=True)
+        
+        _postgres_checkpointer = AsyncPostgresSaver(_connection_pool)
+        # Create tables if they don't exist
+        await _postgres_checkpointer.setup()
+        logger.info("[TesterGraph] PostgresSaver initialized")
+    
+    return _postgres_checkpointer
+
+
+# =============================================================================
+# Interrupt Signal Check (aligned with Developer V2)
+# =============================================================================
+
+def check_interrupt_signal(story_id: str) -> str | None:
+    """Check for pause/cancel signal from TaskRegistry.
+    
+    Aligned with Developer V2 - uses same TaskRegistry for consistent behavior.
+    
+    Returns:
+        'pause', 'cancel', or None
+    """
+    if not story_id:
+        return None
+    
+    try:
+        from app.agents.core.task_registry import check_interrupt_signal as _check
+        return _check(story_id)
+    except ImportError:
+        return None
 
 
 # ============================================================================
@@ -151,10 +219,15 @@ class TesterGraph:
     6. run_tests - Execute tests
     7. analyze_errors - Debug failing tests
     8. send_response - Final message to user
+    
+    Supports checkpointing for pause/resume functionality (aligned with Developer V2).
+    Uses PostgresSaver for persistent checkpoints across restarts.
     """
 
-    def __init__(self, agent=None):
+    def __init__(self, agent=None, checkpointer: Optional[Any] = None):
         self.agent = agent
+        self.checkpointer = checkpointer  # Will be set async if None
+        self._graph_compiled = False
 
         graph = StateGraph(TesterState)
 
@@ -243,7 +316,30 @@ class TesterGraph:
         graph.add_edge("test_status", END)
         graph.add_edge("conversation", END)
 
-        # Compile with higher recursion limit for complex test generation
-        self.graph = graph.compile()
+        self._state_graph = graph
+        self.graph = None  # Will be compiled with checkpointer
         self.recursion_limit = 50  # Increased from default 25
-        logger.info("[TesterGraph] Compiled with optimized flow (no summarize), recursion_limit=50")
+    
+    async def setup(self) -> None:
+        """Setup the graph with PostgresSaver checkpointer (aligned with Developer V2)."""
+        if self.graph is not None:
+            return  # Already setup
+        
+        if self.checkpointer is None:
+            try:
+                self.checkpointer = await get_postgres_checkpointer()
+                logger.info(f"[TesterGraph] PostgresSaver setup OK: {type(self.checkpointer).__name__}")
+            except Exception as e:
+                logger.warning(f"[TesterGraph] Failed to setup PostgresSaver, using MemorySaver: {e}", exc_info=True)
+                self.checkpointer = MemorySaver()
+        
+        self.graph = self._state_graph.compile(checkpointer=self.checkpointer)
+        logger.info(f"[TesterGraph] Graph compiled with checkpointer: {type(self.checkpointer).__name__}")
+    
+    def setup_sync(self) -> None:
+        """Setup the graph with MemorySaver (sync fallback)."""
+        if self.graph is not None:
+            return
+        self.checkpointer = self.checkpointer or MemorySaver()
+        self.graph = self._state_graph.compile(checkpointer=self.checkpointer)
+        logger.info("[TesterGraph] Graph compiled with MemorySaver (sync fallback)")
