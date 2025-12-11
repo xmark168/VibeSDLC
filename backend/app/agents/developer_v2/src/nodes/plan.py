@@ -245,15 +245,31 @@ Each step: file_path, action, task, dependencies."""
 
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Zero-shot planning with FileRepository."""
-    logger.info("[NODE] plan")
+    from langgraph.types import interrupt
+    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    
+    # Create story logger
+    story_logger = StoryLogger.from_state(state, agent).with_node("plan")
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            await story_logger.info(f"Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
+    
+    await story_logger.info("Starting planning phase...")
     workspace_path = state.get("workspace_path", "")
     tech_stack = state.get("tech_stack", "nextjs")
     set_tool_context(root_dir=workspace_path, project_id=state.get("project_id", ""), task_id=state.get("task_id") or state.get("story_id", ""))
     
     try:
+        await story_logger.info("Scanning project files...")
         repo = FileRepository(workspace_path)
         context = repo.to_context()
-        logger.info(f"[plan] FileRepository: {len(repo.file_tree)} files")
+        await story_logger.debug(f"Found {len(repo.file_tree)} files in project")
         
         plan_prompts = get_plan_prompts(tech_stack)
         system_prompt = plan_prompts.get('zero_shot_system', plan_prompts.get('system_prompt', ''))
@@ -272,12 +288,20 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
 
 Create implementation plan. Output JSON steps directly."""
 
+        await story_logger.info("Generating implementation plan with AI...")
         structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
         result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "plan_zero_shot"))
         flush_langfuse(state)
         
+        # Check for interrupt after LLM call
+        if story_id:
+            signal = check_interrupt_signal(story_id)
+            if signal:
+                await story_logger.info(f"Interrupt after LLM: {signal}")
+                interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
+        
         steps = result.model_dump().get("steps", [])
-        logger.info(f"[plan] Got {len(steps)} steps")
+        await story_logger.info(f"Generated {len(steps)} implementation steps")
         
         if not steps:
             return await _plan_with_exploration(state, agent)
@@ -311,15 +335,20 @@ Create implementation plan. Output JSON steps directly."""
         layers = group_steps_by_layer(steps)
         can_parallel = should_use_parallel(steps)
         
-        return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "skill_registry": skill_registry, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
+        # Notify user with plan details
+        if steps:
+            step_list = "\n".join([f"  {i+1}. {s.get('file_path', '')} ({s.get('action', 'modify')})" for i, s in enumerate(steps)])
+            await story_logger.success(f"Plan ready ({len(steps)} steps, {len(layers)} layers):\n{step_list}")
+        
+        return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
     except Exception as e:
-        logger.warning(f"[plan] Zero-shot failed: {e}")
+        await story_logger.warning(f"Zero-shot planning failed: {e}, trying exploration...")
         return await _plan_with_exploration(state, agent)
 
 
 async def _plan_with_exploration(state: DeveloperState, agent=None) -> DeveloperState:
     """Fallback with tool exploration."""
-    logger.info("[NODE] plan_with_exploration")
+    logger.debug("[NODE] plan_with_exploration")
     try:
         workspace_path = state.get("workspace_path", "")
         tech_stack = state.get("tech_stack", "nextjs")
@@ -369,7 +398,11 @@ async def _plan_with_exploration(state: DeveloperState, agent=None) -> Developer
         from app.agents.developer_v2.src.nodes.parallel_utils import group_steps_by_layer, should_use_parallel
         layers = group_steps_by_layer(steps)
         
-        return {**state, "task_type": "feature", "complexity": "medium" if len(steps) <= 5 else "high", "implementation_plan": steps, "dependencies_content": deps_content, "total_steps": len(steps), "current_step": 0, "skill_registry": skill_registry, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": should_use_parallel(steps), "action": "IMPLEMENT"}
+        return {**state, "task_type": "feature", "complexity": "medium" if len(steps) <= 5 else "high", "implementation_plan": steps, "dependencies_content": deps_content, "total_steps": len(steps), "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": should_use_parallel(steps), "action": "IMPLEMENT"}
     except Exception as e:
+        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        from langgraph.errors import GraphInterrupt
+        if isinstance(e, GraphInterrupt):
+            raise
         logger.error(f"[plan] Error: {e}", exc_info=True)
         return {**state, "error": str(e), "action": "RESPOND"}

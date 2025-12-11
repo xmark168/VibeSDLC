@@ -31,6 +31,7 @@ class StoryAgentState(str, Enum):
     """Agent execution state on a story. Resets when story changes column."""
     PENDING = "pending"
     PROCESSING = "processing"
+    PAUSED = "paused"
     CANCELED = "canceled"
     FINISHED = "finished"
 

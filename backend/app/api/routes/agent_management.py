@@ -110,19 +110,51 @@ def ensure_role_class_map():
     return ROLE_CLASS_MAP
 
 
-async def initialize_default_pools() -> None:
-    """Initialize UNIVERSAL agent pool with in-memory management.
+def get_available_pool(role_type: Optional[str] = None) -> Optional[AgentPoolManager]:
+    """Get any available pool manager.
+    
+    Priority:
+    1. Role-specific pool if role_type provided (e.g., "developer_pool")
+    2. Universal pool
+    3. Any available pool
+    
+    Args:
+        role_type: Optional role type to try role-specific pool first
+        
+    Returns:
+        AgentPoolManager or None if no pools available
+    """
+    # Try role-specific pool first
+    if role_type:
+        role_pool = f"{role_type}_pool"
+        if role_pool in _manager_registry:
+            return _manager_registry[role_pool]
+    
+    # Try universal pool
+    if "universal_pool" in _manager_registry:
+        return _manager_registry["universal_pool"]
+    
+    # Fallback to any available pool
+    if _manager_registry:
+        return next(iter(_manager_registry.values()))
+    
+    return None
 
-    Uses AgentPoolManager:
-    - Single-process in-memory management
-    - No multiprocessing overhead
-    - No Redis coordination needed
-    - Direct agent management
+
+async def initialize_default_pools() -> None:
+    """Initialize agent pools with in-memory management.
+
+    Uses AgentPoolManager with configurable pool strategy:
+    - Creates universal pool per role if no pools exist
+    - Config-driven max_agents and health check intervals
+    - Auto-scaling support via AgentMonitor
     - Built-in health monitoring
     """
     import logging
     from sqlmodel import Session, select
     from app.core.db import engine
+    from app.core.config import settings
+    from app.models import AgentPool
 
     logger = logging.getLogger(__name__)
     global ROLE_CLASS_MAP
@@ -131,16 +163,35 @@ async def initialize_default_pools() -> None:
     if ROLE_CLASS_MAP is None:
         ROLE_CLASS_MAP = get_role_class_map()
 
-    logger.info("🚀 Initializing agent pool manager (optimized architecture)")
-    await _initialize_pool(logger, ROLE_CLASS_MAP)
+    logger.info("🚀 Initializing agent pool managers (optimized architecture)")
+    
+    # Check if any pools exist in database
+    with Session(engine) as db_session:
+        existing_pools = db_session.exec(select(AgentPool)).all()
+        has_pools = len(existing_pools) > 0
+    
+    if has_pools:
+        # Restore existing pools from database
+        logger.info(f"📦 Found {len(existing_pools)} existing pools in database, restoring...")
+        for db_pool in existing_pools:
+            if db_pool.role_type:
+                await _initialize_role_pool(logger, db_pool.role_type, ROLE_CLASS_MAP)
+            else:
+                await _initialize_pool(logger, ROLE_CLASS_MAP)
+    else:
+        # No pools exist - create universal pool per role
+        logger.info("📦 No pools found, creating universal pool per role...")
+        for role_type in ROLE_CLASS_MAP.keys():
+            await _initialize_role_pool(logger, role_type, ROLE_CLASS_MAP)
 
 
 async def _initialize_pool(logger, role_class_map) -> None:
-    """Initialize in-memory pool manager from DB."""
+    """Initialize universal in-memory pool manager from DB."""
     from sqlmodel import Session, select
     from app.core.db import engine
     from app.services.pool_service import PoolService
     from app.models import AgentPool, PoolType
+    from app.core.config import settings
 
     pool_name = "universal_pool"
 
@@ -161,8 +212,8 @@ async def _initialize_pool(logger, role_class_map) -> None:
                     pool_name=pool_name,
                     role_type=None,  # Universal pool
                     pool_type=PoolType.FREE,
-                    max_agents=100,
-                    health_check_interval=60,
+                    max_agents=settings.AGENT_POOL_MAX_AGENTS,
+                    health_check_interval=settings.AGENT_POOL_HEALTH_CHECK_INTERVAL,
                     auto_created=True,
                 )
             else:
@@ -189,6 +240,125 @@ async def _initialize_pool(logger, role_class_map) -> None:
 
     except Exception as e:
         logger.error(f"✗ Error creating agent pool '{pool_name}': {e}", exc_info=True)
+
+
+async def _initialize_role_pool(logger, role_type: str, role_class_map) -> None:
+    """Initialize role-specific pool manager from DB."""
+    from sqlmodel import Session, select
+    from app.core.db import engine
+    from app.services.pool_service import PoolService
+    from app.models import AgentPool, PoolType
+    from app.core.config import settings
+
+    pool_name = f"{role_type}_pool"
+    role_config = settings.AGENT_POOL_ROLE_CONFIGS.get(role_type, {})
+    max_agents = role_config.get("max_agents", settings.AGENT_POOL_MAX_AGENTS // 4)
+
+    # Skip if manager already exists
+    if pool_name in _manager_registry:
+        logger.info(f"Pool '{pool_name}' already exists, skipping")
+        return
+
+    try:
+        # Get or create pool in DB
+        with Session(engine) as db_session:
+            pool_service = PoolService(db_session)
+            db_pool = pool_service.get_pool_by_name(pool_name)
+            
+            if not db_pool:
+                logger.info(f"Creating role pool '{pool_name}' in database")
+                db_pool = pool_service.create_pool(
+                    pool_name=pool_name,
+                    role_type=role_type,
+                    pool_type=PoolType.FREE,
+                    max_agents=max_agents,
+                    health_check_interval=settings.AGENT_POOL_HEALTH_CHECK_INTERVAL,
+                    auto_created=True,
+                )
+            else:
+                logger.info(f"Found existing pool '{pool_name}' in database (id={db_pool.id})")
+
+        # Create manager with pool_id from DB
+        manager = AgentPoolManager(
+            pool_name=pool_name,
+            max_agents=db_pool.max_agents,
+            health_check_interval=db_pool.health_check_interval,
+            pool_id=db_pool.id,
+        )
+
+        # Start manager
+        if await manager.start():
+            _manager_registry[pool_name] = manager
+            logger.info(f"✓ Created agent pool: {pool_name} (role: {role_type}, max: {max_agents})")
+
+            # Restore agents for this role from database
+            await _restore_role_agents(logger, manager, role_type, role_class_map)
+
+        else:
+            logger.error(f"✗ Failed to start agent pool manager: {pool_name}")
+
+    except Exception as e:
+        logger.error(f"✗ Error creating agent pool '{pool_name}': {e}", exc_info=True)
+
+
+async def _restore_role_agents(logger, manager, role_type: str, role_class_map) -> None:
+    """Restore agents for a specific role type."""
+    from sqlmodel import Session, select, update
+    from app.core.db import engine
+
+    with Session(engine) as db_session:
+        # Reset transient states for this role
+        reset_states = [
+            AgentStatus.starting,
+            AgentStatus.stopping,
+            AgentStatus.busy,
+            AgentStatus.error,
+            AgentStatus.terminated,
+        ]
+        reset_stmt = (
+            update(Agent)
+            .where(Agent.status.in_(reset_states), Agent.role_type == role_type)
+            .values(status=AgentStatus.idle)
+        )
+        reset_result = db_session.exec(reset_stmt)
+        db_session.commit()
+
+        if reset_result.rowcount > 0:
+            logger.info(f"Auto-reset {reset_result.rowcount} {role_type} agents to idle")
+
+        # Query agents for this role
+        agents_query = select(Agent).where(
+            Agent.role_type == role_type,
+            Agent.status.in_([AgentStatus.idle, AgentStatus.stopped])
+        )
+        db_agents = db_session.exec(agents_query).all()
+
+        if not db_agents:
+            logger.info(f"No {role_type} agents to restore")
+            return
+
+        logger.info(f"Restoring {len(db_agents)} {role_type} agents...")
+
+        role_class = role_class_map.get(role_type)
+        if not role_class:
+            logger.warning(f"No role class found for '{role_type}'")
+            return
+
+        restored = 0
+        for db_agent in db_agents:
+            try:
+                success = await manager.spawn_agent(
+                    agent_id=db_agent.id,
+                    role_class=role_class,
+                    heartbeat_interval=30,
+                    max_idle_time=300,
+                )
+                if success:
+                    restored += 1
+            except Exception as e:
+                logger.error(f"Error restoring {db_agent.human_name}: {e}")
+
+        logger.info(f"📊 Restored {restored}/{len(db_agents)} {role_type} agents")
 
 
 async def _restore_agents(logger, manager, role_class_map) -> None:
@@ -494,9 +664,33 @@ async def spawn_agent(
         f"with persona: {persona.communication_style}, traits: {', '.join(persona.personality_traits[:2]) if persona.personality_traits else 'default'}"
     )
 
-    # Get universal pool manager
-    pool_name = "universal_pool"
-    manager = get_manager(pool_name)
+    # Get the best pool for this agent based on role type and load
+    from app.agents.core.pool_helpers import get_best_pool_for_agent
+    from app.core.config import settings
+    
+    manager = get_best_pool_for_agent(
+        _manager_registry,
+        request.role_type,
+        prefer_role_pool=settings.AGENT_POOL_USE_ROLE_SPECIFIC
+    )
+    
+    if not manager:
+        # Fallback to universal pool or any available pool
+        pool_name = "universal_pool"
+        if pool_name not in _manager_registry:
+            # Try role-specific pool
+            pool_name = f"{request.role_type}_pool"
+        if pool_name not in _manager_registry:
+            # Use any available pool
+            if _manager_registry:
+                pool_name = next(iter(_manager_registry.keys()))
+            else:
+                session.delete(db_agent)
+                session.commit()
+                raise HTTPException(status_code=500, detail="No agent pools available")
+        manager = _manager_registry[pool_name]
+    
+    pool_name = manager.pool_name
 
     # Get role_class for this agent
     role_class = role_class_map[request.role_type]
@@ -517,11 +711,11 @@ async def spawn_agent(
 
     return {
         "agent_id": str(db_agent.id),
-        "human_name": human_name,
-        "display_name": display_name,
+        "human_name": db_agent.human_name,
+        "display_name": db_agent.display_name,
         "role_type": request.role_type,
         "project_id": str(request.project_id),
-        "pool_name": pool_name,  # Always "universal_pool"
+        "pool_name": pool_name,
         "state": "spawning",
         "created_at": db_agent.created_at.isoformat(),
     }

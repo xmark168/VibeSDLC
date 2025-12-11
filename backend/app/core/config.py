@@ -185,6 +185,19 @@ class Settings(BaseSettings):
     LANGFUSE_BASE_URL: str = "https://cloud.langfuse.com"
     LANGFUSE_ENABLED: bool = True
 
+    # AGENT POOL SETTINGS
+    AGENT_POOL_MAX_AGENTS: int = 100
+    AGENT_POOL_HEALTH_CHECK_INTERVAL: int = 60
+    AGENT_POOL_AUTO_SCALE_ENABLED: bool = True
+    AGENT_POOL_AUTO_SCALE_THRESHOLD: float = 0.8
+    AGENT_POOL_USE_ROLE_SPECIFIC: bool = True
+    AGENT_POOL_ROLE_CONFIGS: dict = Field(default_factory=lambda: {
+        "team_leader": {"max_agents": 20, "priority": 1},
+        "developer": {"max_agents": 50, "priority": 2},
+        "tester": {"max_agents": 30, "priority": 2},
+        "business_analyst": {"max_agents": 20, "priority": 1},
+    })
+
     # PAYOS PAYMENT GATEWAY SETTINGS
     PAYOS_CLIENT_ID: str = ""
     PAYOS_API_KEY: str = ""

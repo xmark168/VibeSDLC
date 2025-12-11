@@ -48,6 +48,7 @@ import { useQueryClient } from "@tanstack/react-query"
 interface KanbanBoardProps {
   kanbanData?: any
   projectId?: string
+  onViewFiles?: (worktreePath: string) => void
 }
 
 type ColumnId = "todo" | "inprogress" | "review" | "done" | "archived"
@@ -85,6 +86,9 @@ function SortableCard({
   onCardMove?: (cardId: string, targetColumn: string) => void
   onCardEdit?: (card: KanbanCardData) => void
 }) {
+  // Only allow drag when agent_state is null, finished, or canceled
+  const canDrag = !card.agent_state || card.agent_state === 'finished' || card.agent_state === 'canceled'
+  
   const {
     attributes,
     listeners,
@@ -92,7 +96,10 @@ function SortableCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: card.id })
+  } = useSortable({ 
+    id: card.id,
+    disabled: !canDrag  // Disable drag when agent is pending/processing
+  })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -204,12 +211,13 @@ function DroppableColumn({
   )
 }
 
-export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
+export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardProps) {
   const [cards, setCards] = useState<KanbanCardData[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [clonedCards, setClonedCards] = useState<KanbanCardData[] | null>(null)
   const clonedCardsRef = useRef<KanbanCardData[] | null>(null) // Ref version for callbacks
   const cardsRef = useRef<KanbanCardData[]>(cards) // Current cards ref for callbacks
+  const activeCardRef = useRef<KanbanCardData | null>(null) // Store active card on drag start to avoid recalc
   // Store target position for cross-container moves
   const crossContainerTarget = useRef<{ targetColumn: string; targetIndex: number; overId: string } | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
@@ -292,6 +300,18 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         dependencies: item.dependencies || [],
         created_at: item.created_at,
         updated_at: item.updated_at,
+        agent_state: item.agent_state,
+        running_port: item.running_port,
+        running_pid: item.running_pid,
+        worktree_path: item.worktree_path,
+        worktree_path_display: item.worktree_path_display,
+        branch_name: item.branch_name,
+        pr_url: item.pr_url,
+        merge_status: item.merge_status,
+        started_at: item.started_at,
+        // Use pre-computed blocked state from backend (O(1) instead of frontend O(n²))
+        isBlocked: item.is_blocked ?? false,
+        blockedByCount: item.blocked_by_count ?? 0,
       })
 
       const allCards: KanbanCardData[] = [
@@ -313,18 +333,40 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     return cards.find(c => c.id === selectedCard.id) || selectedCard
   }, [cards, selectedCard?.id])
 
-  // Get the active card for DragOverlay
-  const activeCard = useMemo(() => {
-    if (!activeId) return null
-    return cards.find(c => c.id === activeId) || null
-  }, [activeId, cards])
+  // Get the active card for DragOverlay - use ref to avoid recalc on every cards change
+  const activeCard = activeId ? activeCardRef.current : null
 
   // Keep cardsRef in sync with cards state
   useEffect(() => {
     cardsRef.current = cards
   }, [cards])
 
-
+  // Listen for story state changes from WebSocket
+  useEffect(() => {
+    const handleStoryStateChanged = (event: CustomEvent) => {
+      const { story_id, agent_state, running_port, running_pid } = event.detail
+      console.log('[KanbanBoard] Story state changed event:', { story_id, agent_state, running_port, running_pid })
+      
+      setCards(prev => {
+        const updatedCards = prev.map(card => {
+          if (card.id !== story_id) return card
+          // Merge updates - only update fields that are explicitly provided
+          const updated = { ...card }
+          if (agent_state !== undefined) updated.agent_state = agent_state
+          if (running_port !== undefined) updated.running_port = running_port
+          if (running_pid !== undefined) updated.running_pid = running_pid
+          console.log('[KanbanBoard] Card updated:', { before: card, after: updated })
+          return updated
+        })
+        return updatedCards
+      })
+    }
+    
+    window.addEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    return () => {
+      window.removeEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    }
+  }, [])
 
   // Get cards by column
   const getCardsByColumn = useCallback((columnId: string) => {
@@ -361,7 +403,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     }
   }, [cards])
 
-  // Filter cards and enrich with blocked state
+  // Filter cards - blocked state is now pre-computed from backend
   const filterCards = useCallback((cardsToFilter: KanbanCardData[]) => {
     return cardsToFilter
       .filter(card => {
@@ -384,12 +426,8 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
         return matchesSearch && matchesType && matchesPriority
       })
-      .map(card => {
-        // Enrich card with blocked state
-        const { isBlocked, blockedByCount } = checkDependenciesCompleted(card)
-        return { ...card, isBlocked, blockedByCount }
-      })
-  }, [searchQuery, selectedFilters, checkDependenciesCompleted])
+    // No need to enrich with blocked state - it's pre-computed from backend
+  }, [searchQuery, selectedFilters])
 
   // Find container for an item (official dnd-kit pattern)
   const findContainer = useCallback((id: string): string | undefined => {
@@ -404,9 +442,11 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
 
   // DnD Handlers (following official dnd-kit pattern)
   const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id as string)
+    const dragId = event.active.id as string
+    setActiveId(dragId)
     setClonedCards(cards) // Save for cancel recovery
     clonedCardsRef.current = cards // Also save to ref for callbacks
+    activeCardRef.current = cards.find(c => c.id === dragId) || null // Store active card to avoid recalc
     crossContainerTarget.current = null // Clear any stale target
   }, [cards])
 
@@ -479,6 +519,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     setActiveId(null)
     setClonedCards(null)
     clonedCardsRef.current = null
+    activeCardRef.current = null
 
     if (!over) return
 
@@ -660,6 +701,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
     setActiveId(null)
     setClonedCards(null)
     clonedCardsRef.current = null
+    activeCardRef.current = null
     crossContainerTarget.current = null
   }, [clonedCards])
 
@@ -1033,6 +1075,7 @@ export function KanbanBoard({ kanbanData, projectId }: KanbanBoardProps) {
         //allStories={columns.flatMap(col => col.cards)}
         projectId={projectId}
         allStories={cards}
+        onViewFiles={onViewFiles}
       />
 
       <FlowMetricsDashboard projectId={projectId} open={showFlowMetrics} onOpenChange={setShowFlowMetrics} />

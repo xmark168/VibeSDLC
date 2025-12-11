@@ -1,16 +1,231 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye, Trash2 } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from "@/components/ui/ai/conversation"
+import {
+  Message,
+  MessageContent,
+  MessageAvatar,
+} from "@/components/ui/ai/message"
+import {
+  PromptInput,
+  PromptInputTextarea,
+  PromptInputToolbar,
+  PromptInputTools,
+  PromptInputButton,
+  PromptInputSubmit,
+} from "@/components/ui/ai/prompt-input"
 import type { KanbanCardData } from "./kanban-card"
-import { useState, useRef, useEffect, useCallback } from "react"
+import React, { useState, useRef, useEffect, useCallback } from "react"
 import { useStoryWebSocket } from "@/hooks/useStoryWebSocket"
+import { ErrorBoundary } from "@/components/shared/error-boundary"
+
+// DiffsView component for showing git diffs
+interface DiffFile {
+  status: string
+  filename: string
+  additions: number
+  deletions: number
+  binary: boolean
+}
+
+interface DiffData {
+  files: DiffFile[]
+  file_count: number
+  total_additions: number
+  total_deletions: number
+  diff: string
+  base_branch: string | null
+}
+
+function DiffsView({ storyId, onViewInFiles }: { storyId: string, onViewInFiles?: () => void }) {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [diffs, setDiffs] = useState<DiffData | null>(null)
+  
+  useEffect(() => {
+    const fetchDiffs = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const token = localStorage.getItem('access_token')
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/v1/stories/${storyId}/diffs`,
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        )
+        if (response.ok) {
+          setDiffs(await response.json())
+        } else {
+          setError('Failed to load diffs')
+        }
+      } catch {
+        setError('Failed to load diffs')
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchDiffs()
+  }, [storyId])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center text-destructive py-8">
+        <p className="text-sm">{error}</p>
+      </div>
+    )
+  }
+
+  if (!diffs || diffs.files.length === 0) {
+    return (
+      <div className="text-center text-muted-foreground py-8">
+        <GitBranch className="w-12 h-12 mx-auto mb-3 opacity-50" />
+        <p className="text-sm">No changes detected</p>
+        {diffs?.base_branch && <p className="text-xs mt-1">Comparing to {diffs.base_branch}</p>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Summary header */}
+      <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center gap-3">
+          <span className="text-muted-foreground">{diffs.file_count} files changed</span>
+          <span className="text-green-600 font-medium">+{diffs.total_additions}</span>
+          <span className="text-red-500 font-medium">-{diffs.total_deletions}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {diffs.base_branch && (
+            <span className="text-xs text-muted-foreground">vs {diffs.base_branch}</span>
+          )}
+          {onViewInFiles && (
+            <Button size="sm" variant="default" onClick={onViewInFiles} className="h-7 text-xs">
+              <Eye className="w-3 h-3 mr-1" />
+              View Files
+            </Button>
+          )}
+        </div>
+      </div>
+      
+      {/* File list */}
+      <div className="border rounded-lg">
+        <div className="px-3 py-2 bg-muted/50 border-b text-xs font-medium text-muted-foreground flex items-center gap-2">
+          <FileCode className="w-4 h-4" />
+          Changed Files
+        </div>
+        <div className="divide-y">
+          {diffs.files.map((file, idx) => (
+            <div key={idx} className="px-3 py-2 text-xs flex items-center gap-2 hover:bg-muted/30">
+              {file.status === 'A' && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-green-500/10 text-green-600 border-green-500/30">A</Badge>}
+              {file.status === 'M' && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-500/10 text-amber-600 border-amber-500/30">M</Badge>}
+              {file.status === 'D' && <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-red-500/10 text-red-500 border-red-500/30">D</Badge>}
+              {!['A', 'M', 'D'].includes(file.status) && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{file.status}</Badge>}
+              <span className="font-mono truncate flex-1">{file.filename}</span>
+              {!file.binary ? (
+                <span className="text-muted-foreground font-mono">
+                  <span className="text-green-600">+{file.additions}</span>
+                  {' '}
+                  <span className="text-red-500">-{file.deletions}</span>
+                </span>
+              ) : (
+                <span className="text-muted-foreground text-[10px]">binary</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      {/* Diff content */}
+      {diffs.diff && (
+        <div className="border rounded-lg overflow-hidden">
+          <div className="px-3 py-2 bg-muted/50 border-b text-xs font-medium text-muted-foreground">
+            Diff
+          </div>
+          <pre className="p-3 text-xs font-mono overflow-x-auto bg-muted/20 max-h-[400px] overflow-y-auto whitespace-pre">
+            {diffs.diff}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// PreviewDialog component - Fullscreen iframe preview via backend proxy
+function PreviewDialog({ storyId, storyTitle, runningPort, open, onOpenChange }: { 
+  storyId: string
+  storyTitle: string
+  runningPort?: number | null
+  open: boolean
+  onOpenChange: (open: boolean) => void 
+}) {
+  const [iframeKey, setIframeKey] = useState(0)
+  
+  // Direct iframe to dev server - no proxy needed
+  const previewUrl = runningPort ? `http://localhost:${runningPort}` : null
+
+  const handleRefresh = () => setIframeKey(prev => prev + 1)
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="!max-w-none !w-screen !h-screen !max-h-screen !rounded-none !p-0 !gap-0 !translate-x-0 !translate-y-0 !top-0 !left-0 fixed inset-0">
+        <DialogHeader className="px-4 py-3 border-b shrink-0 flex flex-row items-center justify-between">
+          <div>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5" />
+              Preview: {storyTitle}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Live preview of the application
+            </DialogDescription>
+          </div>
+          {previewUrl && (
+            <Button variant="ghost" size="sm" onClick={handleRefresh} className="mr-8">
+              <RotateCcw className="w-4 h-4 mr-1" />
+              Refresh
+            </Button>
+          )}
+        </DialogHeader>
+        
+        <div className="flex-1 overflow-hidden" style={{ height: 'calc(100vh - 57px)' }}>
+          {!runningPort ? (
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+              <AlertTriangle className="w-16 h-16 mb-4 opacity-50" />
+              <p className="text-lg font-medium">Dev server not running</p>
+              <p className="text-sm mt-2">Start the dev server first using the "Dev Server" button</p>
+            </div>
+          ) : (
+            <iframe
+              key={iframeKey}
+              src={previewUrl!}
+              className="w-full h-full border-0"
+              title="App Preview"
+            />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 interface TaskDetailModalProps {
   card: KanbanCardData | null
@@ -19,6 +234,7 @@ interface TaskDetailModalProps {
   onDownloadResult: (card: KanbanCardData) => void
   allStories?: KanbanCardData[]  // For resolving dependency titles
   projectId?: string  // For WebSocket connection
+  onViewFiles?: (worktreePath: string) => void  // Navigate to files tab in workspace
 }
 
 // Mock chat messages type
@@ -40,10 +256,35 @@ interface EpicInfo {
   domain?: string
 }
 
-export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, allStories = [], projectId }: TaskDetailModalProps) {
+export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, allStories = [], projectId, onViewFiles }: TaskDetailModalProps) {
   const [selectedChild, setSelectedChild] = useState<KanbanCardData | null>(null)
   const [selectedDependency, setSelectedDependency] = useState<KanbanCardData | null>(null)
   const [selectedEpic, setSelectedEpic] = useState<EpicInfo | null>(null)
+  const [localAgentState, setLocalAgentState] = useState<string | null>(null)
+  
+  // Sync local agent state with card prop
+  useEffect(() => {
+    if (card?.agent_state) {
+      setLocalAgentState(card.agent_state)
+    }
+  }, [card?.agent_state])
+  
+  // Listen for story state changes via WebSocket
+  useEffect(() => {
+    const handleStoryStateChanged = (event: CustomEvent) => {
+      if (event.detail.story_id === card?.id) {
+        setLocalAgentState(event.detail.agent_state)
+      }
+    }
+    
+    window.addEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    return () => {
+      window.removeEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    }
+  }, [card?.id])
+  
+  // Use local state for agent_state display
+  const agentState = localAgentState || card?.agent_state
   
   // Get token from localStorage
   const getToken = () => typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
@@ -63,8 +304,240 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   const [chatMessage, setChatMessage] = useState("")
   const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([])
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
-  const chatScrollRef = useRef<HTMLDivElement>(null)
+  const [isActionLoading, setIsActionLoading] = useState(false)
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false)
+  const [storyLogs, setStoryLogs] = useState<Array<{id: string, content: string, level: string, timestamp: string, node: string}>>([])
+  const logsScrollRef = useRef<HTMLDivElement>(null)
   const token = getToken()
+  
+  // Listen for story log messages from WebSocket
+  useEffect(() => {
+    if (!card?.id) return
+    
+    const handleStoryLog = (event: CustomEvent) => {
+      const { story_id, content, message_type, details } = event.detail
+      if (story_id === card.id && message_type === 'log') {
+        setStoryLogs(prev => [...prev, {
+          id: `${Date.now()}-${Math.random()}`,
+          content,
+          level: details?.level || 'info',
+          timestamp: details?.timestamp || new Date().toISOString(),
+          node: details?.node || ''
+        }])
+      }
+    }
+    
+    window.addEventListener('story-log', handleStoryLog as EventListener)
+    return () => window.removeEventListener('story-log', handleStoryLog as EventListener)
+  }, [card?.id])
+  
+  // Fetch historical logs and clear when modal opens for a new card
+  useEffect(() => {
+    if (open && card?.id) {
+      setStoryLogs([])
+      // Fetch historical logs from API
+      const fetchLogs = async () => {
+        try {
+          const authToken = getToken()
+          const response = await fetch(
+            `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/logs`,
+            {
+              headers: { 'Authorization': `Bearer ${authToken}` }
+            }
+          )
+          if (response.ok) {
+            const data = await response.json()
+            setStoryLogs(data.logs.map((log: any) => ({
+              id: log.id,
+              content: log.content,
+              level: log.level,
+              timestamp: log.timestamp,
+              node: log.node
+            })))
+          }
+        } catch (error) {
+          console.error('Failed to fetch logs:', error)
+        }
+      }
+      fetchLogs()
+    }
+  }, [open, card?.id])
+  
+  // Auto-scroll logs to bottom
+  useEffect(() => {
+    if (logsScrollRef.current && storyLogs.length > 0) {
+      logsScrollRef.current.scrollTop = logsScrollRef.current.scrollHeight
+    }
+  }, [storyLogs])
+
+  // Cancel task handler
+  const handleCancelTask = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/cancel`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Task cancelled')
+      } else {
+        toast.error('Failed to cancel task')
+      }
+    } catch (error) {
+      toast.error('Failed to cancel task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Restart task handler
+  const handleRestartTask = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/restart`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Task restarted')
+      } else {
+        toast.error('Failed to restart task')
+      }
+    } catch (error) {
+      toast.error('Failed to restart task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Pause task handler
+  const handlePauseTask = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/pause`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Task paused')
+      } else {
+        toast.error('Failed to pause task')
+      }
+    } catch (error) {
+      toast.error('Failed to pause task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Resume task handler
+  const handleResumeTask = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/resume`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Task resumed')
+      } else {
+        toast.error('Failed to resume task')
+      }
+    } catch (error) {
+      toast.error('Failed to resume task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Start dev server handler
+  const handleStartDevServer = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/dev-server/start`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        const data = await response.json()
+        toast.success(`Dev server started on port ${data.port}`)
+      } else {
+        toast.error('Failed to start dev server')
+      }
+    } catch (error) {
+      toast.error('Failed to start dev server')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Stop dev server handler
+  const handleStopDevServer = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/dev-server/stop`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Dev server stopped')
+      } else {
+        toast.error('Failed to stop dev server')
+      }
+    } catch (error) {
+      toast.error('Failed to stop dev server')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
 
   // Fetch initial messages from API
   const fetchMessages = useCallback(async (storyId: string) => {
@@ -131,41 +604,74 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   }, [open, card?.id, fetchMessages])
 
   // WebSocket for real-time messages
-  const { messages: chatMessages, isConnected } = useStoryWebSocket(
+  const { messages: chatMessages, isConnected, clearMessages } = useStoryWebSocket(
     open ? card?.id ?? null : null,
     projectId ?? null,
     token ?? undefined,
     initialMessages
   )
 
-  // Auto scroll to bottom when new messages arrive
-  useEffect(() => {
-    if (chatScrollRef.current && activeTab === 'chat') {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
-    }
-  }, [chatMessages, activeTab])
+
 
   if (!card) return null
 
-  const handleSendMessage = () => {
-    if (!chatMessage.trim()) return
+  const handleSendMessage = async () => {
+    if (!chatMessage.trim() || !card?.id) return
 
-    const newMessage: ChatMessage = {
-      id: Date.now().toString(),
-      author: 'Current User',
-      author_type: 'user',
-      content: chatMessage,
-      timestamp: new Date().toISOString(),
+    const messageContent = chatMessage.trim()
+    setChatMessage("") // Clear immediately for better UX
+
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ content: messageContent }),
+        }
+      )
+
+      if (!response.ok) {
+        // Restore message on error
+        setChatMessage(messageContent)
+        console.error('Failed to send message:', response.status)
+      }
+      // Message will arrive via WebSocket, no need to manually add
+    } catch (error) {
+      // Restore message on error
+      setChatMessage(messageContent)
+      console.error('Failed to send message:', error)
     }
-
-    setChatMessages(prev => [...prev, newMessage])
-    setChatMessage("")
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSendMessage()
+  const handleClearMessages = async () => {
+    if (!card?.id) return
+
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/messages`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+          },
+        }
+      )
+
+      if (response.ok) {
+        clearMessages() // Clear local state
+        toast.success('Messages cleared')
+      } else {
+        toast.error('Failed to clear messages')
+      }
+    } catch (error) {
+      console.error('Failed to clear messages:', error)
+      toast.error('Failed to clear messages')
     }
   }
 
@@ -230,10 +736,13 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   const getStatusBadgeColor = (status?: string) => {
     switch (status) {
       case "Backlog":
-        return "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20"
+        return "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20"
       case "Todo":
         return "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20"
+      case "InProgress":
       case "Doing":
+        return "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20"
+      case "Review":
         return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
       case "Done":
         return "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20"
@@ -242,17 +751,31 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     }
   }
 
+  // Format status name for display
+  const formatStatusName = (status?: string) => {
+    switch (status) {
+      case "InProgress": return "In Progress"
+      case "Todo": return "To Do"
+      default: return status
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle className="flex items-start justify-between gap-3">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 {card.story_code && (
                   <Badge
-                    variant="outline"
-                    className=""
+                    variant="default"
+                    className="bg-primary/90 hover:bg-primary text-primary-foreground font-mono font-semibold tracking-wide cursor-pointer"
+                    title="Click to copy"
+                    onClick={() => {
+                      navigator.clipboard.writeText(card.story_code || '')
+                      toast.success('Story code copied!')
+                    }}
                   >
                     {card.story_code}
                   </Badge>
@@ -262,27 +785,149 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                     {formatTypeName(card.type)}
                   </Badge>
                 )}
-                {card.status && (
-                  <Badge variant="outline" className={getStatusBadgeColor(card.status)}>
-                    {card.status}
-                  </Badge>
-                )}
-                {card.rank !== undefined && card.rank !== null && (
-                  <Badge
-                    variant="outline"
-                    className={`gap-1 ${card.rank <= 3
-                        ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20"
-                        : card.rank <= 7
-                          ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20"
-                          : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
-                      }`}
-                  >
-                    <Flag className="w-3 h-3" />
-                    Thứ tự: {card.rank}
-                  </Badge>
-                )}
               </div>
               <div className="text-base font-semibold text-foreground">{card.content}</div>
+              
+              {/* Task Details Grid */}
+              {(card.started_at || agentState || card.branch_name || card.merge_status || card.running_port) && (
+                <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 p-3 rounded-lg bg-muted/30 border text-xs">
+                  {card.started_at && (
+                    <>
+                      <span className="text-muted-foreground font-medium">STARTED</span>
+                      <span>{new Date(card.started_at).toLocaleString('vi-VN')}</span>
+                    </>
+                  )}
+                  {agentState && (
+                    <>
+                      <span className="text-muted-foreground font-medium">AGENT STATUS</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className={`inline-block w-2 h-2 rounded-full ${
+                          agentState === 'processing' ? 'bg-primary animate-pulse' :
+                          agentState === 'paused' ? 'bg-amber-500' :
+                          agentState === 'finished' ? 'bg-green-500' :
+                          agentState === 'canceled' ? 'bg-destructive' :
+                          'bg-muted-foreground'
+                        }`}></span>
+                        {agentState === 'processing' ? 'Processing' :
+                         agentState === 'paused' ? 'Paused' :
+                         agentState === 'finished' ? 'Finished' :
+                         agentState === 'canceled' ? 'Canceled' : 'Pending'}
+                      </span>
+                    </>
+                  )}
+                  {card.branch_name && (
+                    <>
+                      <span className="text-muted-foreground font-medium">BRANCH</span>
+                      <code className="bg-muted px-1.5 py-0.5 rounded text-[11px]">{card.branch_name}</code>
+                    </>
+                  )}
+                  {card.merge_status !== undefined && (
+                    <>
+                      <span className="text-muted-foreground font-medium">MERGE STATUS</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className={`inline-block w-2 h-2 rounded-full ${
+                          card.merge_status === 'merged' ? 'bg-green-500' :
+                          card.merge_status === 'conflict' ? 'bg-destructive' :
+                          'bg-amber-500'
+                        }`}></span>
+                        {card.merge_status === 'merged' ? 'Merged' :
+                         card.merge_status === 'conflict' ? 'Conflict' : 'Not merged'}
+                      </span>
+                    </>
+                  )}
+                  {card.running_port && (
+                    <>
+                      <span className="text-muted-foreground font-medium">DEV SERVER</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                        Running on :{card.running_port}
+                      </span>
+                    </>
+                  )}
+
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              {agentState && (
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  {/* Dev Server Start */}
+                  {agentState === 'finished' && card.worktree_path && !card.running_port && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleStartDevServer}
+                      disabled={isActionLoading}
+                    >
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+                      Dev Server
+                    </Button>
+                  )}
+                  
+                  {/* Dev Server Stop - danger color */}
+                  {agentState === 'finished' && card.worktree_path && card.running_port && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleStopDevServer}
+                      disabled={isActionLoading}
+                    >
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
+                      Stop Server
+                    </Button>
+                  )}
+                  
+                  {/* Open App - success/green color */}
+                  {card.running_port && (
+                    <Button variant="outline" size="sm" className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700" asChild>
+                      <a href={`http://localhost:${card.running_port}`} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="w-4 h-4" />
+                        Open App
+                      </a>
+                    </Button>
+                  )}
+                  
+                  {/* Preview - opens fullscreen preview dialog (requires running dev server) */}
+                  {card.running_port && (
+                    <Button variant="outline" size="sm" onClick={() => setShowPreviewDialog(true)}>
+                      <Eye className="w-4 h-4" />
+                      Preview
+                    </Button>
+                  )}
+
+                  {/* Pause when pending or processing */}
+                  {(agentState === 'pending' || agentState === 'processing') && (
+                    <Button variant="outline" size="sm" onClick={handlePauseTask} disabled={isActionLoading}>
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />}
+                      Tạm dừng
+                    </Button>
+                  )}
+                  
+                  {/* Resume when paused */}
+                  {agentState === 'paused' && (
+                    <Button variant="default" size="sm" onClick={handleResumeTask} disabled={isActionLoading}>
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                      Tiếp tục
+                    </Button>
+                  )}
+                  
+                  {/* Cancel when processing or paused */}
+                  {(agentState === 'pending' || agentState === 'processing' || agentState === 'paused') && (
+                    <Button variant="destructive" size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={handleCancelTask} disabled={isActionLoading}>
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
+                      Hủy
+                    </Button>
+                  )}
+                  
+                  {/* Restart when canceled or finished */}
+                  {(agentState === 'canceled' || agentState === 'finished') && (
+                    <Button variant="default" size="sm" onClick={handleRestartTask} disabled={isActionLoading}>
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                      Restart
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           </DialogTitle>
         </DialogHeader>
@@ -291,7 +936,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
 
         {/* Tabs Navigation */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="detail" className="gap-2">
               <FileText className="w-4 h-4" />
               Detail
@@ -303,6 +948,10 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
             <TabsTrigger value="logs" className="gap-2">
               <ScrollText className="w-4 h-4" />
               Logs
+            </TabsTrigger>
+            <TabsTrigger value="diffs" className="gap-2">
+              <GitBranch className="w-4 h-4" />
+              Diffs
             </TabsTrigger>
           </TabsList>
 
@@ -349,6 +998,19 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
 
           {/* Metadata Grid */}
           <div className="grid grid-cols-2 gap-4">
+            {/* Status */}
+            {card.status && (
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-muted-foreground" />
+                <div>
+                  <div className="text-xs text-muted-foreground">Status</div>
+                  <Badge variant="outline" className={`w-fit ${getStatusBadgeColor(card.status)}`}>
+                    {formatStatusName(card.status)}
+                  </Badge>
+                </div>
+              </div>
+            )}
+
             {/* Story Points / Estimate */}
             {(card.story_point !== undefined && card.story_point !== null) && (
               <div className="flex items-center gap-2">
@@ -510,7 +1172,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                     <span className="text-sm flex-1">{child.content}</span>
                     {child.status && (
                       <Badge variant="outline" className={getStatusBadgeColor(child.status)}>
-                        {child.status}
+                        {formatStatusName(child.status)}
                       </Badge>
                     )}
                     {child.story_point !== undefined && child.story_point !== null && (
@@ -586,7 +1248,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
           {/* Chat Tab */}
           <TabsContent value="chat" className="flex-1 flex flex-col mt-4 min-h-0 overflow-hidden">
             {/* Chat Header */}
-            <div className="flex items-center justify-between pb-3 border-b">
+            <div className="flex items-center justify-between pb-3 border-b shrink-0">
               <div className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold">Story Discussion</h3>
@@ -594,147 +1256,186 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   {chatMessages.length} messages
                 </Badge>
               </div>
-              <div className="flex items-center gap-1.5 text-xs">
-                {isConnected ? (
-                  <>
-                    <Wifi className="w-3 h-3 text-green-500" />
-                    <span className="text-green-600 dark:text-green-400">Live</span>
-                  </>
-                ) : (
-                  <>
-                    <WifiOff className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-muted-foreground">Connecting...</span>
-                  </>
+              <div className="flex items-center gap-2">
+                {chatMessages.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClearMessages}
+                    className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="w-3 h-3 mr-1" />
+                    Clear
+                  </Button>
                 )}
+                <div className="flex items-center gap-1.5 text-xs">
+                  {isConnected ? (
+                    <>
+                      <Wifi className="w-3 h-3 text-green-500" />
+                      <span className="text-green-600 dark:text-green-400">Live</span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-muted-foreground">Connecting...</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Messages Area */}
-            <div
-              ref={chatScrollRef}
-              className="flex-1 overflow-y-auto py-4 space-y-4"
-            >
-              {/* Loading State */}
-              {isLoadingMessages && (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  <span className="ml-2 text-sm text-muted-foreground">Loading messages...</span>
-                </div>
-              )}
+            {/* Messages Area with Auto-scroll */}
+            <Conversation className="flex-1 min-h-0">
+              <ConversationContent className="py-2">
+                {/* Loading State */}
+                {isLoadingMessages && (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-sm text-muted-foreground">Loading messages...</span>
+                  </div>
+                )}
 
-              {!isLoadingMessages && chatMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex items-start gap-3 ${
-                    msg.author_type === 'user' ? 'flex-row' : 'flex-row'
-                  }`}
-                >
-                  {/* Avatar */}
-                  <Avatar className="w-8 h-8 shrink-0">
-                    {msg.author_type === 'agent' ? (
-                      <AvatarFallback className="bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs">
-                        🤖
-                      </AvatarFallback>
-                    ) : (
-                      <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                        {msg.author.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    )}
-                  </Avatar>
-
-                  {/* Message Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2 mb-1">
-                      <span className="text-xs font-semibold text-foreground">
-                        {msg.author}
-                      </span>
-                      {msg.author_type === 'agent' && (
-                        <Badge variant="outline" className="text-[10px] h-4 px-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
-                          Agent
-                        </Badge>
-                      )}
-                      <span className="text-[10px] text-muted-foreground">
-                        {formatTimestamp(msg.timestamp)}
-                      </span>
-                    </div>
-                    <div className={`
-                      text-sm rounded-lg px-3 py-2 inline-block max-w-full
-                      ${msg.author_type === 'agent'
-                        ? 'bg-blue-500/10 text-foreground border border-blue-500/20'
-                        : 'bg-muted text-foreground'
+                {/* Messages */}
+                {!isLoadingMessages && chatMessages.map((msg) => (
+                  <Message 
+                    key={msg.id} 
+                    from={msg.author_type === 'agent' ? 'assistant' : 'user'}
+                  >
+                    <MessageAvatar
+                      name={msg.author}
+                      fallback={msg.author_type === 'agent' ? '🤖' : msg.author.charAt(0).toUpperCase()}
+                      className={msg.author_type === 'agent' 
+                        ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' 
+                        : 'bg-primary/10 text-primary'
                       }
-                    `}>
-                      <p className="whitespace-pre-wrap wrap-break-word">{msg.content}</p>
+                    />
+                    <div className="flex flex-col gap-1 max-w-[85%]">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-semibold text-foreground">{msg.author}</span>
+                        {msg.author_type === 'agent' && (
+                          <Badge variant="outline" className="text-[10px] h-4 px-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
+                            Agent
+                          </Badge>
+                        )}
+                        <span className="text-muted-foreground">{formatTimestamp(msg.timestamp)}</span>
+                      </div>
+                      <MessageContent
+                        className={msg.author_type === 'agent'
+                          ? 'bg-blue-500/10 border border-blue-500/20'
+                          : ''
+                        }
+                      >
+                        <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                      </MessageContent>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  </Message>
+                ))}
 
-              {/* Empty State */}
-              {!isLoadingMessages && chatMessages.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-12">
-                  <MessageSquare className="w-12 h-12 mb-3 opacity-30" />
-                  <p className="text-sm font-medium">No messages yet</p>
-                  <p className="text-xs mt-1">Start the conversation about this story</p>
-                </div>
-              )}
-            </div>
-
-            {/* Message Input */}
-            <div className="pt-3 border-t">
-              <div className="flex items-end gap-2">
-                <div className="flex-1 relative">
-                  <Textarea
-                    value={chatMessage}
-                    onChange={(e) => setChatMessage(e.target.value)}
-                    onKeyDown={handleKeyPress}
-                    placeholder="Type a message... (Shift+Enter for new line)"
-                    className="min-h-[60px] max-h-[120px] resize-none pr-20 text-sm"
-                  />
-                  <div className="absolute right-2 bottom-2 flex items-center gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 hover:bg-muted"
-                    >
-                      <Paperclip className="w-4 h-4 text-muted-foreground" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 hover:bg-muted"
-                    >
-                      <Smile className="w-4 h-4 text-muted-foreground" />
-                    </Button>
+                {/* Empty State */}
+                {!isLoadingMessages && chatMessages.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-12">
+                    <MessageSquare className="w-12 h-12 mb-3 opacity-30" />
+                    <p className="text-sm font-medium">No messages yet</p>
+                    <p className="text-xs mt-1">Start the conversation about this story</p>
                   </div>
-                </div>
-                <Button
-                  onClick={handleSendMessage}
-                  disabled={!chatMessage.trim()}
-                  size="sm"
-                  className="h-[60px] px-4"
-                >
-                  <Send className="w-4 h-4" />
-                </Button>
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-1.5">
-                Press Enter to send, Shift+Enter for new line
-              </p>
+                )}
+              </ConversationContent>
+              <ConversationScrollButton />
+            </Conversation>
+
+            {/* Message Input - blended with messages */}
+            <div className="shrink-0 px-4 pb-2">
+              <PromptInput onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="border-muted-foreground/20">
+                <PromptInputTextarea
+                  value={chatMessage}
+                  onChange={(e) => setChatMessage(e.target.value)}
+                  placeholder="Type a message..."
+                />
+                <PromptInputToolbar>
+                  <PromptInputTools>
+                    <PromptInputButton>
+                      <Paperclip className="w-4 h-4" />
+                    </PromptInputButton>
+                    <PromptInputButton>
+                      <Smile className="w-4 h-4" />
+                    </PromptInputButton>
+                  </PromptInputTools>
+                  <PromptInputSubmit disabled={!chatMessage.trim()} />
+                </PromptInputToolbar>
+              </PromptInput>
             </div>
           </TabsContent>
 
           {/* Logs Tab */}
           <TabsContent value="logs" className="flex-1 overflow-y-auto mt-4 min-h-0">
-            <div className="space-y-4">
-              <div className="text-center text-muted-foreground py-8">
-                <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">Activity logs coming soon...</p>
-                <p className="text-xs mt-1">View all activities and changes for this story</p>
-              </div>
+            <div ref={logsScrollRef} className="space-y-1 font-mono text-xs">
+              {storyLogs.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8">
+                  <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">No logs yet</p>
+                  <p className="text-xs mt-1">Logs will appear here when actions are performed</p>
+                </div>
+              ) : (
+                storyLogs.map((log) => (
+                  <div 
+                    key={log.id} 
+                    className={`px-3 py-1.5 rounded ${
+                      log.level === 'error' ? 'bg-red-500/10 text-red-500' :
+                      log.level === 'warning' ? 'bg-yellow-500/10 text-yellow-600' :
+                      log.level === 'success' ? 'bg-green-500/10 text-green-600' :
+                      'bg-muted/50 text-foreground'
+                    }`}
+                  >
+                    <span className="text-muted-foreground">
+                      {new Date(log.timestamp).toLocaleTimeString('vi-VN')}
+                    </span>
+                    {' '}
+                    <span className={`font-semibold uppercase ${
+                      log.level === 'error' ? 'text-red-500' :
+                      log.level === 'warning' ? 'text-yellow-600' :
+                      log.level === 'success' ? 'text-green-600' :
+                      'text-blue-500'
+                    }`}>
+                      [{log.level}]
+                    </span>
+                    {' '}
+                    {log.content}
+                  </div>
+                ))
+              )}
             </div>
           </TabsContent>
+
+          {/* Diffs Tab */}
+          <TabsContent value="diffs" className="flex-1 overflow-y-auto mt-4 min-h-0">
+            <div className="space-y-4">
+              {card.worktree_path ? (
+                <ErrorBoundary
+                  fallback={
+                    <div className="text-center text-destructive/70 py-8">
+                      <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                      <p className="text-sm">Failed to load diffs</p>
+                      <p className="text-xs mt-1">Please try refreshing the page</p>
+                    </div>
+                  }
+                >
+                  <DiffsView storyId={card.id} onViewInFiles={() => {
+                    if (card.worktree_path && onViewFiles) {
+                      onOpenChange(false)  // Close dialog
+                      onViewFiles(card.worktree_path)  // Navigate to files
+                    }
+                  }} />
+                </ErrorBoundary>
+              ) : (
+                <div className="text-center text-muted-foreground py-8">
+                  <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">No worktree available</p>
+                  <p className="text-xs mt-1">Diffs will appear once the agent starts working</p>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
         </Tabs>
       </DialogContent>
 
@@ -809,6 +1510,17 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
             </div>
           </DialogContent>
         </Dialog>
+      )}
+      
+      {/* Preview Dialog - Fullscreen iframe via backend proxy */}
+      {card && (
+        <PreviewDialog
+          storyId={card.id}
+          storyTitle={card.content}
+          runningPort={card.running_port}
+          open={showPreviewDialog}
+          onOpenChange={setShowPreviewDialog}
+        />
       )}
     </Dialog>
   )

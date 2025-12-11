@@ -40,9 +40,24 @@ def _smart_truncate(content: str, max_tokens: int = MAX_REVIEW_TOKENS) -> tuple[
 
 async def review(state: DeveloperState, agent=None) -> DeveloperState:
     """Review implemented code with LGTM/LBTM decision."""
+    from langgraph.types import interrupt
+    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    
+    # Create story logger
+    story_logger = StoryLogger.from_state(state, agent).with_node("review")
+    
+    # Check for pause/cancel signal
+    story_id = state.get("story_id", "")
+    if story_id:
+        signal = check_interrupt_signal(story_id)
+        if signal:
+            await story_logger.info(f"Interrupt signal received: {signal}")
+            interrupt({"reason": signal, "story_id": story_id, "node": "review"})
+    
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
-    logger.info(f"[NODE] review step {current_step}/{total_steps}")
+    await story_logger.info(f"Reviewing step {current_step}/{total_steps}...")
     
     try:
         plan_steps = state.get("implementation_plan", [])
@@ -112,9 +127,12 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         flush_langfuse(state)
         review_result = result.model_dump()
         
-        logger.info(f"[review] {file_path}: {review_result['decision']}")
-        if review_result['decision'] == "LBTM":
-            logger.info(f"[review] LBTM reason: {review_result['feedback'][:500] if review_result['feedback'] else 'No feedback'}")
+        if review_result['decision'] == "LGTM":
+            await story_logger.success(f"Review PASSED: {file_path}")
+        else:
+            await story_logger.warning(f"Review FAILED: {file_path}")
+            if review_result['feedback']:
+                await story_logger.info(f"Feedback: {review_result['feedback'][:200]}...")
         
         # Track LBTM count PER STEP (not global)
         step_lbtm_counts = state.get("step_lbtm_counts", {})
@@ -130,16 +148,15 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
             # Adaptive LBTM limit based on complexity
             complexity = state.get("complexity", "medium")
             max_lbtm = {"low": 1, "medium": 2, "high": 3}.get(complexity, 2)
-            logger.info(f"[review] Step {step_index} LBTM count: {step_lbtm_counts[step_key]}/{max_lbtm} (complexity={complexity})")
+            await story_logger.debug(f"Step {step_index} retry count: {step_lbtm_counts[step_key]}/{max_lbtm}")
             
             # If this step has reached max LBTM for its complexity, force move to next step
             if step_lbtm_counts[step_key] >= max_lbtm:
-                logger.warning(f"[review] Step {step_index} reached max LBTM ({step_lbtm_counts[step_key]}/{max_lbtm}), forcing LGTM")
+                await story_logger.warning(f"Step {step_index} max retries reached, force-approving")
                 review_result["decision"] = "LGTM"
                 review_result["feedback"] = f"(Force-approved after {step_lbtm_counts[step_key]} attempts)"
                 current_step += 1
         else:
-            logger.info(f"[review] Step {step_index} LGTM, moving to step {current_step + 1}")
             current_step += 1
         
         return {
@@ -153,7 +170,11 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         }
         
     except Exception as e:
-        logger.error(f"[review] Error: {e}")
+        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        from langgraph.errors import GraphInterrupt
+        if isinstance(e, GraphInterrupt):
+            raise
+        await story_logger.error(f"Review failed: {str(e)}", exc=e)
         return {**state, "review_result": "LGTM", "review_feedback": "", "error": str(e)}
 
 
