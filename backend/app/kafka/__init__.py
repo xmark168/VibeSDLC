@@ -12,8 +12,6 @@ from app.kafka.consumer_registry import (
 )
 from app.kafka.event_schemas import (
     AgentEvent,
-    AgentResponseEvent,
-    AgentRoutingEvent,
     AgentTaskEvent,
     AgentTaskStatus,
     AgentTaskType,
@@ -22,6 +20,7 @@ from app.kafka.event_schemas import (
     BatchQuestionsAskedEvent,
     ConversationOwnershipChangedEvent,
     ConversationOwnershipReleasedEvent,
+    DelegationRequestEvent,
     FlowStatusEvent,
     FlowStatusType,
     KafkaTopics,
@@ -54,9 +53,8 @@ __all__ = [
     "BaseKafkaEvent",
     "KafkaTopics",
     "UserMessageEvent",
-    "AgentResponseEvent",
-    "AgentRoutingEvent",
     "AgentEvent",
+    "DelegationRequestEvent",
     "StoryEvent",
     "StoryEventType",
     "FlowStatusEvent",

@@ -18,7 +18,6 @@ from uuid import UUID, uuid4
 from app.kafka.producer import KafkaProducer, get_kafka_producer
 from app.kafka.event_schemas import (
     AgentEvent,
-    AgentResponseEvent,
     AgentTaskType,
     DelegationRequestEvent,
     KafkaTopics,

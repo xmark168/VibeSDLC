@@ -63,7 +63,6 @@ export type {
   FetchBacklogItemsParams,
   WIPLimit,
   UpdateWIPLimitParams,
-  FlowMetrics,
 } from './backlog'
 
 // Story types

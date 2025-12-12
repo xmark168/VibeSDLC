@@ -7,7 +7,7 @@ from app.api.routes import (
     auth,
     chat,  # WebSocket chat endpoint
     files,  # Project file management
-    lean_kanban,  # Lean Kanban features: WIP limits, policies, flow metrics
+    lean_kanban,  # Kanban WIP limits
     linked_accounts,  # OAuth account linking
     messages,
     oauth,  # OAuth authentication
@@ -22,7 +22,6 @@ from app.api.routes import (
     tech_stacks,  # TechStack management
     two_factor,  # Two-factor authentication
     users,
-    utils,
 )
 
 api_router = APIRouter()
@@ -32,15 +31,12 @@ api_router.include_router(oauth.router)  # OAuth routes
 api_router.include_router(linked_accounts.router)  # Linked accounts
 api_router.include_router(profile.router)  # User profile management
 api_router.include_router(users.router)
-api_router.include_router(utils.router)
 api_router.include_router(
     stories.router
-)  # Story API (Kanban: Todo/InProgress/Review/Done)
+)  
 api_router.include_router(projects.router)
 api_router.include_router(files.router)  # Project file management
-api_router.include_router(
-    lean_kanban.router
-)  # Lean Kanban: WIP limits, policies, metrics
+api_router.include_router(lean_kanban.router)  # Kanban WIP limits
 api_router.include_router(messages.router)
 api_router.include_router(plans.router)  # Plan management
 api_router.include_router(payments.router)  # Payment and PayOS integration

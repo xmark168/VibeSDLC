@@ -1,7 +1,7 @@
-"""Kanban Service - Business logic for Lean Kanban (WIP limits, flow metrics, policies)."""
+"""Kanban Service - Business logic for WIP limits."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class KanbanService:
-    """Service for Lean Kanban management."""
+    """Service for Kanban WIP limits management."""
 
     def __init__(self, session: Session):
         self.session = session
@@ -240,46 +240,4 @@ class KanbanService:
             "updated_at": project.updated_at
         }
 
-    def get_project_flow_metrics(self, project_id: UUID) -> dict:
-        """Calculate flow metrics (cycle/lead time, throughput, WIP)."""
-        completed_stories = self.session.exec(
-            select(Story)
-            .where(Story.project_id == project_id)
-            .where(Story.status == StoryStatus.DONE)
-            .where(Story.completed_at.isnot(None))
-        ).all()
-        
-        cycle_times = [
-            (s.completed_at - s.started_at).total_seconds() / 3600
-            for s in completed_stories
-            if s.started_at and s.completed_at
-        ]
-        
-        lead_times = [
-            (s.completed_at - s.created_at).total_seconds() / 3600
-            for s in completed_stories
-            if s.completed_at
-        ]
-        
-        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        recent_completed = sum(
-            1 for s in completed_stories 
-            if s.completed_at and s.completed_at >= seven_days_ago
-        )
-        
-        wip_count = self.session.exec(
-            select(func.count())
-            .select_from(Story)
-            .where(Story.project_id == project_id)
-            .where(Story.status.in_([StoryStatus.IN_PROGRESS, StoryStatus.REVIEW]))
-        ).one()
-        
-        return {
-            "avg_cycle_time_hours": sum(cycle_times) / len(cycle_times) if cycle_times else None,
-            "avg_lead_time_hours": sum(lead_times) / len(lead_times) if lead_times else None,
-            "throughput_per_week": recent_completed,
-            "total_completed": len(completed_stories),
-            "work_in_progress": wip_count,
-            "aging_items": [],
-            "bottlenecks": {}
-        }
+

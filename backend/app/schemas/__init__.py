@@ -111,14 +111,12 @@ from .common import (
     NewPassword,
 )
 
-# Lean Kanban schemas
+# Kanban schemas
 from .lean_kanban import (
     WIPLimitCreate,
     WIPLimitUpdate,
     WIPLimitPublic,
     WIPLimitsPublic,
-    StoryFlowMetrics,
-    ProjectFlowMetrics,
     WIPViolation,
 )
 
@@ -279,13 +277,11 @@ __all__ = [
     "Message",
     "NewPassword",
     
-    # Lean Kanban
+    # Kanban
     "WIPLimitCreate",
     "WIPLimitUpdate",
     "WIPLimitPublic",
     "WIPLimitsPublic",
-    "StoryFlowMetrics",
-    "ProjectFlowMetrics",
     "WIPViolation",
 
     # Plan

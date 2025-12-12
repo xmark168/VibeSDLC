@@ -1,4 +1,4 @@
-"""Lean Kanban API endpoints for WIP limits and flow metrics."""
+"""Kanban API endpoints for WIP limits."""
 
 from uuid import UUID
 from fastapi import APIRouter, HTTPException, Depends
@@ -6,14 +6,13 @@ from sqlmodel import Session
 from typing import Any
 
 from app.api.deps import get_current_user, get_db
-from app.models import User, Story
+from app.models import User
 from app.services import KanbanService
 from app.schemas import (
-    WIPLimitUpdate, WIPLimitPublic, WIPLimitsPublic,
-    StoryFlowMetrics, ProjectFlowMetrics
+    WIPLimitUpdate, WIPLimitPublic, WIPLimitsPublic
 )
 
-router = APIRouter(tags=["lean-kanban"])
+router = APIRouter(tags=["kanban"])
 
 
 def get_kanban_service(db: Session = Depends(get_db)) -> KanbanService:
@@ -94,48 +93,4 @@ def validate_wip_before_move(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.get("/projects/{project_id}/flow-metrics", response_model=ProjectFlowMetrics)
-def get_project_flow_metrics(
-    project_id: UUID,
-    days: int = 30,
-    current_user: User = Depends(get_current_user),
-    kanban_service: KanbanService = Depends(get_kanban_service)
-) -> Any:
-    """Get aggregated flow metrics for a project"""
-    metrics = kanban_service.get_project_flow_metrics(project_id)
-    
-    return ProjectFlowMetrics(
-        avg_cycle_time_hours=metrics["avg_cycle_time_hours"],
-        avg_lead_time_hours=metrics["avg_lead_time_hours"],
-        throughput_per_week=metrics["throughput_per_week"],
-        total_completed=metrics["total_completed"],
-        work_in_progress=metrics["work_in_progress"],
-        aging_items=metrics["aging_items"],
-        bottlenecks=metrics["bottlenecks"]
-    )
 
-
-@router.get("/stories/{story_id}/flow-metrics", response_model=StoryFlowMetrics)
-def get_story_flow_metrics(
-    story_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-) -> Any:
-    """Get flow metrics for a specific story"""
-    story = db.get(Story, story_id)
-    if not story:
-        raise HTTPException(status_code=404, detail="Story not found")
-
-    return StoryFlowMetrics(
-        id=story.id,
-        title=story.title,
-        status=story.status.value,
-        created_at=story.created_at,
-        started_at=story.started_at,
-        review_started_at=story.review_started_at,
-        testing_started_at=story.testing_started_at,
-        completed_at=story.completed_at,
-        cycle_time_hours=story.cycle_time_hours,
-        lead_time_hours=story.lead_time_hours,
-        age_in_current_status_hours=story.age_in_current_status_hours
-    )

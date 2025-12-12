@@ -40,13 +40,5 @@ export function useUpdateWIPLimit(projectId: string) {
   })
 }
 
-export function useFlowMetrics(projectId: string | undefined, days: number = 30, enabled: boolean = true) {
-  return useQuery({
-    queryKey: ['flow-metrics', projectId, days],
-    queryFn: () => backlogItemsApi.getFlowMetrics(projectId!, days),
-    enabled: !!projectId && enabled,
-    refetchInterval: false, // Disabled auto-refresh
-    refetchOnWindowFocus: false,
-  })
-}
+
 

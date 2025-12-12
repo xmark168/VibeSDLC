@@ -477,10 +477,7 @@ async def _cleanup_project_files_and_agents(
                 shutil.rmtree(project_dir, onerror=remove_readonly)
                 logger.info(f"[Background] Deleted project directory: {project_dir}")
             except Exception as e:
-                logger.warning(f"Failed to stop agent {agent.human_name}: {e}")
-    
-    # Clean up project files (workspace + worktrees) - run in thread to avoid blocking
-    await asyncio.to_thread(project_service.delete_with_cleanup, project_id)
+                logger.warning(f"[Background] Failed to delete project directory: {e}")
 
 
 @router.post("/{project_id}/cleanup", status_code=status.HTTP_200_OK)
