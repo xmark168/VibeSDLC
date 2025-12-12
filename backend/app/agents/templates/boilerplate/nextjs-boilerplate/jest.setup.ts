@@ -70,6 +70,38 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
 } as any;
 
+// Mock framer-motion to avoid animation issues in tests
+jest.mock('framer-motion', () => ({
+  motion: {
+    div: 'div',
+    span: 'span',
+    h1: 'h1',
+    h2: 'h2',
+    h3: 'h3',
+    p: 'p',
+    a: 'a',
+    button: 'button',
+    section: 'section',
+    article: 'article',
+    nav: 'nav',
+    ul: 'ul',
+    li: 'li',
+    img: 'img',
+    form: 'form',
+    input: 'input',
+    header: 'header',
+    footer: 'footer',
+    main: 'main',
+  },
+  AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
+  useAnimation: () => ({ start: jest.fn(), stop: jest.fn() }),
+  useInView: () => [null, true],
+  useScroll: () => ({ scrollY: { get: () => 0 } }),
+  useTransform: () => 0,
+  useMotionValue: () => ({ get: () => 0, set: jest.fn() }),
+  useSpring: () => ({ get: () => 0, set: jest.fn() }),
+}));
+
 // Mock next/server for API route testing
 jest.mock('next/server', () => {
   // Mock cookies implementation
@@ -123,17 +155,24 @@ jest.mock('next/server', () => {
     NextRequest: class NextRequest extends Request {
       nextUrl: URL;
       cookies: MockRequestCookies;
+      private _url: string;
       
       constructor(input: RequestInfo | URL, init?: RequestInit) {
-        super(input, init);
-        this.nextUrl = new URL(
-          typeof input === 'string'
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url
-        );
+        // Ensure URL string is properly passed to Request
+        const url = typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+        super(url, init);
+        this._url = url;
+        this.nextUrl = new URL(url);
         this.cookies = new MockRequestCookies();
+      }
+      
+      // Override url getter to ensure it returns the correct value
+      get url() {
+        return this._url;
       }
       
       get geo() {

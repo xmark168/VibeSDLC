@@ -1,12 +1,11 @@
 """LLM instances with model selection."""
+import os
 import logging
 from functools import wraps
-
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from app.core.config import settings
 from app.agents.developer_v2.src.config import MAX_RETRIES, RETRY_WAIT_MIN, RETRY_WAIT_MAX
 
 logger = logging.getLogger(__name__)
@@ -53,16 +52,15 @@ def get_model_for_skills(skills: list[str]) -> str:
 
 
 def get_llm(step: str) -> BaseChatModel:
-    """Get LLM for a specific step.
-    
-    Uses settings from app.core.config (TESTER_ANTHROPIC_* or ANTHROPIC_*)
-    """
+    """Get LLM for a specific step."""
     config = LLM_CONFIG.get(step, LLM_CONFIG["implement"])
+    env_model = os.getenv(f"DEVV2_MODEL_{step.upper()}")
+    if env_model:
+        config = {**config, "model": env_model}
     
     model = config["model"]
-    # Use settings from config.py (priority: TESTER_ANTHROPIC_* > ANTHROPIC_*)
-    anthropic_base_url = settings.TESTER_ANTHROPIC_BASE_URL or settings.ANTHROPIC_API_BASE
-    anthropic_api_key = settings.TESTER_ANTHROPIC_API_KEY or settings.ANTHROPIC_API_KEY
+    anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://ai.megallm.io")
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or ''
     
     kwargs = {
         "model": model,
@@ -81,9 +79,8 @@ def get_llm(step: str) -> BaseChatModel:
 def get_llm_for_skills(skills: list[str], temperature: float = 0) -> BaseChatModel:
     """Get LLM based on skills required."""
     model = get_model_for_skills(skills)
-    # Use settings from config.py (priority: TESTER_ANTHROPIC_* > ANTHROPIC_*)
-    anthropic_base_url = settings.TESTER_ANTHROPIC_BASE_URL or settings.ANTHROPIC_API_BASE
-    anthropic_api_key = settings.TESTER_ANTHROPIC_API_KEY or settings.ANTHROPIC_API_KEY
+    anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://v98store.com")
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
     
     kwargs = {
         "model": model,

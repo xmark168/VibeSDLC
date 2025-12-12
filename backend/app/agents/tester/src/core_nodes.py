@@ -298,16 +298,24 @@ async def _query_stories_from_db(project_id: str, story_ids: list, agent) -> lis
 
     try:
         with Session(engine) as session:
+            # Base query: stories in REVIEW status
             query = select(Story).where(
                 Story.project_id == UUID(project_id),
                 Story.status == StoryStatus.REVIEW,
-                or_(
-                    Story.agent_state.is_(None),
-                    Story.agent_state.in_(["pending", "canceled"]),
-                ),
             )
+            
+            # When specific story_ids provided, skip agent_state filter
+            # (Tester already set agent_state to "processing" before this query)
             if story_ids:
                 query = query.where(Story.id.in_([UUID(sid) for sid in story_ids]))
+            else:
+                # Only filter agent_state when scanning for new stories
+                query = query.where(
+                    or_(
+                        Story.agent_state.is_(None),
+                        Story.agent_state.in_(["pending", "canceled"]),
+                    )
+                )
 
             stories = session.exec(query).all()
             logger.info(f"[_query_stories_from_db] Found {len(stories)} stories from query")

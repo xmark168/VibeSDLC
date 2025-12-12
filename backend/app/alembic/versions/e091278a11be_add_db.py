@@ -1,8 +1,8 @@
-"""add new db
+"""add db
 
-Revision ID: 9de7493bf59a
+Revision ID: e091278a11be
 Revises: 
-Create Date: 2025-12-11 13:43:57.160536
+Create Date: 2025-12-11 22:50:28.808340
 
 """
 from alembic import op
@@ -11,7 +11,7 @@ import sqlmodel
 
 
 # revision identifiers, used by Alembic.
-revision = '9de7493bf59a'
+revision = 'e091278a11be'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -390,6 +390,8 @@ def upgrade():
     sa.Column('tokens_used_this_month', sa.Integer(), nullable=False),
     sa.Column('budget_last_reset_daily', sa.DateTime(), nullable=True),
     sa.Column('budget_last_reset_monthly', sa.DateTime(), nullable=True),
+    sa.Column('dev_server_port', sa.Integer(), nullable=True),
+    sa.Column('dev_server_pid', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['active_agent_id'], ['agents.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')

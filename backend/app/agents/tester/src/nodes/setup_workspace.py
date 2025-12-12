@@ -1,10 +1,8 @@
 """Setup workspace node - Setup git workspace/branch for test generation.
 
-Exactly mirrored from developer_v2's setup_workspace.
+Reuses Developer V2's workspace when available (from Story.worktree_path).
 """
 import logging
-import os
-import subprocess
 from pathlib import Path
 from uuid import UUID
 
@@ -16,24 +14,12 @@ from app.agents.tester.src.tools.workspace_tools import (
     setup_git_worktree,
     get_agents_md,
     get_project_context,
+    get_story_workspace,
 )
 from app.core.db import engine
 from app.models import Project
 
 logger = logging.getLogger(__name__)
-
-# Import database container utilities (local copy to avoid developer_v2 import chain)
-try:
-    from app.agents.tester.src.utils.db_container import (
-        start_postgres_container,
-        update_env_file,
-        get_database_url,
-    )
-    DB_CONTAINER_AVAILABLE = True
-    logger.info("[setup_workspace] db_container module loaded successfully")
-except ImportError as e:
-    logger.warning(f"[setup_workspace] db_container import failed: {e}")
-    DB_CONTAINER_AVAILABLE = False
 
 
 def _get_project_path(project_id: str) -> Path | None:
@@ -91,18 +77,33 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
         short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
         branch_name = f"test_{short_id}"
         
-        # Check if workspace_path already exists and is valid (reuse mode)
-        existing_workspace = state.get("workspace_path", "")
-        if existing_workspace and Path(existing_workspace).exists():
-            logger.info(f"[setup_workspace] Reusing existing workspace: {existing_workspace}")
+        # Flag to track if we're reusing developer's workspace (skip setup steps)
+        is_reusing_dev_workspace = False
+        
+        # Strategy 1: Try to reuse Developer's workspace from Story model
+        story_workspace = get_story_workspace(story_id)
+        if story_workspace:
+            logger.info(f"[setup_workspace] Using developer's workspace from Story: {story_workspace['workspace_path']}")
+            workspace_info = {
+                "workspace_path": story_workspace["workspace_path"],
+                "branch_name": story_workspace["branch_name"],
+                "main_workspace": story_workspace["main_workspace"],
+                "workspace_ready": True,
+            }
+            is_reusing_dev_workspace = True  # Skip all setup steps
+        # Strategy 2: Check if workspace_path already exists in state
+        elif state.get("workspace_path") and Path(state.get("workspace_path", "")).exists():
+            existing_workspace = state.get("workspace_path", "")
+            logger.info(f"[setup_workspace] Reusing existing workspace from state: {existing_workspace}")
             workspace_info = {
                 "workspace_path": existing_workspace,
                 "branch_name": branch_name,
                 "main_workspace": state.get("main_workspace", existing_workspace),
                 "workspace_ready": True,
             }
+        # Strategy 3: Create new workspace (fallback for standalone tests)
         else:
-            logger.info(f"[setup_workspace] Setting up workspace for branch '{branch_name}'")
+            logger.info(f"[setup_workspace] Creating new workspace for branch '{branch_name}'")
             
             # Get main workspace - try multiple sources
             main_workspace = None
@@ -155,89 +156,9 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
         skill_registry = SkillRegistry.load(tech_stack)
         logger.info(f"[setup_workspace] Loaded SkillRegistry for '{tech_stack}' with {len(skill_registry.skills)} skills")
         
-        # Start postgres container for database operations (like developer_v2)
-        database_ready = False
-        database_url = ""
-        if workspace_path and DB_CONTAINER_AVAILABLE:
-            try:
-                db_info = start_postgres_container()
-                if db_info:
-                    update_env_file(workspace_path)
-                    database_url = get_database_url()
-                    database_ready = True
-                    logger.info(f"[setup_workspace] Database ready at port {db_info.get('port')}")
-            except Exception as db_err:
-                logger.warning(f"[setup_workspace] Database setup failed: {db_err}")
-        
-        # Run pnpm install if package.json exists
-        pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
-        if pkg_json and os.path.exists(pkg_json):
-            try:
-                logger.info("[setup_workspace] Running pnpm install...")
-                result = subprocess.run(
-                    "pnpm install --frozen-lockfile",
-                    cwd=workspace_path,
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8',
-                    errors='replace',
-                    timeout=120,
-                    shell=True,
-                )
-                if result.returncode == 0:
-                    logger.info("[setup_workspace] pnpm install successful")
-                else:
-                    logger.warning(f"[setup_workspace] pnpm install failed: {result.stderr[:200]}")
-            except subprocess.TimeoutExpired:
-                logger.warning("[setup_workspace] pnpm install timed out")
-            except Exception as e:
-                logger.warning(f"[setup_workspace] pnpm install error: {e}")
-        
-        # Run prisma generate if schema exists
-        schema_path = os.path.join(workspace_path, "prisma", "schema.prisma") if workspace_path else ""
-        if schema_path and os.path.exists(schema_path):
-            try:
-                logger.info("[setup_workspace] Running prisma generate...")
-                result = subprocess.run(
-                    "pnpm exec prisma generate",
-                    cwd=workspace_path,
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8',
-                    errors='replace',
-                    timeout=60,
-                    shell=True,
-                )
-                if result.returncode == 0:
-                    logger.info("[setup_workspace] prisma generate successful")
-                else:
-                    logger.warning(f"[setup_workspace] prisma generate failed: {result.stderr[:200]}")
-            except subprocess.TimeoutExpired:
-                logger.warning("[setup_workspace] prisma generate timed out")
-            except Exception as e:
-                logger.warning(f"[setup_workspace] prisma generate error: {e}")
-            
-            # Run prisma db push to create tables
-            try:
-                logger.info("[setup_workspace] Running prisma db push...")
-                result = subprocess.run(
-                    "pnpm exec prisma db push --skip-generate --accept-data-loss",
-                    cwd=workspace_path,
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8',
-                    errors='replace',
-                    timeout=120,
-                    shell=True,
-                )
-                if result.returncode == 0:
-                    logger.info("[setup_workspace] prisma db push successful")
-                else:
-                    logger.warning(f"[setup_workspace] prisma db push failed: {result.stderr[:200]}")
-            except subprocess.TimeoutExpired:
-                logger.warning("[setup_workspace] prisma db push timed out")
-            except Exception as e:
-                logger.warning(f"[setup_workspace] prisma db push error: {e}")
+        # Skip all setup steps if reusing developer's workspace (already done by developer)
+        if is_reusing_dev_workspace:
+            logger.info("[setup_workspace] Skipping setup steps - reusing developer's workspace")
         
         return {
             "workspace_path": workspace_info["workspace_path"],
