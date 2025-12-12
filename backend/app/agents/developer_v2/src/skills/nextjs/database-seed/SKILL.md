@@ -1,27 +1,47 @@
 ---
 name: database-seed
-description: Create Prisma seed scripts with faker-generated data. Use when populating database with test data.
+description: Create idempotent Prisma seed scripts. CRITICAL - Must use upsert for @unique fields to avoid "Unique constraint failed" errors on re-run.
 ---
 
-## ⚠️ CRITICAL - Use faker, NOT manual data
+## 🚨🚨🚨 ABSOLUTE RULES - VIOLATION CAUSES SEED FAILURE 🚨🚨🚨
 
+### ❌ FORBIDDEN: createMany/createManyAndReturn on @unique fields
 ```typescript
-import { faker } from '@faker-js/faker';
-
-// ✅ CORRECT - generate with faker
-Array.from({ length: 5 }, () => ({
-  name: faker.commerce.productName(),
-  price: faker.number.float({ min: 10, max: 100 }),
-}))
-
-// ❌ WRONG - manual data (wastes tokens!)
-[
-  { name: 'Book 1', price: 10 },
-  { name: 'Book 2', price: 20 },
-]
+// ❌ WILL FAIL with "Unique constraint failed" on re-run
+await prisma.category.createManyAndReturn({ data: [...] })
+await prisma.author.createMany({ data: [...] })
+await prisma.user.createMany({ data: [...] })
 ```
 
-## Template
+### ✅ REQUIRED: ALWAYS use upsert for ANY table with @unique
+```typescript
+// ✅ CORRECT - Safe to run multiple times
+const items = await Promise.all(
+  uniqueValues.map((value) =>
+    prisma.model.upsert({
+      where: { uniqueField: value },
+      update: {},  // Skip if exists
+      create: { uniqueField: value, ...otherFields },
+    })
+  )
+);
+```
+
+## BEFORE WRITING SEED: Check schema.prisma for @unique
+
+```prisma
+model Category {
+  name String @unique  // ← HAS @unique → MUST use upsert
+}
+model Author {
+  email String @unique  // ← HAS @unique → MUST use upsert
+}
+model Book {
+  // No @unique field → Can use deleteMany + createMany
+}
+```
+
+## Template (COPY EXACTLY - DO NOT MODIFY PATTERN)
 
 ```typescript
 // prisma/seed.ts
@@ -31,89 +51,118 @@ import { faker } from '@faker-js/faker';
 const prisma = new PrismaClient();
 
 async function main() {
-  // Clear existing (reverse dependency order)
+  console.log('🌱 Starting seed...');
+
+  // ============================================================
+  // STEP 1: Tables with @unique → UPSERT (idempotent)
+  // ============================================================
+  
+  // Categories (name is @unique)
+  const categoryNames = ['Fiction', 'Non-Fiction', 'Science', 'History', 'Technology'];
+  const categories = await Promise.all(
+    categoryNames.map((name) =>
+      prisma.category.upsert({
+        where: { name },
+        update: {},
+        create: { name, slug: name.toLowerCase().replace(/\s+/g, '-') },
+      })
+    )
+  );
+  console.log(`✅ Upserted ${categories.length} categories`);
+
+  // Authors (email is @unique)
+  const authorData = [
+    { email: 'john@example.com', name: 'John Doe' },
+    { email: 'jane@example.com', name: 'Jane Smith' },
+    { email: 'bob@example.com', name: 'Bob Wilson' },
+  ];
+  const authors = await Promise.all(
+    authorData.map((author) =>
+      prisma.author.upsert({
+        where: { email: author.email },
+        update: {},
+        create: { ...author, bio: faker.lorem.paragraph() },
+      })
+    )
+  );
+  console.log(`✅ Upserted ${authors.length} authors`);
+
+  // ============================================================
+  // STEP 2: Tables WITHOUT @unique → deleteMany + createMany
+  // ============================================================
+  
   await prisma.book.deleteMany();
-  await prisma.category.deleteMany();
-  
-  // Seed categories
-  const categories = await prisma.category.createManyAndReturn({
-    data: Array.from({ length: 3 }, () => ({
-      name: faker.commerce.department(),
-      slug: faker.helpers.slugify(faker.commerce.department()).toLowerCase(),
-    }))
-  });
-  
-  // Seed books with relations
   await prisma.book.createMany({
     data: Array.from({ length: 5 }, () => ({
       title: faker.commerce.productName(),
-      author: faker.person.fullName(),
       price: faker.number.float({ min: 9.99, max: 49.99, fractionDigits: 2 }),
       coverImage: `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/400/600`,
       categoryId: faker.helpers.arrayElement(categories).id,
-    }))
+      authorId: faker.helpers.arrayElement(authors).id,
+    })),
   });
-  
-  console.log('✅ Seeded!');
+  console.log('✅ Created 5 books');
+
+  console.log('🌱 Seed completed!');
 }
 
 main()
-  .catch(e => { console.error(e); process.exit(1); })
+  .catch((e) => { console.error('❌ Seed failed:', e); process.exit(1); })
   .finally(() => prisma.$disconnect());
 ```
 
-## Faker v9+ Cheatsheet (LATEST API)
+## Decision Tree: Which method to use?
 
-| Field Type | Faker Method (v9+) |
-|------------|-------------------|
+```
+Does the table have @unique field?
+├── YES → Use Promise.all + upsert
+│         where: { uniqueField: value }
+│         update: {}
+│         create: { ...data }
+│
+└── NO → Use deleteMany + createMany
+         await prisma.model.deleteMany()
+         await prisma.model.createMany({ data: [...] })
+```
+
+## Faker v9+ Cheatsheet
+
+| Field Type | Faker Method |
+|------------|-------------|
 | Full Name | `faker.person.fullName()` |
-| First Name | `faker.person.firstName()` |
-| Last Name | `faker.person.lastName()` |
-| Username | `faker.internet.username()` |
 | Email | `faker.internet.email()` |
-| Password | `faker.internet.password()` |
-| Title | `faker.commerce.productName()` |
+| Username | `faker.internet.username()` |
+| Title/Name | `faker.commerce.productName()` |
 | Description | `faker.lorem.sentence()` |
 | Paragraph | `faker.lorem.paragraph()` |
 | Price | `faker.number.float({ min: 10, max: 100, fractionDigits: 2 })` |
 | Integer | `faker.number.int({ min: 1, max: 100 })` |
-| Image (cover) | `` `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/400/600` `` |
-| Image (banner) | `` `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/1200/600` `` |
-| Image (card) | `` `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/800/600` `` |
-| Image (thumb) | `` `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/300/300` `` |
-| Avatar | `faker.image.avatar()` |
-| Slug | `faker.helpers.slugify(name).toLowerCase()` |
+| Image | `` `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/400/600` `` |
 | UUID | `faker.string.uuid()` |
-| Date Past | `faker.date.past()` |
-| Date Recent | `faker.date.recent()` |
+| Date | `faker.date.past()` |
 | Boolean | `faker.datatype.boolean()` |
 | Pick from array | `faker.helpers.arrayElement(array)` |
-| ISBN | `faker.commerce.isbn()` |
-| Phone | `faker.phone.number()` |
 
-## ⚠️ DEPRECATED - Do NOT use
+## ❌ DEPRECATED (v8) → ✅ USE (v9+)
 
-| ❌ Deprecated (v8) | ✅ Use Instead (v9+) |
-|-------------------|---------------------|
-| `faker.internet.userName()` | `faker.internet.username()` |
-| `faker.name.firstName()` | `faker.person.firstName()` |
-| `faker.name.lastName()` | `faker.person.lastName()` |
+| ❌ Old | ✅ New |
+|--------|--------|
 | `faker.name.fullName()` | `faker.person.fullName()` |
+| `faker.internet.userName()` | `faker.internet.username()` |
 | `faker.datatype.uuid()` | `faker.string.uuid()` |
-| `faker.random.alphaNumeric()` | `faker.string.alphanumeric()` |
-| `faker.random.word()` | `faker.lorem.word()` |
-| `faker.image.imageUrl()` | `faker.image.url()` |
-| `faker.image.urlPicsumPhotos()` | `` `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/W/H` `` |
 
-## Rules
+## Rules Summary
 
-1. **MAX 5 records** per model
-2. **Use createMany** for bulk inserts
-3. **Clear first** in reverse dependency order
-4. **faker for ALL text** - no manual strings
+1. **Check schema for @unique** before writing seed
+2. **UPSERT** for tables with @unique fields
+3. **deleteMany + createMany** for tables without @unique
+4. **MAX 5 records** per model
+5. **Predefined arrays** for unique values (not faker)
+6. **faker** for non-unique text fields
 
-## NEVER
-- Manual data arrays
-- More than 5 records per model
-- Individual create() calls
-- Complex nested creates
+## 🚫 NEVER (Will cause seed failure)
+
+- `createMany` on tables with @unique fields
+- `createManyAndReturn` on tables with @unique fields
+- `faker.commerce.department()` for unique names (only ~10 values)
+- Running seed without checking schema for @unique first

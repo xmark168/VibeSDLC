@@ -2,14 +2,14 @@
 
 from functools import partial
 from typing import Literal, Optional, Any
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
     setup_workspace, plan, implement, implement_parallel,
-    run_code, analyze_error, review, route_after_review,
+    run_code, analyze_error, review,
 )
 
 
@@ -42,6 +42,17 @@ def route_after_test(state: DeveloperState) -> Literal["analyze_error", "__end__
     if run_result.get("status", "PASS") == "PASS":
         return "__end__"
     return "analyze_error" if state.get("debug_count", 0) < 5 else "__end__"
+
+
+def route_after_setup(state: DeveloperState) -> Literal["plan", "__end__"]:
+    """Route after setup - stop if setup failed."""
+    if state.get("error") or not state.get("workspace_ready"):
+        import logging
+        logging.getLogger(__name__).error(
+            f"[graph] Setup failed, stopping graph. Error: {state.get('error', 'workspace not ready')}"
+        )
+        return "__end__"
+    return "plan"
 
 
 def route_after_parallel(state: DeveloperState) -> Literal["run_code", "implement", "pause_checkpoint"]:
@@ -138,7 +149,7 @@ class DeveloperGraph:
         g.add_node("analyze_error", partial(analyze_error, agent=agent))
         
         g.set_entry_point("setup_workspace")
-        g.add_edge("setup_workspace", "plan")
+        g.add_conditional_edges("setup_workspace", route_after_setup)
         
         if parallel:
             g.add_edge("plan", "implement_parallel")

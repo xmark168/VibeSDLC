@@ -3,7 +3,6 @@
 from .llm_utils import (
     get_langfuse_config,
     flush_langfuse,
-    execute_llm_with_tools,
     file_cache,
 )
 from .prompt_utils import (
@@ -19,7 +18,6 @@ from .token_utils import (
 __all__ = [
     "get_langfuse_config",
     "flush_langfuse",
-    "execute_llm_with_tools",
     "file_cache",
     "format_input_template",
     "build_system_prompt",

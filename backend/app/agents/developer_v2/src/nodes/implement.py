@@ -15,8 +15,8 @@ from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_file
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
 from app.agents.developer_v2.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
 from app.agents.developer_v2.src.utils.token_utils import truncate_to_tokens
-from app.agents.developer_v2.src.nodes._llm import code_llm, get_llm_for_skills
-from app.agents.developer_v2.src.skills import SkillRegistry, get_project_structure
+from app.agents.developer_v2.src.nodes._llm import get_llm_for_skills
+from app.agents.developer_v2.src.skills import SkillRegistry
 from app.agents.developer_v2.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
 
 logger = logging.getLogger(__name__)
@@ -77,9 +77,9 @@ def git_commit_step(workspace_path: str, step_num: int, description: str, files:
             return True
         
         # Commit with WIP message (with retry)
-        msg = f"wip: step {step_num} - {description[:50]}"
+        msg = f"wip: step {step_num} - {description}"
         git_with_retry(["git", "commit", "-m", msg, "--no-verify"], cwd=workspace_path)
-        logger.info(f"[git] Committed step {step_num}: {description[:50]}")
+        logger.info(f"[git] Committed step {step_num}: {description}")
         return True
     except Exception as e:
         logger.warning(f"[git] Commit error (after retries): {e}")
@@ -250,9 +250,9 @@ def _build_debug_summary(state: dict) -> str:
     if review_count > 0:
         parts.append(f"- Review: {review_count}")
         if state.get("review_feedback"):
-            parts.append(f"- Feedback:\n```\n{state.get('review_feedback')[:500]}\n```")
+            parts.append(f"- Feedback:\n```\n{state.get('review_feedback')}\n```")
     if state.get("error"):
-        parts.append(f"- Error: {state.get('error')[:300]}")
+        parts.append(f"- Error: {state.get('error')}")
     parts.append("\nDon't repeat mistakes.")
     return "\n".join(parts)
 
@@ -299,7 +299,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     # Check for pause/cancel signal (triggers LangGraph interrupt)
     story_id = state.get("story_id", "")
     if story_id:
-        signal = check_interrupt_signal(story_id)
+        signal = check_interrupt_signal(story_id, agent)
         if signal:
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
@@ -384,7 +384,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         
         # Check for interrupt after LLM call (can be long-running)
         if story_id:
-            signal = check_interrupt_signal(story_id)
+            signal = check_interrupt_signal(story_id, agent)
             if signal:
                 await story_logger.info(f"Interrupt after LLM: {signal}")
                 interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
@@ -430,7 +430,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                         pass
         
         # Git commit after each successful step
-        step_desc = f"{action} {file_path}" if file_path else task[:50]
+        step_desc = f"{action} {file_path}" if file_path else task
         git_commit_step(workspace_path, current_step + 1, step_desc, new_modified if new_modified else None)
         
         complexity = state.get("complexity", "medium")
@@ -446,7 +446,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         return {**state, "error": str(e), "action": "RESPOND"}
 
 
-from app.agents.developer_v2.src.nodes.parallel_utils import group_steps_by_layer, run_layer_parallel, should_use_parallel, MAX_CONCURRENT
+from app.agents.developer_v2.src.nodes.parallel_utils import group_steps_by_layer, run_layer_parallel, MAX_CONCURRENT
 
 
 async def _implement_single_step(step: Dict, state: DeveloperState, skill_registry: SkillRegistry, workspace_path: str, deps_content: Dict, created_components: Dict[str, str] = None) -> Dict:
@@ -508,7 +508,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")
     if story_id:
-        signal = check_interrupt_signal(story_id)
+        signal = check_interrupt_signal(story_id, agent)
         if signal:
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "implement_parallel"})
@@ -548,17 +548,28 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             if layer_idx <= start_layer:
                 continue
             
-            # Check for interrupt BEFORE starting layer - return state to save checkpoint
+            # Check for interrupt BEFORE starting layer
             if story_id:
-                signal = check_interrupt_signal(story_id)
+                signal = check_interrupt_signal(story_id, agent)
                 if signal:
-                    return {
-                        **state,
-                        "current_layer": layer_idx - 1,
-                        "files_modified": list(set(all_modified)),
-                        "dependencies_content": deps_content,
-                        "action": "PAUSED",
-                    }
+                    if signal == "cancel":
+                        # Cancel: raise exception to stop immediately
+                        from app.agents.developer_v2.developer_v2 import StoryStoppedException
+                        from app.models.base import StoryAgentState
+                        raise StoryStoppedException(
+                            story_id,
+                            StoryAgentState.CANCEL_REQUESTED,
+                            f"Cancel signal detected at layer {layer_idx}"
+                        )
+                    elif signal == "pause":
+                        # Pause: return state to save checkpoint for resume
+                        return {
+                            **state,
+                            "current_layer": layer_idx - 1,
+                            "files_modified": list(set(all_modified)),
+                            "dependencies_content": deps_content,
+                            "action": "PAUSED",
+                        }
             
             layer_steps = layers[layer_num]
             is_parallel = len(layer_steps) > 1 and layer_num >= 5
@@ -633,9 +644,10 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "current_layer": total_layers, "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:
-        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        # Re-raise GraphInterrupt and StoryStoppedException - expected for pause/cancel
         from langgraph.errors import GraphInterrupt
-        if isinstance(e, GraphInterrupt):
+        from app.agents.developer_v2.developer_v2 import StoryStoppedException
+        if isinstance(e, (GraphInterrupt, StoryStoppedException)):
             raise
         await story_logger.error(f"Parallel implementation failed: {str(e)}", exc=e)
         return {**state, "error": str(e), "action": "RESPOND"}

@@ -7,16 +7,12 @@ from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
-from app.agents.developer_v2.src.utils.llm_utils import (
-    get_langfuse_config as _cfg, flush_langfuse, execute_llm_with_tools as _llm_with_tools,
-)
-from app.agents.developer_v2.src.nodes._llm import code_llm, exploration_llm, fast_llm
+from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
+from app.agents.developer_v2.src.nodes._llm import fast_llm
 from app.agents.developer_v2.src.tools import set_tool_context
 from app.agents.developer_v2.src.schemas import SimplePlanOutput
 from app.agents.developer_v2.src.skills.registry import SkillRegistry
-from app.agents.developer_v2.src.skills import get_project_structure, get_plan_prompts
-from app.agents.developer_v2.src.tools.filesystem_tools import read_file_safe, list_directory_safe, glob, grep_files
+from app.agents.developer_v2.src.skills import get_plan_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -80,45 +76,6 @@ class FileRepository:
         return "\n".join(parts)
 
 
-def _extract_keywords(text: str) -> list:
-    stopwords = {'the', 'a', 'an', 'is', 'are', 'can', 'will', 'should', 'must', 'user', 'users', 'when', 'then', 'given', 'and', 'or', 'to', 'from', 'with', 'for', 'on', 'in', 'at', 'by', 'of', 'that', 'this', 'be', 'want', 'see', 'click', 'display', 'show', 'create', 'update', 'delete'}
-    words = re.findall(r'[a-z]+', text.lower())
-    seen = set()
-    return [w for w in words if len(w) > 3 and w not in stopwords and not (w in seen or seen.add(w))][:10]
-
-
-def _smart_prefetch(workspace_path: str, story_title: str, requirements: list) -> str:
-    if not workspace_path or not os.path.exists(workspace_path):
-        return ""
-    parts = []
-    core_files = [("package.json", 500), ("prisma/schema.prisma", 3000), ("src/app/layout.tsx", 2000), ("src/lib/prisma.ts", 1000), ("src/types/index.ts", 1500), ("src/app/actions/index.ts", 1000), ("tsconfig.json", 300)]
-    for file_path, max_len in core_files:
-        full_path = os.path.join(workspace_path, file_path)
-        if os.path.exists(full_path):
-            try:
-                with open(full_path, 'r', encoding='utf-8') as f:
-                    parts.append(f"### {file_path}\n```\n{f.read()[:max_len]}\n```")
-            except:
-                pass
-    text = f"{story_title} {' '.join(requirements or [])}".lower()
-    for kw in _extract_keywords(text)[:8]:
-        try:
-            for match in glob_module.glob(os.path.join(workspace_path, "src", "**", f"*{kw}*"), recursive=True)[:3]:
-                if os.path.isfile(match):
-                    with open(match, 'r', encoding='utf-8') as f:
-                        parts.append(f"### {os.path.relpath(match, workspace_path)}\n```\n{f.read()[:1500]}\n```")
-        except:
-            pass
-    for d in ["src/app/api", "src/components", "src/lib", "src/app"]:
-        dp = os.path.join(workspace_path, d)
-        if os.path.exists(dp):
-            try:
-                parts.append(f"### {d}/\n{', '.join(os.listdir(dp)[:15])}")
-            except:
-                pass
-    return "\n\n".join(parts)
-
-
 def _preload_dependencies(workspace_path: str, steps: list) -> dict:
     deps_content = {}
     if not workspace_path or not os.path.exists(workspace_path):
@@ -141,8 +98,7 @@ def _preload_dependencies(workspace_path: str, steps: list) -> dict:
         if os.path.exists(fp) and os.path.isfile(fp):
             try:
                 with open(fp, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                deps_content[dep] = content[:8000] + "\n... (truncated)" if len(content) > 8000 else content
+                    deps_content[dep] = f.read()
             except:
                 pass
     return deps_content
@@ -215,47 +171,17 @@ def _auto_fix_dependencies(steps: list) -> list:
     return steps
 
 
-async def _extract_json_with_retry(response: str, state: dict, story_title: str, story_description: str, max_retries: int = 2) -> dict:
-    try:
-        structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
-        prompt = f"""Convert exploration into implementation plan.
-
-## Story
-Title: {story_title}
-Description: {story_description[:500] if story_description else ""}
-
-## Exploration
-{response[:6000]}
-
-Create steps (database → API → components → pages).
-Each step: file_path, action, task, dependencies."""
-
-        result = await structured_llm.ainvoke([
-            SystemMessage(content="Create structured implementation plans."),
-            HumanMessage(content=prompt)
-        ], config=_cfg(state, "plan_structured"))
-        flush_langfuse(state)
-        data = result.model_dump()
-        if data and data.get("steps"):
-            return data
-    except Exception as e:
-        logger.warning(f"[plan] Structured output failed: {e}")
-    return {"story_summary": story_title or "Task", "steps": [{"order": 1, "description": f"Implement: {story_title}", "file_path": "src/app/page.tsx", "action": "modify", "dependencies": []}]}
-
-
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Zero-shot planning with FileRepository."""
     from langgraph.types import interrupt
     from app.agents.developer_v2.developer_v2 import check_interrupt_signal
     from app.agents.developer_v2.src.utils.story_logger import StoryLogger
     
-    # Create story logger
     story_logger = StoryLogger.from_state(state, agent).with_node("plan")
-    
-    # Check for pause/cancel signal
     story_id = state.get("story_id", "")
+    
     if story_id:
-        signal = check_interrupt_signal(story_id)
+        signal = check_interrupt_signal(story_id, agent)
         if signal:
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
@@ -281,7 +207,7 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
 
 ## Story
 **Title**: {state.get('story_title', '')}
-**Description**: {state.get('story_description', '')[:800]}
+**Description**: {state.get('story_description', '')}
 **Requirements**: {req_text}
 **Acceptance**: {ac_text}
 
@@ -292,18 +218,17 @@ Create implementation plan. Output JSON steps directly."""
         result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "plan_zero_shot"))
         flush_langfuse(state)
         
-        # Check for interrupt after LLM call
         if story_id:
-            signal = check_interrupt_signal(story_id)
+            signal = check_interrupt_signal(story_id, agent)
             if signal:
                 interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
         
         steps = result.model_dump().get("steps", [])
         
         if not steps:
-            return await _plan_with_exploration(state, agent)
+            logger.warning("[plan] No steps generated, using fallback")
+            steps = [{"order": 1, "task": f"Implement: {state.get('story_title', '')}", "file_path": "src/app/page.tsx", "action": "modify", "dependencies": []}]
         
-        # Post-process
         steps = [s for s in steps if s.get("file_path", "") not in BOILERPLATE_FILES]
         steps = _auto_fix_dependencies(steps)
         
@@ -314,7 +239,6 @@ Create implementation plan. Output JSON steps directly."""
             llm_deps = step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []
             step["dependencies"] = list(set(llm_deps + _auto_detect_dependencies(step.get("file_path", ""), steps)))
         
-        # Auto-add seed
         has_schema = any(s.get("file_path", "").endswith("schema.prisma") for s in steps)
         has_seed = any("seed.ts" in s.get("file_path", "").lower() for s in steps)
         if has_schema and not has_seed:
@@ -325,78 +249,18 @@ Create implementation plan. Output JSON steps directly."""
         for i, s in enumerate(steps):
             s["order"] = i + 1
         
-        skill_registry = SkillRegistry.load(tech_stack)
+        SkillRegistry.load(tech_stack)
         deps_content = _preload_dependencies(workspace_path, steps)
         
         from app.agents.developer_v2.src.nodes.parallel_utils import group_steps_by_layer, should_use_parallel
         layers = group_steps_by_layer(steps)
         can_parallel = should_use_parallel(steps)
         
-        # Milestone message - plan complete (saved to DB)
         if steps:
             await story_logger.message(f"📋 Kế hoạch: {len(steps)} files, {len(layers)} layers")
         
         return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
     except Exception as e:
-        logger.warning(f"[plan] Zero-shot planning failed: {e}, trying exploration...")
-        return await _plan_with_exploration(state, agent)
-
-
-async def _plan_with_exploration(state: DeveloperState, agent=None) -> DeveloperState:
-    """Fallback with tool exploration."""
-    logger.debug("[NODE] plan_with_exploration")
-    try:
-        workspace_path = state.get("workspace_path", "")
-        tech_stack = state.get("tech_stack", "nextjs")
-        set_tool_context(root_dir=workspace_path, project_id=state.get("project_id", ""), task_id=state.get("task_id") or state.get("story_id", ""))
-        
-        project_context = _smart_prefetch(workspace_path, state.get("story_title", ""), state.get("story_requirements", []))
-        plan_prompts = get_plan_prompts(tech_stack)
-        skill_registry = SkillRegistry.load(tech_stack)
-        
-        system_prompt = f"""{plan_prompts['system_prompt']}
-<workflow>
-1. EXPLORE: Use tools (3-5 calls max)
-2. OUTPUT: JSON in <result> tags
-</workflow>
-<project_structure>{get_project_structure(tech_stack)}</project_structure>"""
-
-        req_text = chr(10).join(f"- {r}" for r in state.get("story_requirements", []))
-        ac_text = chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
-        input_text = plan_prompts["input_template"].format(story_id=state.get("story_id", ""), epic=state.get("epic", ""), story_title=state.get("story_title", ""), story_description=state.get("story_description", ""), story_requirements=req_text, acceptance_criteria=ac_text, project_context=project_context)
-        
-        response = await _llm_with_tools(llm=exploration_llm, tools=[read_file_safe, list_directory_safe, glob, grep_files], messages=[SystemMessage(content=system_prompt), HumanMessage(content=input_text)], state=state, name="plan_exploration", max_iterations=5)
-        
-        data = await _extract_json_with_retry(response[:6000], state, state.get("story_title", ""), state.get("story_description", ""))
-        steps = data.get("steps", [])
-        
-        steps = [s for s in steps if "migration" not in s.get("task", "").lower() and s.get("file_path", "") not in BOILERPLATE_FILES]
-        steps = _auto_fix_dependencies(steps)
-        
-        for i, step in enumerate(steps):
-            step["order"] = i + 1
-            step["description"] = step.get("task", "")
-            step["skills"] = _auto_assign_skills(step.get("file_path", ""))
-            llm_deps = step.get("dependencies", []) if isinstance(step.get("dependencies"), list) else []
-            step["dependencies"] = list(set(llm_deps + _auto_detect_dependencies(step.get("file_path", ""), steps)))
-        
-        has_schema = any(s.get("file_path", "").endswith("schema.prisma") for s in steps)
-        has_seed = any("seed.ts" in s.get("file_path", "").lower() for s in steps)
-        if has_schema and not has_seed:
-            seed_exists = workspace_path and (Path(workspace_path) / "prisma" / "seed.ts").exists()
-            idx = next((i for i, s in enumerate(steps) if s.get("file_path", "").endswith("schema.prisma")), 0)
-            steps.insert(idx + 1, {"order": idx + 2, "task": "Seed data", "file_path": "prisma/seed.ts", "action": "modify" if seed_exists else "create", "skills": ["database-seed"], "dependencies": ["prisma/schema.prisma"]})
-        
-        for i, s in enumerate(steps):
-            s["order"] = i + 1
-        
-        deps_content = _preload_dependencies(workspace_path, steps)
-        from app.agents.developer_v2.src.nodes.parallel_utils import group_steps_by_layer, should_use_parallel
-        layers = group_steps_by_layer(steps)
-        
-        return {**state, "task_type": "feature", "complexity": "medium" if len(steps) <= 5 else "high", "implementation_plan": steps, "dependencies_content": deps_content, "total_steps": len(steps), "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": should_use_parallel(steps), "action": "IMPLEMENT"}
-    except Exception as e:
-        # Re-raise GraphInterrupt - it's expected for pause/cancel
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise

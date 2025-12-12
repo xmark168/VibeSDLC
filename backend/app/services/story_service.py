@@ -939,6 +939,15 @@ class StoryService:
         if old_status == new_status:
             return story
 
+        # Block moving from Done to any other status (except Archived)
+        if old_status == StoryStatus.DONE and new_status != StoryStatus.ARCHIVED:
+            raise PermissionError({
+                "error": "DONE_STATUS_LOCKED",
+                "message": "Cannot move story from Done status. Stories that are Done can only be archived.",
+                "current_status": old_status.value,
+                "target_status": new_status.value
+            })
+
         project = self.session.get(Project, story.project_id)
         if not project:
             raise ValueError("Project not found")

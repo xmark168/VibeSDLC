@@ -23,22 +23,25 @@ from app.agents.core.prompt_utils import (
 )
 from app.agents.team_leader.src.schemas import ExtractedPreferences, RoutingDecision
 from app.agents.team_leader.src.state import TeamLeaderState
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 _PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 _DEFAULTS = {"name": "Team Leader", "role": "Team Leader & Project Coordinator", "personality": "Professional and helpful"}
 
-# LLM config - uses ChatAnthropic with v98 proxy (same as Tester agent)
-_base_url = os.getenv("TESTER_ANTHROPIC_BASE_URL") or os.getenv("ANTHROPIC_API_BASE")
-_api_key = os.getenv("TESTER_ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+# LLM config - uses Anthropic API from settings
+_base_url = settings.ANTHROPIC_API_BASE or os.getenv("ANTHROPIC_API_BASE", "https://api.anthropic.com")
+_api_key = settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
 _model = os.getenv("TEAM_LEADER_MODEL", "claude-sonnet-4-5-20250929")
 
-_llm_kwargs = {"model": _model, "max_tokens": 8192, "max_retries": 3}
-if _base_url:
-    _llm_kwargs["base_url"] = _base_url
-if _api_key:
-    _llm_kwargs["api_key"] = _api_key
+_llm_kwargs = {
+    "model": _model,
+    "max_tokens": 8192,
+    "max_retries": 3,
+    "base_url": _base_url,
+    "api_key": _api_key,
+}
 
 _fast_llm = ChatAnthropic(**_llm_kwargs, temperature=0.1, timeout=60)
 _chat_llm = ChatAnthropic(**_llm_kwargs, temperature=0.3, timeout=90)

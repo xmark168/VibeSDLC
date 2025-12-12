@@ -7,11 +7,15 @@ from langchain_core.language_models import BaseChatModel
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from app.agents.developer_v2.src.config import MAX_RETRIES, RETRY_WAIT_MIN, RETRY_WAIT_MAX
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+ANTHROPIC_API_BASE = settings.ANTHROPIC_API_BASE
+ANTHROPIC_API_KEY = settings.ANTHROPIC_API_KEY 
+
 MODELS = {
-    "fast": "claude-haiku-4-5-20251001",
+    "fast": "claude-haiku-4-5-20251001",  
     "medium": "claude-sonnet-4-5-20250929",
     "complex": "claude-opus-4-5-20251101",
 }
@@ -20,16 +24,16 @@ LLM_CONFIG = {
     "router": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     "clarify": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
     "respond": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
-    "analyze": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 40},
-    "plan": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 60},
+    "analyze": {"model": MODELS["medium"], "temperature": 0.1, "timeout": 40},
+    "plan": {"model": MODELS["medium"], "temperature": 0.1, "timeout": 60},
     "implement": {"model": MODELS["medium"], "temperature": 0, "timeout": 60},
     "debug": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 40},
     "review": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30},
 }
 
 SKILL_MODEL_MAP = {
-    "frontend-design": MODELS["complex"],
-    "frontend-component": MODELS["complex"],
+    "frontend-design": MODELS["medium"],
+    "frontend-component": MODELS["medium"],
     "api-route": MODELS["medium"],
     "database-model": MODELS["medium"],
     "database-seed": MODELS["medium"],
@@ -58,29 +62,21 @@ def get_llm(step: str) -> BaseChatModel:
     if env_model:
         config = {**config, "model": env_model}
     
-    model = config["model"]
-    anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://ai.megallm.io")
-    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or ''
-    
     kwargs = {
-        "model": model,
+        "model": config["model"],
         "temperature": config.get("temperature", 0.2),
         "max_tokens": 8192,
         "timeout": config.get("timeout", 40),
         "max_retries": MAX_RETRIES,
+        "base_url": ANTHROPIC_API_BASE,
+        "api_key": ANTHROPIC_API_KEY,
     }
-    if anthropic_base_url:
-        kwargs["base_url"] = anthropic_base_url
-    if anthropic_api_key:
-        kwargs["api_key"] = anthropic_api_key
     return ChatAnthropic(**kwargs)
 
 
 def get_llm_for_skills(skills: list[str], temperature: float = 0) -> BaseChatModel:
     """Get LLM based on skills required."""
     model = get_model_for_skills(skills)
-    anthropic_base_url = os.getenv("ANTHROPIC_API_BASE", "https://v98store.com")
-    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
     
     kwargs = {
         "model": model,
@@ -88,11 +84,9 @@ def get_llm_for_skills(skills: list[str], temperature: float = 0) -> BaseChatMod
         "max_tokens": 16384,
         "timeout": 60,
         "max_retries": MAX_RETRIES,
+        "base_url": ANTHROPIC_API_BASE,
+        "api_key": ANTHROPIC_API_KEY,
     }
-    if anthropic_base_url:
-        kwargs["base_url"] = anthropic_base_url
-    if anthropic_api_key:
-        kwargs["api_key"] = anthropic_api_key
     
     logger.info(f"[LLM] Selected {model} for skills: {skills}")
     return ChatAnthropic(**kwargs)
@@ -132,7 +126,6 @@ async def invoke_with_retry(llm: BaseChatModel, messages: list, config: dict = N
 fast_llm = get_llm("router")
 code_llm = get_llm("implement")
 router_llm = get_llm("router")
-exploration_llm = get_llm("exploration")
 analyze_llm = get_llm("analyze")
 plan_llm = get_llm("plan")
 implement_llm = get_llm("implement")

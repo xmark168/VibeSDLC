@@ -85,6 +85,7 @@ class AgentTaskType(str, Enum):
     # Specific task types
     CODE_REVIEW = "code_review"
     IMPLEMENT_STORY = "implement_story"
+    REVIEW_PR = "review_pr"  # Review PR for conflicts/errors before merge
     WRITE_TESTS = "write_tests"
     FIX_BUG = "fix_bug"
     REFACTOR = "refactor"

@@ -216,8 +216,17 @@ export function FileExplorer({
     
     // Check if file path matches (support both full path and relative path)
     const matchPath = (files: string[] | undefined, path: string) => {
-      if (!files) return false
-      return files.some(f => f === path || path.endsWith(f) || f.endsWith(path))
+      if (!files || files.length === 0) return false
+      // Normalize path separators
+      const normalizedPath = path.replace(/\\/g, '/')
+      return files.some(f => {
+        const normalizedF = f.replace(/\\/g, '/')
+        return normalizedF === normalizedPath || 
+               normalizedPath.endsWith('/' + normalizedF) || 
+               normalizedF.endsWith('/' + normalizedPath) ||
+               normalizedPath.endsWith(normalizedF) ||
+               normalizedF.endsWith(normalizedPath)
+      })
     }
     
     if (matchPath(gitStatus.modified_files, filePath)) return 'M'
