@@ -1,4 +1,4 @@
-"""Node functions for Tester graph (Simplified)."""
+"""Node functions for Tester graph."""
 
 import json
 import logging
@@ -17,12 +17,6 @@ from app.models import Project, Story, StoryStatus
 
 logger = logging.getLogger(__name__)
 
-
-# ============================================================================
-# PERSONA-DRIVEN MESSAGES (Team Leader Pattern)
-# ============================================================================
-
-# Fallback messages when LLM fails
 FALLBACK_MESSAGES = {
     "plan_created": "📋 Đã tạo test plan! Bắt đầu implement nhé~",
     "tests_running": "🧪 Đang chạy tests, đợi mình chút nhé...",
@@ -43,20 +37,7 @@ async def generate_user_message(
     agent=None,
     extra_info: str = "",
 ) -> str:
-    """Generate natural message with persona (Team Leader pattern).
-    
-    This function uses LLM to generate personality-driven messages instead
-    of hardcoded technical messages.
-    
-    Args:
-        action: The action type (e.g., 'tests_passed', 'analyzing')
-        context: Description of the situation
-        agent: Optional agent instance for persona extraction
-        extra_info: Additional context info
-        
-    Returns:
-        Generated message string with personality
-    """
+    """Generate natural message with persona using LLM."""
     try:
         sys_prompt = build_system_prompt_with_persona("response_generation", agent)
         user_prompt = get_user_prompt(
@@ -77,20 +58,8 @@ async def generate_user_message(
         return FALLBACK_MESSAGES.get(action, FALLBACK_MESSAGES["default"])
 
 
-# ============================================================================
-# TESTING CONTEXT DETECTION
-# ============================================================================
-
-
 def detect_testing_context(project_path: str) -> dict:
-    """Detect testing setup and patterns from the project.
-
-    Returns context about:
-    - Auth library (NextAuth, Clerk, custom)
-    - Existing mocks in jest.setup.ts
-    - ORM (Prisma, Drizzle, etc.)
-    - ESM packages to avoid
-    """
+    """Detect auth library, ORM, existing mocks, and ESM warnings."""
     workspace = Path(project_path)
     context = {
         "auth_library": None,
@@ -207,13 +176,8 @@ SAFE PACKAGES:
     return context
 
 
-# ============================================================================
-# HELPERS
-# ============================================================================
-
-
 _llm = default_llm
-_chat_llm = get_llm("default")  # Will use same model with default temp
+_chat_llm = get_llm("default")
 
 
 def _cfg(state: dict, name: str) -> dict:
@@ -249,17 +213,7 @@ def _should_message_user(state: TesterState) -> bool:
 
 
 async def send_message(state: TesterState, agent, content: str, message_type: str = "update"):
-    """Send message to appropriate channel based on context.
-    
-    - Auto-run (is_auto=True): Send to story channel (visible in story detail)
-    - User chat (is_auto=False): Send to main chat (visible in project chat)
-    
-    Args:
-        state: Current state with is_auto and story_ids
-        agent: Agent instance with message_user() and message_story() methods
-        content: Message content
-        message_type: Type for story messages ("update", "test_result", "progress", "error")
-    """
+    """Send message to story channel (auto) or main chat (user mention)."""
     if not agent:
         logger.warning("[send_message] No agent provided, skipping message")
         return
@@ -283,11 +237,6 @@ async def send_message(state: TesterState, agent, content: str, message_type: st
         await agent.message_user("response", content)
     else:
         logger.warning(f"[send_message] is_auto={is_auto} but no story_ids, message dropped: {content[:50]}...")
-
-
-# ============================================================================
-# ROUTER (Entry Point)
-# ============================================================================
 
 
 async def _query_stories_from_db(project_id: str, story_ids: list, agent) -> list:
@@ -356,13 +305,7 @@ async def _query_stories_from_db(project_id: str, story_ids: list, agent) -> lis
 
 
 async def router(state: TesterState, agent=None) -> dict:
-    """Route + query stories + get tech_stack.
-
-    This is the entry point node that:
-    1. Gets tech_stack from project
-    2. Queries stories from DB when auto-triggered
-    3. Routes to appropriate action
-    """
+    """Entry point: get tech_stack, query stories, route to action."""
     project_id = state.get("project_id")
     story_ids = state.get("story_ids", [])
     is_auto = state.get("is_auto", False)
@@ -431,11 +374,6 @@ async def router(state: TesterState, agent=None) -> dict:
         return {"action": "CONVERSATION", "tech_stack": tech_stack}
 
 
-# ============================================================================
-# TOOL-BASED NODES
-# ============================================================================
-
-
 async def test_status(state: TesterState, agent=None) -> dict:
     """Report test status using tools."""
     try:
@@ -492,11 +430,6 @@ async def conversation(state: TesterState, agent=None) -> dict:
         msg = f"Xin lỗi, có lỗi xảy ra: {e}"
         await send_message(state, agent, msg, "error")
         return {"message": msg, "error": str(e)}
-
-
-# ============================================================================
-# SEND RESPONSE
-# ============================================================================
 
 
 async def send_response(state: TesterState, agent=None) -> dict:

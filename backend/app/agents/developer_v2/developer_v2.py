@@ -139,6 +139,8 @@ class DeveloperV2(BaseAgent):
                 story.assigned_agent_id = self.agent_id
                 session.commit()
 
+            logger.info(f"[{self.name}] Updated story {story_id[:8]} state: {old_state} -> {state}")
+            
             if project_id:
                 try:
                     await connection_manager.broadcast_to_project({
@@ -150,7 +152,8 @@ class DeveloperV2(BaseAgent):
                 except Exception:
                     pass
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"[{self.name}] Failed to update story state: {e}", exc_info=True)
             return False
 
     async def cancel_story(self, story_id: str) -> bool:
@@ -603,6 +606,7 @@ class DeveloperV2(BaseAgent):
             
             # Check for LangGraph interrupt (pause/cancel signal was caught by a node)
             interrupt_info = final_state.get("__interrupt__")
+            logger.info(f"[{self.name}] Checking interrupt: {interrupt_info is not None}")
             if interrupt_info:
                 # Extract interrupt reason from the interrupt value
                 interrupt_value = interrupt_info[0].value if interrupt_info else {}
@@ -685,15 +689,20 @@ class DeveloperV2(BaseAgent):
             
             # Update story state based on result
             run_status = final_state.get("run_status", "")
+            logger.info(f"[{self.name}] Final state: run_status={run_status}, action={action}, task_type={task_type}")
             if run_status == "PASS":
-                # Squash WIP commits into single commit on success
+                # Squash WIP commits into single commit on success (non-critical)
                 workspace_path = final_state.get("workspace_path", "")
                 if workspace_path:
-                    from app.agents.developer_v2.src.nodes.implement import git_squash_wip_commits
-                    story_title = initial_state.get("title", "implement story")
-                    base_branch = final_state.get("base_branch", "main")
-                    git_squash_wip_commits(workspace_path, base_branch, f"feat: {story_title}")
-                    logger.info(f"[{self.name}] Squashed WIP commits")
+                    try:
+                        from app.agents.developer_v2.src.nodes.implement import git_squash_wip_commits
+                        story_title = initial_state.get("title", "implement story")
+                        base_branch = final_state.get("base_branch", "main")
+                        git_squash_wip_commits(workspace_path, base_branch, f"feat: {story_title}")
+                        logger.info(f"[{self.name}] Squashed WIP commits")
+                    except Exception as squash_err:
+                        # Git squash is non-critical, don't fail the whole story
+                        logger.warning(f"[{self.name}] Failed to squash commits (non-critical): {squash_err}")
                 
                 if not await self._update_story_state(story_id, StoryAgentState.FINISHED):
                     logger.error(f"Failed to set FINISHED state for {story_id}")

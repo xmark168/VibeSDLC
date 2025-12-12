@@ -49,17 +49,7 @@ def _detect_package_manager(project_path: Path) -> tuple[str, str]:
 
 
 def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dict]:
-    """Detect test commands based on test files.
-    
-    Returns SINGLE command with ALL test files - Jest handles parallelism internally.
-    This is faster than running separate commands for integration/unit tests.
-    
-    Args:
-        project_path: Path to workspace
-        test_files: List of test file paths to run
-    
-    Returns list with single {type, command, files} dict.
-    """
+    """Detect test commands based on test files. Returns single command for all files."""
     # Filter valid test files that exist
     valid_files = []
     

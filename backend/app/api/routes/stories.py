@@ -1011,6 +1011,7 @@ async def _cleanup_and_trigger_agent(
     project_id: str,
     user_id: str,
     story_title: str,
+    story_status: str = "InProgress",
 ) -> None:
     """
     Background task for restart: cleanup ALL resources FIRST, then trigger agent.
@@ -1023,6 +1024,9 @@ async def _cleanup_and_trigger_agent(
     Broadcasts sub_status for smooth UX:
     - "cleaning" while cleanup in progress
     - "starting" when triggering agent
+    
+    Args:
+        story_status: Current story status ("InProgress" or "Review") to route to correct agent
     """
     import logging
     from uuid import UUID
@@ -1056,20 +1060,24 @@ async def _cleanup_and_trigger_agent(
     }, UUID(project_id))
     
     # 2. THEN trigger agent (all resources cleaned, agent starts fresh)
+    # Route to correct agent based on story status:
+    # - InProgress -> Developer
+    # - Review -> Tester
     from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
     
     producer = await get_kafka_producer()
+    old_status = "Todo" if story_status == "InProgress" else "InProgress"
     event = StoryEvent(
         event_type="story.status.changed",
         project_id=project_id,
         user_id=user_id,
         story_id=story_id,
-        old_status="Todo",
-        new_status="InProgress",
+        old_status=old_status,
+        new_status=story_status,
         title=story_title,
     )
     await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
-    _logger.info(f"[restart] Agent triggered for {story_id}")
+    _logger.info(f"[restart] Agent triggered for {story_id} with status {story_status}")
 
 
 @router.post("/{story_id}/restart")
@@ -1178,6 +1186,7 @@ async def restart_story_task(
     checkpoint_thread_id = story.checkpoint_thread_id
     project_id = story.project_id
     story_title = story.title
+    story_status = story.status.value  # "InProgress" or "Review" - for routing to correct agent
     
     # Reset state immediately
     story.agent_state = StoryAgentState.PENDING
@@ -1222,6 +1231,7 @@ async def restart_story_task(
                 str(project_id),
                 str(current_user.id),
                 story_title,
+                story_status,  # Pass status to route to correct agent (Developer/Tester)
             )
         except Exception as e:
             logger.error(f"[restart] Background task failed for {story_id}: {e}", exc_info=True)

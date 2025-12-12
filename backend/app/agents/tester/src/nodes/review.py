@@ -1,8 +1,4 @@
-"""Review node - LGTM/LBTM test review (Developer V2 pattern).
-
-Uses prompts from prompts.yaml for consistency.
-Supports PARALLEL review of all test files using asyncio.gather.
-"""
+"""Review node - LGTM/LBTM test review with parallel file processing."""
 import asyncio
 import json
 import logging
@@ -48,12 +44,7 @@ def _get_file_extension(file_path: str) -> str:
 
 
 def _parse_review_response(response: str) -> dict:
-    """Parse review response to extract decision and feedback.
-    
-    Handles multiple formats:
-    - DECISION: LGTM/LBTM
-    - JSON format {"decision": "LGTM", ...}
-    """
+    """Parse review response to extract decision and feedback."""
     result = {"decision": "LGTM", "review": "", "feedback": "", "issues": []}
 
     # Try JSON format first

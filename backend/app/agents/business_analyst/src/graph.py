@@ -2,9 +2,11 @@
 
 import logging
 from functools import partial
-from typing import Literal
+from typing import Literal, Optional
 
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from .state import BAState
 from .nodes import (
@@ -27,6 +29,50 @@ from .nodes import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Global PostgresSaver instance (shared across all BA agents)
+_postgres_checkpointer: Optional[AsyncPostgresSaver] = None
+_connection_pool = None
+
+
+async def get_postgres_checkpointer() -> AsyncPostgresSaver:
+    """Get or create a PostgresSaver checkpointer for persistent state."""
+    global _postgres_checkpointer, _connection_pool
+    
+    if _postgres_checkpointer is None:
+        try:
+            from app.core.config import settings
+            import psycopg_pool
+            
+            # Build connection string from settings
+            db_url = str(settings.DATABASE_URL)
+            if db_url.startswith("postgresql+psycopg"):
+                db_url = db_url.replace("postgresql+psycopg", "postgresql")
+            
+            logger.info(f"[BA Graph] Creating PostgresSaver with connection pool...")
+            
+            # Create connection pool
+            _connection_pool = psycopg_pool.AsyncConnectionPool(
+                conninfo=db_url,
+                max_size=5,
+                min_size=1,
+                open=False,
+            )
+            await _connection_pool.open()
+            
+            # Create checkpointer
+            _postgres_checkpointer = AsyncPostgresSaver(_connection_pool)
+            
+            # Setup tables if needed
+            await _postgres_checkpointer.setup()
+            
+            logger.info("[BA Graph] PostgresSaver initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"[BA Graph] Failed to create PostgresSaver: {e}, falling back to MemorySaver")
+            return None
+    
+    return _postgres_checkpointer
 
 
 def route_by_intent(state: BAState) -> Literal["conversational", "interview", "prd_create", "prd_update", "extract_stories", "stories_update", "story_edit_single", "stories_approve"]:
@@ -216,6 +262,8 @@ class BusinessAnalystGraph:
             agent: BusinessAnalyst agent instance (for Langfuse callback access)
         """
         self.agent = agent
+        self.checkpointer = None  # Will be set by setup()
+        self._setup_complete = False
         
         graph = StateGraph(BAState)
         
@@ -354,16 +402,57 @@ class BusinessAnalystGraph:
         # Save -> END
         graph.add_edge("save_artifacts", END)
         
-        self.graph = graph.compile()
+        # Store uncompiled graph - will compile with checkpointer in setup()
+        self._graph_builder = graph
+        self.graph = None
         
-        logger.info("[BA Graph] Graph compiled and ready")
+        logger.info("[BA Graph] Graph builder ready, call setup() before execute()")
     
-    async def execute(self, initial_state: dict) -> dict:
-        """Execute graph with initial state."""
+    async def setup(self):
+        """Setup graph with PostgresSaver checkpointer for persistent state."""
+        if self._setup_complete:
+            return
+        
+        try:
+            # Try to get PostgresSaver
+            self.checkpointer = await get_postgres_checkpointer()
+            
+            if self.checkpointer:
+                # Compile with PostgresSaver for persistent checkpoints
+                self.graph = self._graph_builder.compile(checkpointer=self.checkpointer)
+                logger.info("[BA Graph] Compiled with PostgresSaver checkpointer")
+            else:
+                # Fallback to MemorySaver
+                self.checkpointer = MemorySaver()
+                self.graph = self._graph_builder.compile(checkpointer=self.checkpointer)
+                logger.warning("[BA Graph] Compiled with MemorySaver (no persistence)")
+            
+            self._setup_complete = True
+            
+        except Exception as e:
+            logger.error(f"[BA Graph] Setup failed: {e}, using MemorySaver")
+            self.checkpointer = MemorySaver()
+            self.graph = self._graph_builder.compile(checkpointer=self.checkpointer)
+            self._setup_complete = True
+    
+    async def execute(self, initial_state: dict, config: dict = None) -> dict:
+        """Execute graph with initial state.
+        
+        Args:
+            initial_state: Initial state dict
+            config: Optional config with thread_id for checkpointing
+        """
+        # Ensure setup is complete
+        if not self._setup_complete:
+            await self.setup()
+        
         logger.info(f"[BA Graph] Starting execution...")
         
         try:
-            result = await self.graph.ainvoke(initial_state)
+            if config:
+                result = await self.graph.ainvoke(initial_state, config)
+            else:
+                result = await self.graph.ainvoke(initial_state)
             
             logger.info(
                 f"[BA Graph] Execution complete: "
@@ -375,4 +464,32 @@ class BusinessAnalystGraph:
             
         except Exception as e:
             logger.error(f"[BA Graph] Execution failed: {e}", exc_info=True)
+            raise
+    
+    async def resume(self, config: dict) -> dict:
+        """Resume graph from checkpoint using Command(resume=True).
+        
+        Args:
+            config: Config with thread_id to identify checkpoint
+        """
+        if not self._setup_complete:
+            await self.setup()
+        
+        from langgraph.types import Command
+        
+        logger.info(f"[BA Graph] Resuming from checkpoint...")
+        
+        try:
+            result = await self.graph.ainvoke(Command(resume=True), config)
+            
+            logger.info(
+                f"[BA Graph] Resume complete: "
+                f"intent={result.get('intent')}, "
+                f"complete={result.get('is_complete', False)}"
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"[BA Graph] Resume failed: {e}", exc_info=True)
             raise
