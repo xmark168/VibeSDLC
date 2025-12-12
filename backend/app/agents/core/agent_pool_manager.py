@@ -361,13 +361,46 @@ class AgentPoolManager:
         Returns:
             Statistics dictionary
         """
+        from sqlalchemy import func
+        from app.models import AgentExecution, AgentExecutionStatus
+        
         idle_agents = sum(1 for a in self.agents.values() if a.state == AgentStatus.idle)
         busy_agents = sum(1 for a in self.agents.values() if a.state == AgentStatus.busy)
         active_agents = idle_agents + busy_agents
 
-        total_executions = sum(a.total_executions for a in self.agents.values())
-        successful_executions = sum(a.successful_executions for a in self.agents.values())
-        failed_executions = sum(a.failed_executions for a in self.agents.values())
+        # Query execution stats from database for this pool
+        total_executions = 0
+        successful_executions = 0
+        failed_executions = 0
+        
+        # Get role type from pool name
+        role_type = None
+        if self.pool_name.endswith("_pool"):
+            role_type = self.pool_name.replace("_pool", "")
+        
+        if self.pool_id:
+            with Session(engine) as session:
+                # Count executions for this pool by pool_id
+                total_executions = session.exec(
+                    select(func.count(AgentExecution.id))
+                    .where(AgentExecution.pool_id == self.pool_id)
+                ).one() or 0
+                
+                successful_executions = session.exec(
+                    select(func.count(AgentExecution.id))
+                    .where(
+                        AgentExecution.pool_id == self.pool_id,
+                        AgentExecution.status == AgentExecutionStatus.COMPLETED
+                    )
+                ).one() or 0
+                
+                failed_executions = session.exec(
+                    select(func.count(AgentExecution.id))
+                    .where(
+                        AgentExecution.pool_id == self.pool_id,
+                        AgentExecution.status == AgentExecutionStatus.FAILED
+                    )
+                ).one() or 0
 
         # Get agents list
         agents_list = []
@@ -379,9 +412,19 @@ class AgentPoolManager:
                 "state": agent.state.value if hasattr(agent.state, 'value') else str(agent.state),
             })
 
+        # Get pool priority from DB
+        pool_priority = 0
+        if self.pool_id:
+            with Session(engine) as session:
+                pool = session.get(AgentPool, self.pool_id)
+                if pool:
+                    pool_priority = pool.priority
+
         return {
+            "id": str(self.pool_id) if self.pool_id else None,
             "pool_name": self.pool_name,
-            "role_type": "universal",  # Default role type, can be overridden
+            "role_type": role_type or "universal",
+            "priority": pool_priority,
             "manager_type": "in-memory",
             "total_agents": len(self.agents),
             "active_agents": active_agents,

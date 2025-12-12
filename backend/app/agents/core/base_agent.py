@@ -96,6 +96,7 @@ class BaseAgent(ABC):
         """
         self.agent_id = agent_model.id
         self.project_id = agent_model.project_id
+        self.pool_id = agent_model.pool_id  # Pool this agent belongs to
         self.role_type = agent_model.role_type
         self.agent_model = agent_model
         
@@ -1577,6 +1578,8 @@ class BaseAgent(ABC):
                 user_id=task.user_id if hasattr(task, 'user_id') else None,
                 task_type=task.task_type.value if hasattr(task, 'task_type') and task.task_type else None,
                 task_content_preview=task.content[:200] if task.content else None,
+                agent_id=self.agent_id,
+                pool_id=self.pool_id,
             )
         
 

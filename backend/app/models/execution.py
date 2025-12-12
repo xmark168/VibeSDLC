@@ -23,6 +23,26 @@ class AgentExecution(BaseModel, table=True):
             nullable=False
         )
     )
+    
+    agent_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            PG_UUID(as_uuid=True),
+            ForeignKey("agents.id", ondelete="SET NULL", use_alter=True, name="fk_agent_executions_agent_id"),
+            index=True,
+            nullable=True
+        )
+    )
+    
+    pool_id: UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            PG_UUID(as_uuid=True),
+            ForeignKey("agent_pools.id", ondelete="SET NULL", use_alter=True, name="fk_agent_executions_pool_id"),
+            index=True,
+            nullable=True
+        )
+    )
 
     agent_name: str = Field(nullable=False)
     agent_type: str = Field(nullable=False)

@@ -86,34 +86,76 @@ def ensure_role_class_map():
 
 
 def get_available_pool(role_type: Optional[str] = None) -> Optional[AgentPoolManager]:
-    """Get any available pool manager.
+    """Get best available pool manager based on priority and load.
     
-    Priority:
-    1. Role-specific pool if role_type provided (e.g., "developer_pool")
-    2. Universal pool
-    3. Any available pool
+    Selection criteria (in order):
+    1. Pool must be active (is_active=True)
+    2. Pool must have capacity (current_agents < max_agents)
+    3. If role_type provided, prefer pools with matching role_type
+    4. Sort by priority (lower number = higher priority)
+    5. Among same priority, choose pool with least agents (load balancing)
     
     Args:
-        role_type: Optional role type to try role-specific pool first
+        role_type: Optional role type to prefer matching pools
         
     Returns:
         AgentPoolManager or None if no pools available
     """
-    # Try role-specific pool first
-    if role_type:
-        role_pool = f"{role_type}_pool"
-        if role_pool in _manager_registry:
-            return _manager_registry[role_pool]
-
-    # Try universal pool
-    if "universal_pool" in _manager_registry:
-        return _manager_registry["universal_pool"]
-
-    # Fallback to any available pool
-    if _manager_registry:
-        return next(iter(_manager_registry.values()))
-
-    return None
+    from app.models import AgentPool
+    from app.core.db import engine
+    
+    if not _manager_registry:
+        return None
+    
+    # Query active pools from DB with priority info
+    with Session(engine) as session:
+        statement = select(AgentPool).where(AgentPool.is_active == True)
+        if role_type:
+            # Prefer pools with matching role_type, but include universal pools (role_type=None)
+            statement = statement.where(
+                (AgentPool.role_type == role_type) | (AgentPool.role_type == None)
+            )
+        db_pools = {p.pool_name: p for p in session.exec(statement).all()}
+    
+    # Build candidate list with metrics
+    candidates = []
+    for pool_name, manager in _manager_registry.items():
+        db_pool = db_pools.get(pool_name)
+        if not db_pool:
+            continue  # Pool not in DB or not active
+        
+        current_agents = len(manager.agents)
+        if current_agents >= manager.max_agents:
+            continue  # Pool at capacity
+        
+        # Calculate load (0.0 to 1.0)
+        load = current_agents / manager.max_agents if manager.max_agents > 0 else 1.0
+        
+        # Bonus for role-specific pool
+        role_match = 1 if (role_type and db_pool.role_type == role_type) else 0
+        
+        candidates.append({
+            "manager": manager,
+            "priority": db_pool.priority,
+            "load": load,
+            "current_agents": current_agents,
+            "role_match": role_match,
+        })
+    
+    if not candidates:
+        logger.warning(f"No available pool for role_type={role_type}")
+        return None
+    
+    # Sort by: role_match (desc), priority (asc), load (asc)
+    candidates.sort(key=lambda x: (-x["role_match"], x["priority"], x["load"]))
+    
+    best = candidates[0]
+    logger.debug(
+        f"Selected pool '{best['manager'].pool_name}' for role={role_type} "
+        f"(priority={best['priority']}, load={best['load']:.1%}, agents={best['current_agents']})"
+    )
+    
+    return best["manager"]
 
 
 def find_pool_for_agent(agent_id: UUID) -> Optional[AgentPoolManager]:
@@ -1362,6 +1404,55 @@ async def update_pool_config(
         )
 
     return updated_pool
+
+
+@router.put("/pools/priorities", response_model=list[AgentPoolPublic])
+async def update_pool_priorities(
+    request: dict,  # {"pool_priorities": [{"pool_id": "uuid", "priority": 0}, ...]}
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Bulk update pool priorities (for drag-drop reordering).
+    
+    Accepts a list of pool_id and priority pairs and updates all in one transaction.
+    Lower priority number = higher priority (selected first for agent assignment).
+    """
+    from app.models import AgentPool
+    
+    pool_priorities = request.get("pool_priorities", [])
+    if not pool_priorities:
+        raise HTTPException(status_code=400, detail="pool_priorities is required")
+    
+    updated_pools = []
+    
+    for item in pool_priorities:
+        pool_id = item.get("pool_id")
+        priority = item.get("priority")
+        
+        if pool_id is None or priority is None:
+            continue
+        
+        try:
+            pool_uuid = UUID(pool_id) if isinstance(pool_id, str) else pool_id
+        except ValueError:
+            continue
+        
+        pool = session.get(AgentPool, pool_uuid)
+        if pool:
+            pool.priority = priority
+            pool.updated_by = current_user.id
+            session.add(pool)
+            updated_pools.append(pool)
+    
+    session.commit()
+    
+    # Refresh all pools
+    for pool in updated_pools:
+        session.refresh(pool)
+    
+    logger.info(f"Updated priorities for {len(updated_pools)} pools")
+    
+    return updated_pools
 
 
 @router.get("/pools/{pool_id}/metrics", response_model=list[AgentPoolMetricsPublic])

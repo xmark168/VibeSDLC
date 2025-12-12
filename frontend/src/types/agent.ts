@@ -14,8 +14,10 @@ export type AgentState =
 export type AgentStatus = "idle" | "busy" | "stopped" | "error"
 
 export interface PoolResponse {
+  id: string
   pool_name: string
   role_type: string
+  priority: number
   total_agents: number
   active_agents: number
   busy_agents: number
@@ -158,6 +160,7 @@ export interface AgentPoolDB {
   pool_name: string
   role_type: string | null
   pool_type: PoolType
+  priority: number
   max_agents: number
   health_check_interval: number
   llm_model_config: Record<string, string> | null

@@ -304,6 +304,16 @@ export const agentsApi = {
     })
   },
 
+  updatePoolPriorities: async (
+    poolPriorities: Array<{ pool_id: string; priority: number }>
+  ): Promise<AgentPoolDB[]> => {
+    return __request(OpenAPI, {
+      method: "PUT",
+      url: "/api/v1/agents/pools/priorities",
+      body: { pool_priorities: poolPriorities },
+    })
+  },
+
   getPoolMetrics: async (
     poolId: string,
     startDate?: string,

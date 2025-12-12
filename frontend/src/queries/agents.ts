@@ -443,6 +443,24 @@ export function useUpdatePoolConfig() {
 }
 
 /**
+ * Bulk update pool priorities (for drag-drop reordering)
+ */
+export function useUpdatePoolPriorities() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (poolPriorities: Array<{ pool_id: string; priority: number }>) =>
+      agentsApi.updatePoolPriorities(poolPriorities),
+    onSuccess: () => {
+      // Invalidate pools list
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pools() })
+      // Invalidate dashboard
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
+    },
+  })
+}
+
+/**
  * Scale pool to target agent count
  * Automatically spawns or terminates agents
  */

@@ -78,8 +78,10 @@ class TerminateAgentRequest(BaseModel):
 
 
 class PoolResponse(BaseModel):
+    id: Optional[UUID] = None
     pool_name: str
     role_type: str
+    priority: int = 0
     total_agents: int = 0
     active_agents: int = 0
     busy_agents: int = 0
@@ -93,6 +95,7 @@ class PoolResponse(BaseModel):
     failed_executions: int = 0
     success_rate: float = 0.0
     load: float = 0.0
+    created_at: Optional[datetime] = None
     agents: list[dict] = []
 
 
@@ -116,6 +119,7 @@ class AgentPoolPublic(SQLModel):
     pool_name: str
     role_type: Optional[str]
     pool_type: PoolType
+    priority: int = 0
     max_agents: int
     health_check_interval: int
     llm_model_config: Optional[dict] = None
@@ -137,8 +141,14 @@ class UpdatePoolConfigRequest(BaseModel):
     """Update pool configuration request."""
     max_agents: Optional[int] = Field(default=None, ge=1)
     health_check_interval: Optional[int] = Field(default=None, ge=10)
+    priority: Optional[int] = Field(default=None, ge=0)
     llm_model_config: Optional[dict] = None
     allowed_template_ids: Optional[list[str]] = None
+
+
+class UpdatePoolPrioritiesRequest(BaseModel):
+    """Bulk update pool priorities (for drag-drop reordering)."""
+    pool_priorities: list[dict]  # [{"pool_id": "uuid", "priority": 0}, ...]
 
 
 class AgentPoolMetricsPublic(SQLModel):
