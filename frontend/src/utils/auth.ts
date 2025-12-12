@@ -49,17 +49,35 @@ export const requireRole = async (requiredRole: Role) => {
     })
   }
 
-  // Get current state from store
-  const store = useAppStore.getState()
+  // Wait for user data to be available (max 3 seconds)
+  const maxWaitTime = 3000
+  const checkInterval = 50
+  let waited = 0
 
-  // Wait for user data to load if still loading
-  if (store.isLoading) {
-    // In a real app, you might want to wait for loading to complete
-    // For now, we'll assume user data is available
-    return
+  while (waited < maxWaitTime) {
+    const store = useAppStore.getState()
+    
+    // If we have user data, break out of loop
+    if (store.user) {
+      break
+    }
+    
+    // If not loading and no user, authentication failed
+    if (!store.isLoading && !store.user) {
+      throw redirect({
+        to: '/login',
+        search: {
+          redirect: window.location.pathname
+        }
+      })
+    }
+    
+    // Wait and check again
+    await new Promise(resolve => setTimeout(resolve, checkInterval))
+    waited += checkInterval
   }
 
-  const user = store.user
+  const user = useAppStore.getState().user
 
   if (!user) {
     throw redirect({
@@ -71,13 +89,14 @@ export const requireRole = async (requiredRole: Role) => {
   }
 
   // Check if user has the required role
+  // Admin can access all pages, so skip check if user is admin
+  if (user.role === 'admin') {
+    return // Admin has access to everything
+  }
+
   if (user.role !== requiredRole) {
-    // Redirect based on user's actual role
-    if (user.role === 'admin') {
-      throw redirect({ to: '/admin' })
-    } else {
-      throw redirect({ to: '/projects' })
-    }
+    // Redirect non-admin users to their appropriate page
+    throw redirect({ to: '/projects' })
   }
 }
 

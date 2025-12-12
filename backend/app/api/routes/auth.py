@@ -17,7 +17,7 @@ from app.core import security
 from app.core.config import settings
 from app.core.redis_client import get_redis_client
 from app.core.security import get_password_hash, verify_password
-from app.models import User
+from app.models import User, Plan, Subscription, CreditWallet
 from app.schemas import (
     ConfirmCodeRequest,
     ConfirmCodeResponse,
@@ -69,6 +69,60 @@ def validate_password(password: str) -> bool:
 def generate_verification_code() -> str:
     """Generate 6-digit verification code"""
     return str(random.randint(100000, 999999))
+
+
+def assign_free_plan_to_user(session: SessionDep, user: User) -> None:
+    """
+    Assign FREE plan subscription and credit wallet to new user.
+    This ensures every new user starts with FREE plan credits.
+    """
+    from datetime import datetime, timezone
+    from sqlmodel import select
+    
+    # Get FREE plan
+    free_plan = session.exec(
+        select(Plan).where(Plan.code == "FREE")
+    ).first()
+    
+    if not free_plan:
+        logger.warning("FREE plan not found in database. User will not have credits.")
+        return
+    
+    # Check if user already has any subscription
+    existing_sub = session.exec(
+        select(Subscription).where(Subscription.user_id == user.id)
+    ).first()
+    
+    if existing_sub:
+        logger.debug(f"User {user.id} already has subscription, skipping FREE plan assignment")
+        return
+    
+    # Create subscription (no expiry for FREE plan)
+    subscription = Subscription(
+        user_id=user.id,
+        plan_id=free_plan.id,
+        status="active",
+        start_at=datetime.now(timezone.utc),
+        end_at=None,
+        auto_renew=False,
+    )
+    session.add(subscription)
+    session.flush()
+    
+    # Create credit wallet
+    wallet = CreditWallet(
+        user_id=user.id,
+        wallet_type="subscription",
+        subscription_id=subscription.id,
+        period_start=datetime.now(timezone.utc),
+        period_end=None,
+        total_credits=free_plan.monthly_credits or 100,
+        used_credits=0,
+    )
+    session.add(wallet)
+    session.commit()
+    
+    logger.info(f"Assigned FREE plan to user {user.id} with {free_plan.monthly_credits} credits")
 
 
 @router.post("/login/access-token", response_model=LoginResponse)
@@ -184,6 +238,9 @@ def login(
             session.add(user)
             session.commit()
             session.refresh(user)
+            
+            # Assign FREE plan to new OAuth user
+            assign_free_plan_to_user(session, user)
 
     # Check account status
     if not user.is_active:
@@ -442,6 +499,9 @@ def confirm_code(
     session.add(user)
     session.commit()
     session.refresh(user)
+    
+    # Assign FREE plan to new user
+    assign_free_plan_to_user(session, user)
 
     # Clean up Redis data (both keys)
     redis_client.delete(registration_key)
