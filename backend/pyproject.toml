@@ -90,6 +90,13 @@ ignore = [
 [tool.ruff.lint.pyupgrade]
 keep-runtime-typing = true
 
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (slower, requires external services)",
+]
+
 [tool.coverage.run]
 source = ["app"]
 dynamic_context = "test_function"
