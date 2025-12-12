@@ -154,6 +154,11 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     document.body.style.cursor = "col-resize"
   }, [])
 
+  // Debug: Log projectId changes
+  useEffect(() => {
+    console.log('[WorkspacePanel] projectId changed:', projectId, 'Query enabled:', !!projectId)
+  }, [projectId])
+
   // Fetch project agents from database
   const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
     enabled: !!projectId,

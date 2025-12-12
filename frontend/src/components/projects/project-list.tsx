@@ -32,7 +32,8 @@ export const ProjectList = ({ projects, onCreateProject }: ProjectListProps) => 
         const response = await AgentsService.getProjectAgents({ projectId: project.id })
         return { projectId: project.id, agents: response || [] }
       },
-      staleTime: 30000,
+      staleTime: 0, // Always fetch fresh data
+      refetchOnMount: 'always' as const, // Force refetch on mount
     })),
   })
 
