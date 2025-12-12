@@ -268,6 +268,17 @@ class AgentPoolManager:
             logger.error(f"Failed to terminate agent {agent_id}: {e}", exc_info=True)
             return False
 
+    def has_agent(self, agent_id: UUID) -> bool:
+        """Check if agent exists in pool.
+
+        Args:
+            agent_id: Agent UUID
+
+        Returns:
+            True if agent exists, False otherwise
+        """
+        return agent_id in self.agents
+
     def get_agent(self, agent_id: UUID) -> Optional[BaseAgent]:
         """Get agent by ID.
 
@@ -286,6 +297,41 @@ class AgentPoolManager:
             List of agent instances
         """
         return list(self.agents.values())
+
+    # ===== Story Signal Management =====
+
+    def signal_agent(self, agent_id: UUID, story_id: str, signal: str) -> bool:
+        """Send signal directly to an agent for a story.
+        
+        This is O(1) - no Kafka, no DB poll needed.
+        Agent ID comes from story.assigned_agent_id in DB.
+        
+        Args:
+            agent_id: Agent UUID (from story.assigned_agent_id)
+            story_id: Story UUID string
+            signal: Signal type ('cancel', 'pause')
+            
+        Returns:
+            True if signal was delivered to agent
+        """
+        logger.info(f"[Pool] [SIGNAL] signal_agent called: agent={agent_id}, story={story_id[:8]}, signal={signal}")
+        logger.info(f"[Pool] [SIGNAL] Current agents in pool: {list(self.agents.keys())}")
+        
+        agent = self.agents.get(agent_id)
+        if not agent:
+            logger.warning(f"[Pool] [SIGNAL] Agent {agent_id} NOT FOUND in pool '{self.pool_name}'")
+            return False
+        
+        # Direct push to agent - instant delivery
+        logger.info(f"[Pool] [SIGNAL] Calling agent.receive_signal({story_id[:8]}, {signal})")
+        agent.receive_signal(story_id, signal)
+        
+        # Verify signal was stored
+        stored_signal = agent.check_signal(story_id)
+        logger.info(f"[Pool] [SIGNAL] Signal stored in agent._pending_signals: {stored_signal}")
+        logger.info(f"[Pool] [SIGNAL] Agent._pending_signals = {agent._pending_signals}")
+        
+        return True
 
     @property
     def is_running(self) -> bool:
@@ -356,9 +402,10 @@ class AgentPoolManager:
     # ===== Background Tasks =====
 
     async def _monitor_loop(self) -> None:
-        """Single health check monitor loop.
+        """Health check monitor loop with stale state detection.
 
         Periodically checks agent health and terminates unhealthy agents.
+        Also detects and resets agents stuck in busy state with no tasks.
         """
         logger.info(f"Health monitor started for pool '{self.pool_name}'")
 
@@ -377,6 +424,19 @@ class AgentPoolManager:
                                 f"Reason: {health.get('reason', 'unknown')}"
                             )
                             await self.terminate_agent(agent_id, graceful=False)
+                            continue
+
+                        # Check for stale busy state (agent stuck as busy with no tasks)
+                        if agent.state == AgentStatus.busy:
+                            has_queue_tasks = hasattr(agent, '_task_queue') and agent._task_queue.qsize() > 0
+                            has_current_task = getattr(agent, '_current_task_id', None) is not None
+                            
+                            if not has_queue_tasks and not has_current_task:
+                                logger.warning(
+                                    f"Agent {agent.name} ({agent_id}) stuck in busy state "
+                                    f"with no tasks, resetting to idle"
+                                )
+                                agent.state = AgentStatus.idle
 
                     except Exception as e:
                         logger.error(f"Error checking health of agent {agent_id}: {e}")

@@ -1,10 +1,4 @@
-"""Plan Tests node - Analyze stories and create test plan (aligned with Developer V2).
-
-Uses FileRepository for zero-shot planning (Developer V2 pattern):
-- Pre-computes workspace context (file tree, components, API routes)
-- Single LLM call with full context
-- No tool calls needed for planning
-"""
+"""Plan Tests node - Analyze stories and create test plan using FileRepository for zero-shot planning."""
 
 import json
 import logging
@@ -65,15 +59,7 @@ def _slugify(text: str) -> str:
 
 
 def _extract_feature_name(story_title: str) -> str:
-    """Extract feature name from story title for test file naming.
-    
-    Examples:
-    - "As a user, I want to see featured books" -> "featured-books"
-    - "Homepage with categories and search" -> "homepage"
-    - "User can add items to cart" -> "cart"
-    
-    This creates cleaner, feature-based test file names instead of long slugs.
-    """
+    """Extract feature name from story title for test file naming."""
     title_lower = story_title.lower()
     
     # Common feature keywords to extract (priority order)
@@ -114,16 +100,9 @@ def _extract_feature_name(story_title: str) -> str:
     if words:
         # Take first 2 meaningful words
         return '-'.join(words[:2])
-    
-    # Final fallback
     return _slugify(story_title)[:20] or "feature"
 
 
-# =============================================================================
-# VALIDATION
-# =============================================================================
-
-# Invalid patterns that should not be used as story titles/test names
 INVALID_STORY_PATTERNS = [
     "jest-config",
     "config-removal", 
@@ -138,13 +117,7 @@ INVALID_STORY_PATTERNS = [
 
 
 def _is_valid_story_for_testing(story: dict) -> bool:
-    """Check if a story is valid for test generation.
-    
-    Rejects stories that:
-    - Have invalid/placeholder titles
-    - Are about config/setup tasks (not user features)
-    - Have empty or missing required fields
-    """
+    """Check if story is valid for test generation (rejects config/setup tasks)."""
     title = story.get("title", "") or ""
     slug = _slugify(title)
     
@@ -265,17 +238,7 @@ def _find_source_files_for_story(workspace_path: str, keywords: list[str]) -> li
 
 
 def _analyze_component(file_path: str, content: str) -> dict:
-    """Extract component info for better test generation.
-    
-    Analyzes component source to extract:
-    - Component name
-    - Props interface  
-    - Data attributes (data-testid, data-slot, etc.)
-    - Whether it has skeleton/loading state
-    
-    Returns:
-        Dict with component analysis info
-    """
+    """Extract component info: name, props, data attributes, skeleton state."""
     info = {
         "name": "",
         "props": [],
@@ -325,18 +288,7 @@ def _analyze_component(file_path: str, content: str) -> dict:
 
 
 def _find_components_for_unit_test(workspace_path: str, keywords: list[str]) -> list[dict]:
-    """Find components specifically for unit testing with detailed analysis.
-    
-    Unlike _find_source_files_for_story which finds any matching file,
-    this function:
-    1. Focuses on component files (.tsx)
-    2. Excludes UI primitives (button, input, etc.)
-    3. Scores by keyword relevance
-    4. Analyzes each component for props, exports, data attributes
-    
-    Returns:
-        List of component info dicts with path, name, props, exports, data_attributes
-    """
+    """Find components for unit testing with keyword scoring and analysis."""
     from pathlib import Path
     
     path = Path(workspace_path)
@@ -433,14 +385,7 @@ def _format_component_context(components: list[dict]) -> str:
 
 
 def _get_existing_routes(workspace_path: str) -> list[str]:
-    """Scan project for existing API routes.
-    
-    This ensures we only generate tests for code that actually exists,
-    preventing LLM from hallucinating imports for non-existent routes.
-    
-    Returns:
-        List of existing route paths (e.g., ["app/api/books/featured/route.ts"])
-    """
+    """Scan project for existing API routes."""
     from pathlib import Path
     
     routes = []
@@ -474,16 +419,7 @@ def _get_existing_routes(workspace_path: str) -> list[str]:
 
 
 def _load_api_source_code(workspace_path: str, routes: list[str]) -> str:
-    """Load actual API source code for LLM to analyze.
-    
-    This helps LLM understand WHAT each API actually does:
-    - What query params are supported
-    - What the response structure looks like
-    - What database operations are performed
-    
-    Returns:
-        Formatted string with API source code
-    """
+    """Load API source code for LLM analysis."""
     from pathlib import Path
     
     if not workspace_path or not routes:
@@ -520,16 +456,7 @@ def _load_api_source_code(workspace_path: str, routes: list[str]) -> str:
 
 
 def _preload_test_dependencies(workspace_path: str, test_plan: list, stories: list = None) -> dict:
-    """Pre-load source files that tests will need as context (MetaGPT-style).
-    
-    This function:
-    1. Extracts keywords from stories
-    2. Finds actual source files related to those keywords
-    3. Reads their content so LLM knows actual exports, types, functions
-    
-    Returns:
-        Dict mapping file_path -> content
-    """
+    """Pre-load source files that tests will need as context."""
     from pathlib import Path
     
     dependencies_content = {}
@@ -603,20 +530,7 @@ def _preload_test_dependencies(workspace_path: str, test_plan: list, stories: li
 
 
 def _detect_test_structure(project_path: str) -> dict:
-    """Get standardized test folder structure for Next.js projects.
-    
-    FIXED STRUCTURE (Best Practice for Next.js):
-    - Integration tests: src/__tests__/integration/
-    - Unit tests: src/__tests__/unit/
-    
-    This ensures consistent folder structure across all projects.
-    
-    Returns:
-        dict with:
-        - integration_folder: Fixed path for integration tests
-        - unit_folder: Fixed path for unit tests
-        - existing_tests: List of existing test files (for reference)
-    """
+    """Get standardized test folder structure (src/__tests__/integration/, src/__tests__/unit/)."""
     from pathlib import Path
     
     # FIXED STRUCTURE - DO NOT CHANGE based on existing files
@@ -670,22 +584,7 @@ def _detect_test_structure(project_path: str) -> dict:
 
 
 async def plan_tests(state: TesterState, agent=None) -> dict:
-    """Analyze stories and create test plan.
-    
-    This node:
-    1. Detects testing context (auth, ORM, mocks, ESM warnings)
-    2. Analyzes stories to identify testable scenarios
-    3. Decides test scenarios for each story
-    4. Creates a step-by-step test plan
-    
-    Includes interrupt signal check for pause/cancel support.
-    
-    Output:
-    - test_plan: List of test steps
-    - testing_context: Auth patterns, ORM, existing mocks
-    - total_steps: Number of steps
-    - current_step: 0 (starting)
-    """
+    """Analyze stories and create test plan with interrupt support."""
     from langgraph.types import interrupt
     from app.agents.tester.src.graph import check_interrupt_signal
     

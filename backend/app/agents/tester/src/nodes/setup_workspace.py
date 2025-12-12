@@ -1,7 +1,4 @@
-"""Setup workspace node - Setup git workspace/branch for test generation.
-
-Reuses Developer V2's workspace when available (from Story.worktree_path).
-"""
+"""Setup workspace node - Setup git workspace/branch for test generation."""
 import logging
 from pathlib import Path
 from uuid import UUID
@@ -47,11 +44,7 @@ def _get_tech_stack(project_id: str) -> str:
 
 
 async def setup_workspace(state: TesterState, agent=None) -> dict:
-    """Setup git workspace/branch for test generation.
-    
-    Exactly mirrored from developer_v2's setup_workspace.
-    Includes interrupt signal check for pause/cancel support.
-    """
+    """Setup git workspace/branch for test generation with interrupt support."""
     from langgraph.types import interrupt
     from app.agents.tester.src.graph import check_interrupt_signal
     
@@ -77,10 +70,7 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
         short_id = story_id.split('-')[-1][:8] if '-' in story_id else story_id[:8]
         branch_name = f"test_{short_id}"
         
-        # Flag to track if we're reusing developer's workspace (skip setup steps)
         is_reusing_dev_workspace = False
-        
-        # Strategy 1: Try to reuse Developer's workspace from Story model
         story_workspace = get_story_workspace(story_id)
         if story_workspace:
             logger.info(f"[setup_workspace] Using developer's workspace from Story: {story_workspace['workspace_path']}")
@@ -90,8 +80,7 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
                 "main_workspace": story_workspace["main_workspace"],
                 "workspace_ready": True,
             }
-            is_reusing_dev_workspace = True  # Skip all setup steps
-        # Strategy 2: Check if workspace_path already exists in state
+            is_reusing_dev_workspace = True
         elif state.get("workspace_path") and Path(state.get("workspace_path", "")).exists():
             existing_workspace = state.get("workspace_path", "")
             logger.info(f"[setup_workspace] Reusing existing workspace from state: {existing_workspace}")
@@ -101,21 +90,16 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
                 "main_workspace": state.get("main_workspace", existing_workspace),
                 "workspace_ready": True,
             }
-        # Strategy 3: Create new workspace (fallback for standalone tests)
         else:
             logger.info(f"[setup_workspace] Creating new workspace for branch '{branch_name}'")
             
-            # Get main workspace - try multiple sources
             main_workspace = None
-            
-            # 1. From agent attributes (like developer_v2)
             if agent:
                 if hasattr(agent, 'main_workspace'):
                     main_workspace = agent.main_workspace
                 elif hasattr(agent, 'workspace_path'):
                     main_workspace = agent.workspace_path
             
-            # 2. From database if not found
             if not main_workspace:
                 project_path = _get_project_path(project_id)
                 if project_path:
@@ -129,7 +113,6 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
                     "error": "No workspace path configured",
                 }
             
-            # Setup git worktree (uses shared workspace_tools)
             workspace_info = setup_git_worktree(
                 story_id=story_id,
                 main_workspace=main_workspace,
@@ -139,7 +122,6 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
         index_ready = False
         workspace_path = workspace_info.get("workspace_path", "")
         
-        # Load project context
         project_context = ""
         agents_md = ""
         if workspace_path:
@@ -151,12 +133,10 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
             except Exception as ctx_err:
                 logger.warning(f"[setup_workspace] Failed to load project context: {ctx_err}")
         
-        # Load skill registry based on tech stack
         tech_stack = state.get("tech_stack") or _get_tech_stack(project_id)
         skill_registry = SkillRegistry.load(tech_stack)
         logger.info(f"[setup_workspace] Loaded SkillRegistry for '{tech_stack}' with {len(skill_registry.skills)} skills")
         
-        # Skip all setup steps if reusing developer's workspace (already done by developer)
         if is_reusing_dev_workspace:
             logger.info("[setup_workspace] Skipping setup steps - reusing developer's workspace")
         
@@ -176,7 +156,6 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
         }
         
     except Exception as e:
-        # Re-raise GraphInterrupt - it's expected for pause/cancel
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise

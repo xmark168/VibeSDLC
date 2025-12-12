@@ -1,15 +1,4 @@
-"""Implement Tests node - Generate tests using structured output (aligned with Developer V2).
-
-Optimized version:
-- NO tool calling iterations
-- Skills preloaded into system prompt
-- Dependencies preloaded from plan phase
-- Single LLM call with structured output + retry
-- Direct file write (no tools)
-- Component source preloaded with MANDATORY verification checklist
-- Adaptive LLM selection based on test type
-- Refresh dependencies after implementation
-"""
+"""Implement Tests node - Generate tests using structured output with skills and preloaded dependencies."""
 
 import asyncio
 import logging
@@ -41,21 +30,8 @@ logger = logging.getLogger(__name__)
 _llm = implement_llm
 
 
-# =============================================================================
-# Git Helper Functions (aligned with Developer V2)
-# =============================================================================
-
 def git_commit_tests(workspace_path: str, description: str, files: List[str] = None) -> bool:
-    """Commit test files after successful implementation (aligned with Developer V2).
-    
-    Args:
-        workspace_path: Path to git repository
-        description: Brief description of changes
-        files: Specific files to commit, or None for all changes
-    
-    Returns:
-        True if commit succeeded, False otherwise
-    """
+    """Commit test files after successful implementation."""
     import subprocess
     
     try:

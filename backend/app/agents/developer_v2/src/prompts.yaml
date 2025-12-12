@@ -108,6 +108,29 @@ tasks:
       - "Unknown arg" → Field doesn't exist in model, check schema
       - "Record to update not found" → ID doesn't exist, check before update
       
+      Seed Unique Constraint (P2002) - CRITICAL:
+      - "Unique constraint failed on the fields: (`name`)" → faker.commerce.department() only has ~10 values, causes duplicates
+      - FIX: Replace faker with predefined unique array for fields with @unique constraint
+      - Example fix for Category:
+        ```typescript
+        // ❌ WRONG - will cause P2002 unique constraint error
+        const categories = await prisma.category.createManyAndReturn({
+          data: Array.from({ length: 5 }, () => ({
+            name: faker.commerce.department(),  // Only ~10 values!
+          }))
+        });
+        
+        // ✅ CORRECT - predefined unique values
+        const categoryNames = ['Fiction', 'Non-Fiction', 'Science', 'History', 'Technology'];
+        const categories = await prisma.category.createManyAndReturn({
+          data: categoryNames.map((name) => ({
+            name,
+            slug: name.toLowerCase().replace(/\\s+/g, '-'),
+          }))
+        });
+        ```
+      - NEVER use faker for fields with @unique constraint in schema
+      
       Build Warnings (CAN IGNORE):
       - "baseline-browser-mapping" → Harmless dev dependency warning
       - "ExperimentalWarning" → Node.js experimental feature, harmless

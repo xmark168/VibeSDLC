@@ -1,4 +1,4 @@
-"""Analyze Errors node - Debug failing tests and create fix plan (aligned with Developer V2)."""
+"""Analyze Errors node - Debug failing tests and create fix plan."""
 
 import json
 import logging
@@ -20,15 +20,8 @@ from app.agents.tester.src.nodes.plan_tests import _get_existing_routes
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# DEBUG SUMMARY (Developer V2 pattern)
-# =============================================================================
-
 def _build_debug_summary(state: Dict) -> str:
-    """Build summary of previous debug attempts (Developer V2 pattern).
-    
-    This helps LLM understand what was tried before and avoid repeating mistakes.
-    """
+    """Build summary of previous debug attempts to avoid repeating mistakes."""
     debug_count = state.get("debug_count", 0)
     review_count = state.get("review_count", 0)
     
@@ -72,10 +65,6 @@ def _build_debug_summary(state: Dict) -> str:
     
     return "\n".join(parts)
 
-
-# =============================================================================
-# COMPONENT SOURCE LOADING FOR UNIT TESTS
-# =============================================================================
 
 def _extract_component_imports(test_content: str) -> List[str]:
     """Extract component import paths from test file.

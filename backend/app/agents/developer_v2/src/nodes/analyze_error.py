@@ -2,7 +2,6 @@
 import logging
 import os
 import re
-import subprocess
 from dataclasses import dataclass
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
@@ -12,7 +11,7 @@ from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import PlanStep
 from app.agents.developer_v2.src.config import MAX_DEBUG_ATTEMPTS
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
-from app.agents.developer_v2.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
+from app.agents.developer_v2.src.utils.prompt_utils import build_system_prompt as _build_system_prompt
 from app.agents.developer_v2.src.utils.json_utils import extract_json_universal
 from app.agents.developer_v2.src.nodes._llm import code_llm
 from app.agents.developer_v2.src.tools import set_tool_context
@@ -142,7 +141,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")
     if story_id:
-        signal = check_interrupt_signal(story_id)
+        signal = check_interrupt_signal(story_id, agent)
         if signal:
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "analyze_error"})
@@ -166,10 +165,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             if error_analysis["auto_fixable"]:
                 await story_logger.task(f"⚡ Attempting auto-fix: {error_analysis['fix_strategy']}")
                 
-                import asyncio
-                auto_fixed = asyncio.get_event_loop().run_until_complete(
-                    try_auto_fix(error_analysis, workspace_path, story_logger)
-                )
+                auto_fixed = await try_auto_fix(error_analysis, workspace_path, story_logger)
                 
                 if auto_fixed:
                     return {**state, "action": "VALIDATE", "run_status": None, "error_analysis": {"auto_fixed": True, "fix_strategy": error_analysis["fix_strategy"]}}
@@ -183,7 +179,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         set_tool_context(root_dir=workspace_path, project_id=state.get("project_id", ""), task_id=state.get("task_id") or state.get("story_id", ""))
         
         tech_stack = state.get("tech_stack", "nextjs")
-        skill_registry = state.get("skill_registry") or SkillRegistry.load(tech_stack)
+        state.get("skill_registry") or SkillRegistry.load(tech_stack)
         
         # Parse errors and preload context
         parsed_errors = _parse_errors(error_logs)
@@ -196,7 +192,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         # History context
         history = ""
         if debug_history:
-            history = "\n## PREVIOUS ATTEMPTS (DO NOT REPEAT!):\n" + "\n".join(f"- #{h.get('iteration')}: {h.get('fix_description', '')[:80]} -> FAILED" for h in debug_history[-3:])
+            history = "\n## PREVIOUS ATTEMPTS (DO NOT REPEAT!):\n" + "\n".join(f"- #{h.get('iteration')}: {h.get('fix_description', '')} -> FAILED" for h in debug_history[-3:])
         
         # Build prompt with preloaded context
         system_prompt = _build_system_prompt("analyze_error")

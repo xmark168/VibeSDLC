@@ -11,7 +11,6 @@ async function main() {
   await prisma.order.deleteMany();
   await prisma.cartItem.deleteMany();
   await prisma.cart.deleteMany();
-  await prisma.review.deleteMany();
   await prisma.book.deleteMany();
   await prisma.category.deleteMany();
   await prisma.user.deleteMany();
@@ -20,101 +19,113 @@ async function main() {
 
   // Seed Categories
   const categories = await prisma.category.createManyAndReturn({
-    data: Array.from({ length: 5 }, () => {
-      const name = faker.commerce.department();
-      return {
-        name,
-        slug: faker.helpers.slugify(name).toLowerCase(),
+    data: [
+      {
+        name: 'Fiction',
+        slug: 'fiction',
         description: faker.lorem.sentence(),
+      },
+      {
+        name: 'Non-Fiction',
+        slug: 'non-fiction',
+        description: faker.lorem.sentence(),
+      },
+      {
+        name: 'Science',
+        slug: 'science',
+        description: faker.lorem.sentence(),
+      },
+      {
+        name: 'Technology',
+        slug: 'technology',
+        description: faker.lorem.sentence(),
+      },
+      {
+        name: 'Business',
+        slug: 'business',
+        description: faker.lorem.sentence(),
+      },
+    ],
+  });
+
+  console.log(`✅ Seeded ${categories.length} categories`);
+
+  // Seed Books
+  const books = await prisma.book.createManyAndReturn({
+    data: Array.from({ length: 5 }, () => {
+      const title = faker.commerce.productName();
+      return {
+        title,
+        slug: faker.helpers.slugify(title).toLowerCase(),
+        author: faker.person.fullName(),
+        description: faker.lorem.paragraph(),
+        price: faker.number.float({ min: 9.99, max: 49.99, fractionDigits: 2 }),
+        coverImage: `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/400/600`,
+        isbn: faker.commerce.isbn(),
+        publishedDate: faker.date.past(),
+        stock: faker.number.int({ min: 10, max: 100 }),
+        categoryId: faker.helpers.arrayElement(categories).id,
       };
     }),
   });
 
-  console.log(`✅ Created ${categories.length} categories`);
+  console.log(`✅ Seeded ${books.length} books`);
 
   // Seed Users
   const users = await prisma.user.createManyAndReturn({
-    data: Array.from({ length: 5 }, () => ({
+    data: Array.from({ length: 3 }, () => ({
       email: faker.internet.email(),
       name: faker.person.fullName(),
       password: faker.internet.password(),
     })),
   });
 
-  console.log(`✅ Created ${users.length} users`);
+  console.log(`✅ Seeded ${users.length} users`);
 
-  // Seed Books
-  const books = await prisma.book.createManyAndReturn({
-    data: Array.from({ length: 5 }, () => ({
-      title: faker.commerce.productName(),
-      author: faker.person.fullName(),
-      description: faker.lorem.paragraph(),
-      price: faker.number.float({ min: 9.99, max: 49.99, fractionDigits: 2 }),
-      coverImage: `https://picsum.photos/seed/${faker.string.alphanumeric(8)}/400/600`,
-      isbn: faker.commerce.isbn(),
-      stock: faker.number.int({ min: 0, max: 100 }),
-      categoryId: faker.helpers.arrayElement(categories).id,
-      isFeatured: faker.datatype.boolean(),
-      isBestseller: faker.datatype.boolean(),
-    })),
-  });
+  // Seed Carts with CartItems
+  for (const user of users) {
+    const cart = await prisma.cart.create({
+      data: {
+        userId: user.id,
+      },
+    });
 
-  console.log(`✅ Created ${books.length} books`);
+    await prisma.cartItem.createMany({
+      data: Array.from({ length: faker.number.int({ min: 1, max: 3 }) }, () => ({
+        cartId: cart.id,
+        bookId: faker.helpers.arrayElement(books).id,
+        quantity: faker.number.int({ min: 1, max: 3 }),
+      })),
+    });
+  }
 
-  // Seed Reviews
-  await prisma.review.createMany({
-    data: Array.from({ length: 5 }, () => ({
-      rating: faker.number.int({ min: 1, max: 5 }),
-      comment: faker.lorem.paragraph(),
-      userId: faker.helpers.arrayElement(users).id,
-      bookId: faker.helpers.arrayElement(books).id,
-    })),
-  });
+  console.log('✅ Seeded carts with items');
 
-  console.log('✅ Created 5 reviews');
+  // Seed Orders with OrderItems
+  for (const user of users.slice(0, 2)) {
+    const order = await prisma.order.create({
+      data: {
+        userId: user.id,
+        total: faker.number.float({ min: 50, max: 200, fractionDigits: 2 }),
+        status: faker.helpers.arrayElement(['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED']),
+      },
+    });
 
-  // Seed Carts
-  const carts = await prisma.cart.createManyAndReturn({
-    data: Array.from({ length: 3 }, () => ({
-      userId: faker.helpers.arrayElement(users).id,
-    })),
-  });
+    await prisma.orderItem.createMany({
+      data: Array.from({ length: faker.number.int({ min: 1, max: 3 }) }, () => {
+        const book = faker.helpers.arrayElement(books);
+        const quantity = faker.number.int({ min: 1, max: 3 });
+        return {
+          orderId: order.id,
+          bookId: book.id,
+          quantity,
+          price: book.price,
+        };
+      }),
+    });
+  }
 
-  console.log(`✅ Created ${carts.length} carts`);
-
-  // Seed Cart Items
-  await prisma.cartItem.createMany({
-    data: Array.from({ length: 5 }, () => ({
-      quantity: faker.number.int({ min: 1, max: 5 }),
-      cartId: faker.helpers.arrayElement(carts).id,
-      bookId: faker.helpers.arrayElement(books).id,
-    })),
-  });
-
-  console.log('✅ Created 5 cart items');
-
-  // Seed Orders
-  const orders = await prisma.order.createManyAndReturn({
-    data: Array.from({ length: 5 }, () => ({
-      total: faker.number.float({ min: 20, max: 200, fractionDigits: 2 }),
-      status: faker.helpers.arrayElement(['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED']),
-      userId: faker.helpers.arrayElement(users).id,
-    })),
-  });
-
-  console.log(`✅ Created ${orders.length} orders`);
-
-  // Seed Order Items
-  await prisma.orderItem.createMany({
-    data: Array.from({ length: 5 }, () => ({
-      quantity: faker.number.int({ min: 1, max: 3 }),
-      price: faker.number.float({ min: 9.99, max: 49.99, fractionDigits: 2 }),
-      orderId: faker.helpers.arrayElement(orders).id,
-      bookId: faker.helpers.arrayElement(books).id,
-    })),
-  });
-
-  console.log('✅ Created 5 order items');
+  console.log('✅ Seeded orders with items');
 
   console.log('🎉 Seed completed successfully!');
 }

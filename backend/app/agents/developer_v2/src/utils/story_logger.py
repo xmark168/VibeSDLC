@@ -56,15 +56,13 @@ async def log_to_story(
     from app.core.db import engine
     
     try:
-        # Format message with node prefix
-        formatted_content = f"[{node}] {message}" if node else message
-        
+        # Don't prefix content with node - frontend displays node separately
         # 1. Save to database (story_logs table)
         try:
             with Session(engine) as session:
                 log_entry = StoryLog(
                     story_id=UUID(story_id),
-                    content=formatted_content,
+                    content=message,  # Raw message, no prefix
                     level=DBLogLevel(level) if level in ["debug", "info", "warning", "error"] else DBLogLevel.INFO,
                     node=node or "agent"
                 )
@@ -77,7 +75,7 @@ async def log_to_story(
         await connection_manager.broadcast_to_project({
             "type": "story_log",
             "story_id": story_id,
-            "content": formatted_content,
+            "content": message,  # Raw message, no prefix
             "level": level,
             "node": node,
             "timestamp": datetime.now(timezone.utc).isoformat()
@@ -85,7 +83,7 @@ async def log_to_story(
         
         # 3. Also log to standard logger for debugging
         log_func = getattr(logger, level if level in ["debug", "info", "warning", "error"] else "info")
-        log_func(f"[Story:{story_id[:8]}] {formatted_content}")
+        log_func(f"[Story:{story_id[:8]}] [{node}] {message}")
         
     except Exception as e:
         logger.debug(f"[log_to_story] Failed: {e}")
@@ -552,11 +550,24 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
     
     # Analyze error type
     
-    # 1. Prisma errors
+    # 1. Seed unique constraint errors (P2002) - NOT auto-fixable, needs LLM fix
+    seed_unique_patterns = [
+        r"Unique constraint failed on the fields:",
+        r"PrismaClientKnownRequestError:.*Unique constraint",
+        r"code: 'P2002'",
+        r"Error: P2002",
+    ]
+    if any(re.search(p, error_logs) for p in seed_unique_patterns):
+        result["error_type"] = "seed_unique_constraint"
+        result["auto_fixable"] = False
+        result["fix_strategy"] = "fix_seed_unique_constraint"
+        result["files_mentioned"].append("prisma/seed.ts")
+        return result
+    
+    # 2. Prisma client errors (auto-fixable)
     prisma_patterns = [
         r"Cannot find module '@prisma/client'",
         r"PrismaClient is unable to run",
-        r"Error: P\d{4}",  # Prisma error codes
         r"prisma generate",
     ]
     if any(re.search(p, error_logs) for p in prisma_patterns):
@@ -574,12 +585,14 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
         (r"Module not found.*['\"]([^'\"]+)['\"]", False),
     ]
     for pattern, is_local in import_patterns:
-        if re.search(pattern, error_logs):
+        match = re.search(pattern, error_logs)
+        if match:
             result["error_type"] = "import"
             result["is_local_import"] = is_local
+            result["missing_package"] = match.group(1)  # Extract package name
             if not is_local:
                 result["auto_fixable"] = True
-                result["fix_strategy"] = "npm_install"
+                result["fix_strategy"] = "pnpm_add"  # Use pnpm add instead of install
             else:
                 result["auto_fixable"] = False
                 result["fix_strategy"] = "fix_local_import"
@@ -656,20 +669,26 @@ async def try_auto_fix(
             await log.success("Auto-fix: Prisma regenerated")
             return True
         
-        elif strategy == "npm_install":
-            await log.info("Auto-fix: Running pnpm install...")
+        elif strategy == "pnpm_add":
+            missing_package = error_analysis.get("missing_package", "")
+            if not missing_package:
+                await log.warning("Auto-fix: No package name found")
+                return False
+            
+            await log.info(f"Auto-fix: Running pnpm add {missing_package}...")
             result = subprocess.run(
-                "pnpm install --frozen-lockfile",
+                f"pnpm add {missing_package}",
                 cwd=workspace_path,
                 shell=True,
                 capture_output=True,
                 timeout=120
             )
             if result.returncode == 0:
-                await log.success("Auto-fix: Dependencies installed")
+                await log.success(f"Auto-fix: Installed {missing_package}")
                 return True
             else:
-                await log.warning("Auto-fix: pnpm install failed")
+                stderr = result.stderr.decode() if result.stderr else ""
+                await log.warning(f"Auto-fix: pnpm add failed - {stderr[:200]}")
                 return False
         
         return False

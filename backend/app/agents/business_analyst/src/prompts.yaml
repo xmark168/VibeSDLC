@@ -339,45 +339,59 @@ tasks:
       </scope_rules>
 
       <invest_critical>
-      MOST IMPORTANT: Stories must be SMALL (S in INVEST), BUT still Valuable.
-      - Each story = 1-5 story points.
-      - 1–3 points is preferred for most stories.
-      - If a story would require 8 or 13 points → SPLIT it into 2-3 smaller, focused stories.
-      - One story = ONE user capability or behavior, NOT a single UI element.
+      Balance SMALL with COHESIVE - avoid over-splitting!
+      - Each story = 2-5 story points (preferred range).
+      - 3-5 points is ideal for most stories - meaningful work that delivers real value.
+      - Only split if story would require 13+ points OR has completely separate user flows.
+      - One story = ONE cohesive user experience or page, NOT individual UI components.
+      - PREFER fewer, more complete stories over many micro-stories.
       </invest_critical>
 
       <story_size_guide>
-      1 POINT (2-4 hours):
-        - Very small but still valuable behavior, e.g. display a simple section with real data,
-          basic click behavior that navigates somewhere useful, or a minimal view with an existing API.
-        - NOT just: changing colors, adding a label, or pure cosmetic tweaks.
       2 POINTS (4-8 hours):
-        - Simple form, basic list view, single API-backed display, simple filter, or basic interaction.
+        - Simple page or component with basic functionality.
       3 POINTS (1-2 days):
-        - Form with validation, filtered list, simple CRUD for a single entity, or an enriched view.
-      5 POINTS (2-3 days, MAX):
-        - More complex user flow, e.g. search with filters, a small multi-step flow, or advanced validation.
-      TOO BIG - MUST SPLIT:
-        - "Display featured books AND categories AND banners" → split into 3 stories.
-        - "Complete checkout flow" → split into: Cart summary, Payment form, Order confirmation.
-        - "User authentication" → split into: Login, Register, Password reset.
+        - Complete page with multiple sections (e.g., Homepage with hero + products + categories).
+        - Form with validation, filtered list, or enriched view.
+      5 POINTS (2-3 days):
+        - Complex page or multi-step flow (e.g., checkout process, user registration with verification).
+      8 POINTS (3-5 days) - OK if cohesive:
+        - Large feature that forms ONE complete user journey. Only split if it has distinct sub-flows.
+      ONLY SPLIT when:
+        - Story has 13+ points (epic-level).
+        - Story covers DISTINCT user journeys that could be released separately.
+        - Different user roles with different needs (customer view vs admin manage).
+      DO NOT SPLIT:
+        - A single page into separate stories for each section (header, content, footer).
+        - Navigation into separate stories for desktop vs mobile.
+        - UI variations that are part of the same feature.
       </story_size_guide>
 
-      <splitting_examples>
-      BAD (too big):
-        "As a customer, I want to see featured books and categories on homepage"
-      GOOD (split into):
-        - "As a customer, I want to see a hero banner so that I notice current promotions"
-        - "As a customer, I want to see featured books so that I discover popular items"
-        - "As a customer, I want to see category navigation so that I browse by type"
-
-      BAD (too big):
-        "As a customer, I want to use the navigation menu"
-      GOOD (split into):
-        - "As a customer, I want to see the main navigation bar so that I access key sections"
-        - "As a customer, I want to see my cart icon with count so that I know items in cart"
-        - "As a customer, I want a mobile hamburger menu so that I navigate on small screens"
-      </splitting_examples>
+      <cohesive_story_examples>
+      GOOD - One cohesive story:
+        "As a customer, I want to view the homepage so that I can discover products and navigate the site"
+        → Includes: hero banner, featured products, categories, navigation, footer
+        → 5 points, released together, tested together
+      
+      GOOD - One cohesive story:
+        "As a customer, I want to use the navigation menu so that I can access all sections of the site"
+        → Includes: desktop nav, mobile hamburger, cart icon, responsive behavior
+        → 3 points, all navigation tested together
+      
+      BAD - Over-split (avoid this):
+        - "Story 1: Display hero banner"
+        - "Story 2: Display featured products"
+        - "Story 3: Display navigation bar"
+        - "Story 4: Display categories"
+        - "Story 5: Display footer"
+        → These are NOT independent stories - they're parts of ONE homepage!
+      
+      WHEN TO SPLIT:
+        "Complete checkout flow" → Split because distinct user journeys:
+        - "Add items to cart and view cart" (can release first)
+        - "Enter shipping and payment info" (requires cart)
+        - "Order confirmation and email" (requires payment)
+      </cohesive_story_examples>
 
       <demo_rule>
       - Each story should represent a thin vertical slice (from UI down to data) that can be demonstrated.
@@ -399,18 +413,18 @@ tasks:
       </story_structure>
 
       <rules>
-      1. Create 2-6 SMALL, INVEST-compliant stories per epic, depending on the actual PRD scope.
-      2. Each story = ONE focused user capability that delivers visible value.
-      3. If you think "this needs 8+ points or many ACs" → SPLIT it into 2-3 smaller stories.
-      4. Requirements MUST fit on a "sticky note": 3-5 concise bullet points.
-      5. Acceptance criteria MUST be testable, clear Given/When/Then scenarios (2-4 each).
-      6. A developer should be able to finish each story in 1-2 days maximum.
-      7. Do NOT generate micro-stories such as:
-        - "change button color",
-        - "add a single label",
-        - "adjust padding".
-        These are tasks, not user stories.
+      1. Create 1-4 COHESIVE stories per epic - fewer is better if they deliver complete value.
+      2. Each story = ONE complete user experience (page, feature, or flow), NOT individual components.
+      3. Only split if story has 13+ points OR covers distinct, independently releasable user journeys.
+      4. Requirements: 3-6 items describing complete functionality (can be more for larger stories).
+      5. Acceptance criteria: 3-6 Given/When/Then scenarios covering the full experience.
+      6. A developer should be able to finish each story in 1-5 days (3-8 points).
+      7. Do NOT generate micro-stories for:
+        - Individual page sections (hero, footer, sidebar)
+        - UI variations (desktop vs mobile)
+        - Single UI elements (one button, one link)
       8. Do NOT invent unrelated features just to reach a target number of stories.
+      9. PREFER one 5-point story over five 1-point stories - cohesion matters!
       </rules>
 
     user_prompt: |
@@ -423,10 +437,12 @@ tasks:
       PRD Features:
       {prd_features}
 
-      Generate 2-6 SMALL, INVEST-compliant user stories for this epic.
-      - Only use features that are clearly supported by the Epic and PRD Features.
-      - Prefer several small, focused stories over one large story.
-      - Do NOT invent unrelated features or cosmetic-only stories.
+      Generate 1-4 COHESIVE user stories for this epic.
+      - Each story = ONE complete page or feature (not individual sections).
+      - PREFER fewer stories with complete functionality over many micro-stories.
+      - Example: Homepage should be 1-2 stories, NOT 5 separate stories for hero/products/nav/footer.
+      - Only split when user journeys are truly independent and can be released separately.
+      - Do NOT invent unrelated features or split pages into separate section stories.
 
 
   # ---------------------------------------------------------------------------

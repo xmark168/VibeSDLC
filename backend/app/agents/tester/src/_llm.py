@@ -13,7 +13,6 @@ from typing import List
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI
 
 from app.agents.tester.src.config import (
     MAX_RETRIES,
@@ -23,6 +22,7 @@ from app.agents.tester.src.config import (
     FAST_MODEL,
     COMPLEX_MODEL,
 )
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -117,41 +117,21 @@ def get_llm_for_skills(skills: List[str], temperature: float = 0) -> BaseChatMod
 
 
 def _create_llm(model: str, temperature: float, timeout: int) -> BaseChatModel:
-    """Create LLM instance for given model."""
-    # API keys and base URLs
-    openai_base_url = os.getenv("TESTER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
-    openai_api_key = os.getenv("TESTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-    anthropic_base_url = os.getenv("TESTER_ANTHROPIC_BASE_URL") or os.getenv("ANTHROPIC_API_BASE")
-    anthropic_api_key = os.getenv("TESTER_ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or openai_api_key
+    """Create LLM instance for given model using Anthropic API only."""
+    # Use settings from config.py, fallback to env vars for backward compatibility
+    anthropic_base_url = settings.ANTHROPIC_API_BASE or os.getenv("ANTHROPIC_API_BASE", "https://api.anthropic.com")
+    anthropic_api_key = settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
     
-    # Use ChatAnthropic for Claude models
-    if "claude" in model.lower():
-        kwargs = {
-            "model": model,
-            "temperature": temperature,
-            "max_tokens": 16384,
-            "timeout": timeout,
-            "max_retries": MAX_RETRIES,
-        }
-        if anthropic_base_url:
-            kwargs["base_url"] = anthropic_base_url
-        if anthropic_api_key:
-            kwargs["api_key"] = anthropic_api_key
-        return ChatAnthropic(**kwargs)
-    
-    # Use ChatOpenAI for GPT models (default)
     kwargs = {
         "model": model,
         "temperature": temperature,
+        "max_tokens": 16384,
         "timeout": timeout,
         "max_retries": MAX_RETRIES,
+        "base_url": anthropic_base_url,
+        "api_key": anthropic_api_key,
     }
-    if openai_base_url:
-        kwargs["base_url"] = openai_base_url
-    if openai_api_key:
-        kwargs["api_key"] = openai_api_key
-    
-    return ChatOpenAI(**kwargs)
+    return ChatAnthropic(**kwargs)
 
 
 # =============================================================================
