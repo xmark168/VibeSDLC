@@ -34,39 +34,6 @@ class WIPLimitsPublic(SQLModel):
     count: int
 
 
-class WorkflowPolicyCreate(SQLModel):
-    project_id: UUID
-    from_status: str
-    to_status: str
-    criteria: Optional[dict[str, Any]] = None
-    is_active: bool = Field(default=True)
-
-
-class WorkflowPolicyUpdate(SQLModel):
-    criteria: Optional[dict[str, Any]] = None
-    is_active: Optional[bool] = None
-    definition_of_ready: Optional[list[str]] = None
-    definition_of_done: Optional[list[str]] = None
-
-
-class WorkflowPolicyPublic(SQLModel):
-    id: UUID
-    project_id: UUID
-    from_status: str
-    to_status: str
-    criteria: Optional[dict[str, Any]] = None
-    is_active: bool
-    definition_of_ready: Optional[list[str]] = None
-    definition_of_done: Optional[list[str]] = None
-    created_at: datetime
-    updated_at: datetime
-
-
-class WorkflowPoliciesPublic(SQLModel):
-    data: list[WorkflowPolicyPublic]
-    count: int
-
-
 class StoryFlowMetrics(SQLModel):
     id: UUID
     title: str

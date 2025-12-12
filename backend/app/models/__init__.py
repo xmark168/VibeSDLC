@@ -57,7 +57,6 @@ from app.models.agent import (
 # Project models
 from app.models.project import (
     Project,
-    WorkflowPolicy,
     ProjectRules,
     ProjectPreference,
 )
@@ -137,7 +136,6 @@ __all__ = [
     "Agent",
     # Project
     "Project",
-    "WorkflowPolicy",
     "ProjectRules",
     "ProjectPreference",
     # Story

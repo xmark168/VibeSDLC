@@ -79,19 +79,6 @@ class Project(BaseModel, table=True):
     )
 
 
-class WorkflowPolicy(BaseModel, table=True):
-    __tablename__ = "workflow_policies"
-
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
-    from_status: str = Field(max_length=50, nullable=False)
-    to_status: str = Field(max_length=50, nullable=False)
-    criteria: dict | None = Field(default=None, sa_column=Column(JSON))
-    required_role: str | None = Field(default=None, max_length=50)
-    is_active: bool = Field(default=True, nullable=False)
-
-    project: "Project" = Relationship()
-
-
 class ProjectRules(BaseModel, table=True):
     __tablename__ = "projectrules"
 

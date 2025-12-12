@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 from sqlmodel import Session, select, update, and_, func
 from sqlalchemy.sql import ColumnElement
 
-from app.models import Story, StoryStatus, StoryType, IssueActivity, Project, WorkflowPolicy
+from app.models import Story, StoryStatus, StoryType, IssueActivity, Project
 from app.schemas.story import StoryCreate, StoryUpdate, StoryPublic
 
 logger = logging.getLogger(__name__)
@@ -1006,35 +1006,6 @@ class StoryService:
                 except (ValueError, AttributeError):
                     # Invalid UUID format in dependencies, skip validation
                     pass
-
-        # Validate workflow policies
-        policy = self.session.exec(
-            select(WorkflowPolicy).where(
-                and_(
-                    WorkflowPolicy.project_id == story.project_id,
-                    WorkflowPolicy.from_status == old_status.value,
-                    WorkflowPolicy.to_status == new_status.value,
-                    WorkflowPolicy.is_active == True
-                )
-            )
-        ).first()
-
-        if policy and policy.criteria:
-            violations = []
-            if policy.criteria.get("assignee_required") and not story.assignee_id:
-                violations.append("Story must have an assignee")
-            if policy.criteria.get("acceptance_criteria_defined") and not story.acceptance_criteria:
-                violations.append("Acceptance criteria must be defined")
-            if policy.criteria.get("story_points_estimated") and not story.story_point:
-                violations.append("Story points must be estimated")
-
-            if violations:
-                raise PermissionError({
-                    "error": "POLICY_VIOLATION",
-                    "message": "Workflow policy not satisfied",
-                    "violations": violations,
-                    "policy": {"from": old_status.value, "to": new_status.value}
-                })
 
         # Update status and timestamps
         story.status = new_status

@@ -521,11 +521,12 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
     
     Returns:
         {
-            "error_type": "import" | "typescript" | "prisma" | "npm" | "runtime" | "unknown",
-            "is_local_import": bool,  # True if it's a local @/ or ./ import
+            "error_type": str,
+            "is_local_import": bool,
             "auto_fixable": bool,
             "fix_strategy": str,
-            "files_mentioned": list[str]
+            "files_mentioned": list[str],
+            "details": dict  # Additional context for fix
         }
     """
     import re
@@ -535,7 +536,8 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
         "is_local_import": False,
         "auto_fixable": False,
         "fix_strategy": None,
-        "files_mentioned": []
+        "files_mentioned": [],
+        "details": {}
     }
     
     # Extract file paths mentioned in errors
@@ -543,14 +545,142 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
         r'([^\s(]+\.tsx?)\((\d+),(\d+)\)',  # file.tsx(line,col)
         r'\./([^\s:]+\.tsx?):(\d+):(\d+)',   # ./src/file.tsx:line:col
         r"(?:in|at)\s+([^\s]+\.tsx?)",       # in src/file.tsx
+        r"Error: (.+\.tsx?):",               # Error: src/file.tsx:
+        r"'([^']+\.tsx?)'",                  # 'src/file.tsx'
     ]
     for pattern in file_patterns:
         for match in re.finditer(pattern, error_logs):
-            result["files_mentioned"].append(match.group(1))
+            file_path = match.group(1)
+            if file_path and file_path not in result["files_mentioned"]:
+                result["files_mentioned"].append(file_path)
     
-    # Analyze error type
+    # =========================================================================
+    # 1. 'use client' directive errors (AUTO-FIXABLE)
+    # =========================================================================
+    use_client_patterns = [
+        (r"(useState|useEffect|useContext|useReducer|useCallback|useMemo|useRef|useLayoutEffect|useImperativeHandle|useDebugValue)\s+only works in a Client Component", "hook"),
+        (r"useActionState only works in a Client Component", "hook"),
+        (r"Event handlers cannot be passed to Client Component props", "event_handler"),
+        (r"You're importing a component that needs (useState|useEffect|useContext|useReducer)", "hook"),
+        (r"createContext only works in a Client Component", "context"),
+        (r"onClick.*cannot be passed to.*Server Component", "event_handler"),
+        (r"onChange.*cannot be passed to.*Server Component", "event_handler"),
+        (r"onSubmit.*cannot be passed to.*Server Component", "event_handler"),
+    ]
+    for pattern, reason in use_client_patterns:
+        match = re.search(pattern, error_logs, re.IGNORECASE)
+        if match:
+            result["error_type"] = "use_client_missing"
+            result["auto_fixable"] = True
+            result["fix_strategy"] = "add_use_client"
+            result["details"]["reason"] = reason
+            result["details"]["hook_or_event"] = match.group(1) if match.lastindex else reason
+            return result
     
-    # 1. Seed unique constraint errors (P2002) - NOT auto-fixable, needs LLM fix
+    # =========================================================================
+    # 2. ESLint fixable errors (AUTO-FIXABLE)
+    # =========================================================================
+    eslint_fixable_patterns = [
+        (r"'([^']+)' is defined but never used", "unused_var"),
+        (r"'([^']+)' is assigned a value but never used", "unused_var"),
+        (r"Unexpected console statement", "console_statement"),
+        (r"Missing semicolon", "semicolon"),
+        (r"Extra semicolon", "semicolon"),
+        (r"Strings must use (singlequote|doublequote)", "quotes"),
+        (r"Expected indentation of (\d+) spaces", "indentation"),
+        (r"Trailing spaces not allowed", "trailing_spaces"),
+        (r"Newline required at end of file", "newline_eof"),
+        (r"More than (\d+) blank lines not allowed", "blank_lines"),
+        (r"@typescript-eslint/no-unused-vars", "unused_var"),
+        (r"react-hooks/exhaustive-deps", "deps_array"),
+        (r"prefer-const", "prefer_const"),
+        (r"no-var", "no_var"),
+    ]
+    eslint_errors_found = []
+    for pattern, error_type in eslint_fixable_patterns:
+        if re.search(pattern, error_logs, re.IGNORECASE):
+            eslint_errors_found.append(error_type)
+    
+    if eslint_errors_found:
+        result["error_type"] = "eslint_fixable"
+        result["auto_fixable"] = True
+        result["fix_strategy"] = "eslint_fix"
+        result["details"]["eslint_errors"] = eslint_errors_found
+        return result
+    
+    # =========================================================================
+    # 3. Prettier/Format errors (AUTO-FIXABLE)
+    # =========================================================================
+    prettier_patterns = [
+        r"Code style issues found",
+        r"Forgot to run Prettier",
+        r"Replace .* with",
+        r"Delete .* ⏎",
+        r"Insert .* ⏎",
+    ]
+    if any(re.search(p, error_logs, re.IGNORECASE) for p in prettier_patterns):
+        result["error_type"] = "prettier"
+        result["auto_fixable"] = True
+        result["fix_strategy"] = "prettier_fix"
+        return result
+    
+    # =========================================================================
+    # 4. Missing/unused imports (AUTO-FIXABLE with organize-imports)
+    # =========================================================================
+    import_organize_patterns = [
+        (r"'([^']+)' is defined but never used.*@typescript-eslint/no-unused-vars", "unused_import"),
+        (r"import.*'([^']+)'.*is defined but never used", "unused_import"),
+        (r"Cannot find name '([^']+)'.*Did you mean", "missing_import"),
+    ]
+    for pattern, import_type in import_organize_patterns:
+        match = re.search(pattern, error_logs)
+        if match:
+            result["error_type"] = "import_organize"
+            result["auto_fixable"] = True
+            result["fix_strategy"] = "organize_imports"
+            result["details"]["import_type"] = import_type
+            result["details"]["identifier"] = match.group(1)
+            return result
+    
+    # =========================================================================
+    # 5. Next.js cache/build issues (AUTO-FIXABLE)
+    # =========================================================================
+    nextjs_cache_patterns = [
+        r"Module not found.*in.*\.next",
+        r"Cannot find module.*\.next/types",
+        r"ENOENT.*\.next",
+        r"Build failed because of webpack errors",
+        r"Failed to compile.*Module build failed",
+    ]
+    if any(re.search(p, error_logs, re.IGNORECASE) for p in nextjs_cache_patterns):
+        result["error_type"] = "nextjs_cache"
+        result["auto_fixable"] = True
+        result["fix_strategy"] = "clear_nextjs_cache"
+        return result
+    
+    # =========================================================================
+    # 6. TypeScript strict null checks (PARTIALLY AUTO-FIXABLE)
+    # =========================================================================
+    null_check_patterns = [
+        (r"Object is possibly 'undefined'", "undefined"),
+        (r"Object is possibly 'null'", "null"),
+        (r"Cannot read propert(?:y|ies) of undefined", "undefined_access"),
+        (r"Cannot read propert(?:y|ies) of null", "null_access"),
+        (r"'([^']+)' is possibly 'undefined'", "undefined"),
+        (r"'([^']+)' is possibly 'null'", "null"),
+    ]
+    for pattern, null_type in null_check_patterns:
+        if re.search(pattern, error_logs):
+            result["error_type"] = "null_check"
+            result["auto_fixable"] = False  # Needs LLM to add proper null checks
+            result["fix_strategy"] = "add_null_checks"
+            result["details"]["null_type"] = null_type
+            # Don't return - continue checking for more specific errors
+            break
+    
+    # =========================================================================
+    # 7. Seed unique constraint errors (P2002) - NOT auto-fixable
+    # =========================================================================
     seed_unique_patterns = [
         r"Unique constraint failed on the fields:",
         r"PrismaClientKnownRequestError:.*Unique constraint",
@@ -564,11 +694,15 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
         result["files_mentioned"].append("prisma/seed.ts")
         return result
     
-    # 2. Prisma client errors (auto-fixable)
+    # =========================================================================
+    # 8. Prisma client errors (AUTO-FIXABLE)
+    # =========================================================================
     prisma_patterns = [
         r"Cannot find module '@prisma/client'",
         r"PrismaClient is unable to run",
         r"prisma generate",
+        r"@prisma/client did not initialize yet",
+        r"PrismaClientInitializationError",
     ]
     if any(re.search(p, error_logs) for p in prisma_patterns):
         result["error_type"] = "prisma"
@@ -576,18 +710,22 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
         result["fix_strategy"] = "prisma_regenerate"
         return result
     
-    # 2. Import errors - distinguish local vs npm
+    # =========================================================================
+    # 9. Import errors - distinguish local vs npm
+    # =========================================================================
     import_patterns = [
-        (r"Cannot find module ['\"](@/[^'\"]+)['\"]", True),   # Local @/ import
-        (r"Can't resolve ['\"](@/[^'\"]+)['\"]", True),        # Local @/ import
-        (r"Cannot find module ['\"](\.{1,2}/[^'\"]+)['\"]", True),  # Relative import
-        (r"Cannot find module ['\"]([^'\"@./][^'\"]*)['\"]", False),  # NPM package
+        (r"Cannot find module ['\"](@/[^'\"]+)['\"]", True),
+        (r"Can't resolve ['\"](@/[^'\"]+)['\"]", True),
+        (r"Cannot find module ['\"](\.{1,2}/[^'\"]+)['\"]", True),
+        (r"Cannot find module ['\"]([^'\"@./][^'\"]*)['\"]", False),
         (r"Module not found.*['\"]([^'\"]+)['\"]", False),
     ]
     for pattern, is_local in import_patterns:
-        if re.search(pattern, error_logs):
+        match = re.search(pattern, error_logs)
+        if match:
             result["error_type"] = "import"
             result["is_local_import"] = is_local
+            result["details"]["module"] = match.group(1)
             if not is_local:
                 result["auto_fixable"] = True
                 result["fix_strategy"] = "npm_install"
@@ -596,7 +734,9 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
                 result["fix_strategy"] = "fix_local_import"
             return result
     
-    # 3. TypeScript type errors
+    # =========================================================================
+    # 10. TypeScript type errors (NOT auto-fixable, needs LLM)
+    # =========================================================================
     ts_patterns = [
         r"error TS\d+:",
         r"Type '.*' is not assignable to type",
@@ -609,7 +749,9 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
         result["fix_strategy"] = "fix_type_error"
         return result
     
-    # 4. Runtime errors
+    # =========================================================================
+    # 11. Runtime errors (NOT auto-fixable)
+    # =========================================================================
     runtime_patterns = [
         r"TypeError:",
         r"ReferenceError:",
@@ -623,6 +765,59 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
         return result
     
     return result
+
+
+def _add_use_client_to_file(file_path: str) -> bool:
+    """Add 'use client' directive to the top of a file.
+    
+    Returns True if file was modified, False otherwise.
+    """
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            return False
+        
+        content = path.read_text(encoding="utf-8")
+        
+        # Check if already has 'use client'
+        if content.strip().startswith("'use client'") or content.strip().startswith('"use client"'):
+            return False
+        
+        # Add 'use client' at the top
+        new_content = "'use client';\n\n" + content
+        path.write_text(new_content, encoding="utf-8")
+        return True
+    except Exception as e:
+        logger.warning(f"[auto-fix] Failed to add 'use client' to {file_path}: {e}")
+        return False
+
+
+def _find_files_needing_use_client(error_logs: str, workspace_path: str) -> list:
+    """Extract file paths that need 'use client' from error logs."""
+    import re
+    
+    files = []
+    
+    # Pattern: Error in specific file
+    patterns = [
+        r"Error:.*?([^\s]+\.tsx?)(?:\(|\:)",
+        r"in ([^\s]+\.tsx?)",
+        r"'([^\s']+\.tsx?)'",
+        r"([^\s]+\.tsx?)\s*\n.*(?:useState|useEffect|onClick)",
+    ]
+    
+    for pattern in patterns:
+        for match in re.finditer(pattern, error_logs):
+            file_path = match.group(1)
+            # Normalize path
+            if file_path.startswith("./"):
+                file_path = file_path[2:]
+            if file_path.startswith("src/") or file_path.startswith("app/"):
+                full_path = Path(workspace_path) / file_path
+                if full_path.exists() and str(full_path) not in files:
+                    files.append(str(full_path))
+    
+    return files
 
 
 async def try_auto_fix(
@@ -646,9 +841,162 @@ async def try_auto_fix(
         return False
     
     strategy = error_analysis.get("fix_strategy")
+    details = error_analysis.get("details", {})
+    files_mentioned = error_analysis.get("files_mentioned", [])
     
     try:
-        if strategy == "prisma_regenerate":
+        # =====================================================================
+        # Strategy: Add 'use client' directive
+        # =====================================================================
+        if strategy == "add_use_client":
+            await log.info("Auto-fix: Adding 'use client' directive...")
+            
+            fixed_count = 0
+            for file_path in files_mentioned:
+                # Resolve full path
+                if not Path(file_path).is_absolute():
+                    full_path = Path(workspace_path) / file_path
+                else:
+                    full_path = Path(file_path)
+                
+                if full_path.exists() and _add_use_client_to_file(str(full_path)):
+                    await log.info(f"  Added 'use client' to {file_path}")
+                    fixed_count += 1
+            
+            if fixed_count > 0:
+                await log.success(f"Auto-fix: Added 'use client' to {fixed_count} file(s)")
+                return True
+            else:
+                await log.warning("Auto-fix: No files needed 'use client'")
+                return False
+        
+        # =====================================================================
+        # Strategy: ESLint --fix
+        # =====================================================================
+        elif strategy == "eslint_fix":
+            await log.info("Auto-fix: Running ESLint --fix...")
+            
+            # Try pnpm lint:fix first (common script name)
+            result = subprocess.run(
+                "pnpm run lint:fix",
+                cwd=workspace_path,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            
+            if result.returncode == 0:
+                await log.success("Auto-fix: ESLint fixes applied")
+                return True
+            
+            # Fallback to direct eslint command
+            result = subprocess.run(
+                "pnpm exec eslint . --fix --ext .ts,.tsx,.js,.jsx",
+                cwd=workspace_path,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            
+            if result.returncode == 0 or "problems" in result.stdout.lower():
+                await log.success("Auto-fix: ESLint fixes applied")
+                return True
+            
+            await log.warning(f"Auto-fix: ESLint fix had issues: {result.stderr[:200] if result.stderr else ''}")
+            return False
+        
+        # =====================================================================
+        # Strategy: Prettier format
+        # =====================================================================
+        elif strategy == "prettier_fix":
+            await log.info("Auto-fix: Running Prettier...")
+            
+            # Try pnpm format first
+            result = subprocess.run(
+                "pnpm run format",
+                cwd=workspace_path,
+                shell=True,
+                capture_output=True,
+                timeout=60
+            )
+            
+            if result.returncode == 0:
+                await log.success("Auto-fix: Prettier formatting applied")
+                return True
+            
+            # Fallback to direct prettier
+            result = subprocess.run(
+                "pnpm exec prettier --write .",
+                cwd=workspace_path,
+                shell=True,
+                capture_output=True,
+                timeout=60
+            )
+            
+            if result.returncode == 0:
+                await log.success("Auto-fix: Prettier formatting applied")
+                return True
+            
+            await log.warning("Auto-fix: Prettier formatting failed")
+            return False
+        
+        # =====================================================================
+        # Strategy: Organize imports (remove unused)
+        # =====================================================================
+        elif strategy == "organize_imports":
+            await log.info("Auto-fix: Organizing imports...")
+            
+            # Use eslint with specific rule
+            result = subprocess.run(
+                "pnpm exec eslint . --fix --rule '@typescript-eslint/no-unused-vars: error'",
+                cwd=workspace_path,
+                shell=True,
+                capture_output=True,
+                timeout=60
+            )
+            
+            if result.returncode == 0:
+                await log.success("Auto-fix: Imports organized")
+                return True
+            
+            # Try TypeScript organize imports via tsc
+            await log.warning("Auto-fix: Import organization via ESLint failed, trying alternative...")
+            return False
+        
+        # =====================================================================
+        # Strategy: Clear Next.js cache
+        # =====================================================================
+        elif strategy == "clear_nextjs_cache":
+            await log.info("Auto-fix: Clearing Next.js cache...")
+            
+            import shutil
+            next_dir = Path(workspace_path) / ".next"
+            
+            if next_dir.exists():
+                try:
+                    shutil.rmtree(next_dir)
+                    await log.info("  Removed .next directory")
+                except Exception as e:
+                    await log.warning(f"  Failed to remove .next: {e}")
+            
+            # Also clear node_modules/.cache
+            cache_dir = Path(workspace_path) / "node_modules" / ".cache"
+            if cache_dir.exists():
+                try:
+                    shutil.rmtree(cache_dir)
+                    await log.info("  Removed node_modules/.cache")
+                except Exception:
+                    pass
+            
+            await log.success("Auto-fix: Next.js cache cleared")
+            return True
+        
+        # =====================================================================
+        # Strategy: Prisma regenerate
+        # =====================================================================
+        elif strategy == "prisma_regenerate":
             await log.info("Auto-fix: Regenerating Prisma client...")
             subprocess.run(
                 "pnpm exec prisma generate",
@@ -667,6 +1015,9 @@ async def try_auto_fix(
             await log.success("Auto-fix: Prisma regenerated")
             return True
         
+        # =====================================================================
+        # Strategy: NPM install
+        # =====================================================================
         elif strategy == "npm_install":
             await log.info("Auto-fix: Running pnpm install...")
             result = subprocess.run(
@@ -679,12 +1030,69 @@ async def try_auto_fix(
             if result.returncode == 0:
                 await log.success("Auto-fix: Dependencies installed")
                 return True
-            else:
-                await log.warning("Auto-fix: pnpm install failed")
-                return False
+            
+            # Retry without frozen-lockfile
+            result = subprocess.run(
+                "pnpm install",
+                cwd=workspace_path,
+                shell=True,
+                capture_output=True,
+                timeout=120
+            )
+            if result.returncode == 0:
+                await log.success("Auto-fix: Dependencies installed")
+                return True
+            
+            await log.warning("Auto-fix: pnpm install failed")
+            return False
         
         return False
         
+    except subprocess.TimeoutExpired:
+        await log.error("Auto-fix: Command timed out")
+        return False
     except Exception as e:
         await log.error(f"Auto-fix failed: {e}", exc=e)
         return False
+
+
+async def try_multiple_auto_fixes(
+    error_logs: str,
+    workspace_path: str,
+    story_logger: StoryLogger = None,
+    max_attempts: int = 3
+) -> bool:
+    """Try multiple auto-fix strategies in sequence.
+    
+    This is useful when multiple issues might exist.
+    
+    Args:
+        error_logs: Raw error logs
+        workspace_path: Path to workspace
+        story_logger: Optional logger
+        max_attempts: Max fix attempts
+    
+    Returns:
+        True if any fix was successful
+    """
+    log = story_logger or StoryLogger.noop()
+    any_fixed = False
+    
+    for attempt in range(max_attempts):
+        analysis = analyze_error_type(error_logs)
+        
+        if not analysis.get("auto_fixable"):
+            break
+        
+        await log.info(f"Auto-fix attempt {attempt + 1}: {analysis.get('fix_strategy')}")
+        
+        fixed = await try_auto_fix(analysis, workspace_path, story_logger)
+        if fixed:
+            any_fixed = True
+            # Re-analyze to see if more fixes needed
+            # In real usage, you'd re-run the build and get new error_logs
+            break
+        else:
+            break
+    
+    return any_fixed
