@@ -93,14 +93,11 @@ import {
   ShieldAlert,
   Ban,
   Settings,
-  Shield,
-  Timer,
-  Thermometer,
 } from "lucide-react"
 import { toast } from "@/lib/toast"
 import { formatDistanceToNow } from "date-fns"
 import { MetricCard } from "@/components/admin"
-import { PersonasTab, ActivityTab, AgentConfigDialog, BulkActionsToolbar, SpawnAgentDialog, CircuitBreakerTab, SLAMonitoringTab, WarmPoolTab } from "@/components/admin/agents"
+import { ActivityTab, AgentConfigDialog, BulkActionsToolbar, SpawnAgentDialog } from "@/components/admin/agents"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AdminLayout } from "@/components/admin/AdminLayout"
 
@@ -148,7 +145,7 @@ function AgentAdminPage() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-9">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="pools">
             <Server className="w-4 h-4 mr-2" />
             Pools
@@ -156,10 +153,6 @@ function AgentAdminPage() {
           <TabsTrigger value="agents">
             <Users className="w-4 h-4 mr-2" />
             Agents
-          </TabsTrigger>
-          <TabsTrigger value="personas">
-            <Users className="w-4 h-4 mr-2" />
-            Personas
           </TabsTrigger>
           <TabsTrigger value="activity">
             <Activity className="w-4 h-4 mr-2" />
@@ -173,18 +166,6 @@ function AgentAdminPage() {
             <History className="w-4 h-4 mr-2" />
             Executions
           </TabsTrigger>
-          <TabsTrigger value="circuit-breaker">
-            <Shield className="w-4 h-4 mr-2" />
-            Circuit Breaker
-          </TabsTrigger>
-          <TabsTrigger value="sla">
-            <Timer className="w-4 h-4 mr-2" />
-            SLA
-          </TabsTrigger>
-          <TabsTrigger value="warm-pool">
-            <Thermometer className="w-4 h-4 mr-2" />
-            Warm Pool
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="pools" className="mt-6">
@@ -193,10 +174,6 @@ function AgentAdminPage() {
 
         <TabsContent value="agents" className="mt-6">
           <AgentsTab healthData={healthData} pools={pools || []} isLoading={healthLoading} />
-        </TabsContent>
-
-        <TabsContent value="personas" className="mt-6">
-          <PersonasTab />
         </TabsContent>
 
         <TabsContent value="activity" className="mt-6">
@@ -209,18 +186,6 @@ function AgentAdminPage() {
 
         <TabsContent value="executions" className="mt-6">
           <ExecutionsTab executions={executions || []} isLoading={executionsLoading} />
-        </TabsContent>
-
-        <TabsContent value="circuit-breaker" className="mt-6">
-          <CircuitBreakerTab />
-        </TabsContent>
-
-        <TabsContent value="sla" className="mt-6">
-          <SLAMonitoringTab />
-        </TabsContent>
-
-        <TabsContent value="warm-pool" className="mt-6">
-          <WarmPoolTab />
         </TabsContent>
       </Tabs>
     </div>

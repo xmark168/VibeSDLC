@@ -2722,5 +2722,3 @@ async def trigger_auto_scaling_rule(
             "agents_terminated": terminated,
         }
 
-
-
