@@ -105,16 +105,19 @@ tasks:
       }}
       
       **is_update_request field:**
-      - Set to TRUE when user explicitly wants to UPDATE/EDIT/MODIFY existing content:
+      - Set to TRUE when user wants to UPDATE/EDIT/ADD TO existing project:
+        - "thêm feature X", "thêm tính năng X", "thêm chức năng X" (add feature)
+        - "bổ sung thêm X", "cần thêm X", "muốn có thêm X" (add more)
         - "sửa story X", "edit story", "update story"
-        - "thêm feature Y vào", "add feature to existing"
         - "bỏ requirement Z", "remove requirement", "xóa requirement"
         - "thay đổi acceptance criteria", "modify description"
-        - "cập nhật PRD", "update PRD"
-      - Set to FALSE for vague/new project requests:
-        - "tôi muốn làm website bán hàng" (new project)
-        - "tạo app quản lý" (new project)
-        - General questions without specific edit intent
+        - "cập nhật PRD", "update PRD", "sửa PRD"
+        - "web cần có thêm X", "app cần thêm X" (add to existing)
+      - Set to FALSE ONLY for completely NEW project requests:
+        - "tôi muốn làm website bán hàng" (create new project)
+        - "tạo app quản lý" (create new project)
+        - "xây dựng hệ thống mới" (build new system)
+      - IMPORTANT: If user already has a project and mentions adding/editing features → TRUE
 
       # ROUTING EXAMPLES
       
@@ -134,6 +137,23 @@ tasks:
          → action: DELEGATE, target_role: business_analyst
          → message: "Mình sẽ chuyển cho BA để bắt đầu phân tích yêu cầu app của bạn nhé!"
          → ❌ WRONG: "App gì vậy bạn? Có thể mô tả thêm không?" (DO NOT ASK!)
+      
+      **Update/Add Feature to Existing Project (→ business_analyst, is_update_request=TRUE):**
+      ✅ "thêm feature đánh giá sản phẩm"
+         → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
+         → message: "OK! Mình chuyển cho BA để thêm feature đánh giá sản phẩm vào project nhé 📝"
+      
+      ✅ "bổ sung thêm chức năng chat"
+         → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
+         → message: "Đã nhận! Chuyển cho BA bổ sung chức năng chat nhé 💬"
+      
+      ✅ "cần thêm phần quản lý kho"
+         → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
+         → message: "OK! BA sẽ thêm phần quản lý kho vào project nhé 📦"
+      
+      ✅ "sửa PRD thêm tính năng wishlist"
+         → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
+         → message: "Đã nhận! Chuyển cho BA cập nhật PRD với tính năng wishlist 📋"
       
       **Implementation Tasks (→ developer):**
       ✅ "implement story #123"

@@ -1609,6 +1609,32 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         story_id_map = {}  # Map string ID (EPIC-001-US-001) to actual UUID
         
         with Session(engine) as session:
+            # 0. Delete existing epics and stories for this project to avoid duplicates
+            # This handles the case when user updates PRD and regenerates stories
+            existing_stories = session.exec(
+                select(Story).where(Story.project_id == agent.project_id)
+            ).all()
+            existing_epics = session.exec(
+                select(Epic).where(Epic.project_id == agent.project_id)
+            ).all()
+            
+            if existing_stories or existing_epics:
+                # Log story_codes being deleted for debugging
+                existing_codes = [s.story_code for s in existing_stories if s.story_code]
+                logger.info(
+                    f"[BA] Deleting {len(existing_stories)} existing stories "
+                    f"(codes: {existing_codes[:5]}{'...' if len(existing_codes) > 5 else ''}) "
+                    f"and {len(existing_epics)} existing epics for project {agent.project_id}"
+                )
+                for story in existing_stories:
+                    session.delete(story)
+                for epic in existing_epics:
+                    session.delete(epic)
+                # Must COMMIT (not just flush) to ensure DELETEs are persisted
+                # before INSERTs with same story_code values
+                session.commit()
+                logger.info(f"[BA] DELETE committed successfully, proceeding with INSERT")
+            
             # 1. Create all Epics at once
             epic_objects = []
             for epic_data in epics_data:

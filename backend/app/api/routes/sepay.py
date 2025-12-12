@@ -124,7 +124,7 @@ def create_sepay_credit_purchase(
         raise HTTPException(status_code=400, detail="No active subscription found")
     
     plan_service = PlanService(session)
-    plan = plan_service.get_by_code(subscription.plan_code)
+    plan = plan_service.get_by_id(subscription.plan_id)
     
     if not plan or not plan.additional_credit_price:
         raise HTTPException(status_code=400, detail="Credit purchase not available")
@@ -235,7 +235,15 @@ async def check_sepay_status(
                 )
             
             data = response.json()
-            transactions = data.get("transactions", [])
+            logger.info(f"SePay API response: {data}")
+            
+            # Handle both formats: {"transactions": [...]} or direct list
+            if isinstance(data, list):
+                transactions = data
+            else:
+                transactions = data.get("transactions", [])
+            
+            logger.info(f"Found {len(transactions)} transactions, looking for code: {order.sepay_transaction_code}")
             
             # Check if transaction code exists in recent transactions
             for tx in transactions:

@@ -1,6 +1,6 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { AnimatePresence, easeOut, motion } from "framer-motion"
-import { Loader2, Plus } from "lucide-react"
+import { Crown, Loader2, Plus } from "lucide-react"
 import { useState } from "react"
 import { projectsApi } from "@/apis/projects"
 import { CreateProjectModal } from "@/components/projects/create-project-modal"
@@ -16,6 +16,8 @@ import { ApiError, ProjectsListProjectsResponse, ProjectsService } from "@/clien
 import { handleError } from "@/utils"
 import { requireRole } from "@/utils/auth"
 import { useAppStore } from "@/stores/auth-store"
+import { useCurrentSubscription } from "@/queries/subscription"
+import AttractButton from "@/components/kokonutui/acttract-button"
 
 export const Route = createFileRoute("/_user/projects")({
   beforeLoad: async () => {
@@ -32,6 +34,13 @@ function ProjectsPage() {
     queryKey: ["list-project"],
     queryFn: () => ProjectsService.listProjects(),
   })
+  const { data: subscriptionData } = useCurrentSubscription()
+  
+  // Get project limit from subscription plan
+  const projectLimit = subscriptionData?.subscription?.plan?.available_project
+  const currentProjectCount = listProjectPublic?.data?.length || 0
+  const isAtLimit = projectLimit !== null && projectLimit !== undefined && projectLimit !== -1 && currentProjectCount >= projectLimit
+  const planName = subscriptionData?.subscription?.plan?.name || "Free"
 
   const handleNewProjectClick = () => {
     setShowCreateModal(true)
@@ -136,16 +145,35 @@ function ProjectsPage() {
               >
                 <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-muted/50">
                   <span className="font-semibold text-foreground">
-                    {listProjectPublic?.data?.length || 0}
+                    {currentProjectCount}
+                    {projectLimit !== null && projectLimit !== undefined && projectLimit !== -1 && (
+                      <span className="text-muted-foreground font-normal">/{projectLimit}</span>
+                    )}
                   </span>
                   <span className="text-muted-foreground">
-                    {(listProjectPublic?.data?.length || 0) === 1 ? 'Project' : 'Projects'}
+                    {currentProjectCount === 1 ? 'Project' : 'Projects'}
                   </span>
                 </div>
-                <div className="h-4 w-px bg-border" />
-                <span className="text-muted-foreground">
-                  Last updated: Today
-                </span>
+                {projectLimit !== null && projectLimit !== undefined && projectLimit !== -1 && (
+                  <>
+                    <div className="h-4 w-px bg-border" />
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
+                      <Crown className="h-3 w-3" />
+                      {planName} Plan
+                    </div>
+                  </>
+                )}
+                {isAtLimit && (
+                  <>
+                    <div className="h-4 w-px bg-border" />
+                    <Link to="/upgrade">
+                      <AttractButton
+                        content="Upgrade for more projects"
+                        icon="crown"
+                      />
+                    </Link>
+                  </>
+                )}
               </motion.div>
             </motion.div>
 

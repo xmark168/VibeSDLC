@@ -1,6 +1,6 @@
 
 import type React from "react"
-
+import { Rive, RiveFile } from '@rive-app/react-webgl2';
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,7 +17,16 @@ import { useProjectAgents } from "@/queries/agents"
 import { useQueryClient } from "@tanstack/react-query"
 import type { AgentPublic } from "@/client/types.gen"
 import { filesApi } from "@/apis/files"
-
+import {
+  useRive,
+  Layout,
+  Fit,
+  Alignment,
+  useViewModel,
+  useViewModelInstance,
+  useViewModelInstanceNumber,
+  useViewModelInstanceTrigger,
+} from "@rive-app/react-webgl2";
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 interface Tab {
   id: string
@@ -145,6 +154,11 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     document.body.style.userSelect = "none"
     document.body.style.cursor = "col-resize"
   }, [])
+
+  // Debug: Log projectId changes
+  useEffect(() => {
+    console.log('[WorkspacePanel] projectId changed:', projectId, 'Query enabled:', !!projectId)
+  }, [projectId])
 
   // Fetch project agents from database
   const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
@@ -772,7 +786,9 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
           </div>
           <div>
-            <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
+            <div>
+            </div>
+            <Button  size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
               Publish
             </Button>
           </div>
