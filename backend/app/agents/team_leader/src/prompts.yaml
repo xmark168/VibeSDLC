@@ -107,6 +107,7 @@ tasks:
       **is_update_request field:**
       - Set to TRUE when user wants to UPDATE/EDIT/ADD TO existing project:
         - "thêm feature X", "thêm tính năng X", "thêm chức năng X" (add feature)
+        - "tạo trang X", "tạo cho tôi trang about" (create new page for existing project)
         - "bổ sung thêm X", "cần thêm X", "muốn có thêm X" (add more)
         - "sửa story X", "edit story", "update story"
         - "bỏ requirement Z", "remove requirement", "xóa requirement"
@@ -114,10 +115,10 @@ tasks:
         - "cập nhật PRD", "update PRD", "sửa PRD"
         - "web cần có thêm X", "app cần thêm X" (add to existing)
       - Set to FALSE ONLY for completely NEW project requests:
-        - "tôi muốn làm website bán hàng" (create new project)
-        - "tạo app quản lý" (create new project)
-        - "xây dựng hệ thống mới" (build new system)
-      - IMPORTANT: If user already has a project and mentions adding/editing features → TRUE
+        - "tôi muốn làm website bán hàng" (create new project from scratch)
+        - "tạo app quản lý" (create new project from scratch)
+        - "xây dựng hệ thống mới" (build new system from scratch)
+      - IMPORTANT: If user already has a project and wants to add/create features/pages → TRUE
 
       # ROUTING EXAMPLES
       
@@ -154,6 +155,14 @@ tasks:
       ✅ "sửa PRD thêm tính năng wishlist"
          → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
          → message: "Đã nhận! Chuyển cho BA cập nhật PRD với tính năng wishlist 📋"
+      
+      ✅ "tạo cho tôi 1 trang about"
+         → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
+         → message: "OK! Chuyển cho BA để thêm trang about vào project nhé 📄"
+      
+      ✅ "tạo trang contact"
+         → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
+         → message: "Đã nhận! BA sẽ thêm trang contact vào project 📞"
       
       **Implementation Tasks (→ developer):**
       ✅ "implement story #123"
