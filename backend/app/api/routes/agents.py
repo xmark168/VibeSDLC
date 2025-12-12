@@ -1,27 +1,11 @@
+"""Agents API."""
 from typing import Any
 from uuid import UUID
-
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlmodel import col, func, select
-
 from app.api.deps import CurrentUser, SessionDep
-from app.models import Agent as AgentModel
-from app.models import (
-    AgentExecution,
-    AgentExecutionStatus,
-    AuthorType,
-    Message,
-    Role,
-)
-from app.schemas import (
-    AgentActivityResponse,
-    AgentCreate,
-    AgentPublic,
-    AgentsPublic,
-    AgentUpdate,
-    CurrentTaskInfo,
-    RecentActivity,
-)
+from app.models import Agent as AgentModel, AgentExecution, AgentExecutionStatus, AuthorType, Message, Role
+from app.schemas import AgentActivityResponse, AgentCreate, AgentPublic, AgentsPublic, AgentUpdate, CurrentTaskInfo, RecentActivity
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 

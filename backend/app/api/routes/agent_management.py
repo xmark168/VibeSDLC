@@ -1,12 +1,4 @@
-"""Agent lifecycle management API endpoints.
-
-This module provides REST API endpoints for:
-- Creating and managing agent pools
-- Spawning and terminating agents
-- Monitoring agent health and performance
-- Viewing system-wide statistics
-"""
-
+"""Agent pool management API."""
 import asyncio
 import json
 import logging
@@ -14,39 +6,25 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 from uuid import UUID
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, update
-
 from app.agents.core.agent_pool_manager import AgentPoolManager
 from app.api.deps import SessionDep, get_current_user, get_db
 from app.models import Agent, AgentExecution, AgentExecutionStatus, AgentStatus, User
 from app.schemas import (
-    AgentPoolMetricsPublic,
-    AgentPoolPublic,
-    CreatePoolRequest,
-    PoolResponse,
-    SpawnAgentRequest,
-    SystemStatsResponse,
-    TerminateAgentRequest,
-    UpdatePoolConfigRequest,
+    AgentPoolMetricsPublic, AgentPoolPublic, CreatePoolRequest, PoolResponse,
+    SpawnAgentRequest, SystemStatsResponse, TerminateAgentRequest, UpdatePoolConfigRequest,
 )
 from app.services.persona_service import PersonaService
 from app.services.pool_service import PoolService
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agents", tags=["agent-management"])
 
-
-# ===== Global Manager Registry =====
-
-# Manager registry - holds AgentPoolManager instances
 _manager_registry: dict[str, AgentPoolManager] = {}
-
-# Global logger
-logger = logging.getLogger(__name__)
 
 
 # ===== System Status Management =====

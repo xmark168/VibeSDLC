@@ -1,68 +1,47 @@
-"""
-Story Management API
-Endpoints for BA/TeamLeader/Dev/Tester to manage stories in Kanban board
-"""
+"""Story Management API."""
 import asyncio
 import logging
 import uuid
-
-logger = logging.getLogger(__name__)
 from typing import Any, Optional
 from enum import Enum
-
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlmodel import select, func, delete
 import httpx
-
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Story, StoryStatus, StoryType, AgentStatus
 from app.schemas import StoryCreate, StoryUpdate, StoryPublic, StoriesPublic
 from app.schemas.story import BulkRankUpdateRequest
 from app.services.story_service import StoryService
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/stories", tags=["stories"])
 
 
-# ===== Agent Busy Check Helper =====
 def check_agent_busy(agent_id: uuid.UUID) -> tuple[bool, str]:
-    """Check if agent is currently busy processing a task.
-    
-    Returns:
-        (is_busy, reason) - True if agent is busy with reason message
-    """
+    """Check if agent is busy. Returns (is_busy, reason)."""
     from app.api.routes.agent_management import get_available_pool
-    
     manager = get_available_pool()
     if not manager:
         return False, ""
-    
     agent = manager.get_agent(agent_id)
     if not agent:
         return False, ""
-    
-    # Check 1: Agent state is busy
     if agent.state == AgentStatus.busy:
         return True, "Agent đang xử lý task. Vui lòng đợi hoặc stop task hiện tại trước."
-    
-    # Check 2: Queue has pending tasks
     if hasattr(agent, '_task_queue') and agent._task_queue.qsize() > 0:
-        queue_size = agent._task_queue.qsize()
-        return True, f"Agent có {queue_size} task đang chờ trong queue. Vui lòng đợi hoặc stop task hiện tại trước."
-    
+        return True, f"Agent có {agent._task_queue.qsize()} task đang chờ trong queue."
     return False, ""
 
 
-# Helper to run blocking subprocess in thread pool (non-blocking for async)
 async def run_subprocess_async(*args, **kwargs):
-    """Run subprocess.run in thread pool to avoid blocking event loop."""
+    """Run subprocess in thread pool."""
     import subprocess
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, lambda: subprocess.run(*args, **kwargs))
 
 
-# ===== Request/Response Models =====
 class ReviewActionType(str, Enum):
     APPLY = "apply"
     KEEP = "keep"
@@ -74,9 +53,6 @@ class ReviewActionRequest(BaseModel):
     suggested_title: Optional[str] = None
     suggested_acceptance_criteria: Optional[list[str]] = None
     suggested_requirements: Optional[list[str]] = None
-
-
-# ===== Story Creation =====
 @router.post("/", response_model=StoryPublic)
 async def create_story(
     *,

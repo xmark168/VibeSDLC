@@ -1,56 +1,58 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
-    agent_management,  # Agent pools and monitoring
+    agent_management,
     agents,
-    artifacts,  # Agent-produced artifacts (PRD, architecture, code, etc.)
+    artifacts,
     auth,
-    chat,  # WebSocket chat endpoint
-    files,  # Project file management
-    lean_kanban,  # Kanban WIP limits
-    linked_accounts,  # OAuth account linking
+    chat,
+    files,
+    kanban,
+    linked_accounts,
     messages,
-    oauth,  # OAuth authentication
-    payments,  # Payment and PayOS integration
-    personas,  # Persona template management
-    plans,  # Plan management
-    profile,  # User profile management
-    project_rules,  # Project-specific rules and configurations
+    oauth,
+    payments,
+    personas,
+    plans,
+    profile,
+    project_rules,
     projects,
-    sepay,  # SePay payment integration
-    stories,  # Story management (Kanban with Todo/InProgress/Review/Done)
-    tech_stacks,  # TechStack management
-    two_factor,  # Two-factor authentication
+    sepay,
+    stories,
+    tech_stacks,
+    two_factor,
     users,
 )
 
 api_router = APIRouter()
+
+# Auth
 api_router.include_router(auth.router)
-api_router.include_router(two_factor.router)  # 2FA routes
-api_router.include_router(oauth.router)  # OAuth routes
-api_router.include_router(linked_accounts.router)  # Linked accounts
-api_router.include_router(profile.router)  # User profile management
+api_router.include_router(two_factor.router)
+api_router.include_router(oauth.router)
+api_router.include_router(linked_accounts.router)
+api_router.include_router(profile.router)
 api_router.include_router(users.router)
-api_router.include_router(
-    stories.router
-)  
+
+# Core
 api_router.include_router(projects.router)
-api_router.include_router(files.router)  # Project file management
-api_router.include_router(lean_kanban.router)  # Kanban WIP limits
+api_router.include_router(stories.router)
 api_router.include_router(messages.router)
-api_router.include_router(plans.router)  # Plan management
-api_router.include_router(payments.router)  # Payment and PayOS integration
-api_router.include_router(sepay.router)  # SePay payment integration
-api_router.include_router(personas.router)  # Persona template management
-api_router.include_router(tech_stacks.router)  # TechStack management
-api_router.include_router(
-    agent_management.router
-)  # Agent pools and monitoring - MUST be before agents.router
+api_router.include_router(files.router)
+api_router.include_router(kanban.router)
+api_router.include_router(artifacts.router)
+api_router.include_router(project_rules.router)
+
+# Agents (agent_management MUST be before agents)
+api_router.include_router(agent_management.router)
 api_router.include_router(agents.router)
-api_router.include_router(
-    artifacts.router
-)  # Artifact management (agent-produced documents)
-api_router.include_router(
-    project_rules.router
-)  # Project-specific rules and configurations
-api_router.include_router(chat.router)  # WebSocket chat endpoint
+api_router.include_router(personas.router)
+
+# Payments
+api_router.include_router(plans.router)
+api_router.include_router(payments.router)
+api_router.include_router(sepay.router)
+
+# Config
+api_router.include_router(tech_stacks.router)
+api_router.include_router(chat.router)

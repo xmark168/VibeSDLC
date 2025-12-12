@@ -1,26 +1,18 @@
+"""Messages API."""
 import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID
-
 from fastapi import APIRouter, HTTPException, Query, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlmodel import select, func, delete
-
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Message as MessageModel, Project, Agent as AgentModel, AuthorType, MessageVisibility
-from app.schemas import (
-    ChatMessageCreate,
-    ChatMessageUpdate,
-    ChatMessagePublic,
-    ChatMessagesPublic,
-    Message,
-)
+from app.schemas import ChatMessageCreate, ChatMessageUpdate, ChatMessagePublic, ChatMessagesPublic, Message
 from app.core.config import DOCUMENT_UPLOAD_LIMITS
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/messages", tags=["messages"])
 
 

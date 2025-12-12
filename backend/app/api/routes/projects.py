@@ -1,5 +1,4 @@
-"""Project management endpoints."""
-
+"""Project management API."""
 import asyncio
 import logging
 import os
@@ -7,25 +6,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
-
 from fastapi import APIRouter, HTTPException, Query, status, BackgroundTasks
 from sqlmodel import select
-
 from app.api.deps import CurrentUser, SessionDep
 from app.services import ProjectService
 from app.services.agent_service import AgentService
 from app.models import Project, Role, Agent, AgentStatus, Subscription, Plan
-from app.schemas import (
-    ProjectCreate,
-    ProjectUpdate,
-    ProjectPublic,
-    ProjectsPublic,
-)
+from app.schemas import ProjectCreate, ProjectUpdate, ProjectPublic, ProjectsPublic
 from app.services.persona_service import PersonaService
 from app.utils.seed_techstacks import copy_boilerplate_to_project, init_git_repo
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 # Default role types for new projects
