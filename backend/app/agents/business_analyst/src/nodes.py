@@ -41,6 +41,7 @@ BA_DEFAULTS = {
     "communication_style": "Đơn giản, dễ hiểu, tránh thuật ngữ kỹ thuật",
 }
 from app.core.db import engine
+from app.core.config import settings
 from app.models import AgentQuestion, Epic, Story, StoryStatus, StoryType, EpicStatus, ArtifactType
 from app.services.artifact_service import ArtifactService
 from app.kafka import KafkaTopics, get_kafka_producer
@@ -52,9 +53,9 @@ logger = logging.getLogger(__name__)
 # LLM CONFIGURATION (Following Developer V2 pattern)
 # =============================================================================
 
-# API configuration
-ANTHROPIC_API_BASE = os.getenv("ANTHROPIC_API_BASE", "https://ai.megallm.io")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
+# API configuration - use settings from config.py, fallback to env vars
+ANTHROPIC_API_BASE = settings.ANTHROPIC_API_BASE or os.getenv("ANTHROPIC_API_BASE", "https://api.anthropic.com")
+ANTHROPIC_API_KEY = settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
 
 # Model tiers (like Dev V2)
 MODELS = {
@@ -74,11 +75,9 @@ def _get_llm(tier: str = "default", temperature: float = 0.2, timeout: int = 60)
         "max_tokens": 16384,
         "timeout": timeout,
         "max_retries": 3,
+        "base_url": ANTHROPIC_API_BASE,
+        "api_key": ANTHROPIC_API_KEY,
     }
-    if ANTHROPIC_API_BASE:
-        kwargs["base_url"] = ANTHROPIC_API_BASE
-    if ANTHROPIC_API_KEY:
-        kwargs["api_key"] = ANTHROPIC_API_KEY
     
     return ChatAnthropic(**kwargs)
 

@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, update
 
-from app.agents.core import AgentPoolManager
+from app.agents.core.agent_pool_manager import AgentPoolManager
 from app.api.deps import SessionDep, get_current_user, get_db
 from app.models import Agent, AgentExecution, AgentExecutionStatus, AgentStatus, User
 from app.schemas import (

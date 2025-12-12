@@ -317,17 +317,6 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   const logsScrollRef = useRef<HTMLDivElement>(null)
   const token = getToken()
   
-  // Group logs by node for Task component display
-  const groupedLogs = useMemo(() => {
-    const groups: Record<string, typeof storyLogs> = {}
-    storyLogs.forEach(log => {
-      const node = log.node || 'General'
-      if (!groups[node]) groups[node] = []
-      groups[node].push(log)
-    })
-    return groups
-  }, [storyLogs])
-  
   // Listen for story log messages from WebSocket
   useEffect(() => {
     if (!card?.id) return
@@ -381,10 +370,16 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     }
   }, [open, card?.id])
   
-  // Auto-scroll logs to bottom
+  // Auto-scroll logs to bottom when new logs arrive
   useEffect(() => {
     if (logsScrollRef.current && storyLogs.length > 0) {
-      logsScrollRef.current.scrollTop = logsScrollRef.current.scrollHeight
+      // Use setTimeout to ensure DOM has updated
+      setTimeout(() => {
+        logsScrollRef.current?.scrollTo({
+          top: logsScrollRef.current.scrollHeight,
+          behavior: 'smooth'
+        })
+      }, 50)
     }
   }, [storyLogs])
 
@@ -1478,9 +1473,9 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
             </div>
           </TabsContent>
 
-          {/* Logs Tab */}
-          <TabsContent value="logs" className="flex-1 overflow-y-auto mt-4 min-h-0">
-            <div ref={logsScrollRef} className="space-y-3 px-1">
+          {/* Logs Tab - Timeline style */}
+          <TabsContent value="logs" ref={logsScrollRef} className="flex-1 overflow-y-auto mt-4 min-h-0">
+            <div className="space-y-1 px-1 font-mono text-xs">
               {storyLogs.length === 0 ? (
                 <div className="text-center text-muted-foreground py-8">
                   <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -1488,31 +1483,30 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   <p className="text-xs mt-1">Logs will appear here when actions are performed</p>
                 </div>
               ) : (
-                Object.entries(groupedLogs).map(([node, logs]) => (
-                  <Task key={node} defaultOpen={true}>
-                    <TaskTrigger 
-                      title={`${node} (${logs.length})`}
-                      icon={<Activity className="size-4" />}
-                    />
-                    <TaskContent>
-                      {logs.map((log) => (
-                        <TaskItem 
-                          key={log.id}
-                          className={
-                            log.level === 'error' ? 'text-red-500' :
-                            log.level === 'warning' ? 'text-yellow-600' :
-                            log.level === 'success' ? 'text-green-600' :
-                            'text-muted-foreground'
-                          }
-                        >
-                          <span className="text-xs text-muted-foreground/70 mr-2">
-                            {new Date(log.timestamp).toLocaleTimeString('vi-VN')}
-                          </span>
-                          {log.content}
-                        </TaskItem>
-                      ))}
-                    </TaskContent>
-                  </Task>
+                storyLogs.map((log) => (
+                  <div 
+                    key={log.id}
+                    className={`flex items-start gap-2 px-2 py-1 rounded ${
+                      log.level === 'error' ? 'bg-red-500/10 text-red-500' :
+                      log.level === 'warning' ? 'bg-yellow-500/10 text-yellow-600' :
+                      log.level === 'success' ? 'bg-green-500/10 text-green-600' :
+                      log.node === 'restart' ? 'bg-purple-500/10 text-purple-600 font-medium' :
+                      log.content?.startsWith('✅') || log.content?.startsWith('🚀') ? 'bg-green-500/10 text-green-600 font-medium' :
+                      log.content?.startsWith('❌') ? 'bg-red-500/10 text-red-500 font-medium' :
+                      log.content?.startsWith('⚠️') ? 'bg-yellow-500/10 text-yellow-600 font-medium' :
+                      'text-muted-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    <span className="text-muted-foreground/70 shrink-0 w-16">
+                      {new Date(log.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                    {log.node && (
+                      <span className="text-primary/70 shrink-0 w-28 truncate" title={log.node}>
+                        [{log.node}]
+                      </span>
+                    )}
+                    <span className="flex-1 break-all">{log.content}</span>
+                  </div>
                 ))
               )}
             </div>
