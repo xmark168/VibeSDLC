@@ -1,5 +1,6 @@
 """Project management endpoints."""
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -358,8 +359,8 @@ async def delete_project(
             except Exception as e:
                 logger.warning(f"Failed to stop agent {agent.human_name}: {e}")
     
-    # Clean up project files (workspace + worktrees)
-    project_service.delete_with_cleanup(project_id)
+    # Clean up project files (workspace + worktrees) - run in thread to avoid blocking
+    await asyncio.to_thread(project_service.delete_with_cleanup, project_id)
 
 
 @router.post("/{project_id}/cleanup", status_code=status.HTTP_200_OK)
@@ -562,7 +563,9 @@ async def start_project_dev_server(
     node_modules_path = workspace_path / "node_modules"
     if not node_modules_path.exists():
         logger.info(f"node_modules not found, running pnpm install...")
-        install_result = subprocess.run(
+        # Run in thread to avoid blocking event loop (can take 5+ minutes)
+        install_result = await asyncio.to_thread(
+            subprocess.run,
             "pnpm install" if is_windows else ["pnpm", "install"],
             cwd=str(workspace_path),
             shell=is_windows,

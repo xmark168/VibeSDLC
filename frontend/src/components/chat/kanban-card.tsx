@@ -46,7 +46,7 @@ export type KanbanCardData = {
   updated_at?: string
   age_hours?: number  // Age in current status (hours)
   // Agent state
-  agent_state?: 'pending' | 'processing' | 'canceled' | 'finished' | null
+  agent_state?: 'PENDING' | 'PROCESSING' | 'PAUSED' | 'CANCEL_REQUESTED' | 'CANCELED' | 'FINISHED' | null
   running_port?: number | null
   running_pid?: number | null
   worktree_path?: string | null
@@ -91,8 +91,8 @@ function KanbanCardComponent({
   const [showQuickActions, setShowQuickActions] = useState(false)
   
   // Check if card can be dragged based on agent_state
-  const canDrag = !card.agent_state || card.agent_state === 'finished' || card.agent_state === 'canceled'
-  const isAgentRunning = card.agent_state === 'pending' || card.agent_state === 'processing'
+  const canDrag = !card.agent_state || card.agent_state === 'FINISHED' || card.agent_state === 'CANCELED'
+  const isAgentRunning = card.agent_state === 'PENDING' || card.agent_state === 'PROCESSING'
 
   // Get type badge color - Modern & Minimal: More subtle colors
   // Lean Kanban: Only UserStory and EnablerStory on board
@@ -269,19 +269,19 @@ function KanbanCardComponent({
               </Badge>
             )}
             {/* Agent State Badge - Show when pending or processing */}
-            {card.agent_state === 'pending' && (
+            {card.agent_state === 'PENDING' && (
               <Badge variant="outline" className="text-xs font-medium gap-1 bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700 animate-pulse">
                 <Clock className="w-3 h-3" />
                 Pending
               </Badge>
             )}
-            {card.agent_state === 'processing' && (
+            {card.agent_state === 'PROCESSING' && (
               <Badge variant="outline" className="text-xs font-medium gap-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Processing
               </Badge>
             )}
-            {card.agent_state === 'finished' && (
+            {card.agent_state === 'FINISHED' && (
               <Badge variant="outline" className="text-xs font-medium gap-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700">
                 <CheckCircle2 className="w-3 h-3" />
                 Finished

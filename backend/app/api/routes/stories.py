@@ -13,7 +13,7 @@ from enum import Enum
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlmodel import select, func
+from sqlmodel import select, func, delete
 import httpx
 
 from app.api.deps import CurrentUser, SessionDep
@@ -1010,6 +1010,7 @@ async def restart_story_task(
     
     # Reset state immediately
     story.agent_state = StoryAgentState.PENDING
+    story.assigned_agent_id = None  # Clear so new agent will be assigned
     story.running_pid = None
     story.running_port = None
     story.worktree_path = None
@@ -1020,9 +1021,13 @@ async def restart_story_task(
     session.add(story)
     session.commit()
     
-    # Clear signals
-    from app.agents.core.task_registry import clear_signals
-    clear_signals(str(story_id))
+    # Clear old logs for fresh start
+    from app.models.story_log import StoryLog
+    session.exec(
+        delete(StoryLog).where(StoryLog.story_id == story_id)
+    )
+    session.commit()
+    logger.info(f"[restart] Cleared logs for story {story_id}")
     
     # Broadcast "pending" state to UI immediately
     from app.websocket.connection_manager import connection_manager

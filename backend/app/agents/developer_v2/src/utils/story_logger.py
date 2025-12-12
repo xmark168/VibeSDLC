@@ -56,15 +56,13 @@ async def log_to_story(
     from app.core.db import engine
     
     try:
-        # Format message with node prefix
-        formatted_content = f"[{node}] {message}" if node else message
-        
+        # Don't prefix content with node - frontend displays node separately
         # 1. Save to database (story_logs table)
         try:
             with Session(engine) as session:
                 log_entry = StoryLog(
                     story_id=UUID(story_id),
-                    content=formatted_content,
+                    content=message,  # Raw message, no prefix
                     level=DBLogLevel(level) if level in ["debug", "info", "warning", "error"] else DBLogLevel.INFO,
                     node=node or "agent"
                 )
@@ -77,7 +75,7 @@ async def log_to_story(
         await connection_manager.broadcast_to_project({
             "type": "story_log",
             "story_id": story_id,
-            "content": formatted_content,
+            "content": message,  # Raw message, no prefix
             "level": level,
             "node": node,
             "timestamp": datetime.now(timezone.utc).isoformat()
@@ -85,7 +83,7 @@ async def log_to_story(
         
         # 3. Also log to standard logger for debugging
         log_func = getattr(logger, level if level in ["debug", "info", "warning", "error"] else "info")
-        log_func(f"[Story:{story_id[:8]}] {formatted_content}")
+        log_func(f"[Story:{story_id[:8]}] [{node}] {message}")
         
     except Exception as e:
         logger.debug(f"[log_to_story] Failed: {e}")

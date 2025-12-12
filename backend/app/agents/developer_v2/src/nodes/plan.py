@@ -255,7 +255,7 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")
     if story_id:
-        signal = check_interrupt_signal(story_id)
+        signal = check_interrupt_signal(story_id, agent)
         if signal:
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
@@ -294,7 +294,7 @@ Create implementation plan. Output JSON steps directly."""
         
         # Check for interrupt after LLM call
         if story_id:
-            signal = check_interrupt_signal(story_id)
+            signal = check_interrupt_signal(story_id, agent)
             if signal:
                 interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
         

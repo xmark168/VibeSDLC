@@ -28,8 +28,8 @@ LLM_CONFIG = {
 }
 
 SKILL_MODEL_MAP = {
-    "frontend-design": MODELS["complex"],
-    "frontend-component": MODELS["complex"],
+    "frontend-design": MODELS["medium"],
+    "frontend-component": MODELS["medium"],
     "api-route": MODELS["medium"],
     "database-model": MODELS["medium"],
     "database-seed": MODELS["medium"],

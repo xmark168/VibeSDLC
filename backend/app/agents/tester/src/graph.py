@@ -82,22 +82,28 @@ async def get_postgres_checkpointer() -> AsyncPostgresSaver:
 # Interrupt Signal Check (aligned with Developer V2)
 # =============================================================================
 
-def check_interrupt_signal(story_id: str) -> str | None:
-    """Check for pause/cancel signal from TaskRegistry.
+def check_interrupt_signal(story_id: str, agent=None) -> str | None:
+    """Check for interrupt signal from agent's in-memory signal store.
     
-    Aligned with Developer V2 - uses same TaskRegistry for consistent behavior.
+    Signal is pushed by AgentPoolManager.signal_agent() when user clicks cancel/pause.
     
+    Args:
+        story_id: Story UUID string
+        agent: Agent instance for signal check
+        
     Returns:
         'pause', 'cancel', or None
     """
     if not story_id:
         return None
     
-    try:
-        from app.agents.core.task_registry import check_interrupt_signal as _check
-        return _check(story_id)
-    except ImportError:
-        return None
+    if agent is not None and hasattr(agent, 'check_signal'):
+        signal = agent.check_signal(story_id)
+        if signal:
+            import logging
+            logging.getLogger(__name__).info(f"[Signal] {signal} found in agent for story {story_id[:8]}...")
+            return signal
+    return None
 
 
 # ============================================================================

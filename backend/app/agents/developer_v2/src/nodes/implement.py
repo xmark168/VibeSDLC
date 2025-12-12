@@ -299,7 +299,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     # Check for pause/cancel signal (triggers LangGraph interrupt)
     story_id = state.get("story_id", "")
     if story_id:
-        signal = check_interrupt_signal(story_id)
+        signal = check_interrupt_signal(story_id, agent)
         if signal:
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
@@ -384,7 +384,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         
         # Check for interrupt after LLM call (can be long-running)
         if story_id:
-            signal = check_interrupt_signal(story_id)
+            signal = check_interrupt_signal(story_id, agent)
             if signal:
                 await story_logger.info(f"Interrupt after LLM: {signal}")
                 interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
@@ -508,7 +508,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")
     if story_id:
-        signal = check_interrupt_signal(story_id)
+        signal = check_interrupt_signal(story_id, agent)
         if signal:
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "implement_parallel"})
@@ -548,17 +548,28 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             if layer_idx <= start_layer:
                 continue
             
-            # Check for interrupt BEFORE starting layer - return state to save checkpoint
+            # Check for interrupt BEFORE starting layer
             if story_id:
-                signal = check_interrupt_signal(story_id)
+                signal = check_interrupt_signal(story_id, agent)
                 if signal:
-                    return {
-                        **state,
-                        "current_layer": layer_idx - 1,
-                        "files_modified": list(set(all_modified)),
-                        "dependencies_content": deps_content,
-                        "action": "PAUSED",
-                    }
+                    if signal == "cancel":
+                        # Cancel: raise exception to stop immediately
+                        from app.agents.developer_v2.developer_v2 import StoryStoppedException
+                        from app.models.base import StoryAgentState
+                        raise StoryStoppedException(
+                            story_id,
+                            StoryAgentState.CANCEL_REQUESTED,
+                            f"Cancel signal detected at layer {layer_idx}"
+                        )
+                    elif signal == "pause":
+                        # Pause: return state to save checkpoint for resume
+                        return {
+                            **state,
+                            "current_layer": layer_idx - 1,
+                            "files_modified": list(set(all_modified)),
+                            "dependencies_content": deps_content,
+                            "action": "PAUSED",
+                        }
             
             layer_steps = layers[layer_num]
             is_parallel = len(layer_steps) > 1 and layer_num >= 5
@@ -633,9 +644,10 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "current_layer": total_layers, "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:
-        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        # Re-raise GraphInterrupt and StoryStoppedException - expected for pause/cancel
         from langgraph.errors import GraphInterrupt
-        if isinstance(e, GraphInterrupt):
+        from app.agents.developer_v2.developer_v2 import StoryStoppedException
+        if isinstance(e, (GraphInterrupt, StoryStoppedException)):
             raise
         await story_logger.error(f"Parallel implementation failed: {str(e)}", exc=e)
         return {**state, "error": str(e), "action": "RESPOND"}

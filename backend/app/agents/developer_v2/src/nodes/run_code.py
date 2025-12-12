@@ -405,10 +405,23 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
     
     # Check for pause/cancel signal
     if story_id:
-        signal = check_interrupt_signal(story_id)
+        signal = check_interrupt_signal(story_id, agent)
         if signal:
             await log(f"Interrupt signal received: {signal}", "warning")
             interrupt({"reason": signal, "story_id": story_id, "node": node_name})
+    
+    # Check if there were implementation errors that weren't handled
+    parallel_errors = state.get("parallel_errors")
+    if parallel_errors and len(parallel_errors) > 0:
+        error_summary = f"{len(parallel_errors)} implementation errors"
+        await log(f"❌ Skipping build - implementation had errors: {error_summary}", "error")
+        await story_logger.message(f"❌ Implementation failed with {len(parallel_errors)} errors")
+        return {
+            **state,
+            "run_status": "FAIL",
+            "run_result": {"status": "FAIL", "summary": error_summary, "implementation_errors": parallel_errors},
+            "action": "ANALYZE_ERROR"
+        }
     
     await log("🧪 Starting build validation...")
     

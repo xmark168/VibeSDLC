@@ -821,26 +821,50 @@ class StoryEventRouter(BaseEventRouter):
     async def _cancel_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
         """Cancel a running story task.
         
-        Sets cancel signal that nodes check to trigger LangGraph interrupt.
+        Sends cancel signal directly to agent via AgentPoolManager.
         """
         story_id = event_dict.get("story_id")
         self.logger.info(f"Story cancel event received for: {story_id}")
         
-        # Set cancel signal - nodes will check and interrupt
-        from app.agents.core.task_registry import request_cancel
-        request_cancel(story_id)
+        # Get assigned_agent_id from DB and signal via pool
+        from app.models import Story
+        from app.api.routes.agent_management import find_pool_for_agent
+        
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id) if isinstance(story_id, str) else story_id)
+            if story and story.assigned_agent_id:
+                pool = find_pool_for_agent(story.assigned_agent_id)
+                if pool:
+                    pool.signal_agent(story.assigned_agent_id, story_id, "cancel")
+                    self.logger.info(f"[cancel] Signal sent to agent {story.assigned_agent_id}")
+                else:
+                    self.logger.warning(f"[cancel] Agent {story.assigned_agent_id} not found in any pool")
+            else:
+                self.logger.warning(f"[cancel] No assigned_agent_id for story {story_id}")
 
     async def _pause_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
         """Pause a running story task.
         
-        Sets pause signal that nodes check to trigger LangGraph interrupt.
+        Sends pause signal directly to agent via AgentPoolManager.
         """
         story_id = event_dict.get("story_id")
         self.logger.info(f"Story pause event received for: {story_id}")
         
-        # Set pause signal - nodes will check and interrupt
-        from app.agents.core.task_registry import request_pause
-        request_pause(story_id)
+        # Get assigned_agent_id from DB and signal via pool
+        from app.models import Story
+        from app.api.routes.agent_management import find_pool_for_agent
+        
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id) if isinstance(story_id, str) else story_id)
+            if story and story.assigned_agent_id:
+                pool = find_pool_for_agent(story.assigned_agent_id)
+                if pool:
+                    pool.signal_agent(story.assigned_agent_id, story_id, "pause")
+                    self.logger.info(f"[pause] Signal sent to agent {story.assigned_agent_id}")
+                else:
+                    self.logger.warning(f"[pause] Agent {story.assigned_agent_id} not found in any pool")
+            else:
+                self.logger.warning(f"[pause] No assigned_agent_id for story {story_id}")
 
     async def _resume_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
         """Resume a paused story task by re-routing to developer."""

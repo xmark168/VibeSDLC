@@ -87,7 +87,7 @@ function SortableCard({
   onCardEdit?: (card: KanbanCardData) => void
 }) {
   // Only allow drag when agent_state is null, finished, or canceled
-  const canDrag = !card.agent_state || card.agent_state === 'finished' || card.agent_state === 'canceled'
+  const canDrag = !card.agent_state || card.agent_state === 'FINISHED' || card.agent_state === 'CANCELED'
   
   const {
     attributes,
