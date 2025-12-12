@@ -1,0 +1,169 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NextAuth Models (DO NOT MODIFY)
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Bookstore Models
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  books Book[]
+
+  @@index([slug])
+  @@index([isActive])
+}
+
+model Author {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  bio       String?  @db.Text
+  imageUrl  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  books Book[]
+
+  @@index([slug])
+  @@index([name])
+}
+
+model Book {
+  id              String   @id @default(uuid())
+  title           String
+  slug            String   @unique
+  description     String?  @db.Text
+  isbn            String?  @unique
+  coverImageUrl   String?
+  price           Float
+  discountedPrice Float?
+  stockQuantity   Int      @default(0)
+  pageCount       Int?
+  publishedDate   DateTime?
+  language        String   @default("English")
+  isFeatured      Boolean  @default(false)
+  isBestseller    Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  viewCount       Int      @default(0)
+  salesCount      Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  author     Author   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId   String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId String
+
+  promotions PromotionBook[]
+
+  @@index([authorId])
+  @@index([categoryId])
+  @@index([slug])
+  @@index([isFeatured])
+  @@index([isBestseller])
+  @@index([isActive])
+  @@index([salesCount])
+}
+
+model Promotion {
+  id          String    @id @default(uuid())
+  title       String
+  slug        String    @unique
+  description String?   @db.Text
+  imageUrl    String?
+  discountPercent Float?
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  books PromotionBook[]
+
+  @@index([slug])
+  @@index([isActive])
+  @@index([startDate])
+  @@index([endDate])
+}
+
+// Explicit Many-to-Many for Promotions and Books
+model PromotionBook {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  promotionId String
+
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  bookId String
+
+  @@unique([promotionId, bookId])
+  @@index([promotionId])
+  @@index([bookId])
+}

@@ -140,6 +140,18 @@ async def websocket_endpoint(
                                     })
                                     continue
 
+                                # Deduct credit for user message
+                                from app.services.credit_service import CreditService
+                                credit_service = CreditService(db_session)
+                                if not credit_service.deduct_credit(user.id):
+                                    logger.warning(f"Insufficient credits for user {user.id}")
+                                    await websocket.send_json({
+                                        "type": "error",
+                                        "code": 402,
+                                        "message": "Insufficient credits"
+                                    })
+                                    continue
+
                                 # Create message with agent routing info
                                 db_message = MessageModel(
                                     project_id=project_id,

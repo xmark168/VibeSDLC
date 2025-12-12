@@ -151,6 +151,15 @@ class Settings(BaseSettings):
     LIGHT_MODEL: str = "openai/gpt-4.1"  # For validators/coordinators
 
     OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = ""
+    
+    # Anthropic / Claude settings
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_API_BASE: str = ""
+    
+    # Tester agent specific (can override global Anthropic settings)
+    TESTER_ANTHROPIC_API_KEY: str = ""
+    TESTER_ANTHROPIC_BASE_URL: str = ""
 
     SENTRY_DSN: HttpUrl | None = None
 

@@ -8,14 +8,23 @@
 interface TypingIndicatorProps {
   agentName: string
   message?: string
+  avatar?: string | null
 }
 
-export function TypingIndicator({ agentName, message }: TypingIndicatorProps) {
+export function TypingIndicator({ agentName, message, avatar }: TypingIndicatorProps) {
   return (
     <div className="flex items-start gap-3 mb-4">
       {/* Agent Avatar */}
-      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-lg">
-        <span>🤖</span>
+      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-lg overflow-hidden">
+        {avatar ? (
+          <img 
+            src={avatar} 
+            alt={agentName}
+            className="w-8 h-8 rounded-full object-cover"
+          />
+        ) : (
+          <span>🤖</span>
+        )}
       </div>
       
       {/* Typing Animation */}

@@ -671,6 +671,17 @@ export function ChatPanelWS({
     tester: "https://api.dicebear.com/7.x/avataaars/svg?seed=Tester&backgroundColor=f59e0b",
   };
 
+  // Helper to get avatar URL by agent name (for typing indicator)
+  const getAgentAvatarUrl = (agentName: string): string | null => {
+    if (agentsList.length > 0) {
+      const agent = agentsList.find(a => a.human_name === agentName || a.name === agentName);
+      if (agent) {
+        return agent.persona_avatar || DEFAULT_AVATARS[agent.role_type] || null;
+      }
+    }
+    return null;
+  };
+
   const getAgentAvatar = (msg: Message) => {
     if (msg.author_type === AuthorType.USER) return "👤";
     if (msg.author_type === AuthorType.AGENT) {
@@ -1217,6 +1228,7 @@ export function ChatPanelWS({
             key={typing.id}
             agentName={typing.agent_name}
             message={typing.message}
+            avatar={getAgentAvatarUrl(typing.agent_name)}
           />
         ))}
       </div>

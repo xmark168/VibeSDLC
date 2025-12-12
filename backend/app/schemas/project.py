@@ -16,6 +16,7 @@ class ProjectCreate(SQLModel):
     description: Optional[str] = None
     repository_url: Optional[str] = None
     tech_stack: Optional[list[str]] = None
+    agent_personas: Optional[dict[str, str]] = None  # {"team_leader": "persona_id", ...}
 
     @field_validator('tech_stack', mode='before')
     @classmethod

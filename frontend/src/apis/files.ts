@@ -16,11 +16,22 @@ export const filesApi = {
   /**
    * Get file tree for a project
    */
-  getFileTree: async (projectId: string, depth: number = 3, worktree?: string): Promise<FileTreeResponse> => {
+  getFileTree: async (projectId: string, depth: number = 15, worktree?: string): Promise<FileTreeResponse> => {
     return __request<FileTreeResponse>(OpenAPI, {
       method: "GET",
       url: `/api/v1/projects/${projectId}/files/`,
       query: { depth, ...(worktree && { worktree }) },
+    })
+  },
+
+  /**
+   * Lazy load children of a folder
+   */
+  getFolderChildren: async (projectId: string, path: string, worktree?: string, depth: number = 1): Promise<FolderChildrenResponse> => {
+    return __request<FolderChildrenResponse>(OpenAPI, {
+      method: "GET",
+      url: `/api/v1/projects/${projectId}/files/children`,
+      query: { path, depth, ...(worktree && { worktree }) },
     })
   },
 
@@ -38,10 +49,11 @@ export const filesApi = {
   /**
    * Get git status (modified, added, deleted, untracked files)
    */
-  getGitStatus: async (projectId: string): Promise<GitStatusResponse> => {
+  getGitStatus: async (projectId: string, worktree?: string): Promise<GitStatusResponse> => {
     return __request<GitStatusResponse>(OpenAPI, {
       method: "GET",
       url: `/api/v1/projects/${projectId}/files/git-status`,
+      query: { ...(worktree && { worktree }) },
     })
   },
 
@@ -54,6 +66,30 @@ export const filesApi = {
       url: `/api/v1/projects/${projectId}/files/branches`,
     })
   },
+
+  /**
+   * Get git diff for a specific file in story worktree
+   */
+  getFileDiff: async (storyId: string, filePath: string): Promise<FileDiffResponse> => {
+    return __request<FileDiffResponse>(OpenAPI, {
+      method: "GET",
+      url: `/api/v1/stories/${storyId}/file-diff`,
+      query: { file_path: filePath },
+    })
+  },
+}
+
+export interface FileDiffResponse {
+  file_path: string
+  diff: string
+  has_changes: boolean
+  base_branch?: string
+  error?: string
+}
+
+export interface FolderChildrenResponse {
+  path: string
+  children: FileNode[]
 }
 
 // Types for branch operations
@@ -68,4 +104,16 @@ export interface BranchesResponse {
   current: string | null
   branches: string[]
   worktrees: Worktree[]
+}
+
+export const getFileDiff = async (
+  projectId: string,
+  filePath: string,
+  worktree?: string
+): Promise<FileDiffResponse> => {
+  return __request<FileDiffResponse>(OpenAPI, {
+    method: "GET",
+    url: `/api/v1/projects/${projectId}/files/file-diff`,
+    query: { file_path: filePath, ...(worktree && { worktree }) },
+  })
 }

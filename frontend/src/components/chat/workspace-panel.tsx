@@ -1,6 +1,6 @@
 
 import type React from "react"
-
+import { Rive, RiveFile } from '@rive-app/react-webgl2';
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,6 +9,7 @@ import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, P
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
+import { DiffViewer } from "../shared/diff-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
 import { AgentPopup } from "../agents/agent-popup"
@@ -16,7 +17,16 @@ import { useProjectAgents } from "@/queries/agents"
 import { useQueryClient } from "@tanstack/react-query"
 import type { AgentPublic } from "@/client/types.gen"
 import { filesApi } from "@/apis/files"
-
+import {
+  useRive,
+  Layout,
+  Fit,
+  Alignment,
+  useViewModel,
+  useViewModelInstance,
+  useViewModelInstanceNumber,
+  useViewModelInstanceTrigger,
+} from "@rive-app/react-webgl2";
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 interface Tab {
   id: string
@@ -145,6 +155,11 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     document.body.style.cursor = "col-resize"
   }, [])
 
+  // Debug: Log projectId changes
+  useEffect(() => {
+    console.log('[WorkspacePanel] projectId changed:', projectId, 'Query enabled:', !!projectId)
+  }, [projectId])
+
   // Fetch project agents from database
   const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
     enabled: !!projectId,
@@ -250,6 +265,9 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   // Artifact state
   const [selectedArtifact, setSelectedArtifact] = useState<any | null>(null)
   const [isLoadingArtifact, setIsLoadingArtifact] = useState(false)
+  
+  // Diff viewer state
+  const [diffFilePath, setDiffFilePath] = useState<string | null>(null)
 
   // Fetch artifact when selectedArtifactId changes
   useEffect(() => {
@@ -393,7 +411,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     switch (activeView) {
       case "app-preview":
         return (
-          <AppViewer />
+          <AppViewer projectId={projectId} />
         )
       case "kanban":
         // KanbanBoard is rendered separately to keep it always mounted
@@ -407,13 +425,28 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
                 onFileSelect={(path, worktree) => {
                   setSelectedFile(path)
                   setSelectedWorktree(worktree)
+                  setDiffFilePath(null) // Close diff viewer when selecting new file
+                }}
+                onViewDiff={(path) => {
+                  setDiffFilePath(path)
+                }}
+                onWorktreeChange={(worktree) => {
+                  setSelectedWorktree(worktree || undefined)
                 }}
                 selectedFile={selectedFile}
                 initialWorktree={selectedWorktree}
               />
             </div>
             <div className="flex-1">
-              {selectedArtifact ? (
+              {/* Show DiffViewer if diffFilePath is set */}
+              {diffFilePath && projectId ? (
+                <DiffViewer
+                  projectId={projectId}
+                  filePath={diffFilePath}
+                  worktree={selectedWorktree || undefined}
+                  onClose={() => setDiffFilePath(null)}
+                />
+              ) : selectedArtifact ? (
                 isLoadingArtifact ? (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <Loader2 className="w-6 h-6 animate-spin mr-2" />
@@ -753,7 +786,9 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
           </div>
           <div>
-            <Button size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
+            <div>
+            </div>
+            <Button  size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
               Publish
             </Button>
           </div>

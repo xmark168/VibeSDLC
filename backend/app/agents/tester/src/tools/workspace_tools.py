@@ -8,8 +8,42 @@ import logging
 import shutil
 import subprocess
 from pathlib import Path
+from uuid import UUID
+
+from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Story workspace helper - Get developer's workspace from Story model
+# =============================================================================
+
+def get_story_workspace(story_id: str) -> dict | None:
+    """Get workspace path from Story model (created by Developer V2).
+    
+    Returns dict with workspace_path and branch_name if found, None otherwise.
+    """
+    from app.core.db import engine
+    from app.models import Story
+    
+    try:
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id))
+            if story and story.worktree_path:
+                workspace_path = Path(story.worktree_path)
+                if workspace_path.exists():
+                    logger.info(f"[get_story_workspace] Found developer workspace: {workspace_path}")
+                    return {
+                        "workspace_path": str(workspace_path),
+                        "branch_name": story.branch_name or f"story_{story_id.split('-')[-1][:8]}",
+                        "main_workspace": str(workspace_path.parent.parent) if ".worktrees" in str(workspace_path) else str(workspace_path),
+                    }
+                else:
+                    logger.warning(f"[get_story_workspace] Workspace path not found: {workspace_path}")
+    except Exception as e:
+        logger.warning(f"[get_story_workspace] Error: {e}")
+    return None
 
 
 # =============================================================================
