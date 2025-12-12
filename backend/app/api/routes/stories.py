@@ -17,12 +17,41 @@ from sqlmodel import select, func
 import httpx
 
 from app.api.deps import CurrentUser, SessionDep
-from app.models import Story, StoryStatus, StoryType
+from app.models import Story, StoryStatus, StoryType, AgentStatus
 from app.schemas import StoryCreate, StoryUpdate, StoryPublic, StoriesPublic
 from app.schemas.story import BulkRankUpdateRequest
 from app.services.story_service import StoryService
 
 router = APIRouter(prefix="/stories", tags=["stories"])
+
+
+# ===== Agent Busy Check Helper =====
+def check_agent_busy(agent_id: uuid.UUID) -> tuple[bool, str]:
+    """Check if agent is currently busy processing a task.
+    
+    Returns:
+        (is_busy, reason) - True if agent is busy with reason message
+    """
+    from app.api.routes.agent_management import get_available_pool
+    
+    manager = get_available_pool()
+    if not manager:
+        return False, ""
+    
+    agent = manager.get_agent(agent_id)
+    if not agent:
+        return False, ""
+    
+    # Check 1: Agent state is busy
+    if agent.state == AgentStatus.busy:
+        return True, "Agent đang xử lý task. Vui lòng đợi hoặc stop task hiện tại trước."
+    
+    # Check 2: Queue has pending tasks
+    if hasattr(agent, '_task_queue') and agent._task_queue.qsize() > 0:
+        queue_size = agent._task_queue.qsize()
+        return True, f"Agent có {queue_size} task đang chờ trong queue. Vui lòng đợi hoặc stop task hiện tại trước."
+    
+    return False, ""
 
 
 # Helper to run blocking subprocess in thread pool (non-blocking for async)
@@ -912,6 +941,22 @@ async def restart_story_task(
     story = session.get(Story, story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Check if story is currently being processed - must cancel first
+    if story.agent_state == StoryAgentState.PROCESSING:
+        raise HTTPException(
+            status_code=409,  # Conflict
+            detail="Story đang được xử lý. Vui lòng Cancel trước khi Restart."
+        )
+    
+    # Check if agent is busy with another task
+    if story.assigned_agent_id:
+        is_busy, reason = check_agent_busy(story.assigned_agent_id)
+        if is_busy:
+            raise HTTPException(
+                status_code=409,  # Conflict
+                detail=reason
+            )
     
     # Stop dev server if running and notify UI
     if story.running_pid:
