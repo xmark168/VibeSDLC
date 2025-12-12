@@ -246,18 +246,23 @@ function StacksAdminPage() {
                       <TableCell className="font-medium">{stack.name}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {Object.entries(stack.stack_config || {})
-                            .filter(([_, value]) => !Array.isArray(value) && typeof value !== 'object' && value !== null)
-                            .slice(0, 3)
-                            .map(([key, value]) => (
-                              <Badge key={key} variant="secondary" className="text-xs">
-                                {key}: {String(value)}
-                              </Badge>
-                            ))}
-                          {Array.isArray((stack.stack_config as Record<string, unknown>)?.services) && (
-                            <Badge variant="outline" className="text-xs">
-                              {((stack.stack_config as Record<string, unknown>).services as unknown[]).length} service{((stack.stack_config as Record<string, unknown>).services as unknown[]).length > 1 ? 's' : ''}
-                            </Badge>
+                          {Object.keys(stack.stack_config || {}).length === 0 ? (
+                            <span className="text-muted-foreground text-xs">No config</span>
+                          ) : (
+                            <>
+                              {Object.entries(stack.stack_config || {})
+                                .slice(0, 4)
+                                .map(([key, value]) => (
+                                  <Badge key={key} variant="secondary" className="text-xs">
+                                    {key}: {String(value)}
+                                  </Badge>
+                                ))}
+                              {Object.keys(stack.stack_config || {}).length > 4 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{Object.keys(stack.stack_config || {}).length - 4} more
+                                </Badge>
+                              )}
+                            </>
                           )}
                         </div>
                       </TableCell>
