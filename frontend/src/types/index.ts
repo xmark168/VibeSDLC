@@ -53,7 +53,10 @@ export type {
   AutoScalingRuleCreate,
   AgentTemplate,
   AgentTemplateCreate,
-  AgentTemplateFromAgent
+  AgentTemplateFromAgent,
+  AgentTokenStats,
+  PoolTokenStats,
+  SystemTokenSummary
 } from './agent'
 
 // Backlog types

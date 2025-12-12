@@ -9,6 +9,9 @@ Features:
 - Budget checking before task execution
 - Usage tracking and analytics
 - Graceful rejection when budget exceeded
+- Admin bypass (admins skip budget checks)
+- Credit deduction integration
+- Per-agent token tracking
 """
 
 import asyncio
@@ -19,10 +22,14 @@ from uuid import UUID
 import logging
 
 from sqlmodel import Session, select
-from app.models import Project
+from app.models import Project, Agent
+from app.models.base import Role
 from app.core.db import engine
 
 logger = logging.getLogger(__name__)
+
+# Token to credit conversion rate (tokens per credit)
+TOKENS_PER_CREDIT = 1000  # 1 credit = 1000 tokens
 
 # Global locks for thread-safe budget operations per project
 _budget_locks: Dict[UUID, asyncio.Lock] = {}
@@ -101,11 +108,18 @@ class TokenBudgetManager:
         """
         self.session = session
         self.cache: Dict[UUID, TokenBudget] = {}
+    
+    def _is_admin(self, user_id: UUID) -> bool:
+        """Check if user is admin (bypass budget checks)."""
+        from app.models import User
+        user = self.session.get(User, user_id)
+        return user and user.role == Role.ADMIN
         
     async def check_budget(
         self, 
         project_id: UUID, 
-        estimated_tokens: int
+        estimated_tokens: int,
+        user_id: Optional[UUID] = None
     ) -> Tuple[bool, str]:
         """Check if project has budget for estimated token usage.
         
@@ -119,6 +133,11 @@ class TokenBudgetManager:
             - (False, reason) if request should be rejected
         """
         try:
+            # Admin bypass - skip budget checks
+            if user_id and self._is_admin(user_id):
+                logger.debug(f"Admin user {user_id} bypassing budget check")
+                return True, ""
+            
             budget = await self._get_budget(project_id)
             
             # Reset counters if needed
@@ -198,22 +217,43 @@ class TokenBudgetManager:
             
             return allowed, reason
     
-    async def record_usage(self, project_id: UUID, tokens_used: int) -> None:
+    async def record_usage(
+        self, 
+        project_id: UUID, 
+        tokens_used: int,
+        agent_id: Optional[UUID] = None,
+        user_id: Optional[UUID] = None,
+        deduct_credits: bool = True
+    ) -> None:
         """Record actual token usage for a project.
         
         Args:
             project_id: Project UUID
             tokens_used: Actual tokens consumed
+            agent_id: Optional agent ID for per-agent tracking
+            user_id: Optional user ID for credit deduction
+            deduct_credits: Whether to deduct credits (default True)
         """
         try:
             budget = await self._get_budget(project_id)
             
-            # Update counters
+            # Update project counters
             budget.used_today += tokens_used
             budget.used_this_month += tokens_used
             
             # Persist to database
             await self._save_budget(budget)
+            
+            # Track per-agent usage
+            if agent_id:
+                await self._record_agent_usage(agent_id, tokens_used)
+            
+            # Deduct credits (skip for admins)
+            if deduct_credits and user_id and tokens_used > 0:
+                if not self._is_admin(user_id):
+                    await self._deduct_credits(user_id, tokens_used, agent_id)
+                else:
+                    logger.debug(f"Admin user {user_id} - skipping credit deduction")
             
             logger.info(
                 f"Recorded {tokens_used:,} tokens for project {project_id}. "
@@ -225,6 +265,54 @@ class TokenBudgetManager:
             
         except Exception as e:
             logger.error(f"Error recording usage for project {project_id}: {e}", exc_info=True)
+    
+    async def _record_agent_usage(self, agent_id: UUID, tokens_used: int) -> None:
+        """Record token usage for a specific agent.
+        
+        Args:
+            agent_id: Agent UUID
+            tokens_used: Tokens consumed
+        """
+        try:
+            agent = self.session.get(Agent, agent_id)
+            if agent:
+                agent.tokens_used_total = (agent.tokens_used_total or 0) + tokens_used
+                agent.tokens_used_today = (agent.tokens_used_today or 0) + tokens_used
+                agent.llm_calls_total = (agent.llm_calls_total or 0) + 1
+                self.session.add(agent)
+                self.session.commit()
+                logger.debug(f"Agent {agent_id} token usage: +{tokens_used} (total: {agent.tokens_used_total})")
+        except Exception as e:
+            logger.error(f"Error recording agent usage: {e}")
+    
+    async def _deduct_credits(self, user_id: UUID, tokens_used: int, agent_id: Optional[UUID] = None) -> None:
+        """Deduct credits based on token usage.
+        
+        Args:
+            user_id: User UUID
+            tokens_used: Tokens consumed
+            agent_id: Optional agent ID for activity logging
+        """
+        try:
+            from app.services.credit_service import CreditService
+            
+            # Calculate credits to deduct (round up)
+            credits_to_deduct = (tokens_used + TOKENS_PER_CREDIT - 1) // TOKENS_PER_CREDIT
+            
+            if credits_to_deduct > 0:
+                credit_service = CreditService(self.session)
+                success = credit_service.deduct_credit(
+                    user_id=user_id,
+                    amount=credits_to_deduct,
+                    reason=f"llm_tokens_{tokens_used}",
+                    agent_id=agent_id
+                )
+                if success:
+                    logger.info(f"Deducted {credits_to_deduct} credits for {tokens_used} tokens (user: {user_id})")
+                else:
+                    logger.warning(f"Failed to deduct credits for user {user_id}")
+        except Exception as e:
+            logger.error(f"Error deducting credits: {e}")
     
     async def get_budget_status(self, project_id: UUID) -> Dict:
         """Get current budget status for a project.

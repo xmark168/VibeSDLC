@@ -2722,3 +2722,260 @@ async def trigger_auto_scaling_rule(
             "agents_terminated": terminated,
         }
 
+
+# ===== Token Usage Statistics Endpoints =====
+
+class AgentTokenStats(BaseModel):
+    """Token statistics for a single agent."""
+    agent_id: str
+    agent_name: str
+    role_type: str
+    pool_name: str | None
+    tokens_used_total: int
+    tokens_used_today: int
+    llm_calls_total: int
+    status: str
+    created_at: datetime | None
+
+
+class PoolTokenStats(BaseModel):
+    """Token statistics for a pool."""
+    pool_id: str
+    pool_name: str
+    role_type: str | None
+    total_tokens_used: int
+    total_llm_calls: int
+    total_agents: int
+    agents_stats: list[AgentTokenStats]
+
+
+class SystemTokenSummary(BaseModel):
+    """System-wide token usage summary."""
+    total_tokens_all_time: int
+    total_tokens_today: int
+    total_llm_calls: int
+    total_agents: int
+    total_pools: int
+    by_role_type: dict[str, dict]
+    by_pool: list[PoolTokenStats]
+    estimated_cost_usd: float
+
+
+@router.get("/stats/token-usage/agents", response_model=list[AgentTokenStats])
+async def get_agents_token_stats(
+    session: SessionDep,
+    role_type: str | None = Query(default=None, description="Filter by role type"),
+    pool_name: str | None = Query(default=None, description="Filter by pool name"),
+    limit: int = Query(default=100, le=500),
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get token usage statistics for all agents.
+    
+    Returns per-agent token usage including total tokens, today's usage, and LLM calls.
+    """
+    from app.models import AgentPool
+
+    query = select(Agent).order_by(Agent.tokens_used_total.desc())
+    
+    if role_type:
+        query = query.where(Agent.role_type == role_type)
+    
+    if pool_name:
+        pool = session.exec(select(AgentPool).where(AgentPool.pool_name == pool_name)).first()
+        if pool:
+            query = query.where(Agent.pool_id == pool.id)
+    
+    query = query.limit(limit)
+    agents = session.exec(query).all()
+    
+    result = []
+    for agent in agents:
+        # Get pool name if agent has a pool
+        agent_pool_name = None
+        if agent.pool_id:
+            pool = session.get(AgentPool, agent.pool_id)
+            if pool:
+                agent_pool_name = pool.pool_name
+        
+        result.append(AgentTokenStats(
+            agent_id=str(agent.id),
+            agent_name=agent.human_name,
+            role_type=agent.role_type,
+            pool_name=agent_pool_name,
+            tokens_used_total=agent.tokens_used_total or 0,
+            tokens_used_today=agent.tokens_used_today or 0,
+            llm_calls_total=agent.llm_calls_total or 0,
+            status=agent.status.value,
+            created_at=agent.created_at,
+        ))
+    
+    return result
+
+
+@router.get("/stats/token-usage/pools", response_model=list[PoolTokenStats])
+async def get_pools_token_stats(
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get token usage statistics grouped by pool.
+    
+    Returns per-pool aggregated token usage including all agents in each pool.
+    """
+    from sqlalchemy import func
+    from app.models import AgentPool
+    
+    pools = session.exec(select(AgentPool)).all()
+    result = []
+    
+    for pool in pools:
+        # Get agents in this pool
+        agents = session.exec(
+            select(Agent).where(Agent.pool_id == pool.id)
+        ).all()
+        
+        # Calculate totals
+        total_tokens = sum(a.tokens_used_total or 0 for a in agents)
+        total_llm_calls = sum(a.llm_calls_total or 0 for a in agents)
+        
+        agents_stats = [
+            AgentTokenStats(
+                agent_id=str(a.id),
+                agent_name=a.human_name,
+                role_type=a.role_type,
+                pool_name=pool.pool_name,
+                tokens_used_total=a.tokens_used_total or 0,
+                tokens_used_today=a.tokens_used_today or 0,
+                llm_calls_total=a.llm_calls_total or 0,
+                status=a.status.value,
+                created_at=a.created_at,
+            )
+            for a in agents
+        ]
+        
+        result.append(PoolTokenStats(
+            pool_id=str(pool.id),
+            pool_name=pool.pool_name,
+            role_type=pool.role_type,
+            total_tokens_used=total_tokens,
+            total_llm_calls=total_llm_calls,
+            total_agents=len(agents),
+            agents_stats=agents_stats,
+        ))
+    
+    return result
+
+
+@router.get("/stats/token-usage/summary", response_model=SystemTokenSummary)
+async def get_system_token_summary(
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Get system-wide token usage summary.
+    
+    Returns comprehensive token usage statistics including:
+    - Total tokens used (all time and today)
+    - Total LLM calls
+    - Breakdown by role type
+    - Breakdown by pool
+    - Estimated cost
+    """
+    from sqlalchemy import func
+    from app.models import AgentPool
+    
+    # Get all agents
+    agents = session.exec(select(Agent)).all()
+    pools = session.exec(select(AgentPool)).all()
+    
+    # Calculate totals
+    total_tokens_all_time = sum(a.tokens_used_total or 0 for a in agents)
+    total_tokens_today = sum(a.tokens_used_today or 0 for a in agents)
+    total_llm_calls = sum(a.llm_calls_total or 0 for a in agents)
+    
+    # Group by role type
+    by_role_type = {}
+    for agent in agents:
+        role = agent.role_type
+        if role not in by_role_type:
+            by_role_type[role] = {
+                "total_tokens": 0,
+                "tokens_today": 0,
+                "llm_calls": 0,
+                "agent_count": 0,
+            }
+        by_role_type[role]["total_tokens"] += agent.tokens_used_total or 0
+        by_role_type[role]["tokens_today"] += agent.tokens_used_today or 0
+        by_role_type[role]["llm_calls"] += agent.llm_calls_total or 0
+        by_role_type[role]["agent_count"] += 1
+    
+    # Group by pool
+    by_pool = []
+    for pool in pools:
+        pool_agents = [a for a in agents if a.pool_id == pool.id]
+        total_tokens = sum(a.tokens_used_total or 0 for a in pool_agents)
+        total_calls = sum(a.llm_calls_total or 0 for a in pool_agents)
+        
+        agents_stats = [
+            AgentTokenStats(
+                agent_id=str(a.id),
+                agent_name=a.human_name,
+                role_type=a.role_type,
+                pool_name=pool.pool_name,
+                tokens_used_total=a.tokens_used_total or 0,
+                tokens_used_today=a.tokens_used_today or 0,
+                llm_calls_total=a.llm_calls_total or 0,
+                status=a.status.value,
+                created_at=a.created_at,
+            )
+            for a in pool_agents
+        ]
+        
+        by_pool.append(PoolTokenStats(
+            pool_id=str(pool.id),
+            pool_name=pool.pool_name,
+            role_type=pool.role_type,
+            total_tokens_used=total_tokens,
+            total_llm_calls=total_calls,
+            total_agents=len(pool_agents),
+            agents_stats=agents_stats,
+        ))
+    
+    # Estimate cost (GPT-4 pricing: ~$0.03/1K input tokens, ~$0.06/1K output tokens)
+    # Using average estimate
+    estimated_cost = (total_tokens_all_time / 1000) * 0.04
+    
+    return SystemTokenSummary(
+        total_tokens_all_time=total_tokens_all_time,
+        total_tokens_today=total_tokens_today,
+        total_llm_calls=total_llm_calls,
+        total_agents=len(agents),
+        total_pools=len(pools),
+        by_role_type=by_role_type,
+        by_pool=by_pool,
+        estimated_cost_usd=round(estimated_cost, 4),
+    )
+
+
+@router.post("/stats/token-usage/reset-daily")
+async def reset_daily_token_stats(
+    session: SessionDep,
+    current_user: User = Depends(get_current_user),
+) -> Any:
+    """Reset daily token usage counters for all agents.
+    
+    This is typically called automatically at midnight UTC,
+    but can be triggered manually by admins.
+    """
+    from sqlmodel import update
+    
+    result = session.exec(
+        update(Agent).values(tokens_used_today=0)
+    )
+    session.commit()
+    
+    logger.info(f"Daily token stats reset by {current_user.email}")
+    
+    return {
+        "message": "Daily token usage counters reset",
+        "agents_affected": result.rowcount,
+    }
+

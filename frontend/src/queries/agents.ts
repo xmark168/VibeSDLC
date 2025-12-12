@@ -699,6 +699,60 @@ export function useTriggerScalingRule() {
   })
 }
 
+// ===== Token Usage Statistics =====
+
+export const tokenStatsQueryKeys = {
+  all: ["token-stats"] as const,
+  agents: (params?: { role_type?: string; pool_name?: string }) =>
+    [...tokenStatsQueryKeys.all, "agents", params] as const,
+  pools: () => [...tokenStatsQueryKeys.all, "pools"] as const,
+  summary: () => [...tokenStatsQueryKeys.all, "summary"] as const,
+}
+
+export function useAgentsTokenStats(
+  params?: { role_type?: string; pool_name?: string; limit?: number },
+  options?: { enabled?: boolean; refetchInterval?: number }
+) {
+  return useQuery({
+    queryKey: tokenStatsQueryKeys.agents(params),
+    queryFn: () => agentsApi.getAgentsTokenStats(params),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 60000,
+    staleTime: 30000,
+  })
+}
+
+export function usePoolsTokenStats(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: tokenStatsQueryKeys.pools(),
+    queryFn: () => agentsApi.getPoolsTokenStats(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 60000,
+    staleTime: 30000,
+  })
+}
+
+export function useSystemTokenSummary(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: tokenStatsQueryKeys.summary(),
+    queryFn: () => agentsApi.getSystemTokenSummary(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 60000,
+    staleTime: 30000,
+  })
+}
+
+export function useResetDailyTokenStats() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => agentsApi.resetDailyTokenStats(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: tokenStatsQueryKeys.all })
+    },
+  })
+}
+
 // ===== Agent Templates =====
 
 export const templateQueryKeys = {

@@ -2219,7 +2219,8 @@ class BaseAgent(ABC):
                 budget_mgr = TokenBudgetManager(session)
                 allowed, reason = await budget_mgr.check_budget(
                     self.project_id,
-                    estimated_tokens
+                    estimated_tokens,
+                    user_id=self._current_user_id
                 )
                 
                 return allowed, reason
@@ -2233,7 +2234,7 @@ class BaseAgent(ABC):
             return True, ""
     
     async def _record_token_usage(self, tokens_used: int) -> None:
-        """Record actual token usage.
+        """Record actual token usage with per-agent tracking and credit deduction.
         
         Args:
             tokens_used: Actual tokens consumed
@@ -2248,7 +2249,13 @@ class BaseAgent(ABC):
             
             with Session(engine) as session:
                 budget_mgr = TokenBudgetManager(session)
-                await budget_mgr.record_usage(self.project_id, tokens_used)
+                await budget_mgr.record_usage(
+                    project_id=self.project_id,
+                    tokens_used=tokens_used,
+                    agent_id=self.agent_id,
+                    user_id=self._current_user_id,
+                    deduct_credits=True
+                )
                 
         except Exception as e:
             logger.error(

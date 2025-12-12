@@ -98,6 +98,8 @@ import { toast } from "@/lib/toast"
 import { formatDistanceToNow } from "date-fns"
 import { MetricCard } from "@/components/admin"
 import { ActivityTab, AgentConfigDialog, BulkActionsToolbar, SpawnAgentDialog } from "@/components/admin/agents"
+import { useSystemTokenSummary, usePoolsTokenStats, useAgentsTokenStats } from "@/queries/agents"
+import { Coins } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AdminLayout } from "@/components/admin/AdminLayout"
 
@@ -259,8 +261,8 @@ function SystemStatsCards({
   const successTrend = executionData?.data.map((d: any) => ({ value: d.success_rate || 0 })) || []
   const successChange = calculateTrend(executionData?.data || [], "success_rate")
 
-  const tokenTrend = tokenData?.data.map((d) => ({ value: d.total_tokens })) || []
-  const tokenChange = tokenData?.data.length > 1
+  const tokenTrend = tokenData?.data?.map((d) => ({ value: d.total_tokens })) || []
+  const tokenChange = tokenData?.data && tokenData.data.length > 1
     ? ((tokenData.data[tokenData.data.length - 1].total_tokens - tokenData.data[0].total_tokens) / (tokenData.data[0].total_tokens || 1)) * 100
     : 0
 
@@ -447,6 +449,7 @@ function PoolsTab({
   isLoading: boolean
 }) {
   const [expandedPools, setExpandedPools] = useState<Set<string>>(new Set())
+  const { data: poolsTokenStats } = usePoolsTokenStats()
 
   const togglePool = (poolName: string) => {
     setExpandedPools((prev) => {
@@ -487,7 +490,9 @@ function PoolsTab({
         </Card>
       ) : (
         <div className="space-y-4">
-          {pools.map((pool) => (
+          {pools.map((pool) => {
+            const poolTokenData = poolsTokenStats?.find(p => p.pool_name === pool.pool_name)
+            return (
             <Card key={pool.pool_name}>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -518,6 +523,18 @@ function PoolsTab({
                         Load: {(pool.load * 100).toFixed(0)}%
                       </div>
                     </div>
+                    {/* Token Stats Badge */}
+                    {poolTokenData && (
+                      <div className="text-sm text-right border-l pl-4">
+                        <div className="font-medium flex items-center gap-1">
+                          <Coins className="w-3 h-3" />
+                          {(poolTokenData.total_tokens_used / 1000).toFixed(1)}K tokens
+                        </div>
+                        <div className="text-muted-foreground">
+                          {poolTokenData.total_llm_calls} LLM calls
+                        </div>
+                      </div>
+                    )}
                     <PoolActions pool={pool} />
                   </div>
                 </div>
@@ -525,7 +542,7 @@ function PoolsTab({
 
               {expandedPools.has(pool.pool_name) && (
                 <CardContent className="pt-0">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4 text-sm">
                     <div>
                       <span className="text-muted-foreground">Total Agents:</span>
                       <span className="ml-2 font-medium">{pool.total_agents}</span>
@@ -538,6 +555,12 @@ function PoolsTab({
                       <span className="text-muted-foreground">Success Rate:</span>
                       <span className="ml-2 font-medium">
                         {(pool.success_rate * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Total Tokens:</span>
+                      <span className="ml-2 font-medium">
+                        {poolTokenData ? poolTokenData.total_tokens_used.toLocaleString() : "0"}
                       </span>
                     </div>
                     <div>
@@ -595,7 +618,7 @@ function PoolsTab({
                 </CardContent>
               )}
             </Card>
-          ))}
+          )})}
         </div>
       )}
     </div>
@@ -813,6 +836,7 @@ function AgentsTab({
   isLoading: boolean
 }) {
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set())
+  const { data: agentsTokenStats } = useAgentsTokenStats()
 
   // Flatten all agents with their pool names
   const allAgents: Array<{ agent: AgentHealth; poolName: string }> = []
@@ -903,11 +927,15 @@ function AgentsTab({
                   <TableHead>Health</TableHead>
                   <TableHead>Uptime</TableHead>
                   <TableHead>Success Rate</TableHead>
+                  <TableHead>Tokens</TableHead>
+                  <TableHead>LLM Calls</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {allAgents.map(({ agent, poolName }) => (
+                {allAgents.map(({ agent, poolName }) => {
+                  const tokenStats = agentsTokenStats?.find(a => a.agent_id === agent.agent_id)
+                  return (
                   <TableRow
                     key={agent.agent_id}
                     className={selectedAgents.has(agent.agent_id) ? "bg-muted/50" : ""}
@@ -943,10 +971,19 @@ function AgentsTab({
                         : "N/A"}
                     </TableCell>
                     <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Coins className="w-3 h-3 text-muted-foreground" />
+                        {tokenStats ? (tokenStats.tokens_used_total / 1000).toFixed(1) + "K" : "0"}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {tokenStats?.llm_calls_total || 0}
+                    </TableCell>
+                    <TableCell>
                       <AgentActions agent={agent} poolName={poolName} />
                     </TableCell>
                   </TableRow>
-                ))}
+                )})}
               </TableBody>
             </Table>
           )}

@@ -24,6 +24,9 @@ import type {
   AgentTemplate,
   AgentTemplateCreate,
   AgentTemplateFromAgent,
+  AgentTokenStats,
+  PoolTokenStats,
+  SystemTokenSummary,
 } from "@/types"
 
 // Re-export types for convenience
@@ -43,6 +46,9 @@ export type {
   AgentPoolMetrics,
   UpdatePoolConfigRequest,
   PoolSuggestion,
+  AgentTokenStats,
+  PoolTokenStats,
+  SystemTokenSummary,
 }
 
 // ===== API Client =====
@@ -578,6 +584,45 @@ export const agentsApi = {
       method: "GET",
       url: `/api/v1/agents/${agentId}/activity`,
       query: { limit },
+    })
+  },
+
+  // ===== Token Usage Statistics =====
+
+  getAgentsTokenStats: async (params?: {
+    role_type?: string
+    pool_name?: string
+    limit?: number
+  }): Promise<AgentTokenStats[]> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agents/stats/token-usage/agents",
+      query: {
+        role_type: params?.role_type,
+        pool_name: params?.pool_name,
+        limit: params?.limit || 100,
+      },
+    })
+  },
+
+  getPoolsTokenStats: async (): Promise<PoolTokenStats[]> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agents/stats/token-usage/pools",
+    })
+  },
+
+  getSystemTokenSummary: async (): Promise<SystemTokenSummary> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agents/stats/token-usage/summary",
+    })
+  },
+
+  resetDailyTokenStats: async (): Promise<{ message: string; agents_affected: number }> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agents/stats/token-usage/reset-daily",
     })
   },
 }
