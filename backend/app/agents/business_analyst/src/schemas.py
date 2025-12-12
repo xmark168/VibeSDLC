@@ -258,3 +258,34 @@ class ConversationalOutput(BaseModel):
 class DocumentFeedbackOutput(BaseModel):
     """Output schema for generate_document_feedback."""
     message: str = Field(description="Natural feedback message in Vietnamese with emoji, KHÔNG dùng ký tự ** hoặc *")
+
+
+# =============================================================================
+# FEATURE CLARITY CHECK
+# =============================================================================
+
+class FeatureClarityOutput(BaseModel):
+    """Output schema for checking if user request relates to existing features or is new.
+    
+    Used to determine if BA should ask clarification questions or notify about existing feature.
+    """
+    is_new_feature: bool = Field(
+        description="True if this is a NEW feature not covered by any existing feature/epic. "
+                    "False if this request relates to an EXISTING feature/epic."
+    )
+    related_existing_feature: Optional[str] = Field(
+        default=None,
+        description="Name/title of the existing feature/epic this request relates to (if is_new_feature=False)"
+    )
+    has_specific_change: bool = Field(
+        default=False,
+        description="True if user specifies WHAT to add/change (e.g., 'thêm filter giá', 'thêm nút sort'). "
+                    "False if user just mentions the feature without specific changes (e.g., 'thêm trang about')."
+    )
+    clarification_questions: List[str] = Field(
+        default=[],
+        description="Questions to ask user - for NEW features OR for existing features without specific changes (Vietnamese, 2-4 questions)"
+    )
+    reasoning: str = Field(
+        description="Brief explanation of the analysis (Vietnamese)"
+    )

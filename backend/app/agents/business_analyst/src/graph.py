@@ -338,8 +338,15 @@ class BusinessAnalystGraph:
         # Story approve -> save
         graph.add_edge("approve_stories", "save_artifacts")
         
-        # PRD update -> save (no story extraction needed)
-        graph.add_edge("update_prd", "save_artifacts")
+        # PRD update -> conditional: check if we should save or end early (for clarification)
+        graph.add_conditional_edges(
+            "update_prd",
+            should_save_or_end,
+            {
+                "save": "save_artifacts",
+                "end": END  # End early if needs clarification for new feature
+            }
+        )
         
         # Note: analyze_domain now loops back to ask_batch_questions (defined above)
         # Removed: graph.add_edge("analyze_domain", "save_artifacts")
