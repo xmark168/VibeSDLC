@@ -14,6 +14,8 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src._llm import get_llm, default_llm
 from app.core.db import engine
 from app.models import Project, Story, StoryStatus
+from app.models.base import StoryAgentState
+from app.agents.developer_v2.src.utils.story_logger import StoryLogger
 
 logger = logging.getLogger(__name__)
 
@@ -258,11 +260,10 @@ async def _query_stories_from_db(project_id: str, story_ids: list, agent) -> lis
             if story_ids:
                 query = query.where(Story.id.in_([UUID(sid) for sid in story_ids]))
             else:
-                # Only filter agent_state when scanning for new stories
                 query = query.where(
                     or_(
                         Story.agent_state.is_(None),
-                        Story.agent_state.in_(["pending", "canceled"]),
+                        Story.agent_state.in_([StoryAgentState.PENDING, StoryAgentState.CANCELED]),
                     )
                 )
 
@@ -285,13 +286,12 @@ async def _query_stories_from_db(project_id: str, story_ids: list, agent) -> lis
 
             logger.info(f"[_query_stories_from_db] Found {len(stories_data)} stories")
 
-        # Update agent_state to "processing"
         if agent and stories_data:
             for story in stories_data:
                 try:
                     await agent.update_story_agent_state(
                         story_id=UUID(story["id"]),
-                        new_state="processing",
+                        new_state="PROCESSING",
                         progress_message="Đang phân tích và tạo test cases...",
                     )
                 except Exception as e:
@@ -434,6 +434,8 @@ async def conversation(state: TesterState, agent=None) -> dict:
 
 async def send_response(state: TesterState, agent=None) -> dict:
     """Send final response after test generation flow."""
+    story_logger = StoryLogger.from_state(state, agent).with_node("send_response")
+    
     stories = state.get("stories", [])
     error = state.get("error")
     test_plan = state.get("test_plan", [])
@@ -444,24 +446,33 @@ async def send_response(state: TesterState, agent=None) -> dict:
     branch_name = state.get("branch_name", "")
     workspace_ready = state.get("workspace_ready", False)
 
-    # Commit changes if workspace is ready and tests passed
     commit_msg = ""
-    if workspace_ready and workspace_path and files_created:
-        try:
-            from app.agents.tester.src.tools.workspace_tools import commit_workspace_changes
-            
-            story_titles = ", ".join(s.get("title", "")[:30] for s in stories[:2]) if stories else "tests"
-            commit_result = commit_workspace_changes(
-                workspace_path=workspace_path,
-                title=story_titles,
-                branch_name=branch_name or "test",
-                agent_name="tester",
-            )
-            if commit_result.get("success"):
-                commit_msg = f"\n\n📝 {commit_result.get('message', 'Changes committed')}"
-                logger.info(f"[send_response] Committed changes: {commit_result}")
-        except Exception as e:
-            logger.warning(f"[send_response] Failed to commit: {e}")
+    
+    # Only commit when tests PASS, revert on FAIL/ERROR
+    if workspace_ready and workspace_path:
+        from app.agents.tester.src.tools.workspace_tools import commit_workspace_changes, revert_test_changes
+        
+        if run_status == "PASS" and files_created:
+            try:
+                story_titles = ", ".join(s.get("title", "")[:30] for s in stories[:2]) if stories else "tests"
+                commit_result = commit_workspace_changes(
+                    workspace_path=workspace_path,
+                    title=story_titles,
+                    branch_name=branch_name or "test",
+                    agent_name="tester",
+                )
+                if commit_result.get("success"):
+                    commit_msg = f"\n\n📝 {commit_result.get('message', 'Changes committed')}"
+                    await story_logger.info(f"Committed changes: {commit_result.get('message')}")
+            except Exception as e:
+                await story_logger.warning(f"Failed to commit: {e}")
+        elif run_status in ["FAIL", "ERROR"]:
+            # Revert all uncommitted changes on failure
+            try:
+                revert_test_changes(workspace_path)
+                await story_logger.info(f"Reverted changes due to {run_status}")
+            except Exception as e:
+                await story_logger.warning(f"Failed to revert: {e}")
 
     # Build message
     if error:
@@ -472,12 +483,20 @@ async def send_response(state: TesterState, agent=None) -> dict:
         if files_created:
             msg += f"\n\nFiles created:\n" + "\n".join(f"  - {f}" for f in files_created)
         msg += commit_msg
+    elif run_status == "ERROR":
+        # Setup error (Jest not found, etc.)
+        setup_error = run_result.get("setup_error") or run_result.get("error") or "Unknown setup error"
+        results = run_result.get("results", [])
+        if results:
+            for r in results:
+                if r.get("setup_error") or r.get("error"):
+                    setup_error = r.get("setup_error") or r.get("error")
+                    break
+        msg = f"⚠️ Setup Error: {setup_error}\n\nTests could not run. Please check:\n- Jest is installed (`pnpm install`)\n- Working directory is correct"
     elif run_status == "FAIL":
         passed = run_result.get("passed", 0)
         failed = run_result.get("failed", 0)
         msg = f"❌ Tests failed! ({passed} passed, {failed} failed)"
-        if files_created:
-            msg += f"\n\nFiles created:\n" + "\n".join(f"  - {f}" for f in files_created)
     elif not test_plan:
         msg = "Không có tests được tạo."
     else:
@@ -486,18 +505,15 @@ async def send_response(state: TesterState, agent=None) -> dict:
             msg += f"\n\nFiles created:\n" + "\n".join(f"  - {f}" for f in files_created)
         msg += commit_msg
 
-    # Update story states
+    # Update story states (use direct _update_story_state for WebSocket broadcast)
     if agent and stories:
         for story in stories:
             story_id = story["id"]
             try:
-                await agent.update_story_agent_state(
-                    story_id=UUID(story_id),
-                    new_state="finished",
-                    progress_message=msg[:200],
-                )
+                await agent._update_story_state(story_id, StoryAgentState.FINISHED)
+                await story_logger.info(f"Updated story {story_id[:8]} to FINISHED")
             except Exception as e:
-                logger.warning(f"[send_response] Failed to update story {story_id}: {e}")
+                await story_logger.error(f"Failed to update story {story_id[:8]}: {e}")
 
     # Message to appropriate channel
     await send_message(state, agent, msg, "test_result")

@@ -1042,14 +1042,25 @@ async def _cleanup_and_trigger_agent(
         "sub_status": "cleaning",
     }, UUID(project_id))
     
-    # 1. CLEANUP ALL RESOURCES FIRST (blocking, must complete before agent starts)
-    results = await cleanup_story_resources(
-        worktree_path=worktree_path,
-        branch_name=branch_name,
-        main_workspace=main_workspace,
-        checkpoint_thread_id=checkpoint_thread_id,
-    )
-    _logger.info(f"[restart] Cleanup completed for {story_id}: {results}")
+    # 1. CLEANUP RESOURCES (conditional based on story status)
+    # - InProgress (Developer): Full cleanup - worktree, branch, checkpoint
+    # - Review (Tester): Partial cleanup - only checkpoint, keep worktree for reuse
+    if story_status == "InProgress":
+        results = await cleanup_story_resources(
+            worktree_path=worktree_path,
+            branch_name=branch_name,
+            main_workspace=main_workspace,
+            checkpoint_thread_id=checkpoint_thread_id,
+        )
+    else:
+        # Tester - only cleanup checkpoint, keep worktree
+        results = await cleanup_story_resources(
+            worktree_path=None,
+            branch_name=None,
+            main_workspace=main_workspace,
+            checkpoint_thread_id=checkpoint_thread_id,
+        )
+    _logger.info(f"[restart] Cleanup completed for {story_id} (status={story_status}): {results}")
     
     # Broadcast "starting" sub-status
     await connection_manager.broadcast_to_project({
@@ -1193,11 +1204,15 @@ async def restart_story_task(
     story.assigned_agent_id = None  # Clear so new agent will be assigned
     story.running_pid = None
     story.running_port = None
-    story.worktree_path = None
-    story.branch_name = None
     story.checkpoint_thread_id = None
     story.db_container_id = None
     story.db_port = None
+    
+    # Only clear worktree for Developer (InProgress), keep for Tester (Review)
+    if story.status == StoryStatus.IN_PROGRESS:
+        story.worktree_path = None
+        story.branch_name = None
+    # else: Keep worktree_path and branch_name for Tester to reuse
     session.add(story)
     session.commit()
     

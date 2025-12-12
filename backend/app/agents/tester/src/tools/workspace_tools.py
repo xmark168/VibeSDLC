@@ -364,3 +364,37 @@ def merge_to_main(workspace_path: str, branch_name: str, main_branch: str = "mai
     except Exception as e:
         logger.error(f"[merge_to_main] Error: {e}")
         return {"success": False, "message": str(e)}
+
+
+def revert_test_changes(workspace_path: str | Path) -> bool:
+    """Revert all uncommitted changes in test workspace.
+    
+    Used when tests fail to clean up generated test files.
+    """
+    if not workspace_path:
+        return False
+    
+    workspace_path = Path(workspace_path)
+    if not workspace_path.exists():
+        return False
+    
+    try:
+        # Discard all staged and unstaged changes
+        subprocess.run(
+            ["git", "checkout", "."],
+            cwd=str(workspace_path),
+            capture_output=True,
+            timeout=30,
+        )
+        # Remove untracked files (generated test files)
+        subprocess.run(
+            ["git", "clean", "-fd"],
+            cwd=str(workspace_path),
+            capture_output=True,
+            timeout=30,
+        )
+        logger.info(f"[revert_test_changes] Reverted all changes in {workspace_path}")
+        return True
+    except Exception as e:
+        logger.warning(f"[revert_test_changes] Error: {e}")
+        return False
