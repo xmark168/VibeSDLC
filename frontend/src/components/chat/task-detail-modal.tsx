@@ -268,30 +268,65 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   const [selectedDependency, setSelectedDependency] = useState<KanbanCardData | null>(null)
   const [selectedEpic, setSelectedEpic] = useState<EpicInfo | null>(null)
   const [localAgentState, setLocalAgentState] = useState<string | null>(null)
+  const [localPrState, setLocalPrState] = useState<string | null>(null)
+  const [localStatus, setLocalStatus] = useState<string | null>(null)
   
-  // Sync local agent state with card prop
+  // Sync local state with card prop
   useEffect(() => {
     if (card?.agent_state) {
       setLocalAgentState(card.agent_state)
     }
-  }, [card?.agent_state])
+    if (card?.pr_state) {
+      setLocalPrState(card.pr_state)
+    }
+    if (card?.status) {
+      setLocalStatus(card.status)
+    }
+  }, [card?.agent_state, card?.pr_state, card?.status])
   
   // Listen for story state changes via WebSocket
   useEffect(() => {
     const handleStoryStateChanged = (event: CustomEvent) => {
+      console.log('[TaskDetailModal] Received story-state-changed:', event.detail, 'card?.id:', card?.id)
       if (event.detail.story_id === card?.id) {
-        setLocalAgentState(event.detail.agent_state)
+        if (event.detail.agent_state !== undefined) {
+          console.log('[TaskDetailModal] Updating localAgentState to:', event.detail.agent_state)
+          setLocalAgentState(event.detail.agent_state)
+        }
+        if (event.detail.pr_state !== undefined) {
+          console.log('[TaskDetailModal] Updating localPrState to:', event.detail.pr_state)
+          setLocalPrState(event.detail.pr_state)
+        }
+      }
+    }
+    
+    // Also listen for story-status-changed (merge success sends this)
+    const handleStoryStatusChanged = (event: CustomEvent) => {
+      console.log('[TaskDetailModal] Received story-status-changed:', event.detail, 'card?.id:', card?.id)
+      if (event.detail.story_id === card?.id) {
+        if (event.detail.pr_state !== undefined) {
+          console.log('[TaskDetailModal] Updating localPrState to:', event.detail.pr_state)
+          setLocalPrState(event.detail.pr_state)
+        }
+        if (event.detail.status !== undefined) {
+          console.log('[TaskDetailModal] Updating localStatus to:', event.detail.status)
+          setLocalStatus(event.detail.status)
+        }
       }
     }
     
     window.addEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    window.addEventListener('story-status-changed', handleStoryStatusChanged as EventListener)
     return () => {
       window.removeEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+      window.removeEventListener('story-status-changed', handleStoryStatusChanged as EventListener)
     }
   }, [card?.id])
   
-  // Use local state for agent_state display
+  // Use local state for agent_state, pr_state, and status display
   const agentState = localAgentState || card?.agent_state
+  const prState = localPrState || card?.pr_state
+  const status = localStatus || card?.status
   
   // Get token from localStorage
   const getToken = () => typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
@@ -312,21 +347,17 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([])
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isActionLoading, setIsActionLoading] = useState(false)
+  
+  // Reset to detail tab if current tab is hidden (Done/Archived status)
+  useEffect(() => {
+    if ((status === 'Done' || status === 'Archived') && (activeTab === 'chat' || activeTab === 'diffs')) {
+      setActiveTab('detail')
+    }
+  }, [status, activeTab])
   const [showPreviewDialog, setShowPreviewDialog] = useState(false)
   const [storyLogs, setStoryLogs] = useState<Array<{id: string, content: string, level: string, timestamp: string, node: string}>>([])
   const logsScrollRef = useRef<HTMLDivElement>(null)
   const token = getToken()
-  
-  // Group logs by node for Task component display
-  const groupedLogs = useMemo(() => {
-    const groups: Record<string, typeof storyLogs> = {}
-    storyLogs.forEach(log => {
-      const node = log.node || 'General'
-      if (!groups[node]) groups[node] = []
-      groups[node].push(log)
-    })
-    return groups
-  }, [storyLogs])
   
   // Listen for story log messages from WebSocket
   useEffect(() => {
@@ -381,10 +412,16 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     }
   }, [open, card?.id])
   
-  // Auto-scroll logs to bottom
+  // Auto-scroll logs to bottom when new logs arrive
   useEffect(() => {
     if (logsScrollRef.current && storyLogs.length > 0) {
-      logsScrollRef.current.scrollTop = logsScrollRef.current.scrollHeight
+      // Use setTimeout to ensure DOM has updated
+      setTimeout(() => {
+        logsScrollRef.current?.scrollTo({
+          top: logsScrollRef.current.scrollHeight,
+          behavior: 'smooth'
+        })
+      }, 50)
     }
   }, [storyLogs])
 
@@ -439,6 +476,35 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
       }
     } catch (error) {
       toast.error('Failed to restart task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Merge to Main handler - triggers Developer agent to merge branch
+  const handleMergeToMain = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/merge-to-main`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Merge started. Check logs for progress.')
+      } else {
+        const data = await response.json()
+        toast.error(data.detail || 'Failed to start merge')
+      }
+    } catch (error) {
+      toast.error('Failed to start merge')
     } finally {
       setIsActionLoading(false)
     }
@@ -848,16 +914,16 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                       <span className="text-muted-foreground font-medium">AGENT STATUS</span>
                       <span className="flex items-center gap-1.5">
                         <span className={`inline-block w-2 h-2 rounded-full ${
-                          agentState === 'processing' ? 'bg-primary animate-pulse' :
-                          agentState === 'paused' ? 'bg-amber-500' :
-                          agentState === 'finished' ? 'bg-green-500' :
-                          agentState === 'canceled' ? 'bg-destructive' :
+                          agentState === 'PROCESSING' ? 'bg-primary animate-pulse' :
+                          agentState === 'PAUSED' ? 'bg-amber-500' :
+                          agentState === 'FINISHED' ? 'bg-green-500' :
+                          agentState === 'CANCELED' ? 'bg-destructive' :
                           'bg-muted-foreground'
                         }`}></span>
-                        {agentState === 'processing' ? 'Processing' :
-                         agentState === 'paused' ? 'Paused' :
-                         agentState === 'finished' ? 'Finished' :
-                         agentState === 'canceled' ? 'Canceled' : 'Pending'}
+                        {agentState === 'PROCESSING' ? 'Processing' :
+                         agentState === 'PAUSED' ? 'Paused' :
+                         agentState === 'FINISHED' ? 'Finished' :
+                         agentState === 'CANCELED' ? 'Canceled' : 'Pending'}
                       </span>
                     </>
                   )}
@@ -894,11 +960,11 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                 </div>
               )}
 
-              {/* Action Buttons */}
-              {agentState && (
+              {/* Action Buttons - show when agentState exists OR when in InProgress/Review */}
+              {(agentState || status === 'InProgress' || status === 'Review') && (
                 <div className="mt-3 flex items-center gap-2 flex-wrap">
                   {/* Dev Server Start */}
-                  {agentState === 'finished' && card.worktree_path && !card.running_port && (
+                  {agentState === 'FINISHED' && card.worktree_path && !card.running_port && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -911,7 +977,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   )}
                   
                   {/* Dev Server Stop - danger color */}
-                  {agentState === 'finished' && card.worktree_path && card.running_port && (
+                  {agentState === 'FINISHED' && card.worktree_path && card.running_port && (
                     <Button
                       variant="destructive"
                       size="sm"
@@ -941,42 +1007,71 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                     </Button>
                   )}
 
-                  {/* Pause when pending or processing */}
-                  {(agentState === 'pending' || agentState === 'processing') && (
-                    <Button variant="outline" size="sm" onClick={handlePauseTask} disabled={isActionLoading}>
-                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />}
-                      Tạm dừng
+                  {/* Agent control buttons - only show in InProgress or Review columns */}
+                  {(status === 'InProgress' || status === 'Review') && (
+                    <>
+                      {/* Waiting for agent when no state yet (just moved to InProgress, agent auto-triggered) */}
+                      {!agentState && (
+                        <Button variant="outline" size="sm" disabled className="text-muted-foreground">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Đang khởi tạo...
+                        </Button>
+                      )}
+                      
+                      {/* Pause when pending or processing */}
+                      {(agentState === 'PENDING' || agentState === 'PROCESSING') && (
+                        <Button variant="outline" size="sm" onClick={handlePauseTask} disabled={isActionLoading}>
+                          {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />}
+                          Tạm dừng
+                        </Button>
+                      )}
+                      
+                      {/* Resume when paused */}
+                      {agentState === 'PAUSED' && (
+                        <Button variant="default" size="sm" onClick={handleResumeTask} disabled={isActionLoading}>
+                          {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                          Tiếp tục
+                        </Button>
+                      )}
+                      
+                      {/* Cancel when processing or paused */}
+                      {(agentState === 'PENDING' || agentState === 'PROCESSING' || agentState === 'PAUSED') && (
+                        <Button variant="destructive" size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={handleCancelTask} disabled={isActionLoading}>
+                          {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
+                          Hủy
+                        </Button>
+                      )}
+                      
+                      {/* Restart when canceled or finished */}
+                      {(agentState === 'CANCELED' || agentState === 'FINISHED') && (
+                        <Button variant="default" size="sm" onClick={handleRestartTask} disabled={isActionLoading}>
+                          {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                          Restart
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  
+                  {/* Merge to Main when finished, not yet merged, not merging, and status is InProgress or Review */}
+                  {agentState === 'FINISHED' && card.merge_status !== 'merged' && prState !== 'merging' && (status === 'InProgress' || status === 'Review') && (
+                    <Button variant="default" size="sm" onClick={handleMergeToMain} disabled={isActionLoading} className="bg-green-600 hover:bg-green-700 text-white">
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <GitBranch className="w-4 h-4" />}
+                      Merge to Main
                     </Button>
                   )}
                   
-                  {/* Resume when paused */}
-                  {agentState === 'paused' && (
-                    <Button variant="default" size="sm" onClick={handleResumeTask} disabled={isActionLoading}>
-                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                      Tiếp tục
-                    </Button>
-                  )}
-                  
-                  {/* Cancel when processing or paused */}
-                  {(agentState === 'pending' || agentState === 'processing' || agentState === 'paused') && (
-                    <Button variant="destructive" size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={handleCancelTask} disabled={isActionLoading}>
-                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
-                      Hủy
-                    </Button>
-                  )}
-                  
-                  {/* Restart when canceled or finished */}
-                  {(agentState === 'canceled' || agentState === 'finished') && (
-                    <Button variant="default" size="sm" onClick={handleRestartTask} disabled={isActionLoading}>
-                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                      Restart
+                  {/* Show merging indicator */}
+                  {prState === 'merging' && (
+                    <Button variant="outline" size="sm" disabled className="text-amber-600 border-amber-500">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Merging...
                     </Button>
                   )}
                 </div>
               )}
               
               {/* Review Story Button - Only visible in Todo column */}
-              {card.status === 'Todo' && (
+              {status === 'Todo' && (
                 <div className="mt-3">
                   <Button 
                     variant="outline" 
@@ -996,25 +1091,29 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
 
         <Separator />
 
-        {/* Tabs Navigation */}
+        {/* Tabs Navigation - Hide Chat and Diffs tabs when Done or Archived */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className={`grid w-full ${status === 'Done' || status === 'Archived' ? 'grid-cols-2' : 'grid-cols-4'}`}>
             <TabsTrigger value="detail" className="gap-2">
               <FileText className="w-4 h-4" />
               Detail
             </TabsTrigger>
-            <TabsTrigger value="chat" className="gap-2">
-              <MessageSquare className="w-4 h-4" />
-              Chat
-            </TabsTrigger>
+            {status !== 'Done' && status !== 'Archived' && (
+              <TabsTrigger value="chat" className="gap-2">
+                <MessageSquare className="w-4 h-4" />
+                Chat
+              </TabsTrigger>
+            )}
             <TabsTrigger value="logs" className="gap-2">
               <ScrollText className="w-4 h-4" />
               Logs
             </TabsTrigger>
-            <TabsTrigger value="diffs" className="gap-2">
-              <GitBranch className="w-4 h-4" />
-              Diffs
-            </TabsTrigger>
+            {status !== 'Done' && status !== 'Archived' && (
+              <TabsTrigger value="diffs" className="gap-2">
+                <GitBranch className="w-4 h-4" />
+                Diffs
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Detail Tab */}
@@ -1478,9 +1577,9 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
             </div>
           </TabsContent>
 
-          {/* Logs Tab */}
-          <TabsContent value="logs" className="flex-1 overflow-y-auto mt-4 min-h-0">
-            <div ref={logsScrollRef} className="space-y-3 px-1">
+          {/* Logs Tab - Timeline style */}
+          <TabsContent value="logs" ref={logsScrollRef} className="flex-1 overflow-y-auto mt-4 min-h-0">
+            <div className="space-y-1 px-1 font-mono text-xs">
               {storyLogs.length === 0 ? (
                 <div className="text-center text-muted-foreground py-8">
                   <ScrollText className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -1488,31 +1587,30 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   <p className="text-xs mt-1">Logs will appear here when actions are performed</p>
                 </div>
               ) : (
-                Object.entries(groupedLogs).map(([node, logs]) => (
-                  <Task key={node} defaultOpen={true}>
-                    <TaskTrigger 
-                      title={`${node} (${logs.length})`}
-                      icon={<Activity className="size-4" />}
-                    />
-                    <TaskContent>
-                      {logs.map((log) => (
-                        <TaskItem 
-                          key={log.id}
-                          className={
-                            log.level === 'error' ? 'text-red-500' :
-                            log.level === 'warning' ? 'text-yellow-600' :
-                            log.level === 'success' ? 'text-green-600' :
-                            'text-muted-foreground'
-                          }
-                        >
-                          <span className="text-xs text-muted-foreground/70 mr-2">
-                            {new Date(log.timestamp).toLocaleTimeString('vi-VN')}
-                          </span>
-                          {log.content}
-                        </TaskItem>
-                      ))}
-                    </TaskContent>
-                  </Task>
+                storyLogs.map((log) => (
+                  <div 
+                    key={log.id}
+                    className={`flex items-start gap-2 px-2 py-1 rounded ${
+                      log.level === 'error' ? 'bg-red-500/10 text-red-500' :
+                      log.level === 'warning' ? 'bg-yellow-500/10 text-yellow-600' :
+                      log.level === 'success' ? 'bg-green-500/10 text-green-600' :
+                      log.node === 'restart' ? 'bg-purple-500/10 text-purple-600 font-medium' :
+                      log.content?.startsWith('✅') || log.content?.startsWith('🚀') ? 'bg-green-500/10 text-green-600 font-medium' :
+                      log.content?.startsWith('❌') ? 'bg-red-500/10 text-red-500 font-medium' :
+                      log.content?.startsWith('⚠️') ? 'bg-yellow-500/10 text-yellow-600 font-medium' :
+                      'text-muted-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    <span className="text-muted-foreground/70 shrink-0 w-16">
+                      {new Date(log.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                    {log.node && (
+                      <span className="text-primary/70 shrink-0 w-28 truncate" title={log.node}>
+                        [{log.node}]
+                      </span>
+                    )}
+                    <span className="flex-1 break-all">{log.content}</span>
+                  </div>
                 ))
               )}
             </div>

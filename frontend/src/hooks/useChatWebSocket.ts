@@ -226,6 +226,10 @@ export function useChatWebSocket(
         handleStoryStateChanged(msg)
         break
       
+      case 'story_status_changed':
+        handleStoryStatusChanged(msg)
+        break
+      
       case 'branch_changed':
         handleBranchChanged(msg)
         break
@@ -705,9 +709,26 @@ export function useChatWebSocket(
       detail: { 
         story_id: msg.story_id, 
         agent_state: msg.agent_state,
+        sub_status: msg.sub_status,  // NEW: sub-status for PENDING state (queued/cleaning/starting)
         old_state: msg.old_state,
         running_port: msg.running_port,
         running_pid: msg.running_pid,
+        pr_state: msg.pr_state,
+        merge_status: msg.merge_status,
+      }
+    }))
+  }
+  
+  const handleStoryStatusChanged = (msg: any) => {
+    console.log('[WS] 📋 Story status changed:', msg.story_id, msg)
+    
+    // Dispatch custom event for KanbanBoard to listen
+    window.dispatchEvent(new CustomEvent('story-status-changed', {
+      detail: { 
+        story_id: msg.story_id, 
+        status: msg.status,
+        merge_status: msg.merge_status,
+        pr_state: msg.pr_state,
       }
     }))
   }

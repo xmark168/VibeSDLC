@@ -163,6 +163,9 @@ class BaseAgent(ABC):
         # Cross-agent collaboration
         self._pending_collaborations: Dict[UUID, asyncio.Future] = {}
 
+        # Signal handling for cancel/pause (pushed from pool manager)
+        self._pending_signals: Dict[str, str] = {}  # story_id -> signal ('cancel', 'pause')
+
         logger.info(
             f"Initialized {self.role_type} agent: {self.name} "
             f"(style: {self.communication_style or 'N/A'}, traits: {', '.join(self.personality_traits[:2]) if self.personality_traits else 'N/A'})"
@@ -1322,6 +1325,67 @@ class BaseAgent(ABC):
         else:
             future.set_exception(CollaborationError(error or "Collaboration failed"))
 
+    # =========================================================================
+    # SIGNAL HANDLING (for cancel/pause from pool manager)
+    # =========================================================================
+
+    def receive_signal(self, story_id: str, signal: str) -> None:
+        """Receive signal from pool manager.
+        
+        Called by AgentPoolManager.signal_agent() - direct push, no polling.
+        
+        Args:
+            story_id: Story UUID string
+            signal: Signal type ('cancel', 'pause')
+        """
+        self._pending_signals[story_id] = signal
+        logger.info(f"[{self.name}] Received signal '{signal}' for story {story_id[:8]}...")
+
+    def check_signal(self, story_id: str) -> Optional[str]:
+        """Check for pending signal without consuming it.
+        
+        Called by graph nodes during execution - O(1), no DB query.
+        
+        Args:
+            story_id: Story UUID string
+            
+        Returns:
+            Signal type ('cancel', 'pause') or None
+        """
+        return self._pending_signals.get(story_id)
+
+    def consume_signal(self, story_id: str) -> Optional[str]:
+        """Check and consume signal (remove after reading).
+        
+        Args:
+            story_id: Story UUID string
+            
+        Returns:
+            Signal type or None
+        """
+        return self._pending_signals.pop(story_id, None)
+
+    def clear_signal(self, story_id: str) -> None:
+        """Clear signal for a story.
+        
+        Called on restart/finish to clean up.
+        
+        Args:
+            story_id: Story UUID string
+        """
+        self._pending_signals.pop(story_id, None)
+
+    def has_signal(self, story_id: str) -> bool:
+        """Check if signal exists for a story.
+        
+        Args:
+            story_id: Story UUID string
+            
+        Returns:
+            True if signal exists
+        """
+        return story_id in self._pending_signals
+
     def get_langfuse_callback(
         self,
         trace_name: str,
@@ -1676,17 +1740,27 @@ class BaseAgent(ABC):
                 except asyncio.TimeoutError:
                     continue  # Check if still running
                 
-                # Process task
-                await self._execute_task(task_data)
-                
-                # Mark task as done in queue
-                self._task_queue.task_done()
+                # Process task with guaranteed cleanup
+                try:
+                    await self._execute_task(task_data)
+                finally:
+                    # ALWAYS mark task as done and reset state
+                    self._task_queue.task_done()
+                    if self.state == AgentStatus.busy:
+                        self.state = AgentStatus.idle
                 
             except asyncio.CancelledError:
                 logger.info(f"[{self.name}] Task queue worker cancelled")
+                # Ensure state is reset before exiting
+                if self.state == AgentStatus.busy:
+                    logger.info(f"[{self.name}] Resetting state to idle on worker cancel")
+                    self.state = AgentStatus.idle
                 break
             except Exception as e:
                 logger.error(f"[{self.name}] Task queue worker error: {e}", exc_info=True)
+                # Reset state on error too
+                if self.state == AgentStatus.busy:
+                    self.state = AgentStatus.idle
         
 
 
@@ -1924,12 +1998,23 @@ class BaseAgent(ABC):
                         f"[{self.name}] Task {task_id} failed: {result.error_message}"
                     )
 
+        except asyncio.CancelledError:
+            # Task was cancelled - ensure we reset state
+            logger.info(f"[{self.name}] Task {task_id} was cancelled")
+            self.state = AgentStatus.idle
+            # Don't re-raise - let the task complete gracefully
+            
         except Exception as e:
             logger.error(
                 f"[{self.name}] Error processing task {task_id}: {e}",
                 exc_info=True
             )
         finally:
+            # ALWAYS reset state to idle (defensive - in case inner finally didn't run)
+            if self.state == AgentStatus.busy:
+                logger.debug(f"[{self.name}] Resetting state to idle in outer finally")
+                self.state = AgentStatus.idle
+            
             # Score task completion (v3 API - non-blocking)
             try:
                 duration_ms = (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000 if self._execution_start_time else 0

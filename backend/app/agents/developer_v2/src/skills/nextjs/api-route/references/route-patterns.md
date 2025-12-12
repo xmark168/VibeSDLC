@@ -1,5 +1,38 @@
 # API Route Patterns
 
+## ⚠️ Response Format Rules - CRITICAL
+
+**LUÔN trả về array trực tiếp trong `data`, KHÔNG wrap trong object:**
+
+```typescript
+// ✅ CORRECT - data is array
+return successResponse(items);
+// Result: { success: true, data: [...] }
+
+// ❌ WRONG - data is object with nested array
+return successResponse({ results: items, metadata: {...} });
+// Result: { success: true, data: { results: [...], metadata: {...} } }
+// Frontend sẽ CRASH khi gọi data.data.map()!
+```
+
+**Nếu cần metadata (pagination, filters), dùng `meta` field riêng:**
+
+```typescript
+// ✅ CORRECT with meta
+return NextResponse.json({
+  success: true,
+  data: items,           // Array trực tiếp
+  meta: {                // Metadata riêng
+    total,
+    page,
+    limit,
+    appliedFilters: {...}
+  }
+});
+```
+
+---
+
 ## Types (from api.types.ts)
 
 ```typescript
@@ -150,3 +183,87 @@ export async function POST(request: NextRequest) {
   }
 }
 ```
+
+## Search with Filters Pattern
+
+**CRITICAL**: Param names MUST match frontend exactly!
+
+```typescript
+// app/api/books/search/route.ts
+import { NextRequest } from 'next/server';
+import { Prisma } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
+import { successResponse, handleError } from '@/lib/api-response';
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    
+    // Parse comma-separated filters (NOT getAll!)
+    const categories = searchParams.get('categories')?.split(',').filter(Boolean) ?? [];
+    const authors = searchParams.get('authors')?.split(',').filter(Boolean) ?? [];
+    const minPrice = searchParams.get('minPrice');
+    const maxPrice = searchParams.get('maxPrice');
+    const sort = searchParams.get('sort') || 'relevance';  // NOT 'sortBy'!
+    const query = searchParams.get('q') || '';
+
+    // Build Prisma where clause
+    const where: Prisma.BookWhereInput = {};
+    
+    if (query) {
+      where.OR = [
+        { title: { contains: query, mode: 'insensitive' } },
+        { author: { name: { contains: query, mode: 'insensitive' } } },
+      ];
+    }
+    
+    if (categories.length > 0) {
+      where.categoryId = { in: categories };
+    }
+    
+    if (authors.length > 0) {
+      where.authorId = { in: authors };
+    }
+    
+    if (minPrice || maxPrice) {
+      where.price = {};
+      if (minPrice) where.price.gte = parseFloat(minPrice);
+      if (maxPrice) where.price.lte = parseFloat(maxPrice);
+    }
+
+    // Sort mapping - use 'sort' param, NOT 'sortBy'
+    const orderByMap: Record<string, Prisma.BookOrderByWithRelationInput> = {
+      'price-asc': { price: 'asc' },
+      'price-desc': { price: 'desc' },
+      'newest': { createdAt: 'desc' },
+      'title': { title: 'asc' },
+      'relevance': { title: 'asc' },
+    };
+    const orderBy = orderByMap[sort] || { title: 'asc' };
+
+    const books = await prisma.book.findMany({
+      where,
+      orderBy,
+      include: {
+        author: { select: { id: true, name: true } },
+        category: { select: { id: true, name: true } },
+      },
+    });
+
+    // Convert Decimal to number if needed
+    const result = books.map(book => ({
+      ...book,
+      price: Number(book.price),
+    }));
+
+    return successResponse(result);
+  } catch (error) {
+    return handleError(error);
+  }
+}
+```
+
+**Param naming convention:**
+- Multi-select: `categories`, `authors`, `tags` (plural, comma-separated)
+- Single value: `sort`, `page`, `limit`
+- Range: `minPrice`, `maxPrice`

@@ -34,10 +34,73 @@ def custom_generate_unique_id(route: APIRoute) -> str:
     return route.name
 
 
+async def cleanup_stale_story_states():
+    """Reset stale story states on backend restart.
+    
+    When backend restarts, any stories in PENDING/PROCESSING state
+    are stale (no agent is actually processing them). Reset to null
+    and clear checkpoints.
+    """
+    from sqlmodel import Session
+    from sqlalchemy import text
+    from app.models import Story
+    from app.models.base import StoryAgentState
+    
+    try:
+        with Session(engine) as session:
+            # Find stories with stale states (any non-finished state)
+            stale_stories = session.exec(
+                text("""
+                    SELECT id, checkpoint_thread_id 
+                    FROM stories 
+                    WHERE agent_state IN ('PENDING', 'PROCESSING', 'PAUSED', 'CANCEL_REQUESTED')
+                """)
+            ).all()
+            
+            if not stale_stories:
+                logger.info("✓ No stale story states to cleanup")
+                return
+            
+            story_ids = [str(s[0]) for s in stale_stories]
+            checkpoint_ids = [s[1] for s in stale_stories if s[1]]
+            
+            logger.info(f"🧹 Cleaning up {len(stale_stories)} stale stories: {story_ids}")
+            
+            # Reset agent_state to null and clear assigned_agent_id
+            session.exec(
+                text("""
+                    UPDATE stories 
+                    SET agent_state = NULL,
+                        checkpoint_thread_id = NULL,
+                        assigned_agent_id = NULL
+                    WHERE agent_state IN ('PENDING', 'PROCESSING', 'PAUSED', 'CANCEL_REQUESTED')
+                """)
+            )
+            
+            # Clear checkpoint data for these stories
+            if checkpoint_ids:
+                for tid in checkpoint_ids:
+                    try:
+                        session.exec(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), {"tid": tid})
+                        session.exec(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), {"tid": tid})
+                        session.exec(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": tid})
+                    except Exception as e:
+                        logger.warning(f"Failed to delete checkpoint {tid}: {e}")
+            
+            session.commit()
+            logger.info(f"✓ Reset {len(stale_stories)} stale story states and cleared {len(checkpoint_ids)} checkpoints")
+            
+    except Exception as e:
+        logger.error(f"Failed to cleanup stale story states: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     with Session(engine) as session:
         init_db(session)
+
+    # Cleanup stale story states from previous run
+    await cleanup_stale_story_states()
 
     from app.kafka import ensure_kafka_topics
     try:

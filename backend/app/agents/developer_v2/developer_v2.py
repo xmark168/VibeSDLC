@@ -1,19 +1,10 @@
-"""
-Developer V2 Agent - LangGraph-based Story Processor.
-"""
-
+"""Developer V2 Agent - LangGraph-based Story Processor."""
 import asyncio
 import logging
 from typing import Dict, List, Optional, Set
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.core.project_context import ProjectContext
-from app.agents.core.task_registry import (
-    request_pause,
-    request_cancel,
-    check_interrupt_signal,
-    clear_signals,
-)
 from app.models import Agent as AgentModel
 from app.models.base import StoryAgentState
 from app.agents.developer_v2.src import DeveloperGraph
@@ -23,24 +14,21 @@ from app.kafka.event_schemas import AgentTaskType
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Pause/Cancel Signal Management - Delegated to TaskRegistry
-# =============================================================================
-# These functions are re-exported from task_registry for backward compatibility
-# The actual implementation is in app.agents.core.task_registry
-#
-# - request_pause(story_id) - Request pause for a story
-# - request_cancel(story_id) - Request cancel for a story  
-# - check_interrupt_signal(story_id) - Check for 'pause', 'cancel', or None
-# - clear_signals(story_id) - Clear all signals for a story
+def check_interrupt_signal(story_id: str, agent=None) -> Optional[str]:
+    """Check for interrupt signal. Returns 'pause', 'cancel', or None."""
+    if agent is not None and hasattr(agent, 'check_signal'):
+        signal = agent.check_signal(story_id)
+        if signal:
+            return signal
+    return None
 
 
 class StoryStoppedException(Exception):
-    """Raised when story processing should stop (paused or cancelled)."""
+    """Raised when story processing should stop."""
     def __init__(self, story_id: str, state: StoryAgentState, message: str = ""):
         self.story_id = story_id
         self.state = state
-        self.message = message or f"Story {story_id} stopped with state: {state.value}"
+        self.message = message or f"Story {story_id} stopped: {state.value}"
         super().__init__(self.message)
 
 
@@ -48,74 +36,89 @@ class DeveloperV2(BaseAgent):
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
-        
         self.context = ProjectContext.get(self.project_id)
         self.graph_engine = DeveloperGraph(agent=self)
-        
-        # Workspace management
         self.workspace_manager = ProjectWorkspaceManager(self.project_id)
         self.main_workspace = self.workspace_manager.get_main_workspace()
-        
-        # Task control: track running story tasks for cancel/pause
-        self._running_tasks: Dict[str, asyncio.Task] = {}  # story_id -> Task
-        self._paused_stories: Set[str] = set()  # story_ids that are paused (local cache)
-        self._cancelled_stories: Set[str] = set()  # story_ids that should be cancelled (local cache)
+        self._running_tasks: Dict[str, asyncio.Task] = {}
+        self._paused_stories: Set[str] = set()
+        self._cancelled_stories: Set[str] = set()
 
-    # =========================================================================
-    # Story State Check from DB (for pause/cancel detection)
-    # =========================================================================
-    
     def get_story_state_from_db(self, story_id: str) -> Optional[StoryAgentState]:
-        """Get current story agent_state from database.
-        
-        This is the source of truth for pause/cancel detection.
-        """
+        """Get story agent_state from database."""
         try:
             from uuid import UUID
             from sqlmodel import Session
             from app.core.db import engine
             from app.models import Story
-
             with Session(engine) as session:
                 story = session.get(Story, UUID(story_id))
-                if story:
-                    return story.agent_state
-                return None
-        except Exception as e:
-            logger.error(f"[{self.name}] Failed to get story state from DB: {e}")
+                return story.agent_state if story else None
+        except Exception:
             return None
     
     def check_should_stop(self, story_id: str) -> None:
-        """Check if story should stop processing. Raises StoryStoppedException if so.
+        """Check if story should stop. Raises StoryStoppedException if cancelled/paused."""
+        signal = self.check_signal(story_id)
+        if signal == "cancel":
+            self._cancelled_stories.add(story_id)
+            raise StoryStoppedException(story_id, StoryAgentState.CANCEL_REQUESTED, "Cancel requested")
+        elif signal == "pause":
+            self._paused_stories.add(story_id)
+            raise StoryStoppedException(story_id, StoryAgentState.PAUSED, "Paused")
         
-        Call this periodically during graph execution to detect pause/cancel.
-        """
         state = self.get_story_state_from_db(story_id)
-        if state == StoryAgentState.CANCELED:
-            self._cancelled_stories.add(story_id)  # Update local cache
-            raise StoryStoppedException(story_id, state, "Story was cancelled")
+        if state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
+            self._cancelled_stories.add(story_id)
+            raise StoryStoppedException(story_id, state, "Cancelled")
         elif state == StoryAgentState.PAUSED:
-            self._paused_stories.add(story_id)  # Update local cache
-            raise StoryStoppedException(story_id, state, "Story was paused")
+            self._paused_stories.add(story_id)
+            raise StoryStoppedException(story_id, state, "Paused")
     
     def is_story_paused(self, story_id: str) -> bool:
-        """Check if story has been paused (from DB, not just local cache)."""
-        # Check local cache first for performance
         if story_id in self._paused_stories:
             return True
-        # Check DB as source of truth
         state = self.get_story_state_from_db(story_id)
         if state == StoryAgentState.PAUSED:
             self._paused_stories.add(story_id)
             return True
         return False
 
-    async def _update_story_state(self, story_id: str, state: StoryAgentState) -> bool:
-        """Update story agent_state in database with WebSocket broadcast.
+    async def _run_graph_with_signal_check(self, graph, input_data, config, story_id: str):
+        """Run graph with signal checking between nodes."""
+        final_state = None
+        node_count = 0
+        
+        signal = self.check_signal(story_id)
+        db_state = self.get_story_state_from_db(story_id)
+        if signal == "cancel" or db_state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
+            raise StoryStoppedException(story_id, StoryAgentState.CANCEL_REQUESTED, "Cancel before start")
+        
+        async for event in graph.astream(input_data, config, stream_mode="values"):
+            node_count += 1
+            final_state = event
+            
+            signal = self.check_signal(story_id)
+            if signal == "cancel":
+                self._cancelled_stories.add(story_id)
+                raise StoryStoppedException(story_id, StoryAgentState.CANCEL_REQUESTED, "Cancel signal")
+            elif signal == "pause":
+                self._paused_stories.add(story_id)
+                raise StoryStoppedException(story_id, StoryAgentState.PAUSED, "Pause signal")
+            
+            db_state = self.get_story_state_from_db(story_id)
+            if db_state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
+                self._cancelled_stories.add(story_id)
+                raise StoryStoppedException(story_id, db_state, "Cancelled (DB)")
+            elif db_state == StoryAgentState.PAUSED:
+                self._paused_stories.add(story_id)
+                raise StoryStoppedException(story_id, db_state, "Paused (DB)")
+        
+        logger.info(f"[{self.name}] Graph completed after {node_count} nodes")
+        return final_state
 
-        Returns:
-            bool: True if successful, False if failed
-        """
+    async def _update_story_state(self, story_id: str, state: StoryAgentState) -> bool:
+        """Update story agent_state in DB and broadcast via WebSocket."""
         from uuid import UUID
         from sqlmodel import Session
         from app.core.db import engine
@@ -129,17 +132,13 @@ class DeveloperV2(BaseAgent):
             with Session(engine) as session:
                 story = session.get(Story, UUID(story_id))
                 if not story:
-                    logger.error(f"[{self.name}] Story {story_id} not found")
                     return False
-
                 old_state = story.agent_state
                 project_id = story.project_id
                 story.agent_state = state
+                story.assigned_agent_id = self.agent_id
                 session.commit()
 
-            logger.info(f"[{self.name}] Story {story_id} agent_state: {old_state} → {state}")
-            
-            # Broadcast state change to frontend
             if project_id:
                 try:
                     await connection_manager.broadcast_to_project({
@@ -148,126 +147,55 @@ class DeveloperV2(BaseAgent):
                         "agent_state": state.value if state else None,
                         "old_state": old_state.value if old_state else None,
                     }, project_id)
-                    logger.info(f"[{self.name}] Broadcasted agent_state change: {state.value}")
-                except Exception as broadcast_err:
-                    logger.warning(f"[{self.name}] Failed to broadcast state change: {broadcast_err}")
-            
-            return True
-
-        except Exception as e:
-            logger.error(f"[{self.name}] Failed to update story state: {e}", exc_info=True)
-            if project_id:
-                try:
-                    await connection_manager.broadcast_to_project({
-                        "type": "story_state_error",
-                        "story_id": story_id,
-                        "error": f"Failed to update state: {str(e)}",
-                        "message_type": "error",
-                    }, project_id)
                 except Exception:
                     pass
+            return True
+        except Exception:
             return False
 
-    # =========================================================================
-    # Task Control: Cancel/Pause/Resume
-    # =========================================================================
-    
     async def cancel_story(self, story_id: str) -> bool:
-        """Cancel a running story task.
-
-        Args:
-            story_id: Story UUID string
-
-        Returns:
-            True if task was cancelled, False if not found
-            
-        Note: State is already updated by API endpoint before this is called.
-        This method focuses on stopping the running task.
-        """
-        logger.info(f"[{self.name}] Cancelling story: {story_id}")
+        """Cancel a running story task."""
         self._cancelled_stories.add(story_id)
-
         task = self._running_tasks.get(story_id)
         if task and not task.done():
             task.cancel()
             await self._cleanup_story(story_id)
             return True
-
         return False
     
     async def pause_story(self, story_id: str) -> bool:
-        """Pause a running story task at current checkpoint.
-
-        Args:
-            story_id: Story UUID string
-
-        Returns:
-            True if task was paused, False if not found or invalid state
-            
-        Note: State is already updated by API endpoint before this is called.
-        This method focuses on stopping the running task gracefully.
-        """
-        logger.info(f"[{self.name}] Pausing story: {story_id}")
+        """Pause a running story task."""
         self._paused_stories.add(story_id)
-
         task = self._running_tasks.get(story_id)
         if task and not task.done():
-            task.cancel()  # Will save checkpoint before exit
+            task.cancel()
             return True
-
         return False
     
     async def resume_story(self, story_id: str) -> bool:
-        """Check if story can be resumed from pause.
-
-        The actual resume happens via Kafka event triggering _process_story again.
-
-        Args:
-            story_id: Story UUID string
-
-        Returns:
-            True if story can be resumed (has checkpoint_thread_id)
-            
-        Note: This validates resume conditions from DB, not in-memory state.
-        """
+        """Check if story can be resumed from checkpoint."""
         try:
             from uuid import UUID
             from sqlmodel import Session
             from app.core.db import engine
             from app.models import Story
-
             with Session(engine) as session:
                 story = session.get(Story, UUID(story_id))
-                if not story:
-                    logger.error(f"Story {story_id} not found")
+                if not story or not story.checkpoint_thread_id:
                     return False
-
-                # Check if has checkpoint (required for resume)
-                if not story.checkpoint_thread_id:
-                    logger.warning(f"Cannot resume: no checkpoint for {story_id}")
-                    return False
-                    
-                # Clear from paused cache since we're resuming
                 self._paused_stories.discard(story_id)
-                
-                logger.info(f"[{self.name}] Story {story_id} ready to resume from checkpoint: {story.checkpoint_thread_id}")
                 return True
-                
-        except Exception as e:
-            logger.error(f"Failed to validate resume state: {e}")
+        except Exception:
             return False
     
     async def _cleanup_story(self, story_id: str):
         """Cleanup resources for a cancelled/finished story."""
         try:
-            # Stop dev server if running
             from uuid import UUID
             from sqlmodel import Session
             from app.core.db import engine
             from app.models import Story
-            import os
-            import signal
-            
+            import os, signal
             with Session(engine) as session:
                 story = session.get(Story, UUID(story_id))
                 if story and story.running_pid:
@@ -278,21 +206,23 @@ class DeveloperV2(BaseAgent):
                     story.running_pid = None
                     story.running_port = None
                     session.commit()
-            
-            # Remove from tracking
             self._running_tasks.pop(story_id, None)
             self._cancelled_stories.discard(story_id)
             self._paused_stories.discard(story_id)
-            
-        except Exception as e:
-            logger.error(f"[{self.name}] Cleanup error for story {story_id}: {e}")
+            self.clear_signal(story_id)
+        except Exception:
+            pass
+    
+    def clear_story_cache(self, story_id: str) -> None:
+        """Clear story from caches for restart."""
+        self._cancelled_stories.discard(story_id)
+        self._paused_stories.discard(story_id)
+        self._running_tasks.pop(story_id, None)
+        self.clear_signal(story_id)
     
     def is_story_cancelled(self, story_id: str) -> bool:
-        """Check if story has been cancelled (from DB, not just local cache)."""
-        # Check local cache first for performance
         if story_id in self._cancelled_stories:
             return True
-        # Check DB as source of truth
         state = self.get_story_state_from_db(story_id)
         if state == StoryAgentState.CANCELED:
             self._cancelled_stories.add(story_id)
@@ -307,6 +237,8 @@ class DeveloperV2(BaseAgent):
         # Route based on task type
         if task.task_type == AgentTaskType.IMPLEMENT_STORY:
             return await self._handle_story_processing(task)
+        elif task.task_type == AgentTaskType.REVIEW_PR:
+            return await self._handle_merge_to_main(task)
         else:
             return await self._handle_user_message(task)
 
@@ -368,14 +300,14 @@ class DeveloperV2(BaseAgent):
             if story_id_from_context and (event_type == "story.status.changed" or is_resume):
                 story_id = story_id_from_context
                 
-                if is_resume:
-                    # Resuming paused story - state update only, no message (node will handle)
-                    if not await self._update_story_state(story_id, StoryAgentState.PROCESSING):
-                        raise RuntimeError(f"Cannot resume: failed to update state for {story_id}")
-                else:
-                    # Starting new story - state update only
-                    if not await self._update_story_state(story_id, StoryAgentState.PENDING):
-                        raise RuntimeError(f"Cannot start: failed to update state for {story_id}")
+                # Check if story is already cancelled/cancel_requested - abort early
+                current_state = self.get_story_state_from_db(story_id)
+                if current_state in [StoryAgentState.CANCELED, StoryAgentState.CANCEL_REQUESTED]:
+                    logger.info(f"[{self.name}] Story {story_id} is {current_state}, skipping")
+                    return TaskResult(success=False, output="", error_message=f"Story is {current_state.value}")
+                
+                # NOTE: Don't set PROCESSING here - keep PENDING until workspace is ready
+                # PROCESSING will be set by setup_workspace node after successful setup
                 
                 story_data = await self._load_story_from_db(story_id)
                 
@@ -454,8 +386,9 @@ class DeveloperV2(BaseAgent):
         try:
             story_id = story_data.get("story_id", str(task.task_id))
             
-            # Clear any leftover signals from previous runs (important for restart)
-            clear_signals(story_id)
+            # Clear any leftover signals from previous runs
+            # Note: Restart API clears signal after sending cancel and waiting
+            self.clear_signal(story_id)
             logger.info(f"[{self.name}] Cleared signals for story {story_id}")
             
             # Check if Langfuse is enabled before initializing
@@ -557,9 +490,12 @@ class DeveloperV2(BaseAgent):
                 "tech_stack": "nextjs",
             }
             
-            # Set PROCESSING state before starting graph
-            if not await self._update_story_state(story_id, StoryAgentState.PROCESSING):
-                raise RuntimeError(f"Failed to set PROCESSING state for {story_id}")
+            # Check signal before starting graph (in case cancel came during setup)
+            signal = self.check_signal(story_id)
+            if signal == "cancel":
+                logger.info(f"[{self.name}] Cancel signal found before graph start, aborting")
+                await self._update_story_state(story_id, StoryAgentState.CANCELED)
+                return TaskResult(success=False, output="", error_message="Cancelled before start")
             
             # Setup graph with PostgresSaver for persistent checkpoints
             logger.info(f"[{self.name}] Setting up graph with PostgresSaver...")
@@ -605,7 +541,10 @@ class DeveloperV2(BaseAgent):
                 except Exception as e:
                     logger.error(f"[{self.name}] Failed to save checkpoint_thread_id: {e}")
 
-            config = {"configurable": {"thread_id": thread_id}}
+            config = {
+                "configurable": {"thread_id": thread_id},
+                "callbacks": [langfuse_handler] if langfuse_handler else []
+            }
 
             # Check if resuming from pause
             if is_resume:
@@ -621,7 +560,13 @@ class DeveloperV2(BaseAgent):
                         from langgraph.types import Command
                         logger.info(f"[{self.name}] Checkpoint found, resuming with Command(resume=True)")
                         try:
-                            final_state = await self.graph_engine.graph.ainvoke(Command(resume=True), config)
+                            # Use signal-checking wrapper for resume
+                            final_state = await self._run_graph_with_signal_check(
+                                self.graph_engine.graph, 
+                                Command(resume=True), 
+                                config, 
+                                story_id
+                            )
                         except Exception as resume_err:
                             # Resume failed (checkpoint may have been deleted after check)
                             logger.warning(f"[{self.name}] Resume failed: {resume_err}, falling back to fresh start")
@@ -640,13 +585,23 @@ class DeveloperV2(BaseAgent):
                         message_type="warning"
                     )
                     is_resume = False
-                    final_state = await self.graph_engine.graph.ainvoke(initial_state, config)
+                    # Use signal-checking wrapper for fresh start
+                    final_state = await self._run_graph_with_signal_check(
+                        self.graph_engine.graph,
+                        initial_state,
+                        config,
+                        story_id
+                    )
             else:
-                # Start fresh
-                final_state = await self.graph_engine.graph.ainvoke(initial_state, config)
+                # Start fresh with signal-checking wrapper
+                final_state = await self._run_graph_with_signal_check(
+                    self.graph_engine.graph,
+                    initial_state,
+                    config,
+                    story_id
+                )
             
             # Check for LangGraph interrupt (pause/cancel signal was caught by a node)
-            from langgraph.types import Interrupt
             interrupt_info = final_state.get("__interrupt__")
             if interrupt_info:
                 # Extract interrupt reason from the interrupt value
@@ -808,27 +763,36 @@ class DeveloperV2(BaseAgent):
             )
         
         except StoryStoppedException as e:
-            # Story was stopped via DB state check (pause or cancel detected)
+            # Story was stopped via signal or DB state check
             logger.info(f"[{self.name}] Story {story_id} stopped: {e.message}")
             
             # Remove from local tracking
             self._running_tasks.pop(story_id, None)
             
-            # Notify user (milestone messages)
+            # Clear the signal after handling
+            self.consume_signal(story_id)
+            
+            # Handle based on state
             try:
                 from uuid import UUID
                 story_uuid = UUID(story_id)
+                
                 if e.state == StoryAgentState.PAUSED:
+                    # Paused - checkpoint auto-saved by LangGraph, just notify
                     await self.message_story(
                         story_uuid,
                         f"⏸️ Đã tạm dừng. Bấm Resume để tiếp tục.",
-                        message_type="text"
+                        message_type="system"
                     )
-                elif e.state == StoryAgentState.CANCELED:
+                elif e.state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
+                    # Cancel requested/canceled - transition to CANCELED and notify
+                    if e.state == StoryAgentState.CANCEL_REQUESTED:
+                        # Agent acknowledges cancel by transitioning to CANCELED
+                        await self._update_story_state(story_id, StoryAgentState.CANCELED)
                     await self.message_story(
                         story_uuid,
                         f"🛑 Đã hủy story.",
-                        message_type="text"
+                        message_type="system"
                     )
             except Exception:
                 pass
@@ -970,3 +934,236 @@ class DeveloperV2(BaseAgent):
         )
         
         return await self.handle_task(task)
+
+    async def _handle_merge_to_main(self, task: TaskContext) -> TaskResult:
+        """Handle merge story branch to main/master.
+        
+        Flow:
+        1. Fetch latest main branch
+        2. Merge main into story branch (in worktree)
+        3. If conflict: try to resolve, if not possible mark as conflict
+        4. If success: merge story branch into main
+        5. Cleanup worktree and branch
+        """
+        import subprocess
+        from pathlib import Path
+        from uuid import UUID
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Story
+        from app.models.story import StoryStatus
+        from app.agents.developer_v2.src.utils.story_logger import log_to_story
+        
+        # Extract task context
+        ctx = task.context or {}
+        story_id = ctx.get("story_id") or (task.content if isinstance(task.content, str) else None)
+        branch_name = ctx.get("branch_name")
+        worktree_path = ctx.get("worktree_path")
+        main_workspace = ctx.get("main_workspace")
+        project_id = str(task.project_id) if task.project_id else ctx.get("project_id")
+        
+        if not story_id:
+            return TaskResult(success=False, output="Missing story_id in task context")
+        
+        logger.info(f"[{self.name}] Starting merge task for story {story_id}")
+        
+        # Get story from DB
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id))
+            if not story:
+                return TaskResult(success=False, output=f"Story not found: {story_id}")
+            
+            branch_name = branch_name or story.branch_name
+            worktree_path = worktree_path or story.worktree_path
+            
+            if not branch_name:
+                story.pr_state = "error"
+                story.merge_status = "no_branch"
+                session.add(story)
+                session.commit()
+                return TaskResult(success=False, output="Story has no branch to merge")
+        
+        # Determine workspace to use
+        workspace = worktree_path if worktree_path and Path(worktree_path).exists() else main_workspace
+        if not workspace or not Path(workspace).exists():
+            await self._update_merge_status(story_id, "error", "no_workspace")
+            return TaskResult(success=False, output="No valid workspace found")
+        
+        await log_to_story(story_id, project_id, f"🔄 Starting merge of {branch_name} to main...", "info", "merge")
+        
+        try:
+            # Use main workspace (not worktree) for merge operations
+            main_ws = main_workspace if main_workspace and Path(main_workspace).exists() else workspace
+            
+            # 1. Detect default branch (local)
+            base_branch = "main"
+            for branch in ["main", "master"]:
+                result = subprocess.run(
+                    ["git", "branch", "--list", branch],
+                    cwd=main_ws, capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    base_branch = branch
+                    break
+            
+            await log_to_story(story_id, project_id, f"📍 Base branch: {base_branch}, workspace: {main_ws}", "info", "merge")
+            
+            # 2. Fetch all branches
+            await log_to_story(story_id, project_id, f"📥 Fetching latest changes...", "info", "merge")
+            subprocess.run(["git", "fetch", "--all"], cwd=main_ws, capture_output=True, timeout=60)
+            
+            # 3. Switch to base branch and pull latest
+            await log_to_story(story_id, project_id, f"🔀 Switching to {base_branch}...", "info", "merge")
+            checkout_result = subprocess.run(
+                ["git", "checkout", base_branch],
+                cwd=main_ws, capture_output=True, text=True, timeout=30
+            )
+            if checkout_result.returncode != 0:
+                await self._update_merge_status(story_id, "error", "checkout_failed")
+                await log_to_story(story_id, project_id, f"❌ Failed to checkout {base_branch}: {checkout_result.stderr}", "error", "merge")
+                return TaskResult(success=False, output=f"Failed to checkout {base_branch}")
+            
+            subprocess.run(["git", "pull", "origin", base_branch], cwd=main_ws, capture_output=True, timeout=60)
+            
+            # 4. Merge story branch into base branch (local merge)
+            await log_to_story(story_id, project_id, f"🔀 Merging {branch_name} into {base_branch}...", "info", "merge")
+            merge_result = subprocess.run(
+                ["git", "merge", branch_name, "--no-ff", "-m", f"Merge branch '{branch_name}'"],
+                cwd=main_ws, capture_output=True, text=True, timeout=60
+            )
+            
+            if merge_result.returncode != 0:
+                # Check if conflict
+                if "CONFLICT" in merge_result.stdout or "CONFLICT" in merge_result.stderr:
+                    subprocess.run(["git", "merge", "--abort"], cwd=main_ws, capture_output=True, timeout=10)
+                    await self._update_merge_status(story_id, "conflict", "merge_conflict")
+                    await log_to_story(story_id, project_id, f"❌ Merge conflict! Please resolve manually.", "error", "merge")
+                    return TaskResult(success=False, output=f"Merge conflict. Manual resolution required.")
+                else:
+                    error_msg = merge_result.stderr or merge_result.stdout
+                    subprocess.run(["git", "merge", "--abort"], cwd=main_ws, capture_output=True, timeout=10)
+                    await self._update_merge_status(story_id, "error", "merge_failed")
+                    await log_to_story(story_id, project_id, f"❌ Merge failed: {error_msg[:200]}", "error", "merge")
+                    return TaskResult(success=False, output=f"Merge failed: {error_msg}")
+            
+            await log_to_story(story_id, project_id, f"✅ Successfully merged {branch_name} into {base_branch}", "success", "merge")
+            
+            # 5. Cleanup
+            await log_to_story(story_id, project_id, f"🧹 Cleaning up worktree and branch...", "info", "merge")
+            await self._cleanup_after_merge(story_id, worktree_path, branch_name, main_ws)
+            
+            # 6. Move story to Done and update merge status
+            with Session(engine) as session:
+                story = session.get(Story, UUID(story_id))
+                if story:
+                    story.status = StoryStatus.DONE
+                    story.pr_state = "merged"
+                    story.merge_status = "merged"
+                    session.add(story)
+                    session.commit()
+            
+            # 7. Broadcast status change to frontend
+            from app.websocket.connection_manager import connection_manager
+            await connection_manager.broadcast_to_project({
+                "type": "story_status_changed",
+                "story_id": story_id,
+                "status": "Done",
+                "merge_status": "merged",
+                "pr_state": "merged",
+            }, UUID(project_id))
+            
+            await log_to_story(story_id, project_id, f"📋 Story moved to Done", "success", "merge")
+            await log_to_story(story_id, project_id, f"✅ Successfully merged {branch_name} into {base_branch}!", "success", "merge")
+            
+            return TaskResult(
+                success=True,
+                output=f"Successfully merged {branch_name} into {base_branch}",
+                structured_data={
+                    "branch_name": branch_name,
+                    "base_branch": base_branch,
+                    "merge_status": "merged"
+                }
+            )
+            
+        except subprocess.TimeoutExpired:
+            await self._update_merge_status(story_id, "error", "timeout")
+            await log_to_story(story_id, project_id, "❌ Merge operation timed out", "error", "merge")
+            return TaskResult(success=False, output="Merge operation timed out")
+        except Exception as e:
+            logger.error(f"[{self.name}] Merge error: {e}")
+            await self._update_merge_status(story_id, "error", "exception")
+            await log_to_story(story_id, project_id, f"❌ Merge error: {str(e)[:200]}", "error", "merge")
+            return TaskResult(success=False, output=f"Merge error: {e}")
+
+    async def _update_merge_status(self, story_id: str, pr_state: str, merge_status: str):
+        """Update story merge status in DB and broadcast via WebSocket."""
+        from uuid import UUID
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Story
+        from app.websocket.connection_manager import connection_manager
+        
+        project_id = None
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id))
+            if story:
+                story.pr_state = pr_state
+                story.merge_status = merge_status
+                project_id = story.project_id
+                session.add(story)
+                session.commit()
+        
+        # Broadcast WebSocket event for UI update
+        if project_id:
+            await connection_manager.broadcast_to_project({
+                "type": "story_state_changed",
+                "story_id": story_id,
+                "pr_state": pr_state,
+                "merge_status": merge_status,
+            }, project_id)
+
+    async def _cleanup_after_merge(self, story_id: str, worktree_path: str | None, branch_name: str | None, main_workspace: str):
+        """Cleanup worktree and branch after successful merge."""
+        import subprocess
+        from pathlib import Path
+        import shutil
+        from uuid import UUID
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Story
+        
+        try:
+            # 1. Remove worktree
+            if worktree_path and Path(worktree_path).exists():
+                try:
+                    subprocess.run(
+                        ["git", "worktree", "remove", worktree_path, "--force"],
+                        cwd=main_workspace, capture_output=True, timeout=30
+                    )
+                except:
+                    shutil.rmtree(worktree_path, ignore_errors=True)
+                logger.info(f"[{self.name}] Removed worktree: {worktree_path}")
+            
+            # 2. Delete branch (local and remote)
+            if branch_name:
+                subprocess.run(
+                    ["git", "branch", "-D", branch_name],
+                    cwd=main_workspace, capture_output=True, timeout=10
+                )
+                subprocess.run(
+                    ["git", "push", "origin", "--delete", branch_name],
+                    cwd=main_workspace, capture_output=True, timeout=30
+                )
+                logger.info(f"[{self.name}] Deleted branch: {branch_name}")
+            
+            # 3. Update story in DB
+            with Session(engine) as session:
+                story = session.get(Story, UUID(story_id))
+                if story:
+                    story.worktree_path = None
+                    story.branch_name = None
+                    session.add(story)
+                    session.commit()
+                    
+        except Exception as e:
+            logger.error(f"[{self.name}] Cleanup error: {e}")

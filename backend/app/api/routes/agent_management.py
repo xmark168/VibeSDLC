@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, update
 
-from app.agents.core import AgentPoolManager
+from app.agents.core.agent_pool_manager import AgentPoolManager
 from app.api.deps import SessionDep, get_current_user, get_db
 from app.models import Agent, AgentExecution, AgentExecutionStatus, AgentStatus, User
 from app.schemas import (
@@ -135,6 +135,27 @@ def get_available_pool(role_type: Optional[str] = None) -> Optional[AgentPoolMan
     if _manager_registry:
         return next(iter(_manager_registry.values()))
 
+    return None
+
+
+def find_pool_for_agent(agent_id: UUID) -> Optional[AgentPoolManager]:
+    """Find which pool contains the given agent.
+    
+    Searches all pools to find the agent. Use this when you need to
+    send signals to a specific agent but don't know which pool it's in.
+    
+    Args:
+        agent_id: Agent UUID to find
+        
+    Returns:
+        AgentPoolManager containing the agent, or None if not found
+    """
+    for pool_name, manager in _manager_registry.items():
+        if agent_id in manager.agents:
+            logger.debug(f"[find_pool] Agent {agent_id} found in pool '{pool_name}'")
+            return manager
+    
+    logger.warning(f"[find_pool] Agent {agent_id} not found in any pool")
     return None
 
 

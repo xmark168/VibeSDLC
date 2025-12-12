@@ -100,6 +100,7 @@ class Story(BaseModel, table=True):
     
     # PR and merge tracking
     pr_url: str | None = Field(default=None, max_length=500)
+    pr_state: str | None = Field(default=None, max_length=50)  # "draft", "open", "merged", "closed"
     merge_status: str | None = Field(default=None, max_length=50)  # "not_merged", "merged", "conflict"
     
     # LangGraph checkpoint for pause/resume

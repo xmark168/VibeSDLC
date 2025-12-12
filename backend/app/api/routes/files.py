@@ -475,13 +475,35 @@ def get_git_status(
             behind=0,
         )
 
-    # Get current branch
+    # Get current branch - for worktrees, read from HEAD file directly
     try:
         current_branch = repo.active_branch.name
     except TypeError:
+        # Detached HEAD - try to read from HEAD file
         current_branch = repo.head.commit.hexsha[:7]
+    
+    # For worktrees, the HEAD might point to a different branch
+    # Check if this is a worktree and get the correct branch
+    if worktree:
+        head_file = project_folder / ".git"
+        if head_file.is_file():
+            # This is a worktree - .git is a file pointing to main repo
+            try:
+                # Read the actual HEAD reference
+                import subprocess
+                result = subprocess.run(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                    cwd=str(project_folder),
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    current_branch = result.stdout.strip()
+            except Exception as e:
+                logger.debug(f"Error getting worktree branch: {e}")
 
-    logger.info(f"Current branch: {current_branch}")
+    logger.info(f"Current branch: {current_branch}, is_worktree: {worktree is not None}")
 
     modified_files = []
     staged_files = []

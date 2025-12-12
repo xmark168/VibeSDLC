@@ -7,22 +7,16 @@ from ._base_context import (
 )
 
 from .filesystem_tools import (
-    read_file_safe,
-    list_directory_safe,
-    glob,
-    grep_files,
     get_modified_files,
     reset_modified_files,
+    _modified_files,
 )
 
 __all__ = [
     "set_tool_context",
     "get_root_dir",
     "is_safe_path",
-    "read_file_safe",
-    "list_directory_safe",
-    "glob",
-    "grep_files",
     "get_modified_files",
     "reset_modified_files",
+    "_modified_files",
 ]

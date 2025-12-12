@@ -1,6 +1,5 @@
 """Developer V2 Configuration Loader."""
 
-import os
 import yaml
 from pathlib import Path
 

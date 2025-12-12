@@ -1,5 +1,6 @@
 """Project management endpoints."""
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
@@ -476,21 +477,10 @@ async def _cleanup_project_files_and_agents(
                 shutil.rmtree(project_dir, onerror=remove_readonly)
                 logger.info(f"[Background] Deleted project directory: {project_dir}")
             except Exception as e:
-                logger.error(f"[Background] Failed to delete project directory {project_dir}: {e}")
-        
-        # Clean up worktrees (directories starting with project name + "_")
-        parent_dir = project_dir.parent
-        project_name = project_dir.name
-        if parent_dir.exists():
-            for item in parent_dir.iterdir():
-                if item.is_dir() and item.name.startswith(f"{project_name}_"):
-                    try:
-                        shutil.rmtree(item, onerror=remove_readonly)
-                        logger.info(f"[Background] Deleted worktree: {item}")
-                    except Exception as e:
-                        logger.error(f"[Background] Failed to delete worktree {item}: {e}")
+                logger.warning(f"Failed to stop agent {agent.human_name}: {e}")
     
-    logger.info(f"[Background] Cleanup completed for project {project_code}")
+    # Clean up project files (workspace + worktrees) - run in thread to avoid blocking
+    await asyncio.to_thread(project_service.delete_with_cleanup, project_id)
 
 
 @router.post("/{project_id}/cleanup", status_code=status.HTTP_200_OK)
@@ -693,7 +683,9 @@ async def start_project_dev_server(
     node_modules_path = workspace_path / "node_modules"
     if not node_modules_path.exists():
         logger.info(f"node_modules not found, running pnpm install...")
-        install_result = subprocess.run(
+        # Run in thread to avoid blocking event loop (can take 5+ minutes)
+        install_result = await asyncio.to_thread(
+            subprocess.run,
             "pnpm install" if is_windows else ["pnpm", "install"],
             cwd=str(workspace_path),
             shell=is_windows,

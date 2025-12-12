@@ -3,8 +3,6 @@
 import logging
 import time
 from typing import Dict, Tuple, Optional
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import ToolMessage
 
 logger = logging.getLogger(__name__)
 
@@ -65,69 +63,3 @@ def get_langfuse_span(state: dict, name: str, input_data: dict = None):
         return get_client().span(name=name, input=input_data or {})
     except Exception:
         return None
-
-
-async def execute_llm_with_tools(
-    llm: ChatOpenAI,
-    tools: list,
-    messages: list,
-    state: dict,
-    name: str,
-    max_iterations: int = 5
-) -> str:
-    """Execute LLM with ReAct tool calling pattern."""
-    llm_with_tools = llm.bind_tools(tools)
-    tool_map = {tool.name: tool for tool in tools}
-    conversation = list(messages)
-    
-    for i in range(max_iterations):
-        logger.info(f"[{name}] Iteration {i+1}/{max_iterations}")
-        
-        response = await llm_with_tools.ainvoke(
-            conversation, 
-            config=get_langfuse_config(state, name)
-        )
-        conversation.append(response)
-        flush_langfuse(state)
-        
-        if not response.tool_calls:
-            logger.info(f"[{name}] Completed at iteration {i+1}")
-            return response.content or ""
-        
-        tool_names = [tc["name"] for tc in response.tool_calls]
-        logger.info(f"[{name}] Tools called: {tool_names}")
-        
-        for tool_call in response.tool_calls:
-            tool_name = tool_call["name"]
-            tool_args = tool_call["args"]
-            
-            if tool_name in tool_map:
-                try:
-                    tool = tool_map[tool_name]
-                    if hasattr(tool, 'invoke'):
-                        result = tool.invoke(tool_args)
-                    elif hasattr(tool, 'func'):
-                        result = tool.func(**tool_args)
-                    else:
-                        result = tool(**tool_args)
-                    
-                    result_str = str(result)
-                    content = result_str if "[SKILL:" in result_str else result_str[:4000]
-                    
-                    conversation.append(ToolMessage(
-                        content=content,
-                        tool_call_id=tool_call["id"]
-                    ))
-                except Exception as e:
-                    conversation.append(ToolMessage(
-                        content=f"Error: {str(e)}",
-                        tool_call_id=tool_call["id"]
-                    ))
-            else:
-                conversation.append(ToolMessage(
-                    content=f"Unknown tool: {tool_name}",
-                    tool_call_id=tool_call["id"]
-                ))
-    
-    logger.warning(f"[{name}] Max iterations reached")
-    return conversation[-1].content if hasattr(conversation[-1], 'content') else ""

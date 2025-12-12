@@ -821,26 +821,50 @@ class StoryEventRouter(BaseEventRouter):
     async def _cancel_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
         """Cancel a running story task.
         
-        Sets cancel signal that nodes check to trigger LangGraph interrupt.
+        Sends cancel signal directly to agent via AgentPoolManager.
         """
         story_id = event_dict.get("story_id")
         self.logger.info(f"Story cancel event received for: {story_id}")
         
-        # Set cancel signal - nodes will check and interrupt
-        from app.agents.core.task_registry import request_cancel
-        request_cancel(story_id)
+        # Get assigned_agent_id from DB and signal via pool
+        from app.models import Story
+        from app.api.routes.agent_management import find_pool_for_agent
+        
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id) if isinstance(story_id, str) else story_id)
+            if story and story.assigned_agent_id:
+                pool = find_pool_for_agent(story.assigned_agent_id)
+                if pool:
+                    pool.signal_agent(story.assigned_agent_id, story_id, "cancel")
+                    self.logger.info(f"[cancel] Signal sent to agent {story.assigned_agent_id}")
+                else:
+                    self.logger.warning(f"[cancel] Agent {story.assigned_agent_id} not found in any pool")
+            else:
+                self.logger.warning(f"[cancel] No assigned_agent_id for story {story_id}")
 
     async def _pause_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
         """Pause a running story task.
         
-        Sets pause signal that nodes check to trigger LangGraph interrupt.
+        Sends pause signal directly to agent via AgentPoolManager.
         """
         story_id = event_dict.get("story_id")
         self.logger.info(f"Story pause event received for: {story_id}")
         
-        # Set pause signal - nodes will check and interrupt
-        from app.agents.core.task_registry import request_pause
-        request_pause(story_id)
+        # Get assigned_agent_id from DB and signal via pool
+        from app.models import Story
+        from app.api.routes.agent_management import find_pool_for_agent
+        
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id) if isinstance(story_id, str) else story_id)
+            if story and story.assigned_agent_id:
+                pool = find_pool_for_agent(story.assigned_agent_id)
+                if pool:
+                    pool.signal_agent(story.assigned_agent_id, story_id, "pause")
+                    self.logger.info(f"[pause] Signal sent to agent {story.assigned_agent_id}")
+                else:
+                    self.logger.warning(f"[pause] Agent {story.assigned_agent_id} not found in any pool")
+            else:
+                self.logger.warning(f"[pause] No assigned_agent_id for story {story_id}")
 
     async def _resume_story_task(self, event_dict: Dict[str, Any], project_id: str | UUID) -> None:
         """Resume a paused story task by re-routing to developer."""
@@ -1772,3 +1796,92 @@ async def stop_router_service() -> None:
     if _router_service is not None:
         await _router_service.stop()
         _router_service = None
+
+
+async def route_story_event(
+    story_id: str,
+    project_id: str,
+    task_type: "AgentTaskType",
+    priority: str = "medium",
+    metadata: Optional[Dict[str, Any]] = None
+) -> bool:
+    """Route a story-related event to an available agent.
+    
+    This is a helper function for triggering agent tasks from API routes.
+    
+    Args:
+        story_id: The story ID
+        project_id: The project ID
+        task_type: The type of task (e.g., REVIEW_PR, IMPLEMENT_STORY)
+        priority: Task priority (low, medium, high)
+        metadata: Additional context for the task
+    
+    Returns:
+        True if task was routed successfully
+    """
+    from uuid import UUID
+    from sqlmodel import Session
+    from app.core.db import engine
+    from app.services import AgentService
+    from app.models import Story
+    from app.agents.core.agent_pool_manager import AgentPoolManager
+    from app.api.routes.agent_management import _manager_registry
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id))
+            if not story:
+                logger.error(f"[route_story_event] Story not found: {story_id}")
+                return False
+            
+            agent_service = AgentService(session)
+            
+            # Get Developer agent for the project
+            developer = agent_service.get_by_project_and_role(
+                project_id=UUID(project_id),
+                role_type="developer"
+            )
+            
+            if not developer:
+                logger.error(f"[route_story_event] No Developer agent for project {project_id}")
+                return False
+            
+            # Create task context
+            from app.kafka.event_schemas import RouterTaskEvent
+            from uuid import uuid4
+            
+            context = {
+                "story_id": story_id,
+                "project_id": project_id,
+                "story_title": story.title,
+                "story_description": story.description,
+                "pr_url": story.pr_url,
+                "worktree_path": story.worktree_path,
+                "branch_name": story.branch_name,
+                **(metadata or {})
+            }
+            
+            task = RouterTaskEvent(
+                task_id=uuid4(),
+                task_type=task_type,
+                agent_id=developer.id,
+                source_event_type="api_trigger",
+                source_event_id=str(uuid4()),
+                routing_reason=f"route_story_event_{task_type.value}",
+                priority=priority,
+                project_id=UUID(project_id),
+                context=context,
+            )
+            
+            # Publish task to Kafka AGENT_TASKS topic for agent to consume
+            producer = await get_kafka_producer()
+            await producer.publish(topic=KafkaTopics.AGENT_TASKS, event=task)
+            
+            logger.info(f"[route_story_event] Routed {task_type.value} for story {story_id} to {developer.name}")
+            return True
+            
+    except Exception as e:
+        logger.error(f"[route_story_event] Error: {e}")
+        return False

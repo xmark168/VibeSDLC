@@ -41,7 +41,7 @@ def load_env_file():
 
     for env_file in env_files:
         if env_file.is_file():
-            load_dotenv(dotenv_path=env_file)
+            load_dotenv(dotenv_path=env_file, override=True)
             print(f"Loaded environment from {env_file}")
             return str(env_file)
 
@@ -140,26 +140,9 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: EmailStr
     FIRST_SUPERUSER_PASSWORD: str
 
-    LLM_API_KEY: str = ""
-    LLM_MODEL: str = "gpt-4.1"
-    DEFAULT_LLM_TEMPERATURE: float = 0.2
-    MAX_TOKENS: int = 2000
-    MAX_LLM_CALL_RETRIES: int = 3
-
-    # LLM Model Settings
-    STRONG_MODEL: str = "openai/gpt-4.1"  # For creative agents (BA, Designer)
-    LIGHT_MODEL: str = "openai/gpt-4.1"  # For validators/coordinators
-
-    OPENAI_API_KEY: str = ""
-    OPENAI_BASE_URL: str = ""
-    
-    # Anthropic / Claude settings
+    # Anthropic API Settings (all agents use this)
     ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_API_BASE: str = ""
-    
-    # Tester agent specific (can override global Anthropic settings)
-    TESTER_ANTHROPIC_API_KEY: str = ""
-    TESTER_ANTHROPIC_BASE_URL: str = ""
+    ANTHROPIC_API_BASE: str = "https://api.anthropic.com"
 
     SENTRY_DSN: HttpUrl | None = None
 
@@ -223,12 +206,6 @@ class Settings(BaseSettings):
     def _set_default_emails_from(self) -> Self:
         if not self.EMAILS_FROM_NAME:
             self.EMAILS_FROM_NAME = self.PROJECT_NAME
-        return self
-
-    @model_validator(mode="after")
-    def _sync_openai_api_key(self) -> Self:
-        if not self.OPENAI_API_KEY and self.LLM_API_KEY:
-            self.OPENAI_API_KEY = self.LLM_API_KEY
         return self
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:

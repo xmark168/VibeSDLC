@@ -109,7 +109,7 @@ export function useStoryWebSocket(
     
     // Handle agent state changes for thinking indicator
     if (msg.type === 'story_state_changed' && msg.story_id === storyIdRef.current) {
-      setIsAgentThinking(msg.agent_state === 'processing')
+      setIsAgentThinking(msg.agent_state === 'PROCESSING')
     }
     
     // Only handle story_message events for this story

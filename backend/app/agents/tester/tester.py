@@ -13,12 +13,6 @@ from uuid import UUID
 from sqlmodel import Session
 
 from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.agents.core.task_registry import (
-    request_pause,
-    request_cancel,
-    check_interrupt_signal,
-    clear_signals,
-)
 from app.agents.tester.src.graph import TesterGraph
 from app.core.db import engine
 from app.core.langfuse_client import flush_langfuse
@@ -61,7 +55,7 @@ class Tester(BaseAgent):
     - No more separate Consumer/Role layers
     - Handles tasks via handle_task() method
     - Router sends tasks via @Tester mentions
-    - Supports pause/resume/cancel via TaskRegistry signals
+    - Supports pause/resume/cancel via AgentPoolManager signals
     - Uses PostgresSaver for persistent checkpoints
     """
 
@@ -106,10 +100,21 @@ class Tester(BaseAgent):
     def check_should_stop(self, story_id: str) -> None:
         """Check if story should stop processing. Raises StoryStoppedException if so.
         
+        Uses fast in-memory signal check first (O(1)), then DB state.
         Call this periodically during graph execution to detect pause/cancel.
         """
+        # Fast path: check in-memory signal from pool manager
+        signal = self.check_signal(story_id)
+        if signal == "cancel":
+            self._cancelled_stories.add(story_id)
+            raise StoryStoppedException(story_id, StoryAgentState.CANCEL_REQUESTED, "Cancel requested")
+        elif signal == "pause":
+            self._paused_stories.add(story_id)
+            raise StoryStoppedException(story_id, StoryAgentState.PAUSED, "Story was paused")
+        
+        # Slow path: check DB state (backup, in case signal was missed)
         state = self.get_story_state_from_db(story_id)
-        if state == StoryAgentState.CANCELED:
+        if state == StoryAgentState.CANCEL_REQUESTED or state == StoryAgentState.CANCELED:
             self._cancelled_stories.add(story_id)
             raise StoryStoppedException(story_id, state, "Story was cancelled")
         elif state == StoryAgentState.PAUSED:
@@ -136,6 +141,53 @@ class Tester(BaseAgent):
             return True
         return False
 
+    async def _run_graph_with_signal_check(self, graph, input_data, config, story_id: str):
+        """Run graph with signal checking between nodes.
+        
+        Uses astream() to get control after each node, allowing us to check
+        for cancel/pause signals and stop early if needed.
+        """
+        final_state = None
+        node_count = 0
+        
+        async for event in graph.astream(input_data, config, stream_mode="values"):
+            node_count += 1
+            final_state = event
+            
+            # Check for cancel/pause signal after each node completes
+            signal = self.check_signal(story_id)
+            if signal:
+                logger.info(f"[{self.name}] Signal '{signal}' detected after node {node_count}")
+                
+                if signal == "cancel":
+                    self._cancelled_stories.add(story_id)
+                    raise StoryStoppedException(
+                        story_id, 
+                        StoryAgentState.CANCEL_REQUESTED, 
+                        f"Cancel signal detected between nodes"
+                    )
+                elif signal == "pause":
+                    self._paused_stories.add(story_id)
+                    raise StoryStoppedException(
+                        story_id,
+                        StoryAgentState.PAUSED,
+                        f"Pause signal detected between nodes"
+                    )
+            
+            # Also check DB state as backup
+            db_state = self.get_story_state_from_db(story_id)
+            if db_state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
+                logger.info(f"[{self.name}] DB state {db_state} detected after node {node_count}")
+                self._cancelled_stories.add(story_id)
+                raise StoryStoppedException(story_id, db_state, "Story cancelled (from DB state)")
+            elif db_state == StoryAgentState.PAUSED:
+                logger.info(f"[{self.name}] DB state PAUSED detected after node {node_count}")
+                self._paused_stories.add(story_id)
+                raise StoryStoppedException(story_id, db_state, "Story paused (from DB state)")
+        
+        logger.info(f"[{self.name}] Graph completed after {node_count} nodes")
+        return final_state
+
     async def _update_story_state(self, story_id: str, state: StoryAgentState) -> bool:
         """Update story agent_state in database with WebSocket broadcast.
 
@@ -158,9 +210,11 @@ class Tester(BaseAgent):
                 old_state = story.agent_state
                 project_id = story.project_id
                 story.agent_state = state
+                # CRITICAL: Set assigned_agent_id so cancel signal can find this agent
+                story.assigned_agent_id = self.agent_id
                 session.commit()
 
-            logger.info(f"[{self.name}] Story {story_id} agent_state: {old_state} → {state}")
+            logger.info(f"[{self.name}] Story {story_id} agent_state: {old_state} → {state} (assigned_agent_id={self.agent_id})")
             
             # Broadcast state change to frontend
             if project_id:
@@ -266,6 +320,8 @@ class Tester(BaseAgent):
             self._running_tasks.pop(story_id, None)
             self._cancelled_stories.discard(story_id)
             self._paused_stories.discard(story_id)
+            # Clear any pending signals to prevent memory leak
+            self.clear_signal(story_id)
             
         except Exception as e:
             logger.error(f"[{self.name}] Cleanup error for story {story_id}: {e}")
@@ -308,7 +364,7 @@ class Tester(BaseAgent):
         is_resume = context.get("resume", False)
         
         # Clear any leftover signals from previous runs (important for restart)
-        clear_signals(story_id)
+        self.clear_signal(story_id)
         logger.info(f"[{self.name}] Cleared signals for story {story_id}")
         
         langfuse_ctx = None
@@ -402,7 +458,13 @@ class Tester(BaseAgent):
                         from langgraph.types import Command
                         logger.info(f"[{self.name}] Checkpoint found, resuming with Command(resume=True)")
                         try:
-                            final_state = await self.graph_engine.graph.ainvoke(Command(resume=True), config)
+                            # Use signal-checking wrapper for resume
+                            final_state = await self._run_graph_with_signal_check(
+                                self.graph_engine.graph,
+                                Command(resume=True),
+                                config,
+                                story_id
+                            )
                         except Exception as resume_err:
                             logger.warning(f"[{self.name}] Resume failed: {resume_err}, falling back to fresh start")
                             final_state = None
@@ -414,10 +476,21 @@ class Tester(BaseAgent):
                 if final_state is None:
                     logger.warning(f"[{self.name}] Auto-restarting from beginning")
                     is_resume = False
-                    final_state = await self.graph_engine.graph.ainvoke(initial_state, config)
+                    # Use signal-checking wrapper for fresh start
+                    final_state = await self._run_graph_with_signal_check(
+                        self.graph_engine.graph,
+                        initial_state,
+                        config,
+                        story_id
+                    )
             else:
-                # Start fresh
-                final_state = await self.graph_engine.graph.ainvoke(initial_state, config)
+                # Start fresh with signal-checking wrapper
+                final_state = await self._run_graph_with_signal_check(
+                    self.graph_engine.graph,
+                    initial_state,
+                    config,
+                    story_id
+                )
             
             # Check for LangGraph interrupt (pause/cancel signal was caught by a node)
             from langgraph.types import Interrupt
@@ -512,23 +585,32 @@ class Tester(BaseAgent):
             )
         
         except StoryStoppedException as e:
-            # Story was stopped via DB state check (pause or cancel detected)
+            # Story was stopped via signal or DB state check
             logger.info(f"[{self.name}] Story {story_id} stopped: {e.message}")
             
             # Remove from local tracking
             self._running_tasks.pop(story_id, None)
             
-            # Notify user
+            # Clear the signal after handling
+            self.consume_signal(story_id)
+            
+            # Handle based on state
             if story_ids:
                 try:
                     story_uuid = UUID(story_ids[0])
+                    
                     if e.state == StoryAgentState.PAUSED:
+                        # Paused - checkpoint auto-saved by LangGraph, just notify
                         await self.message_story(
                             story_uuid,
                             f"⏸️ Tests đã tạm dừng. Checkpoint đã được lưu.",
                             message_type="system"
                         )
-                    elif e.state == StoryAgentState.CANCELED:
+                    elif e.state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
+                        # Cancel requested/canceled - transition to CANCELED and notify
+                        if e.state == StoryAgentState.CANCEL_REQUESTED:
+                            # Agent acknowledges cancel by transitioning to CANCELED
+                            await self._update_story_state(story_id, StoryAgentState.CANCELED)
                         await self.message_story(
                             story_uuid,
                             f"🛑 Tests đã bị hủy.",
