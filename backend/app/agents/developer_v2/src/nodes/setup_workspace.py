@@ -60,6 +60,18 @@ def cleanup_old_worktree(main_workspace: Path, branch_name: str, worktree_path: 
                 else:
                     logger.error(f"[{agent_name}] Failed to remove directory: {e}")
     
+    # CRITICAL: Prune stale worktree entries so git knows the worktree is gone
+    # Without this, git branch -D will fail with "branch checked out at..." error
+    try:
+        subprocess.run(
+            ["git", "worktree", "prune"],
+            cwd=str(main_workspace),
+            capture_output=True,
+            timeout=10,
+        )
+    except Exception as e:
+        logger.debug(f"[{agent_name}] Git worktree prune failed: {e}")
+    
     try:
         subprocess.run(
             ["git", "branch", "-D", branch_name],
@@ -631,6 +643,13 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         if workspace_info.get("workspace_ready"):
             db_status = "DB ready" if database_ready else "No DB"
             await story_logger.info(f"Workspace ready | Branch: {workspace_info.get('branch_name')} | {db_status}")
+            
+            # Set PROCESSING state now that workspace is ready
+            # This was moved from _handle_story_processing to here for accurate state tracking
+            if story_id and agent and hasattr(agent, '_update_story_state'):
+                from app.models.base import StoryAgentState
+                await agent._update_story_state(story_id, StoryAgentState.PROCESSING)
+            
             await story_logger.message("✅ Workspace sẵn sàng, bắt đầu phân tích...")
         
         return {

@@ -141,8 +141,7 @@ def _preload_dependencies(workspace_path: str, steps: list) -> dict:
         if os.path.exists(fp) and os.path.isfile(fp):
             try:
                 with open(fp, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                deps_content[dep] = content[:8000] + "\n... (truncated)" if len(content) > 8000 else content
+                    deps_content[dep] = f.read()  # Full content, no truncation
             except:
                 pass
     return deps_content

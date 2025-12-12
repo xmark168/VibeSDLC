@@ -709,6 +709,7 @@ export function useChatWebSocket(
       detail: { 
         story_id: msg.story_id, 
         agent_state: msg.agent_state,
+        sub_status: msg.sub_status,  // NEW: sub-status for PENDING state (queued/cleaning/starting)
         old_state: msg.old_state,
         running_port: msg.running_port,
         running_pid: msg.running_pid,

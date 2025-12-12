@@ -344,8 +344,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   // Listen for story state changes from WebSocket
   useEffect(() => {
     const handleStoryStateChanged = (event: CustomEvent) => {
-      const { story_id, agent_state, running_port, running_pid, pr_state, merge_status } = event.detail
-      console.log('[KanbanBoard] Story state changed event:', { story_id, agent_state, running_port, running_pid, pr_state, merge_status })
+      const { story_id, agent_state, sub_status, running_port, running_pid, pr_state, merge_status } = event.detail
+      console.log('[KanbanBoard] Story state changed event:', { story_id, agent_state, sub_status, running_port, running_pid, pr_state, merge_status })
       
       setCards(prev => {
         const updatedCards = prev.map(card => {
@@ -353,6 +353,10 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
           // Merge updates - only update fields that are explicitly provided
           const updated = { ...card }
           if (agent_state !== undefined) updated.agent_state = agent_state
+          // Update sub_status for PENDING state (queued/cleaning/starting)
+          if (sub_status !== undefined) updated.agent_sub_status = sub_status
+          // Clear sub_status when moving away from PENDING
+          if (agent_state && agent_state !== 'PENDING') updated.agent_sub_status = null
           if (running_port !== undefined) updated.running_port = running_port
           if (running_pid !== undefined) updated.running_pid = running_pid
           if (pr_state !== undefined) updated.pr_state = pr_state

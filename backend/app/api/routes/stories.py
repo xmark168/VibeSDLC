@@ -714,6 +714,10 @@ async def cancel_story_task(
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     
+    # Only allow cancel in InProgress or Review status
+    if story.status not in [StoryStatus.IN_PROGRESS, StoryStatus.REVIEW]:
+        raise HTTPException(status_code=400, detail="Can only cancel tasks in InProgress or Review status")
+    
     # Kill dev server if running
     if story.running_pid:
         try:
@@ -790,6 +794,10 @@ async def pause_story_task(
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     
+    # Only allow pause in InProgress or Review status
+    if story.status not in [StoryStatus.IN_PROGRESS, StoryStatus.REVIEW]:
+        raise HTTPException(status_code=400, detail="Can only pause tasks in InProgress or Review status")
+    
     # Allow pause for both PENDING and PROCESSING states
     if story.agent_state not in [StoryAgentState.PENDING, StoryAgentState.PROCESSING]:
         raise HTTPException(status_code=400, detail="Can only pause pending or processing tasks")
@@ -837,6 +845,10 @@ async def resume_story_task(
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
     
+    # Only allow resume in InProgress or Review status
+    if story.status not in [StoryStatus.IN_PROGRESS, StoryStatus.REVIEW]:
+        raise HTTPException(status_code=400, detail="Can only resume tasks in InProgress or Review status")
+    
     if story.agent_state != StoryAgentState.PAUSED:
         raise HTTPException(status_code=400, detail="Can only resume paused tasks")
     
@@ -869,69 +881,35 @@ async def resume_story_task(
     return {"success": True, "message": "Task resumed"}
 
 
-def _cleanup_worktree_sync(
-    worktree_path: str,
-    branch_name: str,
-    main_workspace: str,
-    checkpoint_thread_id: str,
-    story_id: str,
-) -> None:
-    """Synchronous cleanup - runs in thread pool."""
+def _cleanup_story_resources_sync(
+    worktree_path: str | None = None,
+    branch_name: str | None = None,
+    main_workspace: str | None = None,
+    checkpoint_thread_id: str | None = None,
+) -> dict:
+    """
+    Cleanup all story resources synchronously.
+    
+    Args:
+        worktree_path: Path to git worktree to remove
+        branch_name: Git branch name to delete
+        main_workspace: Main git workspace path
+        checkpoint_thread_id: LangGraph checkpoint thread ID to delete
+    
+    Returns:
+        dict with cleanup results: {"checkpoint": bool, "worktree": bool, "branch": bool}
+    """
     from pathlib import Path
     import subprocess
     import shutil
+    import platform
+    import tempfile
     import logging
     
-    logger = logging.getLogger(__name__)
+    _logger = logging.getLogger(__name__)
+    results = {"checkpoint": False, "worktree": False, "branch": False}
     
-    # 1. Git worktree remove
-    if worktree_path:
-        worktree = Path(worktree_path)
-        try:
-            if main_workspace and Path(main_workspace).exists():
-                subprocess.run(
-                    ["git", "worktree", "remove", str(worktree), "--force"],
-                    cwd=main_workspace,
-                    capture_output=True,
-                    timeout=30
-                )
-        except Exception as e:
-            logger.debug(f"Git worktree remove failed: {e}")
-        
-        # 2. Force delete directory if still exists
-        if worktree.exists():
-            try:
-                shutil.rmtree(worktree)
-            except Exception:
-                # Windows long path workaround
-                import platform
-                import tempfile
-                if platform.system() == "Windows":
-                    try:
-                        empty_dir = tempfile.mkdtemp()
-                        subprocess.run(
-                            ["robocopy", empty_dir, str(worktree), "/mir", "/njh", "/njs", "/nc", "/ns", "/np"],
-                            capture_output=True,
-                            timeout=60,
-                        )
-                        shutil.rmtree(empty_dir, ignore_errors=True)
-                        shutil.rmtree(worktree, ignore_errors=True)
-                    except Exception:
-                        pass
-    
-    # 3. Delete branch
-    if branch_name and main_workspace and Path(main_workspace).exists():
-        try:
-            subprocess.run(
-                ["git", "branch", "-D", branch_name],
-                cwd=main_workspace,
-                capture_output=True,
-                timeout=10
-            )
-        except Exception:
-            pass
-    
-    # 4. Delete checkpoint data (separate DB session)
+    # 1. Delete checkpoint data
     if checkpoint_thread_id:
         try:
             from sqlmodel import Session
@@ -943,44 +921,155 @@ def _cleanup_worktree_sync(
                 db.execute(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
                 db.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
                 db.commit()
+            results["checkpoint"] = True
+            _logger.info(f"[cleanup] Deleted checkpoint: {checkpoint_thread_id}")
         except Exception as e:
-            logger.warning(f"Failed to delete checkpoint data: {e}")
+            _logger.warning(f"[cleanup] Failed to delete checkpoint: {e}")
     
-    # Note: We don't clear story_logs or story_messages on restart
-    # to preserve history for user reference
+    # 2. Remove git worktree
+    if worktree_path:
+        worktree = Path(worktree_path)
+        try:
+            if main_workspace and Path(main_workspace).exists():
+                subprocess.run(
+                    ["git", "worktree", "remove", str(worktree), "--force"],
+                    cwd=main_workspace,
+                    capture_output=True,
+                    timeout=30
+                )
+        except Exception as e:
+            _logger.debug(f"[cleanup] Git worktree remove failed: {e}")
+        
+        # Force delete directory if still exists
+        if worktree.exists():
+            try:
+                shutil.rmtree(worktree)
+            except Exception:
+                # Windows long path workaround
+                if platform.system() == "Windows":
+                    try:
+                        empty_dir = tempfile.mkdtemp()
+                        subprocess.run(
+                            ["robocopy", empty_dir, str(worktree), "/mir", "/r:0", "/w:0", "/njh", "/njs", "/nc", "/ns", "/np", "/nfl", "/ndl"],
+                            capture_output=True,
+                            timeout=15,
+                        )
+                        shutil.rmtree(empty_dir, ignore_errors=True)
+                        shutil.rmtree(worktree, ignore_errors=True)
+                    except Exception:
+                        pass
+        
+        # CRITICAL: Prune stale worktree entries so git knows the worktree is gone
+        # Without this, git branch -D will fail with "branch checked out at..." error
+        if main_workspace and Path(main_workspace).exists():
+            try:
+                subprocess.run(
+                    ["git", "worktree", "prune"],
+                    cwd=main_workspace,
+                    capture_output=True,
+                    timeout=10
+                )
+            except Exception:
+                pass
+        
+        results["worktree"] = not worktree.exists()
+    
+    # 3. Delete git branch
+    if branch_name and main_workspace and Path(main_workspace).exists():
+        try:
+            result = subprocess.run(
+                ["git", "branch", "-D", branch_name],
+                cwd=main_workspace,
+                capture_output=True,
+                timeout=10
+            )
+            results["branch"] = result.returncode == 0
+        except Exception:
+            pass
+    
+    return results
+
+
+async def cleanup_story_resources(
+    worktree_path: str | None = None,
+    branch_name: str | None = None,
+    main_workspace: str | None = None,
+    checkpoint_thread_id: str | None = None,
+) -> dict:
+    """
+    Async wrapper for cleanup_story_resources_sync.
+    Runs blocking cleanup in thread pool executor.
+    """
+    import asyncio
+    from functools import partial
+    
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        partial(
+            _cleanup_story_resources_sync,
+            worktree_path=worktree_path,
+            branch_name=branch_name,
+            main_workspace=main_workspace,
+            checkpoint_thread_id=checkpoint_thread_id,
+        )
+    )
 
 
 async def _cleanup_and_trigger_agent(
-    worktree_path: str,
-    branch_name: str,
-    main_workspace: str,
-    checkpoint_thread_id: str,
+    worktree_path: str | None,
+    branch_name: str | None,
+    main_workspace: str | None,
+    checkpoint_thread_id: str | None,
     story_id: str,
     project_id: str,
     user_id: str,
     story_title: str,
 ) -> None:
-    """Background task: cleanup worktree then trigger agent."""
-    import asyncio
+    """
+    Background task for restart: cleanup ALL resources FIRST, then trigger agent.
+    
+    Order is critical:
+    1. Delete checkpoint - prevent agent from loading stale state with error
+    2. Delete worktree/branch - prevent conflict when agent creates new worktree
+    3. THEN trigger agent - agent starts with clean slate
+    
+    Broadcasts sub_status for smooth UX:
+    - "cleaning" while cleanup in progress
+    - "starting" when triggering agent
+    """
     import logging
+    from uuid import UUID
+    from app.websocket.connection_manager import connection_manager
     
-    logger = logging.getLogger(__name__)
-    loop = asyncio.get_event_loop()
+    _logger = logging.getLogger(__name__)
     
-    # Run sync cleanup in thread pool (non-blocking)
-    await loop.run_in_executor(
-        None,
-        _cleanup_worktree_sync,
-        worktree_path,
-        branch_name,
-        main_workspace,
-        checkpoint_thread_id,
-        story_id,
+    # Broadcast "cleaning" sub-status
+    await connection_manager.broadcast_to_project({
+        "type": "story_state_changed",
+        "story_id": story_id,
+        "agent_state": "PENDING",
+        "sub_status": "cleaning",
+    }, UUID(project_id))
+    
+    # 1. CLEANUP ALL RESOURCES FIRST (blocking, must complete before agent starts)
+    results = await cleanup_story_resources(
+        worktree_path=worktree_path,
+        branch_name=branch_name,
+        main_workspace=main_workspace,
+        checkpoint_thread_id=checkpoint_thread_id,
     )
+    _logger.info(f"[restart] Cleanup completed for {story_id}: {results}")
     
-    logger.info(f"[restart] Cleanup complete for {story_id}, triggering agent...")
+    # Broadcast "starting" sub-status
+    await connection_manager.broadcast_to_project({
+        "type": "story_state_changed",
+        "story_id": story_id,
+        "agent_state": "PENDING",
+        "sub_status": "starting",
+    }, UUID(project_id))
     
-    # Now trigger agent AFTER cleanup is done
+    # 2. THEN trigger agent (all resources cleaned, agent starts fresh)
     from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
     
     producer = await get_kafka_producer()
@@ -994,8 +1083,7 @@ async def _cleanup_and_trigger_agent(
         title=story_title,
     )
     await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
-    
-    logger.info(f"[restart] Agent triggered for {story_id}")
+    _logger.info(f"[restart] Agent triggered for {story_id}")
 
 
 @router.post("/{story_id}/restart")
@@ -1022,6 +1110,10 @@ async def restart_story_task(
     story = session.get(Story, story_id)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Only allow restart in InProgress or Review status
+    if story.status not in [StoryStatus.IN_PROGRESS, StoryStatus.REVIEW]:
+        raise HTTPException(status_code=400, detail="Can only restart tasks in InProgress or Review status")
     
     # Check if story is currently being processed - must cancel first
     if story.agent_state == StoryAgentState.PROCESSING:
@@ -1078,6 +1170,14 @@ async def restart_story_task(
     from app.agents.developer_v2.src.utils.db_container import clear_container_from_registry
     clear_container_from_registry(str(story_id))
     
+    # Clear agent's in-memory cache for this story (critical for restart after cancel)
+    from app.api.routes.agent_management import _manager_registry
+    for manager in _manager_registry.values():
+        for agent in manager.get_all_agents():
+            if hasattr(agent, 'clear_story_cache'):
+                agent.clear_story_cache(str(story_id))
+                logger.info(f"[restart] Cleared agent cache for story {story_id}")
+    
     # Get main workspace from Project
     from app.models import Project
     project = session.get(Project, story.project_id)
@@ -1114,26 +1214,34 @@ async def restart_story_task(
     session.commit()
     logger.info(f"[restart] Cleared logs for story {story_id}")
     
-    # Broadcast "pending" state to UI immediately
+    # Broadcast "pending" state to UI immediately with sub_status "queued"
     from app.websocket.connection_manager import connection_manager
     await connection_manager.broadcast_to_project({
         "type": "story_state_changed",
         "story_id": str(story_id),
         "agent_state": "PENDING",
+        "sub_status": "queued",  # Will change to "cleaning" -> "starting" in background task
         "old_state": None,
     }, project_id)
     
     # Schedule background task: cleanup THEN trigger agent
-    asyncio.create_task(_cleanup_and_trigger_agent(
-        worktree_path,
-        branch_name,
-        main_workspace,
-        checkpoint_thread_id,
-        str(story_id),
-        str(project_id),
-        str(current_user.id),
-        story_title,
-    ))
+    async def _run_cleanup_with_error_handling():
+        try:
+            await _cleanup_and_trigger_agent(
+                worktree_path,
+                branch_name,
+                main_workspace,
+                checkpoint_thread_id,
+                str(story_id),
+                str(project_id),
+                str(current_user.id),
+                story_title,
+            )
+        except Exception as e:
+            logger.error(f"[restart] Background task failed for {story_id}: {e}", exc_info=True)
+    
+    asyncio.create_task(_run_cleanup_with_error_handling())
+    logger.info(f"[restart] Background task scheduled for {story_id}")
     
     return {"success": True, "message": "Task restarting..."}
 

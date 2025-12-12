@@ -47,6 +47,7 @@ export type KanbanCardData = {
   age_hours?: number  // Age in current status (hours)
   // Agent state
   agent_state?: 'PENDING' | 'PROCESSING' | 'PAUSED' | 'CANCEL_REQUESTED' | 'CANCELED' | 'FINISHED' | null
+  agent_sub_status?: 'queued' | 'cleaning' | 'starting' | null  // Sub-status for PENDING state
   running_port?: number | null
   running_pid?: number | null
   worktree_path?: string | null
@@ -271,9 +272,27 @@ function KanbanCardComponent({
             )}
             {/* Agent State Badge - Show when pending or processing */}
             {card.agent_state === 'PENDING' && (
-              <Badge variant="outline" className="text-xs font-medium gap-1 bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700 animate-pulse">
-                <Clock className="w-3 h-3" />
-                Pending
+              <Badge 
+                variant="outline" 
+                className="text-xs font-medium gap-1 bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700 animate-pulse transition-all duration-300"
+                title={card.agent_sub_status ? `Status: ${card.agent_sub_status}` : 'Queued for processing'}
+              >
+                {card.agent_sub_status === 'cleaning' ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Cleaning...
+                  </>
+                ) : card.agent_sub_status === 'starting' ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <Clock className="w-3 h-3" />
+                    Queued
+                  </>
+                )}
               </Badge>
             )}
             {card.agent_state === 'PROCESSING' && (
@@ -386,6 +405,8 @@ export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
   if (prevProps.card.blockedByCount !== nextProps.card.blockedByCount) return false
   // Check agent_state - important for drag-and-drop
   if (prevProps.card.agent_state !== nextProps.card.agent_state) return false
+  // Check agent_sub_status - important for showing cleaning/starting progress
+  if (prevProps.card.agent_sub_status !== nextProps.card.agent_sub_status) return false
   // Check arrays - important for edit form data sync
   if (JSON.stringify(prevProps.card.dependencies) !== JSON.stringify(nextProps.card.dependencies)) return false
   if (JSON.stringify(prevProps.card.acceptance_criteria) !== JSON.stringify(nextProps.card.acceptance_criteria)) return false

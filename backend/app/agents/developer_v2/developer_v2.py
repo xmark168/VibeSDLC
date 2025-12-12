@@ -389,6 +389,18 @@ class DeveloperV2(BaseAgent):
         except Exception as e:
             logger.error(f"[{self.name}] Cleanup error for story {story_id}: {e}")
     
+    def clear_story_cache(self, story_id: str) -> None:
+        """Clear story from cancelled/paused caches for restart.
+        
+        This MUST be called before restart to ensure agent doesn't skip
+        the story due to stale in-memory cache from previous cancel.
+        """
+        self._cancelled_stories.discard(story_id)
+        self._paused_stories.discard(story_id)
+        self._running_tasks.pop(story_id, None)
+        self.clear_signal(story_id)
+        logger.info(f"[{self.name}] Cleared cache for story {story_id}")
+    
     def is_story_cancelled(self, story_id: str) -> bool:
         """Check if story has been cancelled (from DB, not just local cache)."""
         # Check local cache first for performance
@@ -478,9 +490,8 @@ class DeveloperV2(BaseAgent):
                     logger.info(f"[{self.name}] Story {story_id} is {current_state}, skipping")
                     return TaskResult(success=False, output="", error_message=f"Story is {current_state.value}")
                 
-                # Set PROCESSING immediately (restart API already set PENDING)
-                if not await self._update_story_state(story_id, StoryAgentState.PROCESSING):
-                    raise RuntimeError(f"Cannot start: failed to update state for {story_id}")
+                # NOTE: Don't set PROCESSING here - keep PENDING until workspace is ready
+                # PROCESSING will be set by setup_workspace node after successful setup
                 
                 story_data = await self._load_story_from_db(story_id)
                 

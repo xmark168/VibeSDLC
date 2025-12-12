@@ -46,13 +46,55 @@ interface BookCardProps {
 - Passing individual fields when component expects an object prop
 - Not reading the Props interface before using component
 - Missing required props: `<Banner />` instead of `<Banner title="Sale" />`
+- **INVENTING props that don't exist** - component may self-fetch data internally!
+
+**Example - Component self-fetches data:**
+```tsx
+// FilterPanel.tsx - self-fetches authors/categories internally
+interface FilterPanelProps {
+  selectedAuthors: string[];     // Only IDs!
+  onAuthorToggle: (id: string) => void;
+  // NO 'authors' prop - component fetches itself!
+}
+
+// ❌ WRONG - passing data that component fetches itself
+<FilterPanel 
+  authors={authorsList}     // ERROR! Prop doesn't exist!
+  selectedAuthors={selected}
+/>
+
+// ✅ CORRECT - only pass props defined in interface
+<FilterPanel 
+  selectedAuthors={selected}
+  onAuthorToggle={handleToggle}
+/>
+```
+
+**RULE: If prop doesn't exist in interface, DON'T pass it!**
 
 **TypeScript error patterns:**
 - `TS2741: Property 'X' is missing` → Add the required prop
-- `TS2353: 'X' does not exist` → Remove invented prop, check interface
+- `TS2353: 'X' does not exist` → **REMOVE the prop - it's not in interface!**
 - `TS2322: Type 'X' is not assignable` → Check if server action includes relations
 
 ## ⚠️ Data Fetching - Self-Fetch Pattern
+
+**CRITICAL: API Route First!**
+Before creating ANY component that fetches data, you MUST:
+1. **Check if API route exists** - look at `src/app/api/` folder
+2. **Create API route FIRST** if it doesn't exist
+3. **Then create the component** that calls the API
+
+```
+❌ WRONG ORDER:
+1. Create RelatedCategories.tsx (calls /api/categories/related)
+2. Forget to create /api/categories/related/route.ts
+→ Component breaks with 404!
+
+✅ CORRECT ORDER:
+1. Create /api/categories/related/route.ts FIRST
+2. Then create RelatedCategories.tsx that calls it
+```
 
 Components that need data should SELF-FETCH from API routes:
 
@@ -110,22 +152,43 @@ export function FeaturedBooks() {
 
 ## More Rules
 
-### 1. 'use client' - ADD when using hooks/events
-```tsx
-// MUST add 'use client' as FIRST LINE when component has:
-// - useState, useEffect, useRef, useContext
-// - onClick, onChange, onSubmit, onHover
-// - useRouter, usePathname
+### 1. 'use client' - CRITICAL SYNTAX RULES
 
-'use client';  // ← FIRST LINE, before imports!
+**'use client' MUST be FIRST LINE of file, NEVER inside function!**
+
+```tsx
+// ❌ WRONG - 'use client' inside function body
+function MyComponent() {
+  'use client';  // ERROR: Invalid position!
+  const router = useRouter();
+}
+
+// ❌ WRONG - using require() instead of import
+function MyComponent() {
+  const { useRouter } = require('next/navigation');  // ERROR!
+}
+
+// ❌ WRONG - 'use client' after imports
+import { useState } from 'react';
+'use client';  // ERROR: Must be first line!
+
+// ✅ CORRECT - 'use client' at FIRST LINE, use import
+'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export function BookCard() {
+  const router = useRouter();
   const [liked, setLiked] = useState(false);
   return <button onClick={() => setLiked(true)}>Like</button>;
 }
 ```
+
+**When to add 'use client':**
+- useState, useEffect, useRef, useContext
+- onClick, onChange, onSubmit, onHover
+- useRouter, usePathname, useSearchParams
 
 ### 2. Layout - NO header in pages
 Root `layout.tsx` has `<Navigation />`. Pages only have content:
