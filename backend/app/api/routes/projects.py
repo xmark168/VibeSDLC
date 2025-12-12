@@ -3,16 +3,18 @@
 import asyncio
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status, BackgroundTasks
+from sqlmodel import select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.services import ProjectService
 from app.services.agent_service import AgentService
-from app.models import Project, Role, Agent, AgentStatus
+from app.models import Project, Role, Agent, AgentStatus, Subscription, Plan
 from app.schemas import (
     ProjectCreate,
     ProjectUpdate,
@@ -139,6 +141,49 @@ async def create_project(
     """
     logger.info(f"Creating new project '{project_in.name}' for user {current_user.id}")
 
+    # Check project limit based on user's subscription plan
+    now = datetime.now(timezone.utc)
+    
+    # Get user's active subscription
+    subscription_statement = (
+        select(Subscription)
+        .where(Subscription.user_id == current_user.id)
+        .where(Subscription.status == "active")
+        .where(Subscription.end_at > now)
+    )
+    subscription = session.exec(subscription_statement).first()
+    
+    # Determine project limit from plan
+    if subscription:
+        plan = session.get(Plan, subscription.plan_id)
+        project_limit = plan.available_project if plan else None
+    else:
+        # No active subscription - use FREE plan limit
+        free_plan_statement = select(Plan).where(Plan.code == "FREE")
+        free_plan = session.exec(free_plan_statement).first()
+        project_limit = free_plan.available_project if free_plan else 1  # Default to 1 for safety
+    
+    # Check if user has reached project limit (skip for admins and unlimited plans)
+    if current_user.role != Role.ADMIN and project_limit is not None and project_limit != -1:
+        # Count user's current projects
+        project_service = ProjectService(session)
+        _, current_project_count = project_service.get_by_owner(
+            owner_id=current_user.id,
+            skip=0,
+            limit=1,  # We only need the count
+        )
+        
+        if current_project_count >= project_limit:
+            plan_name = "FREE" if not subscription else (plan.name if plan else "Unknown")
+            logger.warning(
+                f"User {current_user.id} reached project limit ({current_project_count}/{project_limit}) "
+                f"on {plan_name} plan"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You have reached your project limit ({project_limit} projects) on your current plan. Please upgrade to create more projects.",
+            )
+
     try:
         # Create project without committing (uses flush to get ID)
         project_service = ProjectService(session)
@@ -170,11 +215,22 @@ async def create_project(
         used_persona_ids = []
         
         for role_type in DEFAULT_AGENT_ROLES:
-            # Get random persona for this role (avoid duplicates in same project)
-            persona = persona_service.get_random_persona_for_role(
-                role_type=role_type,
-                exclude_ids=used_persona_ids
-            )
+            persona = None
+            
+            # Check if user selected custom persona for this role
+            if project_in.agent_personas and role_type in project_in.agent_personas:
+                custom_persona_id = project_in.agent_personas[role_type]
+                if custom_persona_id:
+                    persona = persona_service.get_by_id(UUID(custom_persona_id))
+                    if persona:
+                        logger.info(f"Using custom persona '{persona.name}' for {role_type}")
+            
+            # Fallback to random persona if no custom selection or not found
+            if not persona:
+                persona = persona_service.get_random_persona_for_role(
+                    role_type=role_type,
+                    exclude_ids=used_persona_ids
+                )
             
             if not persona:
                 # No fallback - fail fast if personas not seeded
@@ -312,14 +368,17 @@ async def delete_project(
     project_id: UUID,
     session: SessionDep,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ) -> None:
     """
     Delete a project and clean up all associated files (workspace + worktrees).
+    File cleanup runs in background for faster response.
 
     Args:
         project_id: UUID of the project to delete
         session: Database session
         current_user: Current authenticated user
+        background_tasks: FastAPI background tasks
 
     Raises:
         HTTPException: If project not found or user lacks access
@@ -347,15 +406,76 @@ async def delete_project(
 
     logger.info(f"Deleting project {project.code} (ID: {project_id})")
     
-    # Stop any running agents for this project
-    from app.api.routes.agent_management import get_available_pool
-    agents = session.query(Agent).filter(Agent.project_id == project_id).all()
-    for agent in agents:
-        pool_manager = get_available_pool(role_type=agent.role_type)
-        if pool_manager:
+    # Get project path before deletion for background cleanup
+    project_path = project.project_path
+    project_code = project.code
+    
+    # Collect agent info for background termination
+    agents_info = [
+        {"id": str(agent.id), "role_type": agent.role_type, "human_name": agent.human_name}
+        for agent in session.query(Agent).filter(Agent.project_id == project_id).all()
+    ]
+    
+    # Delete from database first (fast) - this makes the project disappear from UI immediately
+    project_service.delete(project_id)
+    
+    # Schedule background cleanup tasks
+    background_tasks.add_task(
+        _cleanup_project_files_and_agents,
+        project_path=project_path,
+        project_code=project_code,
+        agents_info=agents_info,
+    )
+
+
+async def _cleanup_project_files_and_agents(
+    project_path: str | None,
+    project_code: str,
+    agents_info: list[dict],
+) -> None:
+    """Background task to clean up project files and terminate agents."""
+    import shutil
+    import stat
+    import os
+    import asyncio
+    
+    logger.info(f"[Background] Starting cleanup for project {project_code}")
+    
+    # Terminate agents in parallel
+    if agents_info:
+        from app.api.routes.agent_management import get_available_pool
+        
+        async def terminate_agent(agent: dict):
+            pool_manager = get_available_pool(role_type=agent["role_type"])
+            if pool_manager:
+                try:
+                    await pool_manager.terminate_agent(agent["id"])
+                    logger.info(f"[Background] Stopped agent {agent['human_name']}")
+                except Exception as e:
+                    logger.warning(f"[Background] Failed to stop agent {agent['human_name']}: {e}")
+        
+        await asyncio.gather(*[terminate_agent(a) for a in agents_info], return_exceptions=True)
+    
+    # Clean up project files
+    if project_path:
+        backend_root = Path(__file__).resolve().parent.parent.parent.parent
+        project_dir = backend_root / project_path
+        
+        def remove_readonly(func, path, excinfo):
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+            func(path)
+        
+        if project_dir.exists():
             try:
-                await pool_manager.terminate_agent(agent.id)
-                logger.info(f"Stopped agent {agent.human_name}")
+                # Remove large subdirectories first
+                for subdir in ['.next', 'node_modules', '.worktrees']:
+                    subpath = project_dir / subdir
+                    if subpath.exists():
+                        shutil.rmtree(subpath, onerror=remove_readonly)
+                
+                # Remove main directory
+                shutil.rmtree(project_dir, onerror=remove_readonly)
+                logger.info(f"[Background] Deleted project directory: {project_dir}")
             except Exception as e:
                 logger.warning(f"Failed to stop agent {agent.human_name}: {e}")
     

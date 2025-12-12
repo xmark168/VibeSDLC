@@ -211,6 +211,7 @@ export type ProjectCreate = {
     description?: (string | null);
     repository_url?: (string | null);
     tech_stack?: (Array<string> | null);
+    agent_personas?: (Record<string, string> | null);
 };
 
 /**

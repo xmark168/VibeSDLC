@@ -10,13 +10,20 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DeleteProjectDialog } from "./delete-project-dialog";
 
+interface AgentInfo {
+    id: string;
+    human_name: string;
+    role_type: string;
+    persona_avatar?: string | null;
+}
+
 interface ProjectCardProps {
     title: string;
     code: string;
     projectId?: string;
     status: "in-progress" | "completed" | "planning" | "on-hold";
     techStack: string[];
-    agents: string[];
+    agents: AgentInfo[];
     lastUpdated: string;
     href?: string;
     githubUrl?: string;
@@ -252,15 +259,23 @@ export function ProjectCard({
 
                 {/* Agents */}
                 <div className="space-y-1.5">
-                    <div className="text-[10px] font-medium text-muted-foreground">Agents</div>
+                    <div className="text-[10px] font-medium text-muted-foreground">Agents ({agents.length})</div>
                     <div className="flex flex-wrap gap-1.5">
-                        {agents.map((agent, index) => (
+                        {agents.map((agent) => (
                             <div
-                                key={index}
-                                className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary border border-primary/20"
+                                key={agent.id}
+                                className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary border border-primary/20"
                             >
-                                <span className="text-xs">🤖</span>
-                                {agent}
+                                {agent.persona_avatar ? (
+                                    <img 
+                                        src={agent.persona_avatar} 
+                                        alt={agent.human_name}
+                                        className="w-4 h-4 rounded-full object-cover"
+                                    />
+                                ) : (
+                                    <span className="text-xs">🤖</span>
+                                )}
+                                {agent.human_name}
                             </div>
                         ))}
                     </div>

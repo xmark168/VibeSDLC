@@ -31,7 +31,7 @@ export interface PaymentStatusResponse {
 export interface Order {
   id: string
   user_id?: string
-  order_type: 'subscription' | 'addon'
+  order_type: 'subscription' | 'credit' | 'addon' | 'SUBSCRIPTION' | 'CREDIT'
   subscription_id?: string | null
   amount: number
   status: 'PENDING' | 'PAID' | 'FAILED' | 'CANCELED'
@@ -44,6 +44,8 @@ export interface Order {
   checkout_url?: string | null
   billing_cycle: string | null
   plan_code: string | null
+  credit_amount?: number | null
+  sepay_transaction_code?: string | null
   created_at: string
   updated_at?: string
 }

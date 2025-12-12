@@ -373,19 +373,22 @@ def get_payment_history(
     offset: int = 0
 ):
     """
-    Get payment history for current user with pagination
+    Get payment history for current user with pagination.
+    Only returns paid orders (not pending/cancelled).
     """
-    # Get total count
+    # Get total count - only paid orders
     count_statement = (
         select(Order)
         .where(Order.user_id == current_user.id)
+        .where(Order.status == OrderStatus.PAID)
     )
     total = len(session.exec(count_statement).all())
 
-    # Get paginated data
+    # Get paginated data - only paid orders
     statement = (
         select(Order)
         .where(Order.user_id == current_user.id)
+        .where(Order.status == OrderStatus.PAID)
         .order_by(Order.created_at.desc())
         .limit(limit)
         .offset(offset)
@@ -396,14 +399,16 @@ def get_payment_history(
         "data": [
             {
                 "id": str(order.id),
-                "order_type": order.order_type,
+                "order_type": order.order_type.value if hasattr(order.order_type, 'value') else order.order_type,
                 "amount": order.amount,
-                "status": order.status.value,
+                "status": order.status.value if hasattr(order.status, 'value') else order.status,
                 "plan_code": order.plan_code,
                 "billing_cycle": order.billing_cycle,
+                "credit_amount": order.credit_amount,
                 "created_at": order.created_at.isoformat(),
                 "paid_at": order.paid_at.isoformat() if order.paid_at else None,
                 "payos_order_code": order.payos_order_code,
+                "sepay_transaction_code": order.sepay_transaction_code,
             }
             for order in orders
         ],

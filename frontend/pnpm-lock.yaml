@@ -110,6 +110,12 @@ importers:
       '@radix-ui/react-use-controllable-state':
         specifier: ^1.2.2
         version: 1.2.2(@types/react@19.2.7)(react@19.2.1)
+      '@rive-app/react-canvas':
+        specifier: ^4.24.0
+        version: 4.24.0(react@19.2.1)
+      '@rive-app/react-webgl2':
+        specifier: ^4.24.0
+        version: 4.24.0(react@19.2.1)
       '@tailwindcss/vite':
         specifier: ^4.1.14
         version: 4.1.17(vite@7.2.7(@types/node@24.10.2)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
@@ -1583,6 +1589,22 @@ packages:
 
   '@radix-ui/rect@1.1.1':
     resolution: {integrity: sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw==}
+
+  '@rive-app/canvas@2.32.0':
+    resolution: {integrity: sha512-RZRZQRWItH7e0NVmHVhffkm02J/9CO/Qdq71Vu1TkExj312Oc22FpBVn8rBnyEeQak75bJy9m/ig84Crcr7qog==}
+
+  '@rive-app/react-canvas@4.24.0':
+    resolution: {integrity: sha512-L/a+2Oi+tHoYmDIlj49Zudu75AI00jedFRTUA4na1bnQ2WVSJqKP2/tuK6uJDqUhQ7+9fCqgRkJws7KpFHOBag==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0
+
+  '@rive-app/react-webgl2@4.24.0':
+    resolution: {integrity: sha512-P+f563z9jjhfepq3ZZjrJEFit6Dz0g1mJVNZQvhOIJgtHLhTqYkMQBFcUa1hwe2s++e0ffKeNIEHrwfEW6ZZLg==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0
+
+  '@rive-app/webgl2@2.32.0':
+    resolution: {integrity: sha512-99Oquwnbl9HgZQhk70Dx9apQDyQPKTL1dyv5HUoWdVSJM71d3894XBbzw2W0o1pgYTDiS6iogaAs4dTw+OezJQ==}
 
   '@rolldown/pluginutils@1.0.0-beta.47':
     resolution: {integrity: sha512-8QagwMH3kNCuzD8EWL8R2YPW5e4OrHNSAHRFDdmFqEwEaD/KcNKjVoumo+gP2vW5eKB2UPbM6vTYiGZX0ixLnw==}
@@ -4893,6 +4915,20 @@ snapshots:
       '@types/react-dom': 19.2.3(@types/react@19.2.7)
 
   '@radix-ui/rect@1.1.1': {}
+
+  '@rive-app/canvas@2.32.0': {}
+
+  '@rive-app/react-canvas@4.24.0(react@19.2.1)':
+    dependencies:
+      '@rive-app/canvas': 2.32.0
+      react: 19.2.1
+
+  '@rive-app/react-webgl2@4.24.0(react@19.2.1)':
+    dependencies:
+      '@rive-app/webgl2': 2.32.0
+      react: 19.2.1
+
+  '@rive-app/webgl2@2.32.0': {}
 
   '@rolldown/pluginutils@1.0.0-beta.47': {}
 

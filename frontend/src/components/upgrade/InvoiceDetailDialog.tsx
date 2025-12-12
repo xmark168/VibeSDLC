@@ -169,19 +169,19 @@ export function InvoiceDetailDialog({
             )}
 
             {/* Payment Details */}
-            <div className="space-y-3">
+            {/* <div className="space-y-3">
               <h3 className="font-semibold text-lg flex items-center gap-2">
                 <CreditCard className="h-5 w-5" />
                 Thông tin thanh toán
               </h3>
               <div className="bg-muted rounded-lg p-4 space-y-3">
-                {invoiceData.order.payos_order_code && (
+                {invoiceData.order.sepay_transaction_code && (
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground flex items-center gap-2">
                       <Hash className="h-4 w-4" />
                       Mã đơn hàng
                     </span>
-                    <span className="font-mono font-medium">{invoiceData.order.payos_order_code}</span>
+                    <span className="font-mono font-medium">{invoiceData.order.sepay_transaction_code}</span>
                   </div>
                 )}
                 {invoiceData.order.payos_transaction_id && (
@@ -191,7 +191,7 @@ export function InvoiceDetailDialog({
                   </div>
                 )}
               </div>
-            </div>
+            </div> */}
 
             {/* Total Amount */}
             <div className="bg-primary/10 border border-primary/20 rounded-lg p-6">

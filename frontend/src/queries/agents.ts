@@ -47,12 +47,14 @@ export function useProjectAgents(projectId: string, options?: { enabled?: boolea
   return useQuery({
     queryKey: agentQueryKeys.project(projectId),
     queryFn: async () => {
+      console.log('[useProjectAgents] Fetching agents for project:', projectId)
       const response = await AgentsService.getProjectAgents({ projectId })
       return response || []
     },
-    enabled: (options?.enabled ?? true) && !!projectId,
-    staleTime: 10000, // Consider stale after 10s
+    enabled: (options?.enabled ?? true) && !!projectId && projectId.length > 0,
+    staleTime: 0, // Always consider stale - fetch fresh data on navigate
     refetchOnWindowFocus: false, // Agent status updated via WebSocket
+    refetchOnMount: 'always', // Force refetch even if data exists in cache
   })
 }
 
