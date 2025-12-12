@@ -344,8 +344,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   // Listen for story state changes from WebSocket
   useEffect(() => {
     const handleStoryStateChanged = (event: CustomEvent) => {
-      const { story_id, agent_state, running_port, running_pid } = event.detail
-      console.log('[KanbanBoard] Story state changed event:', { story_id, agent_state, running_port, running_pid })
+      const { story_id, agent_state, running_port, running_pid, pr_state, merge_status } = event.detail
+      console.log('[KanbanBoard] Story state changed event:', { story_id, agent_state, running_port, running_pid, pr_state, merge_status })
       
       setCards(prev => {
         const updatedCards = prev.map(card => {
@@ -355,6 +355,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
           if (agent_state !== undefined) updated.agent_state = agent_state
           if (running_port !== undefined) updated.running_port = running_port
           if (running_pid !== undefined) updated.running_pid = running_pid
+          if (pr_state !== undefined) updated.pr_state = pr_state
+          if (merge_status !== undefined) updated.merge_status = merge_status
           console.log('[KanbanBoard] Card updated:', { before: card, after: updated })
           return updated
         })
@@ -365,6 +367,32 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
     window.addEventListener('story-state-changed', handleStoryStateChanged as EventListener)
     return () => {
       window.removeEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    }
+  }, [])
+
+  // Listen for story status changes (e.g., moved to Done after merge)
+  useEffect(() => {
+    const handleStoryStatusChanged = (event: CustomEvent) => {
+      const { story_id, status, merge_status, pr_state } = event.detail
+      console.log('[KanbanBoard] Story status changed event:', { story_id, status, merge_status, pr_state })
+      
+      setCards(prev => {
+        const updatedCards = prev.map(card => {
+          if (card.id !== story_id) return card
+          const updated = { ...card }
+          if (status) updated.columnId = status.toLowerCase()
+          if (merge_status !== undefined) updated.merge_status = merge_status
+          if (pr_state !== undefined) updated.pr_state = pr_state
+          console.log('[KanbanBoard] Card status updated:', { before: card, after: updated })
+          return updated
+        })
+        return updatedCards
+      })
+    }
+    
+    window.addEventListener('story-status-changed', handleStoryStatusChanged as EventListener)
+    return () => {
+      window.removeEventListener('story-status-changed', handleStoryStatusChanged as EventListener)
     }
   }, [])
 

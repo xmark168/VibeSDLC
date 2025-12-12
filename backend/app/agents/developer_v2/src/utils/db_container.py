@@ -111,6 +111,19 @@ def stop_container(story_id: str) -> bool:
         return False
 
 
+def clear_container_from_registry(story_id: str) -> bool:
+    """Remove container reference from in-memory registry without stopping it.
+    
+    Use this when container was already stopped externally (e.g., via docker cli).
+    This ensures fresh start when story is restarted.
+    """
+    if story_id in _containers:
+        del _containers[story_id]
+        logger.info(f"[db_container] Cleared container from registry: {story_id}")
+        return True
+    return False
+
+
 def stop_container_by_id(container_id: str) -> bool:
     """Stop container by docker container ID (for cleanup from DB)."""
     try:

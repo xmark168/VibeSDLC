@@ -268,30 +268,56 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   const [selectedDependency, setSelectedDependency] = useState<KanbanCardData | null>(null)
   const [selectedEpic, setSelectedEpic] = useState<EpicInfo | null>(null)
   const [localAgentState, setLocalAgentState] = useState<string | null>(null)
+  const [localPrState, setLocalPrState] = useState<string | null>(null)
   
   // Sync local agent state with card prop
   useEffect(() => {
     if (card?.agent_state) {
       setLocalAgentState(card.agent_state)
     }
-  }, [card?.agent_state])
+    if (card?.pr_state) {
+      setLocalPrState(card.pr_state)
+    }
+  }, [card?.agent_state, card?.pr_state])
   
   // Listen for story state changes via WebSocket
   useEffect(() => {
     const handleStoryStateChanged = (event: CustomEvent) => {
+      console.log('[TaskDetailModal] Received story-state-changed:', event.detail, 'card?.id:', card?.id)
       if (event.detail.story_id === card?.id) {
-        setLocalAgentState(event.detail.agent_state)
+        if (event.detail.agent_state !== undefined) {
+          console.log('[TaskDetailModal] Updating localAgentState to:', event.detail.agent_state)
+          setLocalAgentState(event.detail.agent_state)
+        }
+        if (event.detail.pr_state !== undefined) {
+          console.log('[TaskDetailModal] Updating localPrState to:', event.detail.pr_state)
+          setLocalPrState(event.detail.pr_state)
+        }
+      }
+    }
+    
+    // Also listen for story-status-changed (merge success sends this)
+    const handleStoryStatusChanged = (event: CustomEvent) => {
+      console.log('[TaskDetailModal] Received story-status-changed:', event.detail, 'card?.id:', card?.id)
+      if (event.detail.story_id === card?.id) {
+        if (event.detail.pr_state !== undefined) {
+          console.log('[TaskDetailModal] Updating localPrState to:', event.detail.pr_state)
+          setLocalPrState(event.detail.pr_state)
+        }
       }
     }
     
     window.addEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    window.addEventListener('story-status-changed', handleStoryStatusChanged as EventListener)
     return () => {
       window.removeEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+      window.removeEventListener('story-status-changed', handleStoryStatusChanged as EventListener)
     }
   }, [card?.id])
   
-  // Use local state for agent_state display
+  // Use local state for agent_state and pr_state display
   const agentState = localAgentState || card?.agent_state
+  const prState = localPrState || card?.pr_state
   
   // Get token from localStorage
   const getToken = () => typeof window !== 'undefined' ? localStorage.getItem('access_token') : null
@@ -434,6 +460,35 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
       }
     } catch (error) {
       toast.error('Failed to restart task')
+    } finally {
+      setIsActionLoading(false)
+    }
+  }
+
+  // Merge to Main handler - triggers Developer agent to merge branch
+  const handleMergeToMain = async () => {
+    if (!card?.id) return
+    setIsActionLoading(true)
+    try {
+      const authToken = getToken()
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/merge-to-main`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      )
+      if (response.ok) {
+        toast.success('Merge started. Check logs for progress.')
+      } else {
+        const data = await response.json()
+        toast.error(data.detail || 'Failed to start merge')
+      }
+    } catch (error) {
+      toast.error('Failed to start merge')
     } finally {
       setIsActionLoading(false)
     }
@@ -843,16 +898,16 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                       <span className="text-muted-foreground font-medium">AGENT STATUS</span>
                       <span className="flex items-center gap-1.5">
                         <span className={`inline-block w-2 h-2 rounded-full ${
-                          agentState === 'processing' ? 'bg-primary animate-pulse' :
-                          agentState === 'paused' ? 'bg-amber-500' :
-                          agentState === 'finished' ? 'bg-green-500' :
-                          agentState === 'canceled' ? 'bg-destructive' :
+                          agentState === 'PROCESSING' ? 'bg-primary animate-pulse' :
+                          agentState === 'PAUSED' ? 'bg-amber-500' :
+                          agentState === 'FINISHED' ? 'bg-green-500' :
+                          agentState === 'CANCELED' ? 'bg-destructive' :
                           'bg-muted-foreground'
                         }`}></span>
-                        {agentState === 'processing' ? 'Processing' :
-                         agentState === 'paused' ? 'Paused' :
-                         agentState === 'finished' ? 'Finished' :
-                         agentState === 'canceled' ? 'Canceled' : 'Pending'}
+                        {agentState === 'PROCESSING' ? 'Processing' :
+                         agentState === 'PAUSED' ? 'Paused' :
+                         agentState === 'FINISHED' ? 'Finished' :
+                         agentState === 'CANCELED' ? 'Canceled' : 'Pending'}
                       </span>
                     </>
                   )}
@@ -893,7 +948,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
               {agentState && (
                 <div className="mt-3 flex items-center gap-2 flex-wrap">
                   {/* Dev Server Start */}
-                  {agentState === 'finished' && card.worktree_path && !card.running_port && (
+                  {agentState === 'FINISHED' && card.worktree_path && !card.running_port && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -906,7 +961,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   )}
                   
                   {/* Dev Server Stop - danger color */}
-                  {agentState === 'finished' && card.worktree_path && card.running_port && (
+                  {agentState === 'FINISHED' && card.worktree_path && card.running_port && (
                     <Button
                       variant="destructive"
                       size="sm"
@@ -937,7 +992,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   )}
 
                   {/* Pause when pending or processing */}
-                  {(agentState === 'pending' || agentState === 'processing') && (
+                  {(agentState === 'PENDING' || agentState === 'PROCESSING') && (
                     <Button variant="outline" size="sm" onClick={handlePauseTask} disabled={isActionLoading}>
                       {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />}
                       Tạm dừng
@@ -945,7 +1000,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   )}
                   
                   {/* Resume when paused */}
-                  {agentState === 'paused' && (
+                  {agentState === 'PAUSED' && (
                     <Button variant="default" size="sm" onClick={handleResumeTask} disabled={isActionLoading}>
                       {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                       Tiếp tục
@@ -953,7 +1008,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   )}
                   
                   {/* Cancel when processing or paused */}
-                  {(agentState === 'pending' || agentState === 'processing' || agentState === 'paused') && (
+                  {(agentState === 'PENDING' || agentState === 'PROCESSING' || agentState === 'PAUSED') && (
                     <Button variant="destructive" size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={handleCancelTask} disabled={isActionLoading}>
                       {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
                       Hủy
@@ -961,10 +1016,26 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   )}
                   
                   {/* Restart when canceled or finished */}
-                  {(agentState === 'canceled' || agentState === 'finished') && (
+                  {(agentState === 'CANCELED' || agentState === 'FINISHED') && (
                     <Button variant="default" size="sm" onClick={handleRestartTask} disabled={isActionLoading}>
                       {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
                       Restart
+                    </Button>
+                  )}
+                  
+                  {/* Merge to Main when finished, not yet merged, not merging, and status is InProgress or Review */}
+                  {agentState === 'FINISHED' && card.merge_status !== 'merged' && prState !== 'merging' && (card.status === 'InProgress' || card.status === 'Review') && (
+                    <Button variant="default" size="sm" onClick={handleMergeToMain} disabled={isActionLoading} className="bg-green-600 hover:bg-green-700 text-white">
+                      {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <GitBranch className="w-4 h-4" />}
+                      Merge to Main
+                    </Button>
+                  )}
+                  
+                  {/* Show merging indicator */}
+                  {prState === 'merging' && (
+                    <Button variant="outline" size="sm" disabled className="text-amber-600 border-amber-500">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Merging...
                     </Button>
                   )}
                 </div>

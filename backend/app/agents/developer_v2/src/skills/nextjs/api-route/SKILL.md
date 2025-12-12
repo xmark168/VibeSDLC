@@ -16,6 +16,21 @@ API routes live in the `app/api/` directory:
 
 **CRITICAL**: In Next.js 16, dynamic route params are async. You MUST `await params` before using them.
 
+## ⚠️ Prisma Import Pattern - CRITICAL
+
+```typescript
+// ✅ CORRECT - separate imports
+import { Prisma } from '@prisma/client';  // Types/namespace (BookWhereInput, etc.)
+import { prisma } from '@/lib/prisma';     // Instance
+
+// ❌ WRONG - @/lib/prisma doesn't export Prisma namespace
+import { prisma, Prisma } from '@/lib/prisma';
+```
+
+**Rule:**
+- `prisma` (instance) → `@/lib/prisma`
+- `Prisma` (types like `Prisma.BookWhereInput`) → `@prisma/client`
+
 ## ⚠️ Schema Validation - READ FIRST
 
 **BEFORE writing ANY Prisma query:**
@@ -231,6 +246,31 @@ return successResponse(
 ```
 
 **Tip**: Use `Float` instead of `Decimal` in schema to avoid this conversion entirely.
+
+## Filter Parameter Convention - CRITICAL ⚠️
+
+**Frontend gửi comma-separated string, API phải parse:**
+
+```typescript
+// ❌ WRONG - getAll only works with repeated params (?id=1&id=2)
+const categories = searchParams.getAll('categoryId');
+
+// ✅ CORRECT - parse comma-separated string
+const categories = searchParams.get('categories')?.split(',').filter(Boolean) ?? [];
+const authors = searchParams.get('authors')?.split(',').filter(Boolean) ?? [];
+const sort = searchParams.get('sort') || 'relevance';  // NOT 'sortBy'!
+```
+
+**Param naming rules:**
+| Type | Param Name | Example |
+|------|------------|---------|
+| Multi-select | `categories`, `authors`, `tags` | `?categories=id1,id2,id3` |
+| Single value | `sort`, `page`, `limit` | `?sort=price-asc&page=1` |
+| Price range | `minPrice`, `maxPrice` | `?minPrice=10&maxPrice=100` |
+
+**NEVER use:**
+- `categoryId`, `authorId` (singular) for multi-select filters
+- `sortBy` - always use `sort`
 
 ## Common Patterns
 

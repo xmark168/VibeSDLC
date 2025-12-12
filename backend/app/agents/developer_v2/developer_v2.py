@@ -409,6 +409,8 @@ class DeveloperV2(BaseAgent):
         # Route based on task type
         if task.task_type == AgentTaskType.IMPLEMENT_STORY:
             return await self._handle_story_processing(task)
+        elif task.task_type == AgentTaskType.REVIEW_PR:
+            return await self._handle_merge_to_main(task)
         else:
             return await self._handle_user_message(task)
 
@@ -476,14 +478,9 @@ class DeveloperV2(BaseAgent):
                     logger.info(f"[{self.name}] Story {story_id} is {current_state}, skipping")
                     return TaskResult(success=False, output="", error_message=f"Story is {current_state.value}")
                 
-                if is_resume:
-                    # Resuming paused story - state update only, no message (node will handle)
-                    if not await self._update_story_state(story_id, StoryAgentState.PROCESSING):
-                        raise RuntimeError(f"Cannot resume: failed to update state for {story_id}")
-                else:
-                    # Starting new story - state update only
-                    if not await self._update_story_state(story_id, StoryAgentState.PENDING):
-                        raise RuntimeError(f"Cannot start: failed to update state for {story_id}")
+                # Set PROCESSING immediately (restart API already set PENDING)
+                if not await self._update_story_state(story_id, StoryAgentState.PROCESSING):
+                    raise RuntimeError(f"Cannot start: failed to update state for {story_id}")
                 
                 story_data = await self._load_story_from_db(story_id)
                 
@@ -666,10 +663,6 @@ class DeveloperV2(BaseAgent):
                 "tech_stack": "nextjs",
             }
             
-            # Set PROCESSING state before starting graph
-            if not await self._update_story_state(story_id, StoryAgentState.PROCESSING):
-                raise RuntimeError(f"Failed to set PROCESSING state for {story_id}")
-            
             # Check signal before starting graph (in case cancel came during setup)
             signal = self.check_signal(story_id)
             if signal == "cancel":
@@ -721,7 +714,10 @@ class DeveloperV2(BaseAgent):
                 except Exception as e:
                     logger.error(f"[{self.name}] Failed to save checkpoint_thread_id: {e}")
 
-            config = {"configurable": {"thread_id": thread_id}}
+            config = {
+                "configurable": {"thread_id": thread_id},
+                "callbacks": [langfuse_handler] if langfuse_handler else []
+            }
 
             # Check if resuming from pause
             if is_resume:
@@ -1112,3 +1108,236 @@ class DeveloperV2(BaseAgent):
         )
         
         return await self.handle_task(task)
+
+    async def _handle_merge_to_main(self, task: TaskContext) -> TaskResult:
+        """Handle merge story branch to main/master.
+        
+        Flow:
+        1. Fetch latest main branch
+        2. Merge main into story branch (in worktree)
+        3. If conflict: try to resolve, if not possible mark as conflict
+        4. If success: merge story branch into main
+        5. Cleanup worktree and branch
+        """
+        import subprocess
+        from pathlib import Path
+        from uuid import UUID
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Story
+        from app.models.story import StoryStatus
+        from app.agents.developer_v2.src.utils.story_logger import log_to_story
+        
+        # Extract task context
+        ctx = task.context or {}
+        story_id = ctx.get("story_id") or (task.content if isinstance(task.content, str) else None)
+        branch_name = ctx.get("branch_name")
+        worktree_path = ctx.get("worktree_path")
+        main_workspace = ctx.get("main_workspace")
+        project_id = str(task.project_id) if task.project_id else ctx.get("project_id")
+        
+        if not story_id:
+            return TaskResult(success=False, output="Missing story_id in task context")
+        
+        logger.info(f"[{self.name}] Starting merge task for story {story_id}")
+        
+        # Get story from DB
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id))
+            if not story:
+                return TaskResult(success=False, output=f"Story not found: {story_id}")
+            
+            branch_name = branch_name or story.branch_name
+            worktree_path = worktree_path or story.worktree_path
+            
+            if not branch_name:
+                story.pr_state = "error"
+                story.merge_status = "no_branch"
+                session.add(story)
+                session.commit()
+                return TaskResult(success=False, output="Story has no branch to merge")
+        
+        # Determine workspace to use
+        workspace = worktree_path if worktree_path and Path(worktree_path).exists() else main_workspace
+        if not workspace or not Path(workspace).exists():
+            await self._update_merge_status(story_id, "error", "no_workspace")
+            return TaskResult(success=False, output="No valid workspace found")
+        
+        await log_to_story(story_id, project_id, f"🔄 Starting merge of {branch_name} to main...", "info", "merge")
+        
+        try:
+            # Use main workspace (not worktree) for merge operations
+            main_ws = main_workspace if main_workspace and Path(main_workspace).exists() else workspace
+            
+            # 1. Detect default branch (local)
+            base_branch = "main"
+            for branch in ["main", "master"]:
+                result = subprocess.run(
+                    ["git", "branch", "--list", branch],
+                    cwd=main_ws, capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    base_branch = branch
+                    break
+            
+            await log_to_story(story_id, project_id, f"📍 Base branch: {base_branch}, workspace: {main_ws}", "info", "merge")
+            
+            # 2. Fetch all branches
+            await log_to_story(story_id, project_id, f"📥 Fetching latest changes...", "info", "merge")
+            subprocess.run(["git", "fetch", "--all"], cwd=main_ws, capture_output=True, timeout=60)
+            
+            # 3. Switch to base branch and pull latest
+            await log_to_story(story_id, project_id, f"🔀 Switching to {base_branch}...", "info", "merge")
+            checkout_result = subprocess.run(
+                ["git", "checkout", base_branch],
+                cwd=main_ws, capture_output=True, text=True, timeout=30
+            )
+            if checkout_result.returncode != 0:
+                await self._update_merge_status(story_id, "error", "checkout_failed")
+                await log_to_story(story_id, project_id, f"❌ Failed to checkout {base_branch}: {checkout_result.stderr}", "error", "merge")
+                return TaskResult(success=False, output=f"Failed to checkout {base_branch}")
+            
+            subprocess.run(["git", "pull", "origin", base_branch], cwd=main_ws, capture_output=True, timeout=60)
+            
+            # 4. Merge story branch into base branch (local merge)
+            await log_to_story(story_id, project_id, f"🔀 Merging {branch_name} into {base_branch}...", "info", "merge")
+            merge_result = subprocess.run(
+                ["git", "merge", branch_name, "--no-ff", "-m", f"Merge branch '{branch_name}'"],
+                cwd=main_ws, capture_output=True, text=True, timeout=60
+            )
+            
+            if merge_result.returncode != 0:
+                # Check if conflict
+                if "CONFLICT" in merge_result.stdout or "CONFLICT" in merge_result.stderr:
+                    subprocess.run(["git", "merge", "--abort"], cwd=main_ws, capture_output=True, timeout=10)
+                    await self._update_merge_status(story_id, "conflict", "merge_conflict")
+                    await log_to_story(story_id, project_id, f"❌ Merge conflict! Please resolve manually.", "error", "merge")
+                    return TaskResult(success=False, output=f"Merge conflict. Manual resolution required.")
+                else:
+                    error_msg = merge_result.stderr or merge_result.stdout
+                    subprocess.run(["git", "merge", "--abort"], cwd=main_ws, capture_output=True, timeout=10)
+                    await self._update_merge_status(story_id, "error", "merge_failed")
+                    await log_to_story(story_id, project_id, f"❌ Merge failed: {error_msg[:200]}", "error", "merge")
+                    return TaskResult(success=False, output=f"Merge failed: {error_msg}")
+            
+            await log_to_story(story_id, project_id, f"✅ Successfully merged {branch_name} into {base_branch}", "success", "merge")
+            
+            # 5. Cleanup
+            await log_to_story(story_id, project_id, f"🧹 Cleaning up worktree and branch...", "info", "merge")
+            await self._cleanup_after_merge(story_id, worktree_path, branch_name, main_ws)
+            
+            # 6. Move story to Done and update merge status
+            with Session(engine) as session:
+                story = session.get(Story, UUID(story_id))
+                if story:
+                    story.status = StoryStatus.DONE
+                    story.pr_state = "merged"
+                    story.merge_status = "merged"
+                    session.add(story)
+                    session.commit()
+            
+            # 7. Broadcast status change to frontend
+            from app.websocket.connection_manager import connection_manager
+            await connection_manager.broadcast_to_project({
+                "type": "story_status_changed",
+                "story_id": story_id,
+                "status": "Done",
+                "merge_status": "merged",
+                "pr_state": "merged",
+            }, UUID(project_id))
+            
+            await log_to_story(story_id, project_id, f"📋 Story moved to Done", "success", "merge")
+            await log_to_story(story_id, project_id, f"✅ Successfully merged {branch_name} into {base_branch}!", "success", "merge")
+            
+            return TaskResult(
+                success=True,
+                output=f"Successfully merged {branch_name} into {base_branch}",
+                structured_data={
+                    "branch_name": branch_name,
+                    "base_branch": base_branch,
+                    "merge_status": "merged"
+                }
+            )
+            
+        except subprocess.TimeoutExpired:
+            await self._update_merge_status(story_id, "error", "timeout")
+            await log_to_story(story_id, project_id, "❌ Merge operation timed out", "error", "merge")
+            return TaskResult(success=False, output="Merge operation timed out")
+        except Exception as e:
+            logger.error(f"[{self.name}] Merge error: {e}")
+            await self._update_merge_status(story_id, "error", "exception")
+            await log_to_story(story_id, project_id, f"❌ Merge error: {str(e)[:200]}", "error", "merge")
+            return TaskResult(success=False, output=f"Merge error: {e}")
+
+    async def _update_merge_status(self, story_id: str, pr_state: str, merge_status: str):
+        """Update story merge status in DB and broadcast via WebSocket."""
+        from uuid import UUID
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Story
+        from app.websocket.connection_manager import connection_manager
+        
+        project_id = None
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id))
+            if story:
+                story.pr_state = pr_state
+                story.merge_status = merge_status
+                project_id = story.project_id
+                session.add(story)
+                session.commit()
+        
+        # Broadcast WebSocket event for UI update
+        if project_id:
+            await connection_manager.broadcast_to_project({
+                "type": "story_state_changed",
+                "story_id": story_id,
+                "pr_state": pr_state,
+                "merge_status": merge_status,
+            }, project_id)
+
+    async def _cleanup_after_merge(self, story_id: str, worktree_path: str | None, branch_name: str | None, main_workspace: str):
+        """Cleanup worktree and branch after successful merge."""
+        import subprocess
+        from pathlib import Path
+        import shutil
+        from uuid import UUID
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Story
+        
+        try:
+            # 1. Remove worktree
+            if worktree_path and Path(worktree_path).exists():
+                try:
+                    subprocess.run(
+                        ["git", "worktree", "remove", worktree_path, "--force"],
+                        cwd=main_workspace, capture_output=True, timeout=30
+                    )
+                except:
+                    shutil.rmtree(worktree_path, ignore_errors=True)
+                logger.info(f"[{self.name}] Removed worktree: {worktree_path}")
+            
+            # 2. Delete branch (local and remote)
+            if branch_name:
+                subprocess.run(
+                    ["git", "branch", "-D", branch_name],
+                    cwd=main_workspace, capture_output=True, timeout=10
+                )
+                subprocess.run(
+                    ["git", "push", "origin", "--delete", branch_name],
+                    cwd=main_workspace, capture_output=True, timeout=30
+                )
+                logger.info(f"[{self.name}] Deleted branch: {branch_name}")
+            
+            # 3. Update story in DB
+            with Session(engine) as session:
+                story = session.get(Story, UUID(story_id))
+                if story:
+                    story.worktree_path = None
+                    story.branch_name = None
+                    session.add(story)
+                    session.commit()
+                    
+        except Exception as e:
+            logger.error(f"[{self.name}] Cleanup error: {e}")

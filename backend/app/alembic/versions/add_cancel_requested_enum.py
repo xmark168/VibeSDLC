@@ -1,7 +1,7 @@
 """add cancel_requested to storyagentstate enum
 
 Revision ID: add_cancel_requested
-Revises: 9de7493bf59a
+Revises: e091278a11be
 Create Date: 2025-12-12
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_cancel_requested'
-down_revision = '9de7493bf59a'
+down_revision = 'e091278a11be'
 branch_labels = None
 depends_on = None
 

@@ -75,8 +75,13 @@ export function FeaturedBooks() {
     fetch('/api/books/featured')
       .then(res => res.json())
       .then(data => {
-        if (data.success) setBooks(data.data ?? []);
-        else setError(data.error);
+        if (data.success) {
+          // Handle both formats: data.data as array OR data.data.results
+          const items = Array.isArray(data.data) ? data.data : (data.data?.results ?? []);
+          setBooks(items);
+        } else {
+          setError(data.error);
+        }
       })
       .catch(() => setError('Failed to load'))
       .finally(() => setIsLoading(false));
@@ -86,6 +91,11 @@ export function FeaturedBooks() {
   if (error) return <Alert>{error}</Alert>;
   return <BookGrid books={books} />;
 }
+
+// API Response Formats:
+// - Standard: { success: true, data: [...] } → use data.data
+// - With results: { success: true, data: { results: [...] } } → use data.data.results
+// - Always safe: Array.isArray(data.data) ? data.data : (data.data?.results ?? [])
 ```
 
 **Rules:**
@@ -279,6 +289,64 @@ setItems((await res.json()).data ?? []);
 {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
 ```
 
+## Filter State Pattern - URL Sync
+
+When building filter/search pages, sync state with URL:
+
+```typescript
+'use client';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+
+export function SearchPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState('relevance');
+
+  // Initialize filters from URL on mount (empty deps = run once)
+  useEffect(() => {
+    const categories = searchParams.get('categories')?.split(',').filter(Boolean) ?? [];
+    const sort = searchParams.get('sort') ?? 'relevance';
+    setSelectedCategories(categories);
+    setSortBy(sort);
+  }, []);  // Empty deps - only run once on mount!
+
+  // Update URL when filters change
+  const updateURL = useCallback((filters: FilterState) => {
+    const params = new URLSearchParams();
+    if (filters.query) params.set('q', filters.query);
+    if (filters.categories.length > 0) {
+      params.set('categories', filters.categories.join(','));  // comma-separated!
+    }
+    if (filters.sort !== 'relevance') {
+      params.set('sort', filters.sort);  // NOT 'sortBy'!
+    }
+    router.push(`/search?${params.toString()}`, { scroll: false });
+  }, [router]);
+
+  // Fetch data with current filters
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set('q', query);
+    if (selectedCategories.length > 0) {
+      params.set('categories', selectedCategories.join(','));
+    }
+    if (sortBy !== 'relevance') params.set('sort', sortBy);
+    
+    fetch(`/api/books/search?${params.toString()}`)
+      .then(res => res.json())
+      .then(data => setBooks(data.data ?? []));
+  }, [query, selectedCategories, sortBy]);
+}
+```
+
+**Param naming MUST match API route:**
+- Frontend sends `categories` → API reads `searchParams.get('categories')`
+- Frontend sends `sort` → API reads `searchParams.get('sort')`
+- **NEVER** use `categoryId`, `authorId`, `sortBy`
+
 ## NEVER
 - `'use client'` when not needed
 - Guess props without reading component
@@ -287,3 +355,5 @@ setItems((await res.json()).data ?? []);
 - Add Header in pages (already in layout)
 - Import from `'./badge'` - use `'@/components/ui/badge'`
 - Create UI components that already exist in shadcn/ui
+- Use `sortBy` param - always use `sort`
+- Use `categoryId`/`authorId` for multi-select - use `categories`/`authors`

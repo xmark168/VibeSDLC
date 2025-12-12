@@ -11,9 +11,13 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Use settings from config.py, fallback to env vars for backward compatibility
-ANTHROPIC_API_BASE = settings.ANTHROPIC_API_BASE or os.getenv("ANTHROPIC_API_BASE", "https://api.anthropic.com")
-ANTHROPIC_API_KEY = settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
+# Use settings from config.py (.env file) - prioritize over system env vars
+ANTHROPIC_API_BASE = settings.ANTHROPIC_API_BASE if settings.ANTHROPIC_API_BASE else "https://api.anthropic.com"
+ANTHROPIC_API_KEY = settings.ANTHROPIC_API_KEY if settings.ANTHROPIC_API_KEY else ""
+
+# Log which key is being used (masked for security)
+logger.info(f"[LLM Config] ANTHROPIC_API_BASE: {ANTHROPIC_API_BASE}")
+logger.info(f"[LLM Config] ANTHROPIC_API_KEY: {ANTHROPIC_API_KEY[:10]}...{ANTHROPIC_API_KEY[-4:] if len(ANTHROPIC_API_KEY) > 14 else '****'}")
 
 MODELS = {
     "fast": "claude-sonnet-4-5-20250929",  # Using sonnet as haiku may not be available
@@ -33,8 +37,8 @@ LLM_CONFIG = {
 }
 
 SKILL_MODEL_MAP = {
-    "frontend-design": MODELS["medium"],
-    "frontend-component": MODELS["medium"],
+    "frontend-design": MODELS["complex"],
+    "frontend-component": MODELS["complex"],
     "api-route": MODELS["medium"],
     "database-model": MODELS["medium"],
     "database-seed": MODELS["medium"],

@@ -268,6 +268,17 @@ class AgentPoolManager:
             logger.error(f"Failed to terminate agent {agent_id}: {e}", exc_info=True)
             return False
 
+    def has_agent(self, agent_id: UUID) -> bool:
+        """Check if agent exists in pool.
+
+        Args:
+            agent_id: Agent UUID
+
+        Returns:
+            True if agent exists, False otherwise
+        """
+        return agent_id in self.agents
+
     def get_agent(self, agent_id: UUID) -> Optional[BaseAgent]:
         """Get agent by ID.
 

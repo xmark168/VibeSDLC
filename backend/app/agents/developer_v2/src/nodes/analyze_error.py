@@ -166,10 +166,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
             if error_analysis["auto_fixable"]:
                 await story_logger.task(f"⚡ Attempting auto-fix: {error_analysis['fix_strategy']}")
                 
-                import asyncio
-                auto_fixed = asyncio.get_event_loop().run_until_complete(
-                    try_auto_fix(error_analysis, workspace_path, story_logger)
-                )
+                auto_fixed = await try_auto_fix(error_analysis, workspace_path, story_logger)
                 
                 if auto_fixed:
                     return {**state, "action": "VALIDATE", "run_status": None, "error_analysis": {"auto_fixed": True, "fix_strategy": error_analysis["fix_strategy"]}}

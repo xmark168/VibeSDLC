@@ -53,6 +53,7 @@ export type KanbanCardData = {
   worktree_path_display?: string | null
   branch_name?: string | null
   pr_url?: string | null
+  pr_state?: string | null  // "merging", "merged", "error"
   merge_status?: string | null  // "not_merged", "merged", "conflict"
   started_at?: string | null
   // TraDS ============= Kanban Hierarchy: Parent/children relationships

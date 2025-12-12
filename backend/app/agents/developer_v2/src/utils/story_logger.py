@@ -550,11 +550,24 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
     
     # Analyze error type
     
-    # 1. Prisma errors
+    # 1. Seed unique constraint errors (P2002) - NOT auto-fixable, needs LLM fix
+    seed_unique_patterns = [
+        r"Unique constraint failed on the fields:",
+        r"PrismaClientKnownRequestError:.*Unique constraint",
+        r"code: 'P2002'",
+        r"Error: P2002",
+    ]
+    if any(re.search(p, error_logs) for p in seed_unique_patterns):
+        result["error_type"] = "seed_unique_constraint"
+        result["auto_fixable"] = False
+        result["fix_strategy"] = "fix_seed_unique_constraint"
+        result["files_mentioned"].append("prisma/seed.ts")
+        return result
+    
+    # 2. Prisma client errors (auto-fixable)
     prisma_patterns = [
         r"Cannot find module '@prisma/client'",
         r"PrismaClient is unable to run",
-        r"Error: P\d{4}",  # Prisma error codes
         r"prisma generate",
     ]
     if any(re.search(p, error_logs) for p in prisma_patterns):

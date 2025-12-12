@@ -212,6 +212,8 @@ async def update_story_status(
             raise HTTPException(status_code=409, detail=error_data)
         if error_data.get("error") == "DEPENDENCIES_NOT_COMPLETED":
             raise HTTPException(status_code=409, detail=error_data)
+        if error_data.get("error") == "DONE_STATUS_LOCKED":
+            raise HTTPException(status_code=403, detail=error_data)
         raise HTTPException(status_code=422, detail=error_data)
 
 
@@ -355,9 +357,84 @@ def delete_story(
     current_user: CurrentUser,
     story_id: uuid.UUID
 ) -> dict:
-    """Delete story."""
+    """Delete story with worktree cleanup."""
+    import subprocess
+    import shutil
+    from pathlib import Path
+    
     story_service = StoryService(session)
     
+    # Get story before delete to cleanup worktree
+    story = story_service.get_by_id(story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Stop dev server if running
+    if story.running_pid:
+        try:
+            import os
+            import signal
+            os.kill(story.running_pid, signal.SIGTERM)
+            logger.info(f"[delete_story] Stopped dev server (PID: {story.running_pid})")
+        except (ProcessLookupError, OSError) as e:
+            logger.warning(f"[delete_story] Dev server process not found or already stopped: {e}")
+    
+    # Cleanup worktree and branch if exists
+    worktree_path = story.worktree_path
+    branch_name = story.branch_name
+    
+    if worktree_path and Path(worktree_path).exists():
+        try:
+            # Get main repo path (parent of worktrees)
+            worktree_parent = Path(worktree_path).parent
+            main_repo = None
+            
+            # Try to find main repo from worktree
+            result = subprocess.run(
+                ["git", "rev-parse", "--git-common-dir"],
+                cwd=worktree_path, capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                git_common_dir = result.stdout.strip()
+                main_repo = str(Path(git_common_dir).parent)
+            
+            # Remove worktree
+            if main_repo:
+                subprocess.run(
+                    ["git", "worktree", "remove", worktree_path, "--force"],
+                    cwd=main_repo, capture_output=True, timeout=30
+                )
+            
+            # Fallback: just delete the directory
+            if Path(worktree_path).exists():
+                shutil.rmtree(worktree_path, ignore_errors=True)
+                
+            logger.info(f"[delete_story] Cleaned up worktree: {worktree_path}")
+        except Exception as e:
+            logger.warning(f"[delete_story] Failed to cleanup worktree: {e}")
+    
+    # Delete branch if exists
+    if branch_name and worktree_path:
+        try:
+            # Get main repo
+            worktree_parent = Path(worktree_path).parent
+            result = subprocess.run(
+                ["git", "rev-parse", "--git-common-dir"],
+                cwd=str(worktree_parent), capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                git_common_dir = result.stdout.strip()
+                main_repo = str(Path(git_common_dir).parent)
+                
+                subprocess.run(
+                    ["git", "branch", "-D", branch_name],
+                    cwd=main_repo, capture_output=True, timeout=10
+                )
+                logger.info(f"[delete_story] Deleted branch: {branch_name}")
+        except Exception as e:
+            logger.warning(f"[delete_story] Failed to delete branch: {e}")
+    
+    # Delete story from DB
     if not story_service.delete(story_id):
         raise HTTPException(status_code=404, detail="Story not found")
     
@@ -665,31 +742,35 @@ async def cancel_story_task(
         story.db_container_id = None
         story.db_port = None
     
+    # Clear container from in-memory registry
+    from app.agents.developer_v2.src.utils.db_container import clear_container_from_registry
+    clear_container_from_registry(str(story_id))
+    
     # Update state to canceled and clear checkpoint (cancel = permanent stop)
     story.agent_state = StoryAgentState.CANCELED
     story.checkpoint_thread_id = None  # Clear checkpoint - cancel means no resume
     session.add(story)
     session.commit()
     
-    # Broadcast WebSocket notification
+    # Broadcast state change via WebSocket (use story_state_changed, not story_message)
     from app.websocket.connection_manager import connection_manager
     await connection_manager.broadcast_to_project({
-        "type": "story_message",
+        "type": "story_state_changed",
         "story_id": str(story_id),
-        "content": f"🛑 Task đã bị hủy",
-        "message_type": "system",
-        "agent_state": "canceled",
+        "agent_state": "CANCELED",
+        "old_state": None,
     }, story.project_id)
     
-    # Publish cancel event to actually stop the agent
-    producer = await get_kafka_producer()
-    event = StoryEvent(
-        event_type="story.cancel",
-        project_id=str(story.project_id),
-        user_id=str(current_user.id),
-        story_id=str(story.id),
-    )
-    await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
+    # Only publish Kafka event if agent is assigned (has something to cancel)
+    if story.assigned_agent_id:
+        producer = await get_kafka_producer()
+        event = StoryEvent(
+            event_type="story.cancel",
+            project_id=str(story.project_id),
+            user_id=str(current_user.id),
+            story_id=str(story.id),
+        )
+        await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
     
     return {"success": True, "message": "Task cancelled"}
 
@@ -725,7 +806,7 @@ async def pause_story_task(
         "story_id": str(story_id),
         "content": f"⏸️ Task đã tạm dừng",
         "message_type": "system",
-        "agent_state": "paused",
+        "agent_state": "PAUSED",
     }, story.project_id)
     
     # Publish pause event to stop the agent
@@ -771,7 +852,7 @@ async def resume_story_task(
         "story_id": str(story_id),
         "content": f"▶️ Đang tiếp tục task...",
         "message_type": "system",
-        "agent_state": "processing",
+        "agent_state": "PROCESSING",
     }, story.project_id)
     
     # Publish resume event to continue the agent
@@ -993,6 +1074,10 @@ async def restart_story_task(
         except Exception as e:
             logger.warning(f"[restart] Failed to stop docker container: {e}")
     
+    # Clear container from in-memory registry to ensure fresh start
+    from app.agents.developer_v2.src.utils.db_container import clear_container_from_registry
+    clear_container_from_registry(str(story_id))
+    
     # Get main workspace from Project
     from app.models import Project
     project = session.get(Project, story.project_id)
@@ -1034,7 +1119,7 @@ async def restart_story_task(
     await connection_manager.broadcast_to_project({
         "type": "story_state_changed",
         "story_id": str(story_id),
-        "agent_state": "pending",
+        "agent_state": "PENDING",
         "old_state": None,
     }, project_id)
     
@@ -1813,3 +1898,140 @@ async def proxy_preview(
         raise HTTPException(status_code=504, detail="Dev server request timed out")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Proxy error: {str(e)}")
+
+
+# ===== Merge Branch Management (Pure Git) =====
+
+@router.post("/{story_id}/merge-to-main")
+async def merge_story_to_main(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Merge story branch to main/master using pure git (no GitHub CLI).
+    
+    Flow:
+    1. Trigger Developer agent to:
+       - Merge main into story branch (resolve conflicts if any)
+       - If success, merge story branch into main
+       - Cleanup worktree/branch after merge
+    2. Update pr_state based on result
+    """
+    from pathlib import Path
+    from app.models import Project
+    from app.models.base import StoryAgentState
+    
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    # Validate story state
+    if story.agent_state != StoryAgentState.FINISHED:
+        raise HTTPException(status_code=400, detail="Story must be FINISHED before merging")
+    
+    if not story.branch_name:
+        raise HTTPException(status_code=400, detail="Story has no branch to merge")
+    
+    if story.merge_status == "merged":
+        raise HTTPException(status_code=400, detail="Story already merged")
+    
+    # Get main workspace from project
+    project = session.get(Project, story.project_id)
+    if not project or not project.project_path:
+        raise HTTPException(status_code=400, detail="Project has no workspace path")
+    
+    backend_root = Path(__file__).resolve().parent.parent.parent.parent
+    main_workspace = str((backend_root / project.project_path).resolve())
+    
+    if not Path(main_workspace).exists():
+        raise HTTPException(status_code=400, detail="Main workspace not found")
+    
+    # Update state to indicate merge in progress
+    story.pr_state = "merging"
+    session.add(story)
+    session.commit()
+    
+    # Broadcast WebSocket event for UI to show "merging" state
+    from app.websocket.connection_manager import connection_manager
+    await connection_manager.broadcast_to_project({
+        "type": "story_state_changed",
+        "story_id": str(story_id),
+        "pr_state": "merging",
+    }, story.project_id)
+    
+    # Trigger Developer agent to handle merge (non-blocking)
+    asyncio.create_task(_trigger_merge_task(
+        str(story_id), 
+        str(story.project_id),
+        story.branch_name,
+        story.worktree_path,
+        main_workspace
+    ))
+    
+    logger.info(f"[merge-to-main] Triggered merge for story {story_id}")
+    
+    return {
+        "success": True,
+        "pr_state": "merging",
+        "message": "Developer agent will merge branch to main. Check pr_state for result."
+    }
+
+
+async def _trigger_merge_task(story_id: str, project_id: str, branch_name: str, worktree_path: str | None, main_workspace: str):
+    """Background task: Trigger Developer agent to merge branch."""
+    try:
+        from app.agents.core.router import route_story_event
+        from app.kafka.event_schemas import AgentTaskType
+        
+        # Small delay to ensure DB commit is visible
+        await asyncio.sleep(1)
+        
+        # Route to available Developer agent for merge task
+        await route_story_event(
+            story_id=story_id,
+            project_id=project_id,
+            task_type=AgentTaskType.REVIEW_PR,
+            priority="high",
+            metadata={
+                "branch_name": branch_name,
+                "worktree_path": worktree_path,
+                "main_workspace": main_workspace
+            }
+        )
+        logger.info(f"[merge-to-main] Triggered merge task for story {story_id}")
+    except Exception as e:
+        logger.error(f"[merge-to-main] Failed to trigger merge task: {e}")
+        # Update story state to indicate failure
+        from uuid import UUID
+        from sqlmodel import Session
+        from app.core.db import engine
+        from app.models import Story
+        
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id))
+            if story:
+                story.pr_state = "error"
+                story.merge_status = "merge_failed"
+                session.add(story)
+                session.commit()
+
+
+@router.get("/{story_id}/merge-status")
+async def get_merge_status(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    story_id: uuid.UUID
+) -> Any:
+    """Get current merge status of story."""
+    story = session.get(Story, story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+    
+    return {
+        "pr_state": story.pr_state,
+        "merge_status": story.merge_status,
+        "branch_name": story.branch_name,
+        "worktree_path": story.worktree_path
+    }

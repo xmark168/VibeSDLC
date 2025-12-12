@@ -120,15 +120,15 @@ def _run_seed(workspace_path: str) -> Tuple[bool, str, str]:
     
     logger.debug("[run_code] Running database seed...")
     success, stdout, stderr = _run_step(
-        "DB Seed", "pnpm exec ts-node prisma/seed.ts",
-        workspace_path, "prisma", timeout=60, allow_fail=True
+        "DB Seed", "pnpm exec ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts",
+        workspace_path, "prisma", timeout=60, allow_fail=False  # Seed errors should be fixed
     )
     
     if success:
         _update_seed_cache(workspace_path)
         logger.debug("[run_code] Database seeded successfully")
     else:
-        logger.warning(f"[run_code] Seed failed (continuing): {stderr[:200] if stderr else 'unknown'}")
+        logger.error(f"[run_code] Seed FAILED: {stderr[:500] if stderr else stdout[:500] if stdout else 'unknown'}")
     
     return success, stdout, stderr
 
@@ -467,7 +467,24 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
                 if seed_success:
                     await log("Database seed completed", "success")
                 else:
-                    await log(f"Database seed failed (continuing): {seed_stderr[:200] if seed_stderr else 'unknown'}", "warning")
+                    # Seed failed - return to ANALYZE_ERROR for fixing
+                    error_output = seed_stderr or seed_stdout or "Unknown seed error"
+                    await log(f"❌ Database seed FAILED: {error_output[:500]}", "error")
+                    await story_logger.message(f"❌ Seed failed - analyzing error...")
+                    if run_code_span:
+                        run_code_span.end(output={"status": "FAIL", "step": "seed", "error": error_output[:500]})
+                    return {
+                        **state,
+                        "run_status": "FAIL",
+                        "run_result": {
+                            "status": "FAIL",
+                            "step": "seed",
+                            "summary": "Database seed failed",
+                            "error_output": error_output,
+                            "file": "prisma/seed.ts"
+                        },
+                        "action": "ANALYZE_ERROR"
+                    }
         else:
             await log("No prisma/seed.ts found, skipping seed", "debug")
         

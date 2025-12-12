@@ -41,7 +41,7 @@ def load_env_file():
 
     for env_file in env_files:
         if env_file.is_file():
-            load_dotenv(dotenv_path=env_file)
+            load_dotenv(dotenv_path=env_file, override=True)
             print(f"Loaded environment from {env_file}")
             return str(env_file)
 

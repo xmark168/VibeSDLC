@@ -35,11 +35,13 @@ async function main() {
   await prisma.book.deleteMany();
   await prisma.category.deleteMany();
   
-  // Seed categories
+  // Seed categories - USE PREDEFINED NAMES for unique constraints!
+  // ⚠️ NEVER use faker.commerce.department() for unique fields (only ~10 values, causes duplicates)
+  const categoryNames = ['Fiction', 'Non-Fiction', 'Science', 'History', 'Technology'];
   const categories = await prisma.category.createManyAndReturn({
-    data: Array.from({ length: 3 }, () => ({
-      name: faker.commerce.department(),
-      slug: faker.helpers.slugify(faker.commerce.department()).toLowerCase(),
+    data: categoryNames.map((name) => ({
+      name,
+      slug: name.toLowerCase().replace(/\s+/g, '-'),
     }))
   });
   
@@ -111,9 +113,33 @@ main()
 2. **Use createMany** for bulk inserts
 3. **Clear first** in reverse dependency order
 4. **faker for ALL text** - no manual strings
+5. **Unique fields** - Use predefined arrays, NOT faker (faker has limited values → duplicates)
+
+## ⚠️ Unique Constraint Warning
+
+For fields with `@unique` constraint, **DO NOT use faker** - it has limited values:
+
+```typescript
+// ❌ WRONG - faker.commerce.department() only has ~10 values → duplicates!
+const categories = await prisma.category.createManyAndReturn({
+  data: Array.from({ length: 5 }, () => ({
+    name: faker.commerce.department(),  // Will fail with unique constraint
+  }))
+});
+
+// ✅ CORRECT - predefined unique values
+const categoryNames = ['Fiction', 'Non-Fiction', 'Science', 'History', 'Technology'];
+const categories = await prisma.category.createManyAndReturn({
+  data: categoryNames.map((name) => ({
+    name,
+    slug: name.toLowerCase().replace(/\s+/g, '-'),
+  }))
+});
+```
 
 ## NEVER
-- Manual data arrays
+- Manual data arrays (except for unique constraint fields)
 - More than 5 records per model
 - Individual create() calls
 - Complex nested creates
+- `faker.commerce.department()` for unique name fields
