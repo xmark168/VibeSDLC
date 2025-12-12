@@ -167,7 +167,6 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         }
         
     except Exception as e:
-        # Re-raise GraphInterrupt - it's expected for pause/cancel
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise
@@ -179,14 +178,12 @@ def route_after_review(state: DeveloperState) -> str:
     """Route based on review result."""
     review_result = state.get("review_result", "LGTM")
     
-    # If LBTM, go back to implement (per-step limit enforced in review node)
     if review_result == "LBTM":
         return "implement"
     
-    # LGTM - check if more steps
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
     
     if current_step >= total_steps:
         return "summarize"
-    return "implement"  # Changed from "next_step" to "implement"
+    return "implement" 

@@ -1,4 +1,4 @@
-"""Project Workspace Manager - Git worktree for isolated story development."""
+"""Project Workspace Manager"""
 
 import logging
 from pathlib import Path
@@ -8,12 +8,9 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectWorkspaceManager:
-    """Git worktree manager using project_path from database.
-    
-    Main workspace: {project_path} (from Project.project_path in DB)
-    Story worktree: {project_path}_{story_id}
     """
-
+    Git worktree manager
+    """
     def __init__(self, project_id: UUID):
         self.project_id = project_id
         self._project_path = None
