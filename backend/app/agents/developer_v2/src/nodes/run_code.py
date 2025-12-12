@@ -495,7 +495,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         for svc in services:
             svc_name = svc.get("name", "app")
-            svc_path = str(Path(workspace_path) / svc.get("path", "."))
+            str(Path(workspace_path) / svc.get("path", "."))
             
             # Format
             if svc.get("format_cmd"):

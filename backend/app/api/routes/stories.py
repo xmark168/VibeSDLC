@@ -881,108 +881,94 @@ async def resume_story_task(
     return {"success": True, "message": "Task resumed"}
 
 
+def _kill_processes_in_worktree(worktree_path: str) -> None:
+    """Kill node processes that might be locking files (Windows only)."""
+    import platform
+    if platform.system() != "Windows":
+        return
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", "node.exe"], capture_output=True, timeout=10)
+    except Exception:
+        pass
+
+
 def _cleanup_story_resources_sync(
     worktree_path: str | None = None,
     branch_name: str | None = None,
     main_workspace: str | None = None,
     checkpoint_thread_id: str | None = None,
 ) -> dict:
-    """
-    Cleanup all story resources synchronously.
-    
-    Args:
-        worktree_path: Path to git worktree to remove
-        branch_name: Git branch name to delete
-        main_workspace: Main git workspace path
-        checkpoint_thread_id: LangGraph checkpoint thread ID to delete
-    
-    Returns:
-        dict with cleanup results: {"checkpoint": bool, "worktree": bool, "branch": bool}
-    """
+    """Cleanup story resources. Order: checkpoint → kill → prune → remove → delete dir → prune → branch."""
     from pathlib import Path
-    import subprocess
-    import shutil
-    import platform
-    import tempfile
-    import logging
+    import subprocess, shutil, platform, tempfile, time
     
-    _logger = logging.getLogger(__name__)
     results = {"checkpoint": False, "worktree": False, "branch": False}
     
-    # 1. Delete checkpoint data
+    # Delete checkpoint
     if checkpoint_thread_id:
         try:
             from sqlmodel import Session
             from sqlalchemy import text
             from app.core.db import engine
-            
             with Session(engine) as db:
                 db.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
                 db.execute(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
                 db.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
                 db.commit()
             results["checkpoint"] = True
-            _logger.info(f"[cleanup] Deleted checkpoint: {checkpoint_thread_id}")
-        except Exception as e:
-            _logger.warning(f"[cleanup] Failed to delete checkpoint: {e}")
+        except Exception:
+            pass
     
-    # 2. Remove git worktree
+    if worktree_path:
+        _kill_processes_in_worktree(worktree_path)
+    
+    # Prune first
+    if main_workspace and Path(main_workspace).exists():
+        try:
+            subprocess.run(["git", "worktree", "prune"], cwd=main_workspace, capture_output=True, timeout=10)
+        except Exception:
+            pass
+    
+    # Remove worktree
     if worktree_path:
         worktree = Path(worktree_path)
-        try:
-            if main_workspace and Path(main_workspace).exists():
-                subprocess.run(
-                    ["git", "worktree", "remove", str(worktree), "--force"],
-                    cwd=main_workspace,
-                    capture_output=True,
-                    timeout=30
-                )
-        except Exception as e:
-            _logger.debug(f"[cleanup] Git worktree remove failed: {e}")
-        
-        # Force delete directory if still exists
-        if worktree.exists():
+        if worktree.exists() and main_workspace and Path(main_workspace).exists():
             try:
-                shutil.rmtree(worktree)
+                subprocess.run(["git", "worktree", "remove", str(worktree), "--force"], cwd=main_workspace, capture_output=True, timeout=30)
             except Exception:
-                # Windows long path workaround
-                if platform.system() == "Windows":
-                    try:
-                        empty_dir = tempfile.mkdtemp()
-                        subprocess.run(
-                            ["robocopy", empty_dir, str(worktree), "/mir", "/r:0", "/w:0", "/njh", "/njs", "/nc", "/ns", "/np", "/nfl", "/ndl"],
-                            capture_output=True,
-                            timeout=15,
-                        )
-                        shutil.rmtree(empty_dir, ignore_errors=True)
-                        shutil.rmtree(worktree, ignore_errors=True)
-                    except Exception:
-                        pass
+                pass
         
-        # CRITICAL: Prune stale worktree entries so git knows the worktree is gone
-        # Without this, git branch -D will fail with "branch checked out at..." error
+        if worktree.exists():
+            for attempt in range(3):
+                try:
+                    shutil.rmtree(worktree)
+                    break
+                except Exception as e:
+                    if attempt < 2:
+                        time.sleep(0.5 * (attempt + 1))
+                        _kill_processes_in_worktree(worktree_path)
+                    elif platform.system() == "Windows":
+                        try:
+                            empty_dir = tempfile.mkdtemp()
+                            subprocess.run(["robocopy", empty_dir, str(worktree), "/mir", "/r:0", "/w:0", "/njh", "/njs", "/nc", "/ns", "/np", "/nfl", "/ndl"], capture_output=True, timeout=30)
+                            shutil.rmtree(empty_dir, ignore_errors=True)
+                            shutil.rmtree(worktree, ignore_errors=True)
+                        except Exception:
+                            pass
+        
+        # Prune again
         if main_workspace and Path(main_workspace).exists():
             try:
-                subprocess.run(
-                    ["git", "worktree", "prune"],
-                    cwd=main_workspace,
-                    capture_output=True,
-                    timeout=10
-                )
+                subprocess.run(["git", "worktree", "prune"], cwd=main_workspace, capture_output=True, timeout=10)
             except Exception:
                 pass
         
         results["worktree"] = not worktree.exists()
     
-    # 3. Delete git branch
+    # Delete branch
     if branch_name and main_workspace and Path(main_workspace).exists():
         try:
-            result = subprocess.run(
-                ["git", "branch", "-D", branch_name],
-                cwd=main_workspace,
-                capture_output=True,
-                timeout=10
-            )
+            result = subprocess.run(["git", "branch", "-D", branch_name], cwd=main_workspace, capture_output=True, timeout=10)
             results["branch"] = result.returncode == 0
         except Exception:
             pass

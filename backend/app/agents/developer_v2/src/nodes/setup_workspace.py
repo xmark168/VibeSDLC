@@ -25,62 +25,62 @@ logger = logging.getLogger(__name__)
 # Git worktree management
 # =============================================================================
 
+def _kill_processes_in_directory(directory: Path, agent_name: str = "Developer") -> None:
+    """Kill node processes that might be locking files (Windows only)."""
+    import platform
+    if platform.system() != "Windows":
+        return
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", "node.exe"], capture_output=True, timeout=10)
+    except Exception:
+        pass
+
+
 def cleanup_old_worktree(main_workspace: Path, branch_name: str, worktree_path: Path, agent_name: str = "Developer"):
-    """Clean up existing worktree directory and branch."""
+    """Clean up worktree and branch. Order: prune → kill → remove → delete dir → prune → delete branch."""
+    import platform, tempfile, time
+    
+    # Prune first
+    try:
+        subprocess.run(["git", "worktree", "prune"], cwd=str(main_workspace), capture_output=True, timeout=10)
+    except Exception:
+        pass
+    
     if worktree_path.exists():
+        _kill_processes_in_directory(worktree_path, agent_name)
+        
         try:
-            subprocess.run(
-                ["git", "worktree", "remove", str(worktree_path), "--force"],
-                cwd=str(main_workspace),
-                capture_output=True,
-                timeout=30,
-            )
-        except Exception as e:
-            logger.warning(f"[{agent_name}] Git worktree remove failed: {e}")
+            subprocess.run(["git", "worktree", "remove", str(worktree_path), "--force"], cwd=str(main_workspace), capture_output=True, timeout=30)
+        except Exception:
+            pass
         
         if worktree_path.exists():
-            try:
-                shutil.rmtree(worktree_path)
-            except Exception as e:
-                # Windows long path workaround: use robocopy to delete
-                import platform
-                if platform.system() == "Windows":
-                    try:
-                        import tempfile
-                        empty_dir = tempfile.mkdtemp()
-                        subprocess.run(
-                            ["robocopy", empty_dir, str(worktree_path), "/mir", "/njh", "/njs", "/nc", "/ns", "/np"],
-                            capture_output=True,
-                            timeout=60,
-                        )
-                        shutil.rmtree(empty_dir, ignore_errors=True)
-                        shutil.rmtree(worktree_path, ignore_errors=True)
-                    except Exception:
-                        pass
-                else:
-                    logger.error(f"[{agent_name}] Failed to remove directory: {e}")
+            for attempt in range(3):
+                try:
+                    shutil.rmtree(worktree_path)
+                    break
+                except Exception as e:
+                    if attempt < 2:
+                        time.sleep(0.5 * (attempt + 1))
+                        _kill_processes_in_directory(worktree_path, agent_name)
+                    elif platform.system() == "Windows":
+                        try:
+                            empty_dir = tempfile.mkdtemp()
+                            subprocess.run(["robocopy", empty_dir, str(worktree_path), "/mir", "/r:0", "/w:0", "/njh", "/njs", "/nc", "/ns", "/np", "/nfl", "/ndl"], capture_output=True, timeout=30)
+                            shutil.rmtree(empty_dir, ignore_errors=True)
+                            shutil.rmtree(worktree_path, ignore_errors=True)
+                        except Exception:
+                            logger.error(f"[{agent_name}] Failed to remove directory: {e}")
     
-    # CRITICAL: Prune stale worktree entries so git knows the worktree is gone
-    # Without this, git branch -D will fail with "branch checked out at..." error
+    # Prune again + delete branch
     try:
-        subprocess.run(
-            ["git", "worktree", "prune"],
-            cwd=str(main_workspace),
-            capture_output=True,
-            timeout=10,
-        )
-    except Exception as e:
-        logger.debug(f"[{agent_name}] Git worktree prune failed: {e}")
-    
+        subprocess.run(["git", "worktree", "prune"], cwd=str(main_workspace), capture_output=True, timeout=10)
+    except Exception:
+        pass
     try:
-        subprocess.run(
-            ["git", "branch", "-D", branch_name],
-            cwd=str(main_workspace),
-            capture_output=True,
-            timeout=10,
-        )
-    except Exception as e:
-        logger.debug(f"[{agent_name}] Branch delete (may not exist): {e}")
+        subprocess.run(["git", "branch", "-D", branch_name], cwd=str(main_workspace), capture_output=True, timeout=10)
+    except Exception:
+        pass
 
 
 def setup_git_worktree(
@@ -326,54 +326,30 @@ def _update_prisma_generate_cache(workspace_path: str) -> None:
 
 
 def _run_pnpm_install(workspace_path: str) -> bool:
-    """Run pnpm install (blocking). Returns True if successful."""
+    """Run pnpm install. Try --frozen-lockfile (60s), fallback to regular (120s)."""
     if _should_skip_pnpm_install(workspace_path):
-        logger.debug("[setup_workspace] Skipping pnpm install (cached)")
         return True
     
     lockfile = Path(workspace_path) / "pnpm-lock.yaml"
-    has_lockfile = lockfile.exists()
-    
     try:
-        if has_lockfile:
-            result = subprocess.run(
-                "pnpm install --frozen-lockfile",
-                cwd=workspace_path,
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                errors='replace',
-                timeout=180,
-                shell=True,
-            )
+        if lockfile.exists():
+            result = subprocess.run("pnpm install --frozen-lockfile", cwd=workspace_path, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60, shell=True)
             if result.returncode == 0:
                 _update_pnpm_install_cache(workspace_path)
                 return True
-            # Frozen-lockfile failed - fallback to regular install
-            logger.debug(f"[setup_workspace] --frozen-lockfile failed, using fallback")
+            logger.warning(f"[setup_workspace] --frozen-lockfile failed: {result.stderr[:200] if result.stderr else ''}")
         
-        # Regular pnpm install (generates/updates lockfile)
-        result = subprocess.run(
-            "pnpm install",
-            cwd=workspace_path,
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            timeout=300,
-            shell=True,
-        )
-        
+        result = subprocess.run("pnpm install", cwd=workspace_path, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120, shell=True)
         if result.returncode == 0:
             _update_pnpm_install_cache(workspace_path)
             return True
-        logger.warning(f"[setup_workspace] pnpm install failed")
+        logger.warning(f"[setup_workspace] pnpm install FAILED: {result.stderr[:200] if result.stderr else ''}")
         return False
-    except subprocess.TimeoutExpired:
-        logger.warning("[setup_workspace] pnpm install timed out")
+    except subprocess.TimeoutExpired as e:
+        logger.warning(f"[setup_workspace] pnpm install TIMEOUT after {e.timeout}s")
         return False
     except Exception as e:
-        logger.warning(f"[setup_workspace] pnpm install error: {e}")
+        logger.warning(f"[setup_workspace] pnpm install ERROR: {e}")
         return False
 
 
@@ -439,6 +415,25 @@ def _run_prisma_db_push(workspace_path: str) -> bool:
         return False
     except Exception as e:
         logger.warning(f"[setup_workspace] prisma db push error: {e}")
+        return False
+
+
+def _run_prisma_seed(workspace_path: str) -> bool:
+    """Run prisma db seed (60s timeout)."""
+    seed_file = os.path.join(workspace_path, "prisma", "seed.ts")
+    if not os.path.exists(seed_file):
+        return True
+    try:
+        result = subprocess.run("pnpm exec ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts", cwd=workspace_path, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60, shell=True)
+        if result.returncode == 0:
+            return True
+        logger.warning(f"[setup_workspace] seed FAILED: {result.stderr[:200] if result.stderr else ''}")
+        return False
+    except subprocess.TimeoutExpired:
+        logger.warning("[setup_workspace] seed TIMEOUT")
+        return False
+    except Exception as e:
+        logger.warning(f"[setup_workspace] seed ERROR: {e}")
         return False
 
 
@@ -600,7 +595,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         
         # Run postgres + pnpm install in PARALLEL
         database_ready = False
-        database_url = ""
         pnpm_success = True
         
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
@@ -615,7 +609,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             db_result, pnpm_success = await asyncio.gather(db_future, pnpm_future)
             
             database_ready = db_result.get("ready", False)
-            database_url = db_result.get("url", "")
+            db_result.get("url", "")
             
             if not pnpm_success:
                 await story_logger.warning("pnpm install failed, continuing...")
@@ -633,6 +627,14 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                         push_success = await loop.run_in_executor(_executor, _run_prisma_db_push, workspace_path)
                         if not push_success:
                             await story_logger.warning("prisma db push failed, tables may not be created")
+                        else:
+                            # Run seed after db push succeeds
+                            seed_file = os.path.join(workspace_path, "prisma", "seed.ts")
+                            if os.path.exists(seed_file):
+                                await story_logger.info("🌱 Seeding database...")
+                                seed_success = await loop.run_in_executor(_executor, _run_prisma_seed, workspace_path)
+                                if not seed_success:
+                                    await story_logger.warning("prisma db seed failed, will retry in build step")
                 else:
                     await story_logger.warning("prisma generate failed")
         

@@ -1,19 +1,16 @@
 """Review node - Code review with LGTM/LBTM decision."""
 import logging
-import re
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes._llm import review_llm
 from app.agents.developer_v2.src.schemas import SimpleReviewOutput
-from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_files
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
 from app.agents.developer_v2.src.utils.prompt_utils import (
     format_input_template as _format_input_template,
     build_system_prompt as _build_system_prompt,
 )
 from app.agents.developer_v2.src.utils.token_utils import (
-    count_tokens,
     smart_truncate_tokens,
 )
 

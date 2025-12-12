@@ -2,14 +2,14 @@
 
 from functools import partial
 from typing import Literal, Optional, Any
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.nodes import (
     setup_workspace, plan, implement, implement_parallel,
-    run_code, analyze_error, review, route_after_review,
+    run_code, analyze_error, review,
 )
 
 

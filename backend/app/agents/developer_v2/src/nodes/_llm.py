@@ -126,7 +126,6 @@ async def invoke_with_retry(llm: BaseChatModel, messages: list, config: dict = N
 fast_llm = get_llm("router")
 code_llm = get_llm("implement")
 router_llm = get_llm("router")
-exploration_llm = get_llm("exploration")
 analyze_llm = get_llm("analyze")
 plan_llm = get_llm("plan")
 implement_llm = get_llm("implement")

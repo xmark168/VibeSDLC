@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Dict, List, Any
+from typing import Dict, List
 
 from app.agents.developer_v2.src.config import MAX_CONCURRENT
 
