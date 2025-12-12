@@ -388,35 +388,43 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
     """
     from langgraph.types import interrupt
     from app.agents.developer_v2.developer_v2 import check_interrupt_signal
-    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    from app.agents.developer_v2.src.utils.story_logger import log_to_story, StoryLogger
     
-    # Create story logger
-    story_logger = StoryLogger.from_state(state, agent).with_node("run_code")
+    # Get IDs for logging
+    story_id = state.get("story_id", "")
+    project_id = state.get("project_id", "")
+    node_name = "run_code"
+    
+    # Helper for logging
+    async def log(message: str, level: str = "info"):
+        if story_id and project_id:
+            await log_to_story(story_id, project_id, message, level, node_name)
+    
+    # Create story logger for milestone messages
+    story_logger = StoryLogger.from_state(state, agent).with_node(node_name)
     
     # Check for pause/cancel signal
-    story_id = state.get("story_id", "")
     if story_id:
         signal = check_interrupt_signal(story_id)
         if signal:
-            await story_logger.info(f"Interrupt signal received: {signal}")
-            interrupt({"reason": signal, "story_id": story_id, "node": "run_code"})
+            await log(f"Interrupt signal received: {signal}", "warning")
+            interrupt({"reason": signal, "story_id": story_id, "node": node_name})
     
-    await story_logger.info("Running build validation...")
-    await story_logger.message("🧪 Đang chạy validation...")
+    await log("🧪 Starting build validation...")
     
     workspace_path = state.get("workspace_path", "")
-    project_id = state.get("project_id", "default")
-    task_id = state.get("task_id") or state.get("story_id", "")
+    task_id = state.get("task_id") or story_id
     
     run_code_span = get_langfuse_span(state, "run_code", {"workspace": workspace_path, "task_id": task_id})
     
     try:
         if not workspace_path or not Path(workspace_path).exists():
-            logger.warning("[run_code] No workspace path, skipping")
+            await log("No workspace path found, skipping build validation", "warning")
             if run_code_span:
                 run_code_span.end(output={"status": "PASS", "reason": "No workspace"})
             return {**state, "run_status": "PASS", "run_result": {"status": "PASS", "summary": "No workspace"}}
         
+        await log(f"Workspace: {workspace_path}", "debug")
         set_tool_context(root_dir=workspace_path, project_id=project_id, task_id=task_id)
         
         project_config = state.get("project_config", {})
@@ -424,59 +432,122 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         services = tech_stack.get("service", []) if isinstance(tech_stack, dict) else []
         
         if not services:
-            logger.error("[run_code] Missing project_config.tech_stack.service")
+            await log("Missing project_config.tech_stack.service configuration", "error")
             if run_code_span:
                 run_code_span.end(output={"status": "ERROR", "reason": "Missing config"})
             return {**state, "run_status": "ERROR", "run_result": {"status": "ERROR", "summary": "Missing config"}}
         
-        logger.debug(f"[run_code] Services: {[s.get('name', 'app') for s in services]}")
+        service_names = [s.get('name', 'app') for s in services]
+        await log(f"Found {len(services)} service(s): {', '.join(service_names)}")
         
-        # Run seed + format/lint in PARALLEL (optimization: saves ~5s)
-        await story_logger.task("Running format and lint...")
-        loop = asyncio.get_event_loop()
-        seed_task = loop.run_in_executor(_executor, _run_seed, workspace_path)
-        format_lint_task = _run_format_lint_parallel(services, workspace_path)
+        # =====================================================================
+        # Step 1: Database Seed (if prisma/seed.ts exists)
+        # =====================================================================
+        seed_file = Path(workspace_path) / "prisma" / "seed.ts"
+        if seed_file.exists():
+            await log("🌱 Running database seed...")
+            if _should_skip_seed(workspace_path):
+                await log("Seed skipped (no changes detected)", "debug")
+            else:
+                loop = asyncio.get_event_loop()
+                seed_success, seed_stdout, seed_stderr = await loop.run_in_executor(_executor, _run_seed, workspace_path)
+                if seed_success:
+                    await log("Database seed completed", "success")
+                else:
+                    await log(f"Database seed failed (continuing): {seed_stderr[:200] if seed_stderr else 'unknown'}", "warning")
+        else:
+            await log("No prisma/seed.ts found, skipping seed", "debug")
         
-        logger.debug("[run_code] Running seed + format/lint in parallel...")
-        await asyncio.gather(seed_task, format_lint_task, return_exceptions=True)
+        # =====================================================================
+        # Step 2: Format + Lint (parallel for each service)
+        # =====================================================================
+        await log("📝 Running code formatting and linting...")
         
-        await story_logger.task("Running typecheck and build...")
-        # Build all services
+        for svc in services:
+            svc_name = svc.get("name", "app")
+            svc_path = str(Path(workspace_path) / svc.get("path", "."))
+            
+            # Format
+            if svc.get("format_cmd"):
+                await log(f"[{svc_name}] Running format: {svc['format_cmd']}", "debug")
+            
+            # Lint
+            if svc.get("lint_fix_cmd"):
+                await log(f"[{svc_name}] Running lint fix: {svc['lint_fix_cmd']}", "debug")
+        
+        await _run_format_lint_parallel(services, workspace_path)
+        await log("Format and lint completed", "success")
+        
+        # =====================================================================
+        # Step 3: Clear Next.js cache (if applicable)
+        # =====================================================================
+        next_types = Path(workspace_path) / ".next" / "types"
+        if next_types.exists():
+            await log("Clearing .next/types cache...", "debug")
+            _clear_next_types_cache(workspace_path)
+        
+        # =====================================================================
+        # Step 4: Null Safety Validation
+        # =====================================================================
+        await log("Running null safety validation...", "debug")
+        null_warnings = _validate_null_safety(workspace_path)
+        if null_warnings:
+            await log(f"Found {len(null_warnings)} potential null safety issue(s): {', '.join(null_warnings[:5])}", "warning")
+        else:
+            await log("No null safety issues detected", "debug")
+        
+        # =====================================================================
+        # Step 5: Typecheck + Build (for each service)
+        # =====================================================================
+        await log("🔨 Running typecheck and build...")
+        
         all_stdout = ""
         all_stderr = ""
         all_passed = True
         summaries = []
         
-        for svc in services:
-            result = await _run_service_build(svc, workspace_path, run_code_span)
+        for i, svc in enumerate(services):
             svc_name = svc.get("name", "app")
+            typecheck_cmd = svc.get("typecheck_cmd", "pnpm run typecheck")
+            build_cmd = svc.get("build_cmd", "")
+            
+            await log(f"[{svc_name}] Building service ({i+1}/{len(services)})...")
+            
+            # Log typecheck
+            if typecheck_cmd and _has_script(workspace_path, "typecheck"):
+                await log(f"[{svc_name}] Running typecheck: {typecheck_cmd}", "debug")
+            
+            # Log build
+            if build_cmd:
+                await log(f"[{svc_name}] Running build: {build_cmd}", "debug")
+            
+            result = await _run_service_build(svc, workspace_path, run_code_span)
             
             all_stdout += result["stdout"]
             all_stderr += result["stderr"]
             
             if result["status"] == "PASS":
+                await log(f"[{svc_name}] Build passed ✓", "success")
                 summaries.append(f"{svc_name}: PASS")
             else:
+                # Log error details
+                error_preview = result["stderr"][:500] if result["stderr"] else result["stdout"][:500]
+                await log(f"[{svc_name}] Build failed: {error_preview}", "error")
                 summaries.append(f"{svc_name}: FAIL")
                 all_passed = False
         
         run_status = "PASS" if all_passed else "FAIL"
         summary = ", ".join(summaries)
         
-        # Log build result
-        story_id = state.get("story_id", "")
-        
+        # =====================================================================
+        # Final Result
+        # =====================================================================
         if all_passed:
-            await story_logger.success(f"Build PASSED: {summary}")
-            await story_logger.message("✅ Build passed!")
+            await log(f"✅ All builds passed: {summary}")
+            await story_logger.message("✅ Build validation passed!")
         else:
-            await story_logger.error(f"Build FAILED: {summary}")
-            await story_logger.message(f"❌ Build failed: {summary}")
-            if all_stderr:
-                await story_logger.info(f"Errors: {all_stderr[:500]}...")
-        
-        # Dev server is started manually via API, not auto-started here
-        # User can start it via the frontend after agent completes
+            await log(f"❌ Build failed: {summary}", "error")
+            await story_logger.message(f"❌ Build validation failed: {summary}")
         
         if run_code_span:
             run_code_span.end(output={"status": run_status, "summary": summary})
@@ -494,7 +565,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise
-        await story_logger.error(f"Build validation failed: {str(e)}", exc=e)
+        await log(f"Build validation failed with exception: {str(e)}", "error")
         if run_code_span:
             run_code_span.end(output={"error": str(e)})
         return {**state, "run_status": "PASS", "run_result": {"status": "PASS", "summary": f"Error: {e}"}}

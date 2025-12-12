@@ -47,6 +47,10 @@ class Project(BaseModel, table=True):
     budget_last_reset_daily: datetime | None = Field(default=None)
     budget_last_reset_monthly: datetime | None = Field(default=None)
     
+    # Dev server state (for main workspace)
+    dev_server_port: int | None = Field(default=None)
+    dev_server_pid: int | None = Field(default=None)
+    
     owner: "User" = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",

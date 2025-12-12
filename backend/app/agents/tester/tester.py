@@ -385,6 +385,11 @@ class Tester(BaseAgent):
                 "recursion_limit": getattr(self.graph_engine, "recursion_limit", 50)
             }
             
+            # Set PROCESSING state before starting graph (aligned with Developer V2)
+            # This enables pause/cancel buttons in frontend immediately
+            if not await self._update_story_state(story_id, StoryAgentState.PROCESSING):
+                logger.warning(f"[{self.name}] Failed to set PROCESSING state for {story_id}")
+            
             # Check if resuming from pause
             if is_resume:
                 logger.info(f"[{self.name}] Resuming story {story_id} from checkpoint")

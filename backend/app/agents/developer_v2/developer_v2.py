@@ -369,29 +369,23 @@ class DeveloperV2(BaseAgent):
                 story_id = story_id_from_context
                 
                 if is_resume:
-                    # Resuming paused story
+                    # Resuming paused story - state update only, no message (node will handle)
                     if not await self._update_story_state(story_id, StoryAgentState.PROCESSING):
                         raise RuntimeError(f"Cannot resume: failed to update state for {story_id}")
-                    from uuid import UUID
-                    await self.message_story(
-                        UUID(story_id),
-                        f"▶️ Tiếp tục xử lý story...",
-                        message_type="progress"
-                    )
                 else:
-                    # Starting new story
+                    # Starting new story - state update only
                     if not await self._update_story_state(story_id, StoryAgentState.PENDING):
                         raise RuntimeError(f"Cannot start: failed to update state for {story_id}")
                 
                 story_data = await self._load_story_from_db(story_id)
                 
                 if not is_resume:
-                    # Notify user that we started processing
+                    # Send milestone message for new story start
                     from uuid import UUID
                     await self.message_story(
                         UUID(story_id),
-                        f"🚀 Bắt đầu triển khai: {story_data.get('title', 'Story')}",
-                        message_type="progress"
+                        f"🚀 Bắt đầu: {story_data.get('title', 'Story')}",
+                        message_type="text"
                     )
             else:
                 # Parse from task content (legacy/direct call)
@@ -679,20 +673,20 @@ class DeveloperV2(BaseAgent):
                         git_reset_all(workspace_path, base_branch)
                         logger.info(f"[{self.name}] Reset all changes on cancel")
                 
-                # Notify user
+                # Notify user (milestone messages for pause/cancel)
                 from uuid import UUID
                 story_uuid = UUID(story_id)
                 if reason == "pause":
                     await self.message_story(
                         story_uuid,
-                        f"⏸️ Story đã tạm dừng tại node '{node}'. Uncommitted changes đã được revert, commits đã lưu.",
-                        message_type="system"
+                        f"⏸️ Đã tạm dừng. Bấm Resume để tiếp tục.",
+                        message_type="text"
                     )
                 elif reason == "cancel":
                     await self.message_story(
                         story_uuid,
-                        f"🛑 Story đã bị hủy tại node '{node}'. Tất cả changes đã được reset.",
-                        message_type="system"
+                        f"🛑 Đã hủy story.",
+                        message_type="text"
                     )
                 
                 # Cleanup langfuse
@@ -820,21 +814,21 @@ class DeveloperV2(BaseAgent):
             # Remove from local tracking
             self._running_tasks.pop(story_id, None)
             
-            # Notify user
+            # Notify user (milestone messages)
             try:
                 from uuid import UUID
                 story_uuid = UUID(story_id)
                 if e.state == StoryAgentState.PAUSED:
                     await self.message_story(
                         story_uuid,
-                        f"⏸️ Story đã tạm dừng. Checkpoint đã được lưu.",
-                        message_type="system"
+                        f"⏸️ Đã tạm dừng. Bấm Resume để tiếp tục.",
+                        message_type="text"
                     )
                 elif e.state == StoryAgentState.CANCELED:
                     await self.message_story(
                         story_uuid,
-                        f"🛑 Story đã bị hủy.",
-                        message_type="system"
+                        f"🛑 Đã hủy story.",
+                        message_type="text"
                     )
             except Exception:
                 pass

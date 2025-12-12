@@ -214,12 +214,24 @@ export function useChatWebSocket(
         handleStoryMessage(msg)
         break
       
+      case 'story_log':
+        handleStoryLog(msg)
+        break
+      
+      case 'story_task':
+        handleStoryTask(msg)
+        break
+      
       case 'story_state_changed':
         handleStoryStateChanged(msg)
         break
       
       case 'branch_changed':
         handleBranchChanged(msg)
+        break
+      
+      case 'project_dev_server':
+        handleProjectDevServer(msg)
         break
       
       default:
@@ -632,28 +644,50 @@ export function useChatWebSocket(
     )
   }
   
+  const handleStoryTask = (msg: any) => {
+    // Transient task update - dispatch event for Task component (not saved to DB)
+    console.log('[WS] 📋 Story task:', msg.story_id, msg.content, msg.progress)
+    
+    window.dispatchEvent(new CustomEvent('story-task', {
+      detail: {
+        story_id: msg.story_id,
+        content: msg.content,
+        node: msg.node,
+        progress: msg.progress,
+        timestamp: msg.timestamp,
+      }
+    }))
+  }
+  
+  const handleStoryLog = (msg: any) => {
+    // Log message - dispatch event for Logs tab (not Chat tab)
+    console.log('[WS] 📝 Story log:', msg.story_id, msg.level, msg.content?.substring(0, 50))
+    
+    window.dispatchEvent(new CustomEvent('story-log', {
+      detail: {
+        story_id: msg.story_id,
+        content: msg.content,
+        level: msg.level,
+        node: msg.node,
+        timestamp: msg.timestamp,
+      }
+    }))
+  }
+  
   const handleStoryMessage = (msg: any) => {
     console.log('[WS] 📋 Story message:', msg.story_id, msg.content, msg.message_type)
     
-    // Dispatch log event for log messages (to show in Logs tab)
-    if (msg.message_type === 'log') {
-      window.dispatchEvent(new CustomEvent('story-log', {
-        detail: { 
-          story_id: msg.story_id, 
-          content: msg.content,
-          message_type: msg.message_type,
-          details: msg.details
-        }
-      }))
-      return // Don't show toast for log messages
-    }
-    
-    // Show toast notification for other messages
-    if (msg.message_type === 'system') {
-      toast.info(msg.content)
-    } else {
-      toast.success(msg.content)
-    }
+    // Dispatch message event for Chat tab in story detail
+    window.dispatchEvent(new CustomEvent('story-message', {
+      detail: {
+        story_id: msg.story_id,
+        content: msg.content,
+        message_type: msg.message_type,
+        author_name: msg.author_name,
+        timestamp: msg.timestamp,
+        details: msg.details,
+      }
+    }))
     
     // Dispatch custom event for story state updates
     if (msg.agent_state) {
@@ -686,6 +720,19 @@ export function useChatWebSocket(
       detail: { 
         project_id: msg.project_id, 
         branch: msg.branch
+      }
+    }))
+  }
+  
+  const handleProjectDevServer = (msg: any) => {
+    console.log('[WS] 🖥️ Project dev server:', msg.project_id, msg.running_port)
+    
+    // Dispatch custom event for AppViewer to listen
+    window.dispatchEvent(new CustomEvent('project_dev_server', {
+      detail: { 
+        project_id: msg.project_id, 
+        running_port: msg.running_port,
+        running_pid: msg.running_pid,
       }
     }))
   }

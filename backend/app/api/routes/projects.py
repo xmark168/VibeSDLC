@@ -604,3 +604,244 @@ def preview_project_deletion(
         "has_workspace": bool(project.project_path),
         "workspace_path": project.project_path,
     }
+
+
+# ============= Dev Server Endpoints =============
+
+@router.post("/{project_id}/dev-server/start")
+async def start_project_dev_server(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    project_id: UUID
+) -> Any:
+    """Start dev server for project main workspace."""
+    import subprocess
+    import socket
+    import sys
+    import asyncio
+    import time
+    
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not project.project_path:
+        raise HTTPException(status_code=400, detail="No workspace path for this project")
+    
+    # Check if path exists
+    workspace_path = Path(project.project_path)
+    if not workspace_path.exists():
+        raise HTTPException(status_code=400, detail="Project workspace not found")
+    
+    is_windows = sys.platform == 'win32'
+    
+    # Helper: Find free port
+    def find_free_port():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('', 0))
+            return s.getsockname()[1]
+    
+    # Helper: Kill process on port
+    def kill_process_on_port(port: int) -> bool:
+        try:
+            if is_windows:
+                result = subprocess.run(
+                    f'netstat -ano | findstr :{port}',
+                    shell=True, capture_output=True, text=True
+                )
+                for line in result.stdout.strip().split('\n'):
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        pid = int(parts[-1])
+                        subprocess.run(f"taskkill /F /PID {pid} /T", shell=True, capture_output=True)
+                        return True
+            else:
+                result = subprocess.run(
+                    f'lsof -ti:{port}',
+                    shell=True, capture_output=True, text=True
+                )
+                if result.stdout.strip():
+                    pid = int(result.stdout.strip())
+                    os.kill(pid, 9)
+                    return True
+        except Exception:
+            pass
+        return False
+    
+    # Helper: Wait for port async
+    async def wait_for_port_async(port: int, timeout: float = 30.0) -> bool:
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(1)
+                    s.connect(('127.0.0.1', port))
+                    return True
+            except (socket.error, socket.timeout):
+                await asyncio.sleep(0.5)
+        return False
+    
+    # Kill existing process if running
+    if project.dev_server_port:
+        kill_process_on_port(project.dev_server_port)
+        await asyncio.sleep(0.5)
+    
+    # Check if node_modules exists, if not run pnpm install
+    node_modules_path = workspace_path / "node_modules"
+    if not node_modules_path.exists():
+        logger.info(f"node_modules not found, running pnpm install...")
+        install_result = subprocess.run(
+            "pnpm install" if is_windows else ["pnpm", "install"],
+            cwd=str(workspace_path),
+            shell=is_windows,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minutes timeout for install
+        )
+        if install_result.returncode != 0:
+            logger.error(f"pnpm install failed: {install_result.stderr}")
+            raise HTTPException(status_code=500, detail=f"Failed to install dependencies: {install_result.stderr[:500]}")
+        logger.info("pnpm install completed")
+    
+    port = find_free_port()
+    logger.info(f"Starting dev server for project {project_id} on port {port}")
+    
+    try:
+        logger.info(f"Workspace path: {workspace_path}")
+        process = subprocess.Popen(
+            f"pnpm dev --port {port}" if is_windows else ["pnpm", "dev", "--port", str(port)],
+            cwd=str(workspace_path),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=is_windows,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if is_windows else 0,
+            env={**os.environ, "FORCE_COLOR": "0"},
+        )
+        
+        # Wait for server to be ready
+        if await wait_for_port_async(port, timeout=15.0) and process.poll() is None:
+            # Store in project
+            project.dev_server_port = port
+            project.dev_server_pid = process.pid
+            session.add(project)
+            session.commit()
+            
+            logger.info(f"Dev server started on port {port} (PID: {process.pid})")
+            
+            # Broadcast via WebSocket
+            from app.websocket.connection_manager import connection_manager
+            await connection_manager.broadcast_to_project({
+                "type": "project_dev_server",
+                "project_id": str(project_id),
+                "running_port": port,
+                "running_pid": process.pid,
+            }, project_id)
+            
+            return {"success": True, "port": port, "pid": process.pid}
+        else:
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                logger.error(f"Process stdout: {stdout.decode() if stdout else ''}")
+                logger.error(f"Process stderr: {stderr.decode() if stderr else ''}")
+                raise Exception(f"Process exited with code {process.returncode}")
+            raise Exception("Server did not start in time")
+            
+    except Exception as e:
+        logger.error(f"Failed to start dev server: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to start dev server: {str(e)}")
+
+
+@router.post("/{project_id}/dev-server/stop")
+async def stop_project_dev_server(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    project_id: UUID
+) -> Any:
+    """Stop dev server for project main workspace."""
+    import subprocess
+    import sys
+    
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    is_windows = sys.platform == 'win32'
+    
+    # Kill by PID
+    if project.dev_server_pid:
+        try:
+            if is_windows:
+                subprocess.run(f"taskkill /F /PID {project.dev_server_pid} /T", shell=True, capture_output=True)
+            else:
+                os.kill(project.dev_server_pid, 9)
+        except Exception as e:
+            logger.warning(f"Failed to kill process {project.dev_server_pid}: {e}")
+    
+    # Kill by port
+    if project.dev_server_port:
+        try:
+            if is_windows:
+                result = subprocess.run(
+                    f'netstat -ano | findstr :{project.dev_server_port}',
+                    shell=True, capture_output=True, text=True
+                )
+                for line in result.stdout.strip().split('\n'):
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        pid = int(parts[-1])
+                        subprocess.run(f"taskkill /F /PID {pid} /T", shell=True, capture_output=True)
+            else:
+                result = subprocess.run(
+                    f'lsof -ti:{project.dev_server_port}',
+                    shell=True, capture_output=True, text=True
+                )
+                if result.stdout.strip():
+                    pid = int(result.stdout.strip())
+                    os.kill(pid, 9)
+        except Exception:
+            pass
+    
+    # Clear from DB
+    project.dev_server_port = None
+    project.dev_server_pid = None
+    session.add(project)
+    session.commit()
+    
+    # Broadcast via WebSocket
+    from app.websocket.connection_manager import connection_manager
+    await connection_manager.broadcast_to_project({
+        "type": "project_dev_server",
+        "project_id": str(project_id),
+        "running_port": None,
+        "running_pid": None,
+    }, project_id)
+    
+    return {"success": True, "message": "Dev server stopped"}
+
+
+@router.get("/{project_id}/dev-server/status")
+def get_project_dev_server_status(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    project_id: UUID
+) -> Any:
+    """Get dev server status for project."""
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    return {
+        "running": bool(project.dev_server_port),
+        "port": project.dev_server_port,
+        "pid": project.dev_server_pid,
+        "has_workspace": bool(project.project_path),
+    }
