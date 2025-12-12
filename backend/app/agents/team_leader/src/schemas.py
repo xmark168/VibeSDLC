@@ -27,7 +27,7 @@ class RoutingDecision(BaseModel):
     )
     is_update_request: bool = Field(
         default=False,
-        description="True if user explicitly wants to UPDATE/EDIT/MODIFY existing stories/PRD (e.g., 'sửa story X', 'thêm feature Y', 'bỏ requirement Z'). False for vague/new project requests."
+        description="True if user wants to work on EXISTING project (UPDATE/ADD/EDIT/REMOVE - e.g., 'sửa story X', 'thêm feature Y', 'thêm trang about', 'thêm tính năng X', 'bổ sung Y', 'cần thêm Z', 'bỏ requirement W'). False ONLY for completely NEW project request when NO project exists or DIFFERENT domain (e.g., 'tôi muốn làm website bán hàng' as first request, or switching from 'website bán sách' to 'app quản lý công việc')."
     )
 
 

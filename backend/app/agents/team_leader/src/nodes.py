@@ -380,6 +380,9 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
                                         # Same domain - check if user explicitly wants to UPDATE
                                         is_update_request = result.get("is_update_request", False)
                                         
+                                        # DEBUG: Log LLM decision for diagnosis
+                                        logger.info(f"[router] LLM decision: is_update_request={is_update_request}, user_message='{state['user_message']}'")
+                                        
                                         if is_update_request:
                                             # User explicitly wants to update/edit something
                                             # Skip CONFIRM_EXISTING and delegate directly to BA

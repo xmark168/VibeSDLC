@@ -150,6 +150,32 @@ def batch_after_ask(state: BAState) -> Literal["wait", "generate_prd"]:
         return "generate_prd"
 
 
+def should_save_or_end(state: BAState) -> Literal["save", "end"]:
+    """Router: After update_stories, check if we should save or end.
+    
+    Logic:
+    - If found_existing_story=True → end (waiting for user decision)
+    - If needs_clarification=True → end (waiting for user clarification)
+    - Otherwise → save artifacts
+    """
+    found_existing = state.get("found_existing_story", False)
+    needs_clarification = state.get("needs_clarification", False)
+    awaiting_user = state.get("awaiting_user_decision", False)
+    
+    # DEBUG logging
+    logger.info(f"[BA Graph] should_save_or_end check: found_existing={found_existing}, needs_clarification={needs_clarification}, awaiting_user={awaiting_user}")
+    
+    if found_existing or awaiting_user:
+        logger.info("[BA Graph] Found existing story - ending flow (waiting for user)")
+        return "end"
+    elif needs_clarification:
+        logger.info("[BA Graph] Needs clarification - ending flow (waiting for user)")
+        return "end"
+    else:
+        logger.info("[BA Graph] Proceeding to save artifacts")
+        return "save"
+
+
 def should_research_or_generate(state: BAState) -> Literal["research", "generate"]:
     """Router: After processing answers, decide if we need more research or can generate PRD.
     
@@ -296,8 +322,15 @@ class BusinessAnalystGraph:
         # Story extraction -> save (called when user approves PRD)
         graph.add_edge("extract_stories", "save_artifacts")
         
-        # Story update -> save
-        graph.add_edge("update_stories", "save_artifacts")
+        # Story update -> conditional: check if we should save or end early
+        graph.add_conditional_edges(
+            "update_stories",
+            should_save_or_end,
+            {
+                "save": "save_artifacts",
+                "end": END  # End early if found duplicate or needs clarification
+            }
+        )
         
         # Single story edit -> save (fast targeted edit)
         graph.add_edge("edit_single_story", "save_artifacts")
