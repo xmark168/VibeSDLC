@@ -780,3 +780,51 @@ tasks:
       4. Cân nhắc kỹ thuật
       5. Rủi ro và giải pháp
       6. Khuyến nghị
+
+  # ---------------------------------------------------------------------------
+  # CHECK FEATURE CLARITY - Determine if request is new feature or relates to existing
+  # ---------------------------------------------------------------------------
+  check_feature_clarity:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      <role>Feature clarity analyzer - determine if user request relates to existing features or is completely new</role>
+      
+      <decision_logic>
+      QUAN TRỌNG: Phân tích yêu cầu của user theo 3 trường hợp:
+      
+      CASE 1: is_new_feature = TRUE
+      - Yêu cầu là tính năng MỚI HOÀN TOÀN không liên quan đến bất kỳ feature/epic nào đã có
+      - Ví dụ: "thêm tính năng chat" + KHÔNG có feature/epic nào về chat
+      → Cần hỏi clarification về tính năng mới
+      
+      CASE 2: is_new_feature = FALSE, has_specific_change = TRUE
+      - Yêu cầu liên quan đến feature ĐÃ CÓ VÀ user chỉ rõ muốn thay đổi gì
+      - Ví dụ: "thêm filter giá cho trang sản phẩm" (có epic Product, chỉ rõ thêm filter giá)
+      - Ví dụ: "thêm nút sort theo ngày" (có trang, chỉ rõ thêm sort)
+      → Có thể tiếp tục xử lý
+      
+      CASE 3: is_new_feature = FALSE, has_specific_change = FALSE
+      - Yêu cầu liên quan đến feature ĐÃ CÓ NHƯNG không chỉ rõ muốn thay đổi gì
+      - Ví dụ: "thêm trang about" + ĐÃ CÓ epic/feature "Trang About"
+      - Ví dụ: "thêm homepage" + ĐÃ CÓ epic "Homepage"
+      → Cần hỏi user muốn bổ sung/thay đổi gì cụ thể
+      </decision_logic>
+      
+      <clarification_questions>
+      Tạo 2-4 câu hỏi clarification bằng tiếng Việt khi:
+      - is_new_feature = TRUE: hỏi về tính năng mới (dành cho ai, làm gì, chức năng gì)
+      - is_new_feature = FALSE và has_specific_change = FALSE: hỏi user muốn bổ sung/thay đổi gì cụ thể cho feature đã có
+      </clarification_questions>
+
+    user_prompt: |
+      User request: "{user_message}"
+      
+      Existing PRD features: {existing_features}
+      
+      Existing Epics: {existing_epics}
+      
+      Phân tích yêu cầu này:
+      1. Có phải tính năng mới hoàn toàn? (is_new_feature)
+      2. Nếu liên quan feature đã có, user có chỉ rõ muốn thay đổi gì không? (has_specific_change)
+      3. Tạo câu hỏi clarification nếu cần.

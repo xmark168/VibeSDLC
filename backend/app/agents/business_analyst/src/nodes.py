@@ -22,6 +22,7 @@ from .schemas import (
     VerifyStoryOutput,
     DocumentFeedbackOutput,
     SingleStoryEditOutput,
+    FeatureClarityOutput,
 )
 from app.agents.core.prompt_utils import (
     load_prompts_yaml,
@@ -156,57 +157,129 @@ def _extract_intent_keywords(user_message: str) -> list:
     return keywords
 
 
-def _check_request_clarity(user_message: str, existing_epics: list) -> tuple:
-    """Check if user request is clear enough or needs clarification.
+async def _check_request_clarity(
+    user_message: str, 
+    existing_epics: list, 
+    existing_prd: dict = None,
+    agent=None
+) -> tuple:
+    """Check if user request relates to existing features or is completely new.
+    
+    Uses LLM to intelligently analyze the request against existing features.
     
     Returns (is_clear, missing_details) where:
-    - is_clear: True if request has enough detail
-    - missing_details: List of questions to ask if vague
+    - is_clear: True if this is a refinement of existing feature (can proceed)
+    - missing_details: List of clarification questions if this is a NEW feature
     
     Logic:
-    - CLEAR: Mentions existing feature + has details (e.g., "thêm filter giá cho product page")
-    - VAGUE: Generic without context (e.g., "thêm trang about", "thêm menu")
+    - REFINEMENT of existing feature → proceed with update (is_clear=True)
+    - NEW feature not covered by existing PRD/epics → ask clarification (is_clear=False)
     """
-    user_msg_lower = user_message.lower()
-    missing_details = []
+    # Build context about existing features
+    existing_features = []
+    if existing_prd and existing_prd.get("features"):
+        existing_features = [f.get("name", "") for f in existing_prd.get("features", []) if f.get("name")]
     
-    # Extract existing domains for context matching
-    existing_domains = set()
+    existing_epic_info = []
     for epic in existing_epics:
-        domain = (epic.get("domain") or "").lower()
-        if domain:
-            existing_domains.add(domain)
+        epic_title = epic.get("title", "")
+        epic_domain = epic.get("domain", "")
+        stories = epic.get("stories", [])
+        story_titles = [s.get("title", "")[:50] for s in stories[:5]]  # First 5 stories
+        existing_epic_info.append({
+            "title": epic_title,
+            "domain": epic_domain,
+            "sample_stories": story_titles
+        })
     
-    # Check if mentions existing domain
-    mentions_existing = any(d in user_msg_lower for d in existing_domains if d)
+    # Build prompts from YAML
+    system_prompt = _sys_prompt(agent, "check_feature_clarity")
+    user_prompt = _user_prompt(
+        "check_feature_clarity",
+        user_message=user_message,
+        existing_features=json.dumps(existing_features, ensure_ascii=False) if existing_features else "Chưa có PRD",
+        existing_epics=json.dumps(existing_epic_info, ensure_ascii=False, indent=2) if existing_epic_info else "Chưa có Epics"
+    )
     
-    # Vague patterns that need clarification
-    vague_keywords = ["thêm trang", "trang mới", "thêm page", "new page"]
-    is_vague_pattern = any(kw in user_msg_lower for kw in vague_keywords)
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
     
-    # Check specificity
-    specific_indicators = ["filter", "sort", "button", "form", "field", "dropdown", "search"]
-    has_details = any(ind in user_msg_lower for ind in specific_indicators)
+    # Default fallback - if no existing features, assume new feature
+    default_questions = [
+        "Tính năng này dành cho ai sử dụng? (visitor, customer, admin, ...)",
+        "Bạn có thể mô tả chi tiết hơn về tính năng này không?",
+        "Tính năng này cần những chức năng gì cụ thể?"
+    ]
     
-    # Short messages are usually vague
-    word_count = len(user_message.split())
-    is_too_short = word_count < 5
+    fallback_data = {
+        "is_new_feature": not existing_features and not existing_epics,  # New if no existing context
+        "related_existing_feature": None,
+        "has_specific_change": False,
+        "clarification_questions": default_questions if (not existing_features and not existing_epics) else [],
+        "reasoning": "Fallback: Không có context về features đã có" if (not existing_features and not existing_epics) else "Fallback: Có features đã có, giả định là refinement"
+    }
     
-    # Decision
-    if mentions_existing and has_details:
-        return True, []  # Clear - mentions existing + has details
-    elif is_vague_pattern or (is_too_short and not mentions_existing):
-        # Vague - need clarification
-        if is_vague_pattern:
-            missing_details.append("Trang này dành cho ai? (visitor, customer, admin, ...)")
-            missing_details.append("Nội dung chính trên trang là gì?")
-            missing_details.append("Có những chức năng/tính năng gì?")
-        else:
-            missing_details.append("Bạn muốn thêm vào trang/epic nào?")
-            missing_details.append("Chi tiết hơn về chức năng cần thêm?")
-        return False, missing_details
-    else:
-        return True, []  # Default to clear
+    try:
+        # Get langfuse callback safely (requires trace_name parameter)
+        langfuse_handler = None
+        if agent and hasattr(agent, 'get_langfuse_callback'):
+            try:
+                langfuse_handler = agent.get_langfuse_callback("check_feature_clarity")
+            except Exception:
+                pass  # Ignore langfuse errors
+        
+        config = _cfg({"langfuse_handler": langfuse_handler}, "check_feature_clarity") if langfuse_handler else {}
+        
+        result = await _invoke_structured(
+            llm=_fast_llm,
+            schema=FeatureClarityOutput,
+            messages=messages,
+            config=config,
+            fallback_data=fallback_data
+        )
+        
+        is_new = result.get("is_new_feature", False)
+        has_specific_change = result.get("has_specific_change", False)
+        questions = result.get("clarification_questions", [])
+        reasoning = result.get("reasoning", "")
+        related = result.get("related_existing_feature")
+        
+        logger.info(f"[BA] Feature clarity check: is_new={is_new}, has_specific_change={has_specific_change}, related={related}, reasoning={reasoning[:100]}")
+        
+        # CASE 1: New feature → need clarification
+        if is_new:
+            return False, questions if questions else default_questions, None
+        
+        # CASE 2: Existing feature WITH specific change → can proceed
+        if not is_new and has_specific_change:
+            return True, [], related
+        
+        # CASE 3: Existing feature WITHOUT specific change → notify and ask what to change
+        if not is_new and not has_specific_change:
+            existing_feature_questions = [
+                f"Tính năng '{related}' đã có trong hệ thống rồi. Bạn muốn bổ sung/thay đổi gì cụ thể?",
+                "Ví dụ: thêm section mới, thay đổi layout, bổ sung thông tin gì?"
+            ]
+            return False, questions if questions else existing_feature_questions, related
+        
+        return True, [], related
+            
+    except Exception as e:
+        logger.warning(f"[BA] Feature clarity check failed: {e}, using simple fallback")
+        # Simple fallback: SHORT message (< 5 words) = always ask clarification
+        # Examples: "thêm trang about" (3 words), "thêm menu" (2 words)
+        word_count = len(user_message.split())
+        if word_count < 5:
+            # Message too short/vague → always ask clarification
+            vague_questions = [
+                "Bạn muốn trang/tính năng này có những nội dung gì?",
+                "Tính năng này dành cho ai sử dụng? (khách hàng, admin, ...)",
+                "Có chức năng cụ thể nào bạn muốn thêm không?"
+            ]
+            return False, vague_questions, None
+        return True, [], None  # Longer message = assume clear enough
 
 
 # Categories for clarity check (used in check_clarity and analyze_domain)
@@ -1031,14 +1104,92 @@ async def update_prd(state: BAState, agent=None) -> dict:
     """Node: Update existing PRD.
     
     Uses structured output for reliable parsing (Developer V2 pattern).
+    
+    FLOW:
+    1. Check if this is a NEW feature request → ask clarification if needed
+    2. If refinement of existing feature → proceed with update
     """
     logger.info(f"[BA] Updating existing PRD...")
     
     existing_prd = state.get("existing_prd", {})
+    existing_epics = state.get("epics", [])
+    user_message = state.get("user_message", "")
+    skip_clarity_check = state.get("skip_clarity_check", False)
     
     if not existing_prd:
         logger.warning("[BA] No existing PRD to update, creating new one")
         return await generate_prd(state, agent)
+    
+    # ====================================================================================
+    # STEP 1: CHECK CLARITY - Ask clarification if this is a NEW feature or existing without specific change
+    # Skip if we're resuming from a previous clarification (skip_clarity_check=True)
+    # ====================================================================================
+    if skip_clarity_check:
+        logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
+        is_clear = True
+        missing_details = []
+        related_feature = None
+    else:
+        is_clear, missing_details, related_feature = await _check_request_clarity(
+            user_message, existing_epics, existing_prd, agent
+        )
+    
+    if not is_clear and agent:
+        # Request needs clarification - either NEW feature or EXISTING without specific change
+        logger.info(f"[BA] Clarification needed (related_feature={related_feature}): {missing_details}")
+        
+        # Build context message
+        if related_feature:
+            context_msg = f"Tính năng \"{related_feature}\" đã có trong hệ thống. Mình cần biết thêm chi tiết để cập nhật."
+        else:
+            context_msg = f"Để mình hiểu rõ hơn về \"{user_message}\", bạn cho mình biết thêm nhé!"
+        
+        # Format questions for batch API (use question cards like interview flow)
+        batch_questions = [
+            {
+                "question_text": detail,
+                "question_type": "open",
+                "options": None,
+                "allow_multiple": False,
+                "context": context_msg if i == 0 else None,  # Only add context to first question
+            }
+            for i, detail in enumerate(missing_details)
+        ]
+        
+        logger.info(f"[BA] Sending {len(batch_questions)} clarification questions via question cards...")
+        
+        # Send questions using question cards (same as interview flow)
+        question_ids = await agent.ask_multiple_clarification_questions(batch_questions)
+        
+        # Save interview state with original_intent so RESUME knows to continue prd_update
+        with Session(engine) as session:
+            interview_state = {
+                "original_intent": "prd_update",  # IMPORTANT: Mark this as prd_update flow
+                "user_message": user_message,
+                "existing_prd": existing_prd,
+                "epics": existing_epics,
+                "questions": batch_questions,
+                "question_ids": [str(qid) for qid in question_ids],
+                "related_feature": related_feature,
+            }
+            _save_interview_state_to_question(session, question_ids[0], interview_state)
+            logger.info(f"[BA] Saved prd_update state for RESUME flow")
+        
+        # Return early - STOP the flow (waiting for user answers via question cards)
+        return {
+            "needs_clarification": True,
+            "waiting_for_answer": True,
+            "question_ids": [str(qid) for qid in question_ids],
+            "is_complete": True,  # Mark complete to stop flow
+            "result": {
+                "summary": f"Feature '{related_feature}' already exists - asked for specific changes" if related_feature else "New feature request - asked for clarification",
+                "task_completed": False  # Don't release ownership - waiting for user
+            }
+        }
+    
+    # ====================================================================================
+    # STEP 2: Proceed with PRD update (feature has specific change to make)
+    # ====================================================================================
     
     # Get conversation context for memory
     conversation_context = state.get("conversation_context", "")
@@ -1386,94 +1537,134 @@ async def update_stories(state: BAState, agent=None) -> dict:
         return {"error": "No existing stories to update"}
     
     user_message = state.get("user_message", "")
+    existing_prd = state.get("existing_prd")
+    skip_clarity_check = state.get("skip_clarity_check", False)
     
     # ====================================================================================
-    # STEP 1: CHECK CLARITY - Ask clarification if request is too vague
+    # STEP 1: CHECK FOR EXISTING STORIES FIRST - Before asking clarification
+    # This prevents asking clarification for features that already exist in stories
     # ====================================================================================
-    is_clear, missing_details = _check_request_clarity(user_message, all_epics)
+    if not skip_clarity_check:  # Only check if not resuming from clarification
+        user_keywords = _extract_intent_keywords(user_message)
+        
+        # Search for existing stories that might already cover this functionality
+        matching_stories = []
+        for epic in all_epics:
+            for story in epic.get("stories", []):
+                story_text = (
+                    f"{story.get('title', '')} {story.get('description', '')} "
+                    f"{' '.join(story.get('requirements', []))}"
+                ).lower()
+                
+                # Check if user keywords appear in story
+                matches = sum(1 for kw in user_keywords if kw in story_text)
+                if matches >= 2:  # At least 2 keywords match
+                    matching_stories.append({
+                        "story": story,
+                        "epic_domain": epic.get("domain"),
+                        "match_score": matches / len(user_keywords) if user_keywords else 0
+                    })
+        
+        if matching_stories and agent:
+            # Found existing stories that might cover this functionality
+            matching_stories.sort(key=lambda x: x["match_score"], reverse=True)
+            best_match = matching_stories[0]
+            story = best_match["story"]
+            
+            logger.info(f"[BA] Found existing story that might cover this: {story.get('id')} - {story.get('title')}")
+            
+            # Ask user if they want to update existing story or create new one
+            existing_story_msg = (
+                f"🔍 Mình tìm thấy story \"{story.get('title', '')}\" (ID: {story.get('id')}) "
+                f"trong domain {best_match['epic_domain']} có vẻ đã cover chức năng này rồi.\n\n"
+                f"Bạn muốn bổ sung gì vào story này không?"
+            )
+            
+            await agent.message_user("response", existing_story_msg)
+            
+            # Return early - STOP the flow (waiting for user decision)
+            return {
+                "found_existing_story": True,
+                "existing_story_id": story.get("id"),
+                "existing_story_title": story.get("title"),
+                "awaiting_user_decision": True,
+                "is_complete": True,
+                "result": {
+                    "summary": "Found existing story - awaiting user decision",
+                    "task_completed": False
+                }
+            }
+    
+    # ====================================================================================
+    # STEP 2: CHECK CLARITY - Ask clarification if this is a NEW feature
+    # Only runs if no existing stories found AND not resuming from clarification
+    # ====================================================================================
+    if skip_clarity_check:
+        logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
+        is_clear = True
+        missing_details = []
+        related_feature = None
+    else:
+        is_clear, missing_details, related_feature = await _check_request_clarity(
+            user_message, all_epics, existing_prd, agent
+        )
     
     if not is_clear and agent:
-        # Request is vague → ask clarification questions
-        logger.info(f"[BA] Request is vague, asking clarification: {missing_details}")
+        # Request needs clarification - either NEW feature or EXISTING without specific change
+        logger.info(f"[BA] Clarification needed (related_feature={related_feature}): {missing_details}")
         
-        clarification_msg = (
-            f"Để mình hiểu rõ hơn về yêu cầu \"{user_message}\", "
-            f"bạn có thể cho mình biết thêm:\n\n"
-        )
-        for i, detail in enumerate(missing_details, 1):
-            clarification_msg += f"{i}. {detail}\n"
+        # Build context message
+        if related_feature:
+            context_msg = f"Tính năng \"{related_feature}\" đã có trong hệ thống. Mình cần biết thêm chi tiết để cập nhật."
+        else:
+            context_msg = f"Để mình hiểu rõ hơn về \"{user_message}\", bạn cho mình biết thêm nhé!"
         
-        clarification_msg += "\nCảm ơn bạn! 😊"
+        # Format questions for batch API (use question cards like interview flow)
+        batch_questions = [
+            {
+                "question_text": detail,
+                "question_type": "open",
+                "options": None,
+                "allow_multiple": False,
+                "context": context_msg if i == 0 else None,
+            }
+            for i, detail in enumerate(missing_details)
+        ]
         
-        await agent.message_user("response", clarification_msg)
+        logger.info(f"[BA] Sending {len(batch_questions)} clarification questions via question cards...")
         
-        # Return early - STOP the flow (waiting for user clarification)
+        # Send questions using question cards
+        question_ids = await agent.ask_multiple_clarification_questions(batch_questions)
+        
+        # Save interview state with original_intent so RESUME knows to continue stories_update
+        with Session(engine) as session:
+            interview_state = {
+                "original_intent": "stories_update",
+                "user_message": user_message,
+                "existing_prd": existing_prd,
+                "epics": all_epics,
+                "questions": batch_questions,
+                "question_ids": [str(qid) for qid in question_ids],
+                "related_feature": related_feature,
+            }
+            _save_interview_state_to_question(session, question_ids[0], interview_state)
+            logger.info(f"[BA] Saved stories_update state for RESUME flow")
+        
+        # Return early - STOP the flow (waiting for user answers)
         return {
             "needs_clarification": True,
-            "clarification_message": clarification_msg,
-            "is_complete": True,  # Mark complete to stop flow
+            "waiting_for_answer": True,
+            "question_ids": [str(qid) for qid in question_ids],
+            "is_complete": True,
             "result": {
-                "summary": "Request is vague - asked for clarification",
-                "task_completed": False  # Don't release ownership - waiting for user
+                "summary": f"Feature '{related_feature}' already exists - asked for specific changes" if related_feature else "New feature request - asked for clarification",
+                "task_completed": False
             }
         }
     
     # ====================================================================================
-    # STEP 2: CHECK FOR EXISTING FUNCTIONALITY - Before calling LLM
+    # STEP 3: PROCEED WITH UPDATE - Either resuming from clarification or request is clear
     # ====================================================================================
-    # Extract user intent keywords (what they want to add/change)
-    user_keywords = _extract_intent_keywords(user_message)
-    
-    # Search for existing stories that might already cover this functionality
-    matching_stories = []
-    for epic in all_epics:
-        for story in epic.get("stories", []):
-            story_text = (
-                f"{story.get('title', '')} {story.get('description', '')} "
-                f"{' '.join(story.get('requirements', []))}"
-            ).lower()
-            
-            # Check if user keywords appear in story
-            matches = sum(1 for kw in user_keywords if kw in story_text)
-            if matches >= 2:  # At least 2 keywords match
-                matching_stories.append({
-                    "story": story,
-                    "epic_domain": epic.get("domain"),
-                    "match_score": matches / len(user_keywords) if user_keywords else 0
-                })
-    
-    if matching_stories and agent:
-        # Found existing stories that might cover this functionality
-        # Sort by match score
-        matching_stories.sort(key=lambda x: x["match_score"], reverse=True)
-        best_match = matching_stories[0]
-        story = best_match["story"]
-        
-        logger.info(f"[BA] Found existing story that might cover this: {story.get('id')} - {story.get('title')}")
-        
-        # Ask user if they want to update existing story or create new one
-        existing_story_msg = (
-            f"🔍 Mình tìm thấy story \"{story.get('title', '')}\" (ID: {story.get('id')}) "
-            f"trong domain {best_match['epic_domain']} có vẻ đã cover chức năng này rồi.\n\n"
-            f"📋 Requirements hiện có:\n"
-        )
-        
-        await agent.message_user("response", existing_story_msg)
-        
-        # Return early - STOP the flow (don't proceed to save_artifacts)
-        # is_complete=True signals to graph that we're done (waiting for user clarification)
-        return {
-            "found_existing_story": True,
-            "existing_story_id": story.get("id"),
-            "existing_story_title": story.get("title"),
-            "awaiting_user_decision": True,
-            "is_complete": True,  # CRITICAL: Mark as complete to stop flow
-            "result": {
-                "summary": "Found existing story - awaiting user decision",
-                "task_completed": False  # Don't release ownership - waiting for user
-            }
-        }
-    
     user_message_lower = state["user_message"].lower()
     
     # SMART FILTERING: Detect if user mentions specific domain/page

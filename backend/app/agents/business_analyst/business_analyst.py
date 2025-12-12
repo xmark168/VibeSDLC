@@ -172,7 +172,13 @@ class BusinessAnalyst(BaseAgent):
             return await self._handle_sequential_resume(task, answer)
     
     async def _handle_batch_resume(self, task: TaskContext, batch_answers: list) -> TaskResult:
-        """Handle batch mode resume - all answers at once."""
+        """Handle batch mode resume - all answers at once.
+        
+        Supports different flows based on original_intent:
+        - interview: Create new PRD (default)
+        - prd_update: Update existing PRD
+        - stories_update: Update existing stories
+        """
         if not batch_answers:
             logger.error(f"[{self.name}] No batch answers in RESUME task")
             return TaskResult(
@@ -188,6 +194,21 @@ class BusinessAnalyst(BaseAgent):
             logger.warning(f"[{self.name}] No interview state found for batch, treating as new task")
             return await self._handle_new_task(task)
         
+        # Check original_intent to determine which flow to continue
+        original_intent = interview_state.get("original_intent", "interview")
+        logger.info(f"[{self.name}] RESUME batch with original_intent: {original_intent}")
+        
+        # Route to appropriate handler based on original_intent
+        if original_intent == "prd_update":
+            return await self._handle_prd_update_resume(task, batch_answers, interview_state)
+        elif original_intent == "stories_update":
+            return await self._handle_stories_update_resume(task, batch_answers, interview_state)
+        else:
+            # Default: interview flow (create new PRD)
+            return await self._handle_interview_resume(task, batch_answers, interview_state)
+    
+    async def _handle_interview_resume(self, task: TaskContext, batch_answers: list, interview_state: dict) -> TaskResult:
+        """Handle interview flow resume - create new PRD."""
         # Load existing PRD from database
         existing_prd = self._load_existing_prd()
         
@@ -208,7 +229,7 @@ class BusinessAnalyst(BaseAgent):
         }
         
         # Process all batch answers
-        logger.info(f"[{self.name}] Processing {len(batch_answers)} batch answers")
+        logger.info(f"[{self.name}] Processing {len(batch_answers)} batch answers for interview")
         state = {**state, **(await process_batch_answers(state, agent=self))}
         
         # Check clarity - do we have enough info or need more research?
@@ -257,6 +278,90 @@ class BusinessAnalyst(BaseAgent):
         state = {**state, **(await generate_prd(state, agent=self))}
         
         # Save PRD and wait for user approval before extracting stories
+        state = {**state, **(await save_artifacts(state, agent=self))}
+        
+        return TaskResult(
+            success=True,
+            output=str(state.get("result", {})),
+            structured_data=state.get("result", {})
+        )
+    
+    async def _handle_prd_update_resume(self, task: TaskContext, batch_answers: list, interview_state: dict) -> TaskResult:
+        """Handle PRD update flow resume - update existing PRD with user's clarified requirements."""
+        logger.info(f"[{self.name}] Resuming prd_update flow after clarification")
+        
+        # Build combined message from original request + answers
+        original_message = interview_state.get("user_message", "")
+        questions = interview_state.get("questions", [])
+        
+        # Combine answers into context
+        clarification_context = []
+        for i, ans in enumerate(batch_answers):
+            q_text = questions[i].get("question_text", f"Câu hỏi {i+1}") if i < len(questions) else f"Câu hỏi {i+1}"
+            a_text = ans.get("answer", "") or ", ".join(ans.get("selected_options", []))
+            clarification_context.append(f"Q: {q_text}\nA: {a_text}")
+        
+        combined_message = f"{original_message}\n\nChi tiết bổ sung:\n" + "\n".join(clarification_context)
+        
+        # Build state and call update_prd
+        state = {
+            **self._build_base_state(task),
+            "user_message": combined_message,
+            "existing_prd": interview_state.get("existing_prd") or self._load_existing_prd(),
+            "epics": interview_state.get("epics", []),
+            "intent": "prd_update",
+            "skip_clarity_check": True,  # IMPORTANT: Skip clarity check since we already got clarification
+        }
+        
+        # Now call update_prd (skip clarity check because we have detailed answers)
+        state = {**state, **(await update_prd(state, agent=self))}
+        
+        # Save artifacts
+        state = {**state, **(await save_artifacts(state, agent=self))}
+        
+        return TaskResult(
+            success=True,
+            output=str(state.get("result", {})),
+            structured_data=state.get("result", {})
+        )
+    
+    async def _handle_stories_update_resume(self, task: TaskContext, batch_answers: list, interview_state: dict) -> TaskResult:
+        """Handle stories update flow resume - update existing stories with user's clarified requirements."""
+        logger.info(f"[{self.name}] Resuming stories_update flow after clarification")
+        
+        # Build combined message from original request + answers
+        original_message = interview_state.get("user_message", "")
+        questions = interview_state.get("questions", [])
+        
+        # Combine answers into context
+        clarification_context = []
+        for i, ans in enumerate(batch_answers):
+            q_text = questions[i].get("question_text", f"Câu hỏi {i+1}") if i < len(questions) else f"Câu hỏi {i+1}"
+            a_text = ans.get("answer", "") or ", ".join(ans.get("selected_options", []))
+            clarification_context.append(f"Q: {q_text}\nA: {a_text}")
+        
+        combined_message = f"{original_message}\n\nChi tiết bổ sung:\n" + "\n".join(clarification_context)
+        
+        # Load epics from state or database
+        epics = interview_state.get("epics", [])
+        if not epics:
+            epics, _, _ = self._load_existing_epics()
+        
+        # Build state and call update_stories
+        state = {
+            **self._build_base_state(task),
+            "user_message": combined_message,
+            "existing_prd": interview_state.get("existing_prd") or self._load_existing_prd(),
+            "epics": epics,
+            "intent": "stories_update",
+            "skip_clarity_check": True,  # IMPORTANT: Skip clarity check since we already got clarification
+        }
+        
+        # Now call update_stories (skip clarity check because we have detailed answers)
+        from app.agents.business_analyst.src.nodes import update_stories
+        state = {**state, **(await update_stories(state, agent=self))}
+        
+        # Save artifacts
         state = {**state, **(await save_artifacts(state, agent=self))}
         
         return TaskResult(
