@@ -213,6 +213,11 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     from langgraph.types import interrupt
     from app.agents.tester.src.graph import check_interrupt_signal
     
+    # Ensure story_id is set for StoryLogger
+    stories = state.get("stories", [])
+    if stories and not state.get("story_id"):
+        state["story_id"] = stories[0].get("id")
+    
     story_logger = StoryLogger.from_state(state, agent).with_node("run_tests")
     
     # Check for pause/cancel signal

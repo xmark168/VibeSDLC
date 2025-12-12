@@ -434,9 +434,13 @@ async def conversation(state: TesterState, agent=None) -> dict:
 
 async def send_response(state: TesterState, agent=None) -> dict:
     """Send final response after test generation flow."""
-    story_logger = StoryLogger.from_state(state, agent).with_node("send_response")
-    
     stories = state.get("stories", [])
+    
+    # Ensure story_id is set for StoryLogger (use first story from stories list)
+    if stories and not state.get("story_id"):
+        state["story_id"] = stories[0].get("id")
+    
+    story_logger = StoryLogger.from_state(state, agent).with_node("send_response")
     error = state.get("error")
     test_plan = state.get("test_plan", [])
     run_status = state.get("run_status", "")
