@@ -75,6 +75,11 @@ class Agent(BaseModel, table=True):
     persona_metadata: dict | None = Field(default=None, sa_column=Column(JSON))
 
     status: AgentStatus = Field(default=AgentStatus.idle)
+    
+    # Token usage tracking per agent
+    tokens_used_total: int = Field(default=0)
+    tokens_used_today: int = Field(default=0)
+    llm_calls_total: int = Field(default=0)
 
     persona_template: Optional["AgentPersonaTemplate"] = Relationship(back_populates="agents")
     pool: Optional["AgentPool"] = Relationship(back_populates="agents")
