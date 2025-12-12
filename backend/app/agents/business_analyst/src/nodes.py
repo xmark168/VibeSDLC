@@ -24,6 +24,7 @@ from .schemas import (
     VerifyStoryOutput,
     DocumentFeedbackOutput,
     SingleStoryEditOutput,
+    FeatureClarityOutput,
 )
 from app.agents.core.prompt_utils import (
     load_prompts_yaml,
@@ -112,6 +113,161 @@ async def _invoke_structured(
             logger.info("[BA] Using fallback data")
             return fallback_data
         raise
+
+def _extract_intent_keywords(user_message: str) -> list:
+    """Extract key intent keywords from user message for matching.
+    
+    Returns list of meaningful keywords (nouns, verbs) excluding common words.
+    
+    Examples:
+    - "thêm menu cho homepage" → ["menu", "homepage"]
+    - "thêm filter giá sản phẩm" → ["filter", "giá", "sản phẩm"]
+    """
+    import re
+    
+    # Remove Vietnamese diacritics for better matching (optional, keep original for now)
+    user_msg_lower = user_message.lower()
+    
+    # Remove common action words (they don't help matching)
+    stop_words = {
+        "thêm", "add", "tạo", "create", "sửa", "edit", "update", "xóa", "delete", "remove",
+        "cho", "for", "vào", "into", "to", "the", "a", "an", "của", "in", "on", "at",
+        "là", "is", "are", "và", "and", "or", "với", "with"
+    }
+    
+    # Extract words (alphanumeric + Vietnamese)
+    words = re.findall(r'[\w]+', user_msg_lower, re.UNICODE)
+    
+    # Filter: remove stop words, keep words with length >= 3
+    keywords = [w for w in words if w not in stop_words and len(w) >= 3]
+    
+    return keywords
+
+
+async def _check_request_clarity(
+    user_message: str, 
+    existing_epics: list, 
+    existing_prd: dict = None,
+    agent=None
+) -> tuple:
+    """Check if user request relates to existing features or is completely new.
+    
+    Uses LLM to intelligently analyze the request against existing features.
+    
+    Returns (is_clear, missing_details) where:
+    - is_clear: True if this is a refinement of existing feature (can proceed)
+    - missing_details: List of clarification questions if this is a NEW feature
+    
+    Logic:
+    - REFINEMENT of existing feature → proceed with update (is_clear=True)
+    - NEW feature not covered by existing PRD/epics → ask clarification (is_clear=False)
+    """
+    # Build context about existing features
+    existing_features = []
+    if existing_prd and existing_prd.get("features"):
+        existing_features = [f.get("name", "") for f in existing_prd.get("features", []) if f.get("name")]
+    
+    existing_epic_info = []
+    for epic in existing_epics:
+        epic_title = epic.get("title", "")
+        epic_domain = epic.get("domain", "")
+        stories = epic.get("stories", [])
+        story_titles = [s.get("title", "")[:50] for s in stories[:5]]  # First 5 stories
+        existing_epic_info.append({
+            "title": epic_title,
+            "domain": epic_domain,
+            "sample_stories": story_titles
+        })
+    
+    # Build prompts from YAML
+    system_prompt = _sys_prompt(agent, "check_feature_clarity")
+    user_prompt = _user_prompt(
+        "check_feature_clarity",
+        user_message=user_message,
+        existing_features=json.dumps(existing_features, ensure_ascii=False) if existing_features else "Chưa có PRD",
+        existing_epics=json.dumps(existing_epic_info, ensure_ascii=False, indent=2) if existing_epic_info else "Chưa có Epics"
+    )
+    
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
+    
+    # Default fallback - if no existing features, assume new feature
+    default_questions = [
+        "Tính năng này dành cho ai sử dụng? (visitor, customer, admin, ...)",
+        "Bạn có thể mô tả chi tiết hơn về tính năng này không?",
+        "Tính năng này cần những chức năng gì cụ thể?"
+    ]
+    
+    fallback_data = {
+        "is_new_feature": not existing_features and not existing_epics,  # New if no existing context
+        "related_existing_feature": None,
+        "has_specific_change": False,
+        "clarification_questions": default_questions if (not existing_features and not existing_epics) else [],
+        "reasoning": "Fallback: Không có context về features đã có" if (not existing_features and not existing_epics) else "Fallback: Có features đã có, giả định là refinement"
+    }
+    
+    try:
+        # Get langfuse callback safely (requires trace_name parameter)
+        langfuse_handler = None
+        if agent and hasattr(agent, 'get_langfuse_callback'):
+            try:
+                langfuse_handler = agent.get_langfuse_callback("check_feature_clarity")
+            except Exception:
+                pass  # Ignore langfuse errors
+        
+        config = _cfg({"langfuse_handler": langfuse_handler}, "check_feature_clarity") if langfuse_handler else {}
+        
+        result = await _invoke_structured(
+            llm=_fast_llm,
+            schema=FeatureClarityOutput,
+            messages=messages,
+            config=config,
+            fallback_data=fallback_data
+        )
+        
+        is_new = result.get("is_new_feature", False)
+        has_specific_change = result.get("has_specific_change", False)
+        questions = result.get("clarification_questions", [])
+        reasoning = result.get("reasoning", "")
+        related = result.get("related_existing_feature")
+        
+        logger.info(f"[BA] Feature clarity check: is_new={is_new}, has_specific_change={has_specific_change}, related={related}, reasoning={reasoning[:100]}")
+        
+        # CASE 1: New feature → need clarification
+        if is_new:
+            return False, questions if questions else default_questions, None
+        
+        # CASE 2: Existing feature WITH specific change → can proceed
+        if not is_new and has_specific_change:
+            return True, [], related
+        
+        # CASE 3: Existing feature WITHOUT specific change → notify and ask what to change
+        if not is_new and not has_specific_change:
+            existing_feature_questions = [
+                f"Tính năng '{related}' đã có trong hệ thống rồi. Bạn muốn bổ sung/thay đổi gì cụ thể?",
+                "Ví dụ: thêm section mới, thay đổi layout, bổ sung thông tin gì?"
+            ]
+            return False, questions if questions else existing_feature_questions, related
+        
+        return True, [], related
+            
+    except Exception as e:
+        logger.warning(f"[BA] Feature clarity check failed: {e}, using simple fallback")
+        # Simple fallback: SHORT message (< 5 words) = always ask clarification
+        # Examples: "thêm trang about" (3 words), "thêm menu" (2 words)
+        word_count = len(user_message.split())
+        if word_count < 5:
+            # Message too short/vague → always ask clarification
+            vague_questions = [
+                "Bạn muốn trang/tính năng này có những nội dung gì?",
+                "Tính năng này dành cho ai sử dụng? (khách hàng, admin, ...)",
+                "Có chức năng cụ thể nào bạn muốn thêm không?"
+            ]
+            return False, vague_questions, None
+        return True, [], None  # Longer message = assume clear enough
+
 
 # Categories for clarity check (used in check_clarity and analyze_domain)
 REQUIRED_CATEGORIES = {
@@ -263,15 +419,54 @@ async def analyze_intent(state: BAState, agent=None) -> dict:
     """Node: Analyze user intent and classify task.
     
     Uses structured output for reliable parsing (Developer V2 pattern).
+    Enhanced with dynamic context about existing PRD features and epics.
     """
     logger.info(f"[BA] Analyzing intent: {state['user_message'][:80]}...")
+    
+    # BUILD DYNAMIC CONTEXT about existing PRD features and epics
+    existing_prd = state.get("existing_prd") or {}  # Handle None case
+    existing_epics = state.get("epics", [])
+    
+    # Format PRD features outline (show what topics are already covered)
+    existing_features_context = ""
+    if existing_prd and existing_prd.get("features"):
+        features_list = []
+        for feat in existing_prd.get("features", [])[:10]:  # Show max 10 features
+            feat_name = feat.get("name", "Unknown")
+            features_list.append(f"  - {feat_name}")
+        
+        existing_features_context = f"""Existing PRD features ({len(existing_prd.get('features', []))} total):
+{chr(10).join(features_list)}"""
+    else:
+        existing_features_context = "Existing PRD features: None (no PRD yet)"
+    
+    # Format Epics/Stories outline (show what implementation already exists)
+    existing_epics_context = ""
+    if existing_epics:
+        epics_list = []
+        for epic in existing_epics[:8]:  # Show max 8 epics
+            epic_title = epic.get("title", "Unknown")
+            epic_domain = epic.get("domain", "General")
+            story_count = len(epic.get("stories", []))
+            epics_list.append(f"  - {epic_domain}: {epic_title} ({story_count} stories)")
+        
+        existing_epics_context = f"""Existing Epics/Stories ({len(existing_epics)} epics total):
+{chr(10).join(epics_list)}"""
+    else:
+        existing_epics_context = "Existing Epics/Stories: None (no stories created yet)"
+    
+    # Safe logging with None check
+    prd_features_count = len(existing_prd.get('features', [])) if existing_prd else 0
+    logger.info(f"[BA] Context for intent analysis: {prd_features_count} PRD features, {len(existing_epics)} epics")
     
     system_prompt = _sys_prompt(agent, "analyze_intent")
     user_prompt = _user_prompt(
         "analyze_intent",
         user_message=state["user_message"],
-        has_prd="Yes" if state.get("existing_prd") else "No",
-        has_info="Yes" if state.get("collected_info") else "No"
+        has_prd="Yes" if existing_prd else "No",
+        has_info="Yes" if state.get("collected_info") else "No",
+        existing_features_context=existing_features_context,
+        existing_epics_context=existing_epics_context,
     )
     
     messages = [
@@ -294,12 +489,22 @@ async def analyze_intent(state: BAState, agent=None) -> dict:
     elif any(kw in user_msg_lower for kw in ["sửa story", "update story", "chỉnh story", "thay đổi story"]):
         fallback_intent = "stories_update"
         fallback_reason = "Keyword-based: update stories"
-    elif any(kw in user_msg_lower for kw in ["sửa prd", "update prd", "chỉnh prd", "thêm feature"]):
+    elif any(kw in user_msg_lower for kw in ["sửa prd", "update prd", "chỉnh prd", "thêm feature mới", "feature mới"]):
         fallback_intent = "prd_update"
         fallback_reason = "Keyword-based: update PRD"
-    elif state.get("existing_prd") and not state.get("collected_info"):
+    # NEW: Detect refinement keywords (thêm menu, thêm button, thêm filter, etc.) → stories_update
+    elif any(kw in user_msg_lower for kw in ["thêm", "bổ sung", "add", "thay đổi", "sửa", "chỉnh"]) and existing_epics:
+        # User wants to refine existing features (has epics) → stories_update
+        fallback_intent = "stories_update"
+        fallback_reason = "Keyword-based: refine existing feature (has epics)"
+    elif state.get("existing_prd") and not existing_epics:
+        # Has PRD but NO epics yet → extract stories
         fallback_intent = "extract_stories"
-        fallback_reason = "Has PRD, no collected info - likely wants stories"
+        fallback_reason = "Has PRD, no epics - extract stories first"
+    elif state.get("existing_prd") and not state.get("collected_info"):
+        # Has PRD + epics but user message vague → default to stories_update (safer than extract_stories)
+        fallback_intent = "stories_update"
+        fallback_reason = "Has PRD+epics, vague request - default to stories_update"
     else:
         fallback_intent = "interview"
         fallback_reason = "Default fallback to interview"
@@ -312,7 +517,7 @@ async def analyze_intent(state: BAState, agent=None) -> dict:
         fallback_data={"intent": fallback_intent, "reasoning": fallback_reason}
     )
     
-    logger.info(f"[BA] Intent classified: {result['intent']}")
+    logger.info(f"[BA] Intent classified: {result['intent']} (reasoning: {result.get('reasoning', '')[:100]})")
     return result
 
 
@@ -886,14 +1091,92 @@ async def update_prd(state: BAState, agent=None) -> dict:
     """Node: Update existing PRD.
     
     Uses structured output for reliable parsing (Developer V2 pattern).
+    
+    FLOW:
+    1. Check if this is a NEW feature request → ask clarification if needed
+    2. If refinement of existing feature → proceed with update
     """
     logger.info(f"[BA] Updating existing PRD...")
     
     existing_prd = state.get("existing_prd", {})
+    existing_epics = state.get("epics", [])
+    user_message = state.get("user_message", "")
+    skip_clarity_check = state.get("skip_clarity_check", False)
     
     if not existing_prd:
         logger.warning("[BA] No existing PRD to update, creating new one")
         return await generate_prd(state, agent)
+    
+    # ====================================================================================
+    # STEP 1: CHECK CLARITY - Ask clarification if this is a NEW feature or existing without specific change
+    # Skip if we're resuming from a previous clarification (skip_clarity_check=True)
+    # ====================================================================================
+    if skip_clarity_check:
+        logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
+        is_clear = True
+        missing_details = []
+        related_feature = None
+    else:
+        is_clear, missing_details, related_feature = await _check_request_clarity(
+            user_message, existing_epics, existing_prd, agent
+        )
+    
+    if not is_clear and agent:
+        # Request needs clarification - either NEW feature or EXISTING without specific change
+        logger.info(f"[BA] Clarification needed (related_feature={related_feature}): {missing_details}")
+        
+        # Build context message
+        if related_feature:
+            context_msg = f"Tính năng \"{related_feature}\" đã có trong hệ thống. Mình cần biết thêm chi tiết để cập nhật."
+        else:
+            context_msg = f"Để mình hiểu rõ hơn về \"{user_message}\", bạn cho mình biết thêm nhé!"
+        
+        # Format questions for batch API (use question cards like interview flow)
+        batch_questions = [
+            {
+                "question_text": detail,
+                "question_type": "open",
+                "options": None,
+                "allow_multiple": False,
+                "context": context_msg if i == 0 else None,  # Only add context to first question
+            }
+            for i, detail in enumerate(missing_details)
+        ]
+        
+        logger.info(f"[BA] Sending {len(batch_questions)} clarification questions via question cards...")
+        
+        # Send questions using question cards (same as interview flow)
+        question_ids = await agent.ask_multiple_clarification_questions(batch_questions)
+        
+        # Save interview state with original_intent so RESUME knows to continue prd_update
+        with Session(engine) as session:
+            interview_state = {
+                "original_intent": "prd_update",  # IMPORTANT: Mark this as prd_update flow
+                "user_message": user_message,
+                "existing_prd": existing_prd,
+                "epics": existing_epics,
+                "questions": batch_questions,
+                "question_ids": [str(qid) for qid in question_ids],
+                "related_feature": related_feature,
+            }
+            _save_interview_state_to_question(session, question_ids[0], interview_state)
+            logger.info(f"[BA] Saved prd_update state for RESUME flow")
+        
+        # Return early - STOP the flow (waiting for user answers via question cards)
+        return {
+            "needs_clarification": True,
+            "waiting_for_answer": True,
+            "question_ids": [str(qid) for qid in question_ids],
+            "is_complete": True,  # Mark complete to stop flow
+            "result": {
+                "summary": f"Feature '{related_feature}' already exists - asked for specific changes" if related_feature else "New feature request - asked for clarification",
+                "task_completed": False  # Don't release ownership - waiting for user
+            }
+        }
+    
+    # ====================================================================================
+    # STEP 2: Proceed with PRD update (feature has specific change to make)
+    # ====================================================================================
     
     # Get conversation context for memory
     conversation_context = state.get("conversation_context", "")
@@ -1225,12 +1508,178 @@ async def update_stories(state: BAState, agent=None) -> dict:
     """Node: Update existing Epics and Stories based on user feedback.
     
     Uses structured output for reliable parsing (Developer V2 pattern).
+    
+    FLOW:
+    1. Check request clarity → ask clarification if vague
+    2. Send to LLM for update
+    3. Validate no duplicates created
+    
+    OPTIMIZATION: If user mentions specific page/domain (e.g., "thêm menu ở homepage"),
+    only send RELEVANT epics to LLM instead of all epics (avoids timeout on large projects).
     """
     logger.info(f"[BA] Updating stories based on user feedback...")
     
-    epics = state.get("epics", [])
-    if not epics:
+    all_epics = state.get("epics", [])
+    if not all_epics:
         return {"error": "No existing stories to update"}
+    
+    user_message = state.get("user_message", "")
+    existing_prd = state.get("existing_prd")
+    skip_clarity_check = state.get("skip_clarity_check", False)
+    
+    # ====================================================================================
+    # STEP 1: CHECK FOR EXISTING STORIES FIRST - Before asking clarification
+    # This prevents asking clarification for features that already exist in stories
+    # ====================================================================================
+    if not skip_clarity_check:  # Only check if not resuming from clarification
+        user_keywords = _extract_intent_keywords(user_message)
+        
+        # Search for existing stories that might already cover this functionality
+        matching_stories = []
+        for epic in all_epics:
+            for story in epic.get("stories", []):
+                story_text = (
+                    f"{story.get('title', '')} {story.get('description', '')} "
+                    f"{' '.join(story.get('requirements', []))}"
+                ).lower()
+                
+                # Check if user keywords appear in story
+                matches = sum(1 for kw in user_keywords if kw in story_text)
+                if matches >= 2:  # At least 2 keywords match
+                    matching_stories.append({
+                        "story": story,
+                        "epic_domain": epic.get("domain"),
+                        "match_score": matches / len(user_keywords) if user_keywords else 0
+                    })
+        
+        if matching_stories and agent:
+            # Found existing stories that might cover this functionality
+            matching_stories.sort(key=lambda x: x["match_score"], reverse=True)
+            best_match = matching_stories[0]
+            story = best_match["story"]
+            
+            logger.info(f"[BA] Found existing story that might cover this: {story.get('id')} - {story.get('title')}")
+            
+            # Ask user if they want to update existing story or create new one
+            existing_story_msg = (
+                f"🔍 Mình tìm thấy story \"{story.get('title', '')}\" (ID: {story.get('id')}) "
+                f"trong domain {best_match['epic_domain']} có vẻ đã cover chức năng này rồi.\n\n"
+                f"Bạn muốn bổ sung gì vào story này không?"
+            )
+            
+            await agent.message_user("response", existing_story_msg)
+            
+            # Return early - STOP the flow (waiting for user decision)
+            return {
+                "found_existing_story": True,
+                "existing_story_id": story.get("id"),
+                "existing_story_title": story.get("title"),
+                "awaiting_user_decision": True,
+                "is_complete": True,
+                "result": {
+                    "summary": "Found existing story - awaiting user decision",
+                    "task_completed": False
+                }
+            }
+    
+    # ====================================================================================
+    # STEP 2: CHECK CLARITY - Ask clarification if this is a NEW feature
+    # Only runs if no existing stories found AND not resuming from clarification
+    # ====================================================================================
+    if skip_clarity_check:
+        logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
+        is_clear = True
+        missing_details = []
+        related_feature = None
+    else:
+        is_clear, missing_details, related_feature = await _check_request_clarity(
+            user_message, all_epics, existing_prd, agent
+        )
+    
+    if not is_clear and agent:
+        # Request needs clarification - either NEW feature or EXISTING without specific change
+        logger.info(f"[BA] Clarification needed (related_feature={related_feature}): {missing_details}")
+        
+        # Build context message
+        if related_feature:
+            context_msg = f"Tính năng \"{related_feature}\" đã có trong hệ thống. Mình cần biết thêm chi tiết để cập nhật."
+        else:
+            context_msg = f"Để mình hiểu rõ hơn về \"{user_message}\", bạn cho mình biết thêm nhé!"
+        
+        # Format questions for batch API (use question cards like interview flow)
+        batch_questions = [
+            {
+                "question_text": detail,
+                "question_type": "open",
+                "options": None,
+                "allow_multiple": False,
+                "context": context_msg if i == 0 else None,
+            }
+            for i, detail in enumerate(missing_details)
+        ]
+        
+        logger.info(f"[BA] Sending {len(batch_questions)} clarification questions via question cards...")
+        
+        # Send questions using question cards
+        question_ids = await agent.ask_multiple_clarification_questions(batch_questions)
+        
+        # Save interview state with original_intent so RESUME knows to continue stories_update
+        with Session(engine) as session:
+            interview_state = {
+                "original_intent": "stories_update",
+                "user_message": user_message,
+                "existing_prd": existing_prd,
+                "epics": all_epics,
+                "questions": batch_questions,
+                "question_ids": [str(qid) for qid in question_ids],
+                "related_feature": related_feature,
+            }
+            _save_interview_state_to_question(session, question_ids[0], interview_state)
+            logger.info(f"[BA] Saved stories_update state for RESUME flow")
+        
+        # Return early - STOP the flow (waiting for user answers)
+        return {
+            "needs_clarification": True,
+            "waiting_for_answer": True,
+            "question_ids": [str(qid) for qid in question_ids],
+            "is_complete": True,
+            "result": {
+                "summary": f"Feature '{related_feature}' already exists - asked for specific changes" if related_feature else "New feature request - asked for clarification",
+                "task_completed": False
+            }
+        }
+    
+    # ====================================================================================
+    # STEP 3: PROCEED WITH UPDATE - Either resuming from clarification or request is clear
+    # ====================================================================================
+    user_message_lower = state["user_message"].lower()
+    
+    # SMART FILTERING: Detect if user mentions specific domain/page
+    # If yes, only update that epic (much faster, avoids timeout)
+    relevant_epics = []
+    mentioned_domains = []
+    
+    for epic in all_epics:
+        epic_domain = (epic.get("domain") or "").lower()
+        epic_title = (epic.get("title") or "").lower()
+        
+        # Check if user message mentions this epic's domain or title
+        if epic_domain and epic_domain in user_message_lower:
+            relevant_epics.append(epic)
+            mentioned_domains.append(epic_domain)
+        elif any(keyword in epic_title for keyword in user_message_lower.split() if len(keyword) > 3):
+            # Match significant words (>3 chars) from user message to epic title
+            relevant_epics.append(epic)
+            mentioned_domains.append(epic_domain or "unknown")
+    
+    # If no specific domain mentioned, or too many epics (>5), use ALL epics (general update)
+    # But warn about performance
+    if not relevant_epics or len(relevant_epics) > 5:
+        logger.info(f"[BA] No specific domain detected or too many matches, using ALL {len(all_epics)} epics (may be slow)")
+        epics_to_update = all_epics
+    else:
+        logger.info(f"[BA] Detected specific domains: {mentioned_domains}. Updating only {len(relevant_epics)} relevant epics (optimization)")
+        epics_to_update = relevant_epics
     
     # Get conversation context for memory
     conversation_context = state.get("conversation_context", "")
@@ -1240,7 +1689,7 @@ async def update_stories(state: BAState, agent=None) -> dict:
     system_prompt = _sys_prompt(agent, "update_stories")
     user_prompt = _user_prompt(
         "update_stories",
-        epics=json.dumps(epics, ensure_ascii=False, indent=2),
+        epics=json.dumps(epics_to_update, ensure_ascii=False, indent=2),
         user_message=state["user_message"],
         conversation_context=conversation_context
     )
@@ -1255,16 +1704,36 @@ async def update_stories(state: BAState, agent=None) -> dict:
         schema=FullStoriesOutput,
         messages=messages,
         config=_cfg(state, "update_stories"),
-        fallback_data={"epics": epics, "message_template": "", "approval_template": "", "change_summary": "Không thể cập nhật"}
+        fallback_data={"epics": epics_to_update, "message_template": "", "approval_template": "", "change_summary": "Không thể cập nhật"}
     )
     
     # Convert Pydantic Epic objects to dicts
-    updated_epics = []
+    updated_epics_from_llm = []
     for e in result.get("epics", []):
         if hasattr(e, "model_dump"):
-            updated_epics.append(e.model_dump())
+            updated_epics_from_llm.append(e.model_dump())
         elif isinstance(e, dict):
-            updated_epics.append(e)
+            updated_epics_from_llm.append(e)
+    
+    # MERGE: If we only updated SOME epics (optimization), merge them back into all_epics
+    # Otherwise, use the updated epics directly
+    if len(epics_to_update) < len(all_epics):
+        logger.info(f"[BA] Merging {len(updated_epics_from_llm)} updated epics back into {len(all_epics)} total epics")
+        
+        # Build map of updated epics by ID
+        updated_map = {epic.get("id"): epic for epic in updated_epics_from_llm}
+        
+        # Merge: replace updated epics, keep others unchanged
+        final_epics = []
+        for epic in all_epics:
+            epic_id = epic.get("id")
+            if epic_id in updated_map:
+                final_epics.append(updated_map[epic_id])  # Use updated version
+            else:
+                final_epics.append(epic)  # Keep original
+    else:
+        # All epics were updated, use result directly
+        final_epics = updated_epics_from_llm
     
     change_summary = result.get("change_summary", "Đã cập nhật stories")
     message_template = result.get("message_template", "")
@@ -1272,7 +1741,7 @@ async def update_stories(state: BAState, agent=None) -> dict:
     
     # Flatten stories for backward compatibility (use get, NOT pop - to keep stories in epics)
     all_stories = []
-    for epic in updated_epics:
+    for epic in final_epics:
         stories_in_epic = epic.get("stories", [])
         epic_title = epic.get("title", epic.get("name", "Unknown"))
         for story in stories_in_epic:
@@ -1282,16 +1751,18 @@ async def update_stories(state: BAState, agent=None) -> dict:
             story["epic_title"] = epic_title
             all_stories.append(story)
     
-    total_epics = len(updated_epics)
+    total_epics = len(final_epics)
     total_stories = len(all_stories)
-    logger.info(f"[BA] Updated {total_epics} epics with {total_stories} stories")
+    logger.info(f"[BA] Updated {len(updated_epics_from_llm)} epics, final result: {total_epics} epics with {total_stories} stories")
     
+    # No more validation needed here - STEP 2 already checked for existing functionality
+    # If we reach here, user has confirmed they want to proceed
     # Use hardcoded messages (LLM templates unreliable)
     message = f"✏️ Đã cập nhật xong! Hiện có {total_stories} Stories trong {total_epics} Epics. Bạn xem qua và bấm 'Phê duyệt Stories' nhé! 📋"
     approval_message = f"✅ Đã cập nhật và lưu {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
     
     return {
-        "epics": updated_epics,
+        "epics": final_epics,
         "stories": all_stories,
         "change_summary": change_summary,
         "stories_message": message,
@@ -1419,33 +1890,71 @@ async def edit_single_story(state: BAState, agent=None) -> dict:
             "is_complete": True  # Mark complete so graph ends
         }
     
-    # Step 3: Apply the updated story back to epics/stories
+    # Step 3: Check if user wants to DELETE the story
+    # Story is considered "deleted" if:
+    # - User explicitly says "xóa", "delete", "remove"
+    # - LLM returns empty requirements AND empty acceptance_criteria
     if hasattr(updated_story, "model_dump"):
         updated_story = updated_story.model_dump()
     
-    # Update in stories list
-    stories[target_story_idx] = updated_story
+    user_wants_delete = any(kw in user_msg_lower for kw in ["xóa", "delete", "remove", "loại bỏ", "bỏ story"])
+    story_is_empty = (
+        not updated_story.get("requirements") and 
+        not updated_story.get("acceptance_criteria")
+    )
     
-    # Update in epics structure
-    for epic in epics:
-        epic_stories = epic.get("stories", [])
-        for j, s in enumerate(epic_stories):
-            if s.get("id") == updated_story.get("id"):
-                epic_stories[j] = updated_story
-                break
+    should_delete_story = user_wants_delete or story_is_empty
     
-    change_summary = result.get("change_summary", "Đã cập nhật story")
-    message = result.get("message", f"✅ Đã cập nhật story '{updated_story.get('title', '')[:50]}...'")
-    
-    logger.info(f"[BA] Single story edit complete: {change_summary}")
-    
-    return {
-        "epics": epics,
-        "stories": stories,
-        "change_summary": change_summary,
-        "stories_message": message,
-        "stories_approval_message": f"✅ Đã lưu thay đổi cho story!"
-    }
+    if should_delete_story:
+        # DELETE story completely from epics and stories
+        story_id = target_story.get("id")
+        logger.info(f"[BA] DELETING story {story_id} (user requested or story is empty)")
+        
+        # Remove from flat stories list
+        stories = [s for s in stories if s.get("id") != story_id]
+        
+        # Remove from epics structure
+        for epic in epics:
+            epic_stories = epic.get("stories", [])
+            epic["stories"] = [s for s in epic_stories if s.get("id") != story_id]
+        
+        change_summary = f"Đã xóa story {story_id}"
+        message = result.get("message", f"🗑️ Đã xóa thành công story \"{target_story.get('title', '')[:50]}...\"")
+        
+        logger.info(f"[BA] Story deleted: {story_id}")
+        
+        return {
+            "epics": epics,
+            "stories": stories,
+            "change_summary": change_summary,
+            "stories_message": message,
+            "stories_approval_message": f"✅ Đã xóa story khỏi backlog!"
+        }
+    else:
+        # UPDATE story (keep it, just modify)
+        # Update in stories list
+        stories[target_story_idx] = updated_story
+        
+        # Update in epics structure
+        for epic in epics:
+            epic_stories = epic.get("stories", [])
+            for j, s in enumerate(epic_stories):
+                if s.get("id") == updated_story.get("id"):
+                    epic_stories[j] = updated_story
+                    break
+        
+        change_summary = result.get("change_summary", "Đã cập nhật story")
+        message = result.get("message", f"✅ Đã cập nhật story '{updated_story.get('title', '')[:50]}...'")
+        
+        logger.info(f"[BA] Single story edit complete: {change_summary}")
+        
+        return {
+            "epics": epics,
+            "stories": stories,
+            "change_summary": change_summary,
+            "stories_message": message,
+            "stories_approval_message": f"✅ Đã lưu thay đổi cho story!"
+        }
 
 
 async def _edit_story_with_llm_search(state: BAState, agent, epics: list, stories: list) -> dict:
@@ -1560,8 +2069,17 @@ async def _apply_edit_to_story(state: BAState, agent, epics: list, stories: list
 
 
 async def approve_stories(state: BAState, agent=None) -> dict:
-    """Node: Approve stories and save them to database (batch operation)."""
-    logger.info(f"[BA] Approving stories and saving to database...")
+    """Node: Approve stories and save them to database using UPSERT logic.
+    
+    UPSERT Strategy (preserves existing stories):
+    - Epics/Stories with matching code: UPDATE (preserve status, progress)
+    - New Epics/Stories: INSERT
+    - Epics/Stories not in new data: KEEP (don't delete - user may have other epics)
+    
+    This allows incremental updates when user adds/modifies features without
+    losing existing stories that are in progress.
+    """
+    logger.info(f"[BA] Approving stories with UPSERT logic...")
     
     epics_data = state.get("epics", [])
     stories_data = state.get("stories", [])
@@ -1591,67 +2109,76 @@ async def approve_stories(state: BAState, agent=None) -> dict:
     
     try:
         created_epics = []
+        updated_epics = []
         created_stories = []
+        updated_stories = []
         epic_id_map = {}  # Map string ID (EPIC-001) to UUID
         story_id_map = {}  # Map string ID (EPIC-001-US-001) to actual UUID
         
         with Session(engine) as session:
-            # 0. Delete existing epics and stories for this project to avoid duplicates
-            # This handles the case when user updates PRD and regenerates stories
-            existing_stories = session.exec(
-                select(Story).where(Story.project_id == agent.project_id)
-            ).all()
-            existing_epics = session.exec(
+            # 0. Load existing epics and stories (for UPSERT comparison)
+            existing_epics_db = session.exec(
                 select(Epic).where(Epic.project_id == agent.project_id)
             ).all()
+            existing_stories_db = session.exec(
+                select(Story).where(Story.project_id == agent.project_id)
+            ).all()
             
-            if existing_stories or existing_epics:
-                # Log story_codes being deleted for debugging
-                existing_codes = [s.story_code for s in existing_stories if s.story_code]
-                logger.info(
-                    f"[BA] Deleting {len(existing_stories)} existing stories "
-                    f"(codes: {existing_codes[:5]}{'...' if len(existing_codes) > 5 else ''}) "
-                    f"and {len(existing_epics)} existing epics for project {agent.project_id}"
-                )
-                for story in existing_stories:
-                    session.delete(story)
-                for epic in existing_epics:
-                    session.delete(epic)
-                # Must COMMIT (not just flush) to ensure DELETEs are persisted
-                # before INSERTs with same story_code values
-                session.commit()
-                logger.info(f"[BA] DELETE committed successfully, proceeding with INSERT")
+            # Build lookup maps by epic_code and story_code
+            existing_epics_map = {e.epic_code: e for e in existing_epics_db if e.epic_code}
+            existing_stories_map = {s.story_code: s for s in existing_stories_db if s.story_code}
             
-            # 1. Create all Epics at once
-            epic_objects = []
+            logger.info(
+                f"[BA] UPSERT: Found {len(existing_epics_map)} existing epics, "
+                f"{len(existing_stories_map)} existing stories in DB"
+            )
+            
+            # 1. UPSERT Epics
             for epic_data in epics_data:
                 epic_string_id = epic_data.get("id", "")  # e.g., "EPIC-001"
-                epic = Epic(
-                    epic_code=epic_string_id if epic_string_id else None,  # Save epic code
-                    title=epic_data.get("title", epic_data.get("name", "Unknown Epic")),
-                    description=epic_data.get("description"),
-                    domain=epic_data.get("domain"),
-                    project_id=agent.project_id,
-                    epic_status=EpicStatus.PLANNED
-                )
-                epic_objects.append((epic, epic_string_id))
-                session.add(epic)
+                existing_epic = existing_epics_map.get(epic_string_id)
+                
+                if existing_epic:
+                    # UPDATE existing epic (preserve UUID, update content)
+                    existing_epic.title = epic_data.get("title", epic_data.get("name", existing_epic.title))
+                    existing_epic.description = epic_data.get("description", existing_epic.description)
+                    existing_epic.domain = epic_data.get("domain", existing_epic.domain)
+                    # Note: preserve epic_status - don't reset to PLANNED
+                    
+                    epic_id_map[epic_string_id] = existing_epic.id
+                    updated_epics.append({
+                        "id": str(existing_epic.id),
+                        "title": existing_epic.title,
+                        "domain": existing_epic.domain,
+                        "action": "updated"
+                    })
+                    logger.debug(f"[BA] Updated epic: {epic_string_id} -> {existing_epic.id}")
+                else:
+                    # INSERT new epic
+                    new_epic = Epic(
+                        epic_code=epic_string_id if epic_string_id else None,
+                        title=epic_data.get("title", epic_data.get("name", "Unknown Epic")),
+                        description=epic_data.get("description"),
+                        domain=epic_data.get("domain"),
+                        project_id=agent.project_id,
+                        epic_status=EpicStatus.PLANNED
+                    )
+                    session.add(new_epic)
+                    session.flush()  # Get UUID immediately
+                    
+                    epic_id_map[epic_string_id] = new_epic.id
+                    created_epics.append({
+                        "id": str(new_epic.id),
+                        "title": new_epic.title,
+                        "domain": new_epic.domain,
+                        "action": "created"
+                    })
+                    logger.debug(f"[BA] Created epic: {epic_string_id} -> {new_epic.id}")
             
-            # Single flush for all epics
-            session.flush()
+            logger.info(f"[BA] Epics: {len(created_epics)} created, {len(updated_epics)} updated")
             
-            # Build epic ID map after flush
-            for epic, string_id in epic_objects:
-                epic_id_map[string_id] = epic.id
-                created_epics.append({
-                    "id": str(epic.id),
-                    "title": epic.title,
-                    "domain": epic.domain
-                })
-            
-            logger.info(f"[BA] Created {len(created_epics)} epics in batch")
-            
-            # 2. Create all Stories at once
+            # 2. UPSERT Stories
+            # Get max rank for new stories
             max_rank_result = session.exec(
                 select(func.max(Story.rank)).where(
                     Story.project_id == agent.project_id,
@@ -1660,54 +2187,102 @@ async def approve_stories(state: BAState, agent=None) -> dict:
             ).one()
             current_rank = (max_rank_result or 0)
             
-            story_objects = []  # (story, string_id, original_deps)
+            story_objects_for_deps = []  # (story, string_id, original_deps) for dependency resolution
+            
             for story_data in stories_data:
+                story_string_id = story_data.get("id", "")  # e.g., "EPIC-001-US-001"
                 epic_string_id = story_data.get("epic_id", "")
                 epic_uuid = epic_id_map.get(epic_string_id)
-                current_rank += 1
-                story_string_id = story_data.get("id", "")  # e.g., "EPIC-001-US-001"
                 original_dependencies = story_data.get("dependencies", [])
                 
-                story = Story(
-                    story_code=story_string_id if story_string_id else None,  # Save story code
-                    title=story_data.get("title", "Unknown Story"),
-                    description=story_data.get("description"),
-                    acceptance_criteria=story_data.get("acceptance_criteria", []),
-                    requirements=story_data.get("requirements", []),
-                    project_id=agent.project_id,
-                    epic_id=epic_uuid,
-                    status=StoryStatus.TODO,
-                    type=StoryType.USER_STORY,
-                    priority=story_data.get("priority"),
-                    story_point=story_data.get("story_point"),
-                    rank=current_rank,
-                    dependencies=[],
-                )
-                story_objects.append((story, story_string_id, original_dependencies))
-                session.add(story)
+                existing_story = existing_stories_map.get(story_string_id)
+                
+                if existing_story:
+                    # UPDATE existing story (preserve status, UUID, rank)
+                    existing_story.title = story_data.get("title", existing_story.title)
+                    existing_story.description = story_data.get("description", existing_story.description)
+                    existing_story.acceptance_criteria = story_data.get("acceptance_criteria", existing_story.acceptance_criteria)
+                    existing_story.requirements = story_data.get("requirements", existing_story.requirements)
+                    existing_story.priority = story_data.get("priority", existing_story.priority)
+                    existing_story.story_point = story_data.get("story_point", existing_story.story_point)
+                    # Update epic_id in case story moved to different epic
+                    if epic_uuid:
+                        existing_story.epic_id = epic_uuid
+                    # Note: preserve status, rank - don't reset to TODO
+                    
+                    story_id_map[story_string_id] = str(existing_story.id)
+                    story_objects_for_deps.append((existing_story, story_string_id, original_dependencies))
+                    updated_stories.append({
+                        "id": str(existing_story.id),
+                        "string_id": story_string_id,
+                        "title": existing_story.title,
+                        "epic_id": str(existing_story.epic_id) if existing_story.epic_id else None,
+                        "status": existing_story.status.value if existing_story.status else "TODO",
+                        "action": "updated"
+                    })
+                    logger.debug(f"[BA] Updated story: {story_string_id} (status preserved: {existing_story.status})")
+                else:
+                    # INSERT new story
+                    current_rank += 1
+                    new_story = Story(
+                        story_code=story_string_id if story_string_id else None,
+                        title=story_data.get("title", "Unknown Story"),
+                        description=story_data.get("description"),
+                        acceptance_criteria=story_data.get("acceptance_criteria", []),
+                        requirements=story_data.get("requirements", []),
+                        project_id=agent.project_id,
+                        epic_id=epic_uuid,
+                        status=StoryStatus.TODO,
+                        type=StoryType.USER_STORY,
+                        priority=story_data.get("priority"),
+                        story_point=story_data.get("story_point"),
+                        rank=current_rank,
+                        dependencies=[],
+                    )
+                    session.add(new_story)
+                    session.flush()  # Get UUID immediately
+                    
+                    story_id_map[story_string_id] = str(new_story.id)
+                    story_objects_for_deps.append((new_story, story_string_id, original_dependencies))
+                    created_stories.append({
+                        "id": str(new_story.id),
+                        "string_id": story_string_id,
+                        "title": new_story.title,
+                        "epic_id": str(new_story.epic_id) if new_story.epic_id else None,
+                        "action": "created"
+                    })
+                    logger.debug(f"[BA] Created story: {story_string_id} -> {new_story.id}")
             
-            # Single flush for all stories
-            session.flush()
+            logger.info(f"[BA] Stories: {len(created_stories)} created, {len(updated_stories)} updated")
             
-            # Build story ID map and created_stories list after flush
-            for story, string_id, _ in story_objects:
-                story_id_map[string_id] = str(story.id)
-                created_stories.append({
-                    "id": str(story.id),
-                    "string_id": string_id,
-                    "title": story.title,
-                    "epic_id": str(story.epic_id) if story.epic_id else None
-                })
+            # 3. DELETE stories that are NOT in the new artifact (user deleted them)
+            # This handles the case where user says "xóa story X"
+            deleted_stories = []
+            stories_in_artifact = {s.get("id") for s in stories_data if s.get("id")}
             
-            logger.info(f"[BA] Created {len(created_stories)} stories in batch")
+            for existing_story in existing_stories_db:
+                story_code = existing_story.story_code
+                if story_code and story_code not in stories_in_artifact:
+                    # Story was in DB but NOT in artifact → User deleted it
+                    logger.info(f"[BA] DELETING story from DB: {story_code} (not in artifact)")
+                    session.delete(existing_story)
+                    deleted_stories.append({
+                        "id": str(existing_story.id),
+                        "string_id": story_code,
+                        "title": existing_story.title,
+                        "action": "deleted"
+                    })
             
-            # 3. Resolve dependencies (no additional flush needed, just update objects)
+            if deleted_stories:
+                logger.info(f"[BA] Deleted {len(deleted_stories)} stories from DB")
+            
+            # 4. Resolve dependencies for all stories (both new and updated)
             deps_resolved = 0
-            for story, _, original_deps in story_objects:
+            for story, string_id, original_deps in story_objects_for_deps:
                 if original_deps:
                     resolved_deps = [
-                        story_id_map[dep_id] 
-                        for dep_id in original_deps 
+                        story_id_map[dep_id]
+                        for dep_id in original_deps
                         if dep_id in story_id_map
                     ]
                     if resolved_deps:
@@ -1717,18 +2292,43 @@ async def approve_stories(state: BAState, agent=None) -> dict:
             if deps_resolved:
                 logger.info(f"[BA] Resolved dependencies for {deps_resolved} stories")
             
-            # Single commit for everything
+            # Commit all changes (including deletions)
             session.commit()
         
-        logger.info(f"[BA] Saved {len(created_epics)} epics and {len(created_stories)} stories to database")
+        total_epics = len(created_epics) + len(updated_epics)
+        total_stories = len(created_stories) + len(updated_stories)
         
-        approval_msg = f"✅ Đã phê duyệt và thêm {len(created_epics)} Epics, {len(created_stories)} Stories vào backlog! 🎉"
+        logger.info(
+            f"[BA] UPSERT complete: {total_epics} epics ({len(created_epics)} new, {len(updated_epics)} updated), "
+            f"{total_stories} stories ({len(created_stories)} new, {len(updated_stories)} updated, {len(deleted_stories)} deleted)"
+        )
+        
+        # Build approval message - ONLY show actions that actually happened
+        actions = []
+        
+        # Only mention what actually changed
+        if len(created_stories) > 0:
+            actions.append(f"{len(created_stories)} story thêm mới")
+        if len(updated_stories) > 0:
+            actions.append(f"{len(updated_stories)} story cập nhật")
+        if len(deleted_stories) > 0:
+            actions.append(f"{len(deleted_stories)} story xóa")
+        
+        if actions:
+            # Show only what changed
+            approval_msg = f"✅ Đã cập nhật backlog! {', '.join(actions)}. 🎉"
+        else:
+            # Nothing changed
+            approval_msg = "✅ Backlog đã được đồng bộ! 🎉"
+        
         return {
             "stories_approved": True,
             "created_epics": created_epics,
+            "updated_epics": updated_epics,
             "created_stories": created_stories,
+            "updated_stories": updated_stories,
             "approval_message": approval_msg,
-            "stories_approval_message": approval_msg  # For save_artifacts to use
+            "stories_approval_message": approval_msg
         }
         
     except Exception as e:

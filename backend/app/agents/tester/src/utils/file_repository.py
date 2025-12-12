@@ -1,12 +1,4 @@
-"""FileRepository for zero-shot test planning (aligned with Developer V2).
-
-This class pre-computes workspace context for instant planning without tool calls.
-Scans the workspace ONCE and builds:
-- File tree
-- API routes
-- Components (with analysis)
-- Important files (schema, types, etc.)
-"""
+"""FileRepository for zero-shot test planning. Pre-computes workspace context for instant planning."""
 import logging
 import os
 import re
@@ -17,25 +9,15 @@ logger = logging.getLogger(__name__)
 
 
 class FileRepository:
-    """Pre-computed workspace context for zero-shot test planning.
-    
-    Aligned with Developer V2's FileRepository pattern.
-    Scans workspace once to build:
-    - Complete file tree
-    - API routes list
-    - Component paths and imports
-    - Important file contents (schema, types)
-    """
+    """Pre-computed workspace context: file tree, API routes, components, schemas."""
     
     def __init__(self, workspace_path: str):
         self.workspace_path = workspace_path
-        self.files: Dict[str, str] = {}  # path -> content
+        self.files: Dict[str, str] = {}
         self.file_tree: List[str] = []
-        self.components: Dict[str, str] = {}  # name -> import path
+        self.components: Dict[str, str] = {}
         self.api_routes: List[str] = []
         self.test_files: List[str] = []
-        
-        # Component analysis (for unit tests)
         self.component_analysis: Dict[str, Dict] = {}
         
         if workspace_path and os.path.exists(workspace_path):

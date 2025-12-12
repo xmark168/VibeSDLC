@@ -725,10 +725,10 @@ def analyze_error_type(error_logs: str) -> Dict[str, Any]:
         if match:
             result["error_type"] = "import"
             result["is_local_import"] = is_local
-            result["details"]["module"] = match.group(1)
+            result["missing_package"] = match.group(1)  # Extract package name
             if not is_local:
                 result["auto_fixable"] = True
-                result["fix_strategy"] = "npm_install"
+                result["fix_strategy"] = "pnpm_add"  # Use pnpm add instead of install
             else:
                 result["auto_fixable"] = False
                 result["fix_strategy"] = "fix_local_import"
@@ -1015,36 +1015,27 @@ async def try_auto_fix(
             await log.success("Auto-fix: Prisma regenerated")
             return True
         
-        # =====================================================================
-        # Strategy: NPM install
-        # =====================================================================
-        elif strategy == "npm_install":
-            await log.info("Auto-fix: Running pnpm install...")
+        elif strategy == "pnpm_add":
+            missing_package = error_analysis.get("missing_package", "")
+            if not missing_package:
+                await log.warning("Auto-fix: No package name found")
+                return False
+            
+            await log.info(f"Auto-fix: Running pnpm add {missing_package}...")
             result = subprocess.run(
-                "pnpm install --frozen-lockfile",
+                f"pnpm add {missing_package}",
                 cwd=workspace_path,
                 shell=True,
                 capture_output=True,
                 timeout=120
             )
             if result.returncode == 0:
-                await log.success("Auto-fix: Dependencies installed")
+                await log.success(f"Auto-fix: Installed {missing_package}")
                 return True
-            
-            # Retry without frozen-lockfile
-            result = subprocess.run(
-                "pnpm install",
-                cwd=workspace_path,
-                shell=True,
-                capture_output=True,
-                timeout=120
-            )
-            if result.returncode == 0:
-                await log.success("Auto-fix: Dependencies installed")
-                return True
-            
-            await log.warning("Auto-fix: pnpm install failed")
-            return False
+            else:
+                stderr = result.stderr.decode() if result.stderr else ""
+                await log.warning(f"Auto-fix: pnpm add failed - {stderr[:200]}")
+                return False
         
         return False
         

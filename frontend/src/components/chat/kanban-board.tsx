@@ -208,6 +208,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   const activeCardRef = useRef<KanbanCardData | null>(null) // Store active card on drag start to avoid recalc
   // Store target position for cross-container moves
   const crossContainerTarget = useRef<{ targetColumn: string; targetIndex: number; overId: string } | null>(null)
+  // Track last updated container to prevent redundant updates
+  const lastOverContainerRef = useRef<string | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
   const [showCreateStoryDialog, setShowCreateStoryDialog] = useState(false)
   const [editingStory, setEditingStory] = useState<StoryEditData | null>(null)
@@ -426,15 +428,16 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   }, [searchQuery, selectedFilters])
 
   // Find container for an item (official dnd-kit pattern)
+  // FIX: Use cardsRef instead of cards dependency to prevent infinite loop
   const findContainer = useCallback((id: string): string | undefined => {
     // Check if id is a column
     if (COLUMNS.some(col => col.id === id)) {
       return id
     }
-    // Find the column containing this card
-    const card = cards.find(c => c.id === id)
+    // Find the column containing this card using ref (avoids dependency on cards state)
+    const card = cardsRef.current.find(c => c.id === id)
     return card?.columnId
-  }, [cards])
+  }, [])
 
   // DnD Handlers (following official dnd-kit pattern)
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -444,6 +447,7 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
     clonedCardsRef.current = cards // Also save to ref for callbacks
     activeCardRef.current = cards.find(c => c.id === dragId) || null // Store active card to avoid recalc
     crossContainerTarget.current = null // Clear any stale target
+    lastOverContainerRef.current = null // Reset last container tracking
   }, [cards])
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
@@ -462,11 +466,24 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
     if (!isCrossContainerMove) {
       crossContainerTarget.current = null
+      lastOverContainerRef.current = null
       return
     }
 
     // Skip update if hovering over self (active card)
     if (overId === active.id) {
+      return
+    }
+
+    // FIX INFINITE LOOP: Skip update if we're still hovering over the same container
+    // This prevents redundant setCards calls when dragging within same target container
+    if (lastOverContainerRef.current === overContainer) {
+      // Just update target info without triggering state update
+      crossContainerTarget.current = {
+        targetColumn: overContainer,
+        targetIndex: 0,
+        overId: overId
+      }
       return
     }
 
@@ -477,10 +494,13 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       overId: overId
     }
 
-    // Update columnId to show placeholder in target column
-    // SortableContext will handle visual positioning automatically
+    // Mark this container as last updated
+    lastOverContainerRef.current = overContainer
+
+    // Only update state when container actually changes (not on every pixel movement)
     setCards(prevCards => {
       const card = prevCards.find(c => c.id === active.id)
+      // Skip update if card already in target container or not found
       if (!card || card.columnId === overContainer) return prevCards
 
       const newCards = prevCards.map(c => 
@@ -495,27 +515,28 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
-    // IMPORTANT: Use clonedCards to get original column, not current cards state
-    const originalColumnId = clonedCards?.find(c => c.id === active.id)?.columnId
+    // IMPORTANT: Use clonedCardsRef to get original column (avoid clonedCards state dependency)
+    const originalColumnId = clonedCardsRef.current?.find(c => c.id === active.id)?.columnId
     
     // Debug log
-    const draggedCard = clonedCards?.find(c => c.id === active.id)
+    const draggedCard = clonedCardsRef.current?.find(c => c.id === active.id)
     console.log('[Kanban] DragEnd:', {
       activeId: active.id,
       overId: over?.id,
       originalColumnId,
       draggedCardTitle: draggedCard?.content,
       draggedCardDeps: draggedCard?.dependencies,
-      clonedCardsExists: !!clonedCards,
+      clonedCardsExists: !!clonedCardsRef.current,
     })
-    // Save clonedCards for potential revert before resetting
-    const savedClonedCards = clonedCards
+    // Save clonedCards snapshot for potential revert before resetting refs
+    const savedClonedCards = clonedCardsRef.current
 
     // Always reset active state
     setActiveId(null)
     setClonedCards(null)
     clonedCardsRef.current = null
     activeCardRef.current = null
+    lastOverContainerRef.current = null
 
     if (!over) return
 
@@ -560,7 +581,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
     // Same container - handle reordering with arrayMove (official pattern)
     if (activeContainer === overContainer) {
-      const containerCards = cards
+      // Use cardsRef.current to get latest cards without triggering re-render
+      const containerCards = cardsRef.current
         .filter(c => c.columnId === activeContainer)
         .sort((a, b) => (a.rank || 999) - (b.rank || 999))
 
@@ -599,7 +621,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       if (!originalColumnId) return
 
       // Get other cards in target container (excluding the moved card)
-      const otherCardsInTarget = cards
+      // Use cardsRef.current to avoid dependency on cards state
+      const otherCardsInTarget = cardsRef.current
         .filter(c => c.columnId === overContainer && c.id !== active.id)
         .sort((a, b) => (a.rank || 999) - (b.rank || 999))
 
@@ -619,8 +642,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
       // Build final ordered list: insert active card at newIndex
       const finalOrder = [...otherCardsInTarget]
-      // Use original card from clonedCards to get correct dependencies data
-      const activeCard = savedClonedCards?.find(c => c.id === active.id) || cards.find(c => c.id === active.id)
+      // Use original card from savedClonedCards to get correct dependencies data
+      const activeCard = savedClonedCards?.find(c => c.id === active.id) || cardsRef.current.find(c => c.id === active.id)
       if (activeCard) {
         finalOrder.splice(newIndex, 0, activeCard)
       }
@@ -711,19 +734,21 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
         }
       }
     }
-  }, [cards, clonedCards, findContainer, projectId, checkDependenciesCompleted])
+  }, [findContainer, projectId, checkDependenciesCompleted])
 
   // Handle drag cancel - restore original state
   const handleDragCancel = useCallback(() => {
-    if (clonedCards) {
-      setCards(clonedCards)
+    // Use ref instead of state to avoid dependency
+    if (clonedCardsRef.current) {
+      setCards(clonedCardsRef.current)
     }
     setActiveId(null)
     setClonedCards(null)
     clonedCardsRef.current = null
     activeCardRef.current = null
     crossContainerTarget.current = null
-  }, [clonedCards])
+    lastOverContainerRef.current = null
+  }, [])
 
   // Card handlers
   const handleDownloadResult = useCallback((card: KanbanCardData) => {

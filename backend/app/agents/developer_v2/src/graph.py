@@ -77,8 +77,14 @@ def route_after_parallel(state: DeveloperState) -> Literal["run_code", "implemen
     return "run_code"
 
 
-def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "__end__"]:
-    return "implement" if state.get("action") == "IMPLEMENT" else "__end__"
+def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "run_code", "__end__"]:
+    """Route after analyze_error - handle IMPLEMENT, VALIDATE, or end."""
+    action = state.get("action")
+    if action == "IMPLEMENT":
+        return "implement"
+    elif action == "VALIDATE":
+        return "run_code"  # Re-run build/test after auto-fix
+    return "__end__"
 
 
 async def pause_checkpoint(state: DeveloperState, agent=None) -> DeveloperState:
