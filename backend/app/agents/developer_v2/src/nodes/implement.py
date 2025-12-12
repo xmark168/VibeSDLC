@@ -11,36 +11,27 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.schemas import ImplementOutput
-from app.agents.developer_v2.src.tools.filesystem_tools import get_modified_files, reset_modified_files, _modified_files
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
 from app.agents.developer_v2.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
 from app.agents.developer_v2.src.utils.token_utils import truncate_to_tokens
 from app.agents.developer_v2.src.nodes._llm import get_llm_for_skills
 from app.agents.developer_v2.src.skills import SkillRegistry
 from app.agents.developer_v2.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
+from app.agents.developer_v2.src.utils.story_logger import git_with_retry
 
 logger = logging.getLogger(__name__)
 
+_modified_files: set = set()
 
-# =============================================================================
-# Git Helper Functions for commit-per-step workflow (with retry)
-# =============================================================================
+def get_modified_files() -> list:
+    return list(_modified_files)
 
-from app.agents.developer_v2.src.utils.story_logger import git_with_retry
+def reset_modified_files():
+    _modified_files.clear()
 
 
 def git_commit_step(workspace_path: str, step_num: int, description: str, files: List[str] = None) -> bool:
-    """Commit changes after a successful implement step (with retry).
-    
-    Args:
-        workspace_path: Path to git repository
-        step_num: Step number for commit message
-        description: Brief description of changes
-        files: Specific files to commit, or None for all changes
-    
-    Returns:
-        True if commit succeeded, False otherwise
-    """
+    """Commit changes after a successful implement step."""
     # Validate workspace_path
     if not workspace_path:
         logger.warning(f"[git] Cannot commit: workspace_path is empty")
@@ -87,11 +78,7 @@ def git_commit_step(workspace_path: str, step_num: int, description: str, files:
 
 
 def git_revert_uncommitted(workspace_path: str) -> bool:
-    """Revert uncommitted changes (used on pause, with retry).
-    
-    Returns:
-        True if revert succeeded, False otherwise
-    """
+    """Revert uncommitted changes (used on pause)."""
     # Validate workspace_path
     if not workspace_path:
         logger.warning(f"[git] Cannot revert: workspace_path is empty")
@@ -118,11 +105,7 @@ def git_revert_uncommitted(workspace_path: str) -> bool:
 
 
 def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
-    """Reset all changes to base branch (used on cancel, with retry).
-    
-    Returns:
-        True if reset succeeded, False otherwise
-    """
+    """Reset all changes to base branch (used on cancel)."""
     # Validate workspace_path
     if not workspace_path:
         logger.warning(f"[git] Cannot reset: workspace_path is empty")
@@ -158,16 +141,7 @@ def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
 
 
 def git_squash_wip_commits(workspace_path: str, base_branch: str = "main", final_message: str = None) -> bool:
-    """Squash all WIP commits into a single commit (used on finish, with retry).
-    
-    Args:
-        workspace_path: Path to git repository
-        base_branch: Base branch to squash from
-        final_message: Final commit message, or None to auto-generate
-    
-    Returns:
-        True if squash succeeded, False otherwise
-    """
+    """Squash all WIP commits into a single commit."""
     # Validate workspace_path
     if not workspace_path:
         logger.warning(f"[git] Cannot squash: workspace_path is empty")

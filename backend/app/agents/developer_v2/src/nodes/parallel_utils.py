@@ -99,17 +99,7 @@ async def run_layer_parallel(
     state: Dict,
     max_concurrent: int = MAX_CONCURRENT
 ) -> List[Dict]:
-    """Run all steps in a layer in parallel.
-    
-    Args:
-        layer_steps: List of step dicts to run
-        implement_fn: Async function(step) -> result (closure with state access)
-        state: Current state dict (unused, kept for API compatibility)
-        max_concurrent: Max concurrent executions
-        
-    Returns:
-        List of results from each step
-    """
+    """Run all steps in a layer in parallel."""
     if not layer_steps:
         return []
     
@@ -150,15 +140,7 @@ async def run_layer_parallel(
 
 
 def merge_parallel_results(results: List[Dict], base_state: Dict) -> Dict:
-    """Merge results from parallel execution into state.
-    
-    Args:
-        results: List of result dicts from parallel steps
-        base_state: Original state to merge into
-        
-    Returns:
-        Merged state dict
-    """
+    """Merge results from parallel execution into state."""
     merged = {**base_state}
     
     # Collect all modified files
@@ -187,11 +169,8 @@ def merge_parallel_results(results: List[Dict], base_state: Dict) -> Dict:
 
 
 def should_use_parallel(steps: List[Dict]) -> bool:
-    """Determine if parallel execution is beneficial.
-    
-    Returns True if:
-    - More than 3 steps
-    - At least 2 steps can run in same layer
+    """
+    Determine if parallel execution is beneficial.
     """
     if len(steps) < 4:
         return False
