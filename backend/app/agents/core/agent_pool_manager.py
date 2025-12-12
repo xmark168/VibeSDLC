@@ -428,14 +428,34 @@ class AgentPoolManager:
                 for agent_id, agent in list(self.agents.items()):
                     try:
                         health = await agent.health_check()
+                        severity = health.get("severity", "ok")
 
-                        if not health.get("healthy", False):
-                            logger.warning(
-                                f"Agent {agent.name} ({agent_id}) unhealthy, terminating. "
-                                f"Reason: {health.get('reason', 'unknown')}"
+                        # Critical: terminate immediately
+                        if not health.get("healthy", False) and severity == "critical":
+                            logger.error(
+                                f"[HEALTH] Agent {agent.name} ({agent_id}) CRITICAL: "
+                                f"{health.get('reason', 'unknown')}"
                             )
                             await self.terminate_agent(agent_id, graceful=False)
                             continue
+
+                        # Warning: log but don't terminate (may recover)
+                        if not health.get("healthy", False) and severity == "warning":
+                            logger.warning(
+                                f"[HEALTH] Agent {agent.name} ({agent_id}) WARNING: "
+                                f"{health.get('reason', 'unknown')}"
+                            )
+                            # Reset to idle if stuck busy (give chance to recover)
+                            if agent.state == AgentStatus.busy:
+                                agent.state = AgentStatus.idle
+                            continue
+
+                        # Degraded but operational: log warnings
+                        if health.get("warnings"):
+                            logger.warning(
+                                f"[HEALTH] Agent {agent.name} ({agent_id}) degraded: "
+                                f"{health.get('warnings')}"
+                            )
 
                         # Check for stale busy state (agent stuck as busy with no tasks)
                         if agent.state == AgentStatus.busy:
@@ -444,18 +464,18 @@ class AgentPoolManager:
                             
                             if not has_queue_tasks and not has_current_task:
                                 logger.warning(
-                                    f"Agent {agent.name} ({agent_id}) stuck in busy state "
+                                    f"[HEALTH] Agent {agent.name} ({agent_id}) stuck in busy state "
                                     f"with no tasks, resetting to idle"
                                 )
                                 agent.state = AgentStatus.idle
 
                     except Exception as e:
-                        logger.error(f"Error checking health of agent {agent_id}: {e}")
+                        logger.error(f"[HEALTH] Error checking health of agent {agent_id}: {e}")
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Monitor loop error: {e}", exc_info=True)
+                logger.error(f"[HEALTH] Monitor loop error: {e}", exc_info=True)
 
         logger.info(f"Health monitor stopped for pool '{self.pool_name}'")
 

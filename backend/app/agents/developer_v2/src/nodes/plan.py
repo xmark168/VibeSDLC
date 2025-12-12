@@ -8,7 +8,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
-from app.agents.developer_v2.src.nodes._llm import fast_llm
+from app.agents.developer_v2.src.nodes._llm import get_llm, fast_llm
 from app.agents.developer_v2.src.schemas import SimplePlanOutput
 from app.agents.developer_v2.src.skills.registry import SkillRegistry
 from app.agents.developer_v2.src.skills import get_plan_prompts

@@ -11,6 +11,7 @@ Features:
 - Graceful rejection when budget exceeded
 """
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional, Tuple
@@ -22,6 +23,9 @@ from app.models import Project
 from app.core.db import engine
 
 logger = logging.getLogger(__name__)
+
+# Global locks for thread-safe budget operations per project
+_budget_locks: Dict[UUID, asyncio.Lock] = {}
 
 
 @dataclass
@@ -149,6 +153,50 @@ class TokenBudgetManager:
             logger.error(f"Error checking budget for project {project_id}: {e}", exc_info=True)
             # Fail open (allow request) to avoid blocking on errors
             return True, ""
+    
+    async def check_and_reserve(
+        self,
+        project_id: UUID,
+        estimated_tokens: int
+    ) -> Tuple[bool, str]:
+        """Atomic check and reserve tokens (thread-safe).
+        
+        This method uses asyncio.Lock to ensure that concurrent tasks
+        don't exceed the budget due to race conditions.
+        
+        Args:
+            project_id: Project UUID
+            estimated_tokens: Estimated tokens to reserve
+            
+        Returns:
+            Tuple of (allowed, reason)
+        """
+        global _budget_locks
+        
+        # Get or create lock for this project
+        if project_id not in _budget_locks:
+            _budget_locks[project_id] = asyncio.Lock()
+        
+        lock = _budget_locks[project_id]
+        
+        async with lock:
+            allowed, reason = await self.check_budget(project_id, estimated_tokens)
+            
+            if allowed:
+                # Pre-reserve tokens to prevent concurrent over-allocation
+                try:
+                    budget = await self._get_budget(project_id)
+                    budget.used_today += estimated_tokens
+                    budget.used_this_month += estimated_tokens
+                    # Note: We don't persist here - actual usage is recorded later
+                    # This just updates the in-memory cache to block concurrent requests
+                    logger.debug(
+                        f"[BUDGET] Reserved {estimated_tokens:,} tokens for project {project_id}"
+                    )
+                except Exception as e:
+                    logger.error(f"Error reserving tokens: {e}")
+            
+            return allowed, reason
     
     async def record_usage(self, project_id: UUID, tokens_used: int) -> None:
         """Record actual token usage for a project.

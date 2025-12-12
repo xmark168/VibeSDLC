@@ -26,8 +26,8 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.core_nodes import send_message, generate_user_message
 from app.agents.tester.src.utils.token_utils import truncate_to_tokens
 from app.agents.tester.src._llm import (
-    implement_llm, 
-    get_llm_for_skills,
+    implement_llm,
+    get_llm,
     invoke_structured_with_retry,
 )
 from app.agents.tester.src.config import (
@@ -556,8 +556,8 @@ Scan the source code above and list what you found:
         
         logger.info(f"[implement_tests] Step {step_index + 1}: {description[:50]}... (skills: {step_skills})")
         
-        # Adaptive LLM selection based on skills (Developer V2 pattern)
-        step_llm = get_llm_for_skills(step_skills)
+        # Get implement LLM
+        step_llm = get_llm("implement")
         structured_llm = step_llm.with_structured_output(TestFileOutput)
         result = await _invoke_with_retry(
             structured_llm,

@@ -14,7 +14,7 @@ from app.agents.developer_v2.src.schemas import ImplementOutput
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
 from app.agents.developer_v2.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
 from app.agents.developer_v2.src.utils.token_utils import truncate_to_tokens
-from app.agents.developer_v2.src.nodes._llm import get_llm_for_skills
+from app.agents.developer_v2.src.nodes._llm import get_llm
 from app.agents.developer_v2.src.skills import SkillRegistry
 from app.agents.developer_v2.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
 from app.agents.developer_v2.src.utils.story_logger import git_with_retry
@@ -354,7 +354,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         input_text = _format_input_template("implement_step", step_number=current_step + 1, total_steps=len(plan_steps), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files=_build_modified_files_context(state.get("files_modified", [])), related_context=truncate_to_tokens("\n\n".join(context_parts), 4000), feedback_section=feedback, logic_analysis="", legacy_code=legacy_code, debug_logs=state.get("error", "")[:2000] if state.get("error") else "")
         
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
-        response = await get_llm_for_skills(step_skills).ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "implement_code"))
+        response = await get_llm("implement").ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "implement_code"))
         
         # Check for interrupt after LLM call (can be long-running)
         if story_id:
@@ -456,7 +456,7 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
         
         input_text = _format_input_template("implement_step", step_number=step.get("order", 1), total_steps=state.get("total_steps", 1), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files="", related_context="\n\n".join(context_parts), feedback_section="", logic_analysis="", legacy_code=legacy, debug_logs="")
         
-        response = await get_llm_for_skills(step_skills).ainvoke([SystemMessage(content=_build_system_prompt("implement_step", skills_content=skills_content)), HumanMessage(content=input_text)], config=_cfg(state, f"impl_{file_path}"))
+        response = await get_llm("implement").ainvoke([SystemMessage(content=_build_system_prompt("implement_step", skills_content=skills_content)), HumanMessage(content=input_text)], config=_cfg(state, f"impl_{file_path}"))
         output = _parse_implement_output(response.content or "")
         
         if output and file_path:

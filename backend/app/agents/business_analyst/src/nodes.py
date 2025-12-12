@@ -2,12 +2,14 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.language_models import BaseChatModel
 from sqlmodel import Session, func, select
 from sqlalchemy.orm.attributes import flag_modified
+
+from app.agents.core.llm_factory import get_llm, create_llm, MODELS
 
 from .state import BAState
 from .schemas import (
@@ -50,42 +52,28 @@ from app.kafka.event_schemas import AgentEvent
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# LLM CONFIGURATION (Following Developer V2 pattern)
+# LLM CONFIGURATION - Uses centralized llm_factory
+# Token tracking via callback set in base_agent._process_task()
 # =============================================================================
 
-# API configuration - use settings from config.py, fallback to env vars
-ANTHROPIC_API_BASE = settings.ANTHROPIC_API_BASE or os.getenv("ANTHROPIC_API_BASE", "https://api.anthropic.com")
-ANTHROPIC_API_KEY = settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
-
-# Model tiers (like Dev V2)
-MODELS = {
-    "fast": "claude-sonnet-4-5-20250929",      # Intent, simple tasks
-    "default": "claude-sonnet-4-5-20250929",   # PRD, questions
-    "complex": "claude-sonnet-4-5-20250929",   # Stories (can upgrade to opus if needed)
+# Step mappings for BA agent
+BA_STEP_MAP = {
+    "fast": "router",      # Intent, simple tasks
+    "default": "analyze",  # PRD, questions
+    "complex": "implement", # Stories
 }
 
 
-def _get_llm(tier: str = "default", temperature: float = 0.2, timeout: int = 60) -> BaseChatModel:
-    """Get LLM instance by tier. Uses ChatAnthropic for Claude models."""
-    model = MODELS.get(tier, MODELS["default"])
-    
-    kwargs = {
-        "model": model,
-        "temperature": temperature,
-        "max_tokens": 16384,
-        "timeout": timeout,
-        "max_retries": 3,
-        "base_url": ANTHROPIC_API_BASE,
-        "api_key": ANTHROPIC_API_KEY,
-    }
-    
-    return ChatAnthropic(**kwargs)
+def _get_llm(tier: str = "default"):
+    """Get LLM instance by tier. Tokens auto-tracked via LangChain callback."""
+    step = BA_STEP_MAP.get(tier, "analyze")
+    return get_llm(step)
 
 
 # Pre-configured LLM instances
-_fast_llm = _get_llm("fast", temperature=0.1, timeout=30)
-_default_llm = _get_llm("default", temperature=0.2, timeout=90)
-_story_llm = _get_llm("complex", temperature=0.2, timeout=180)
+_fast_llm = _get_llm("fast")
+_default_llm = _get_llm("default")
+_story_llm = _get_llm("complex")
 
 
 async def _invoke_structured(

@@ -168,6 +168,10 @@ class BaseAgent(ABC):
         # Signal handling for cancel/pause (pushed from pool manager)
         self._pending_signals: Dict[str, str] = {}  # story_id -> signal ('cancel', 'pause')
 
+        # Health tracking
+        self._consecutive_failures: int = 0
+        self._last_activity_at: datetime = datetime.now(timezone.utc)
+
         logger.info(
             f"Initialized {self.role_type} agent: {self.name} "
             f"(style: {self.communication_style or 'N/A'}, traits: {', '.join(self.personality_traits[:2]) if self.personality_traits else 'N/A'})"
@@ -1621,6 +1625,10 @@ class BaseAgent(ABC):
             f"with {len(self._execution_events)} events, {self._total_tokens} tokens, {self._llm_call_count} LLM calls"
         )
         
+        # Record tokens to budget (single source of truth)
+        if self._total_tokens > 0 and self.project_id:
+            await self._record_token_usage(self._total_tokens)
+        
         # Reset token counters for next execution
         self._total_tokens = 0
         self._llm_call_count = 0
@@ -1684,29 +1692,66 @@ class BaseAgent(ABC):
 
 
     async def health_check(self) -> dict:
-        """Check if agent is healthy.
+        """Enhanced health check with multiple signals.
         
         Returns:
-            Dict with health status: {"healthy": bool, "reason": str}
+            Dict with health status including severity level:
+            - severity: "ok" | "warning" | "critical"
+            - healthy: bool
+            - reason: str
         """
+        from app.core.config import settings
+        
         try:
-            # Check if consumer is running
+            # 1. Consumer check (critical)
             if not self._consumer:
                 return {
                     "healthy": False,
-                    "reason": "Consumer not started"
+                    "reason": "Consumer not started",
+                    "severity": "critical"
                 }
             
-            # Agent is healthy if it has a consumer
+            # 2. Consecutive failure check (critical)
+            max_failures = settings.AGENT_HEALTH_MAX_CONSECUTIVE_FAILURES
+            if self._consecutive_failures >= max_failures:
+                return {
+                    "healthy": False,
+                    "reason": f"Too many consecutive failures ({self._consecutive_failures})",
+                    "severity": "critical"
+                }
+            
+            # 3. Stale busy check (warning - may recover)
+            if self.state == AgentStatus.busy:
+                stale_timeout = settings.AGENT_HEALTH_STALE_BUSY_TIMEOUT_SECONDS
+                busy_duration = (datetime.now(timezone.utc) - self._last_activity_at).total_seconds()
+                if busy_duration > stale_timeout:
+                    return {
+                        "healthy": False,
+                        "reason": f"Stuck in busy state for {busy_duration:.0f}s",
+                        "severity": "warning"
+                    }
+            
+            # 4. Warning check (degraded but operational)
+            warning_threshold = settings.AGENT_HEALTH_WARNING_THRESHOLD
+            warnings = []
+            if self._consecutive_failures >= warning_threshold:
+                warnings.append(f"consecutive_failures={self._consecutive_failures}")
+            
             return {
                 "healthy": True,
-                "reason": "Consumer running"
+                "reason": "All checks passed",
+                "severity": "ok",
+                "consecutive_failures": self._consecutive_failures,
+                "last_activity": self._last_activity_at.isoformat(),
+                "warnings": warnings if warnings else None
             }
+            
         except Exception as e:
             logger.error(f"[{self.name}] Health check failed: {e}")
             return {
                 "healthy": False,
-                "reason": f"Exception: {str(e)}"
+                "reason": f"Exception: {str(e)}",
+                "severity": "critical"
             }
 
     # ===== Internal Methods =====
@@ -1958,16 +2003,18 @@ class BaseAgent(ABC):
 
             task_failed = False
             try:
+                # Reset token tracking before handle_task
+                from app.agents.core.llm_factory import reset_token_count, get_token_count, get_llm_call_count
+                reset_token_count()
+                
                 # Call agent's implementation
                 result = await self.handle_task(task)
                 
-                # Record actual token usage
-                actual_tokens = self._extract_token_usage(result)
-                if actual_tokens > 0:
-                    await self._record_token_usage(actual_tokens)
+                # Get token counts after task completion
+                self._total_tokens = get_token_count()
+                self._llm_call_count = get_llm_call_count()
                 
-                
-                # Update execution record with success
+                # Update execution record with success (also records tokens to budget)
                 await self._complete_execution_record(result=result, success=True)
                 
                 # Update statistics
@@ -1977,8 +2024,14 @@ class BaseAgent(ABC):
                     # Circuit breaker: record success
                     if self._circuit_breaker:
                         self._circuit_breaker.record_success()
+                    # Health tracking: reset failures on success
+                    self._consecutive_failures = 0
+                    self._last_activity_at = datetime.now(timezone.utc)
                 else:
                     self.failed_executions += 1
+                    # Health tracking: increment failures
+                    self._consecutive_failures += 1
+                    self._last_activity_at = datetime.now(timezone.utc)
                 
                 # Record metrics and check SLA
                 await self._record_execution_metrics(task, result)
@@ -1995,6 +2048,10 @@ class BaseAgent(ABC):
                 # Circuit breaker: record failure
                 if self._circuit_breaker:
                     self._circuit_breaker.record_failure(e)
+                
+                # Health tracking: increment failures on exception
+                self._consecutive_failures += 1
+                self._last_activity_at = datetime.now(timezone.utc)
                 
                 # Emit error status to frontend
                 await self.message_user("error", f"Task failed: {str(e)}", {

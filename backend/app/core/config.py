@@ -190,6 +190,11 @@ class Settings(BaseSettings):
         "business_analyst": {"max_agents": 20, "priority": 1},
     })
 
+    # AGENT HEALTH CHECK SETTINGS
+    AGENT_HEALTH_MAX_CONSECUTIVE_FAILURES: int = 20     # Terminate after 20 consecutive failures
+    AGENT_HEALTH_STALE_BUSY_TIMEOUT_SECONDS: int = 1800 # 30 min busy without activity = stale
+    AGENT_HEALTH_WARNING_THRESHOLD: int = 15            # Log warning after 15 failures
+
     # CIRCUIT BREAKER SETTINGS
     CIRCUIT_BREAKER_ENABLED: bool = True
     CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 3

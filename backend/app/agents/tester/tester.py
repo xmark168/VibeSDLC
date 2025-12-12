@@ -322,7 +322,6 @@ class Tester(BaseAgent):
             self._paused_stories.discard(story_id)
             # Clear any pending signals to prevent memory leak
             self.clear_signal(story_id)
-            
         except Exception as e:
             logger.error(f"[{self.name}] Cleanup error for story {story_id}: {e}")
 
