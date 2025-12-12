@@ -20,7 +20,7 @@ export const Route = createFileRoute("/")({
 const features = [
   {
     icon: <Workflow className="h-4 w-4 text-primary" />,
-    title: "Lean Kanban Workflow",
+    title: "Kanban Workflow",
     description: "Manage tasks using Kanban model with WIP limits, helping teams focus and avoid overload.",
     area: "md:[grid-area:1/1/2/7] xl:[grid-area:1/1/2/5]",
   },
@@ -265,7 +265,7 @@ function RouteComponent() {
               },
             }}
             title="VibeSDLC - Vibe coding with AI Agents"
-            description="Intelligent multi-agent system with Lean Kanban workflow. Team Leader, Developer, Business Analyst and Tester - ready to support you throughout the entire software development lifecycle."
+            description="Intelligent multi-agent system with Kanban workflow. Team Leader, Developer, Business Analyst and Tester - ready to support you throughout the entire software development lifecycle."
             actions={[
               {
                 text: "Get started",
@@ -292,7 +292,7 @@ function RouteComponent() {
                   Meet the AI Agents Team
                 </h2>
                 <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                  4 specialized AI agents, working seamlessly with Lean Kanban model
+                  4 specialized AI agents, working seamlessly with Kanban model
                   to take your project from idea to finished product.
                 </p>
               </div>

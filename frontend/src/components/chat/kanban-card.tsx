@@ -96,8 +96,7 @@ function KanbanCardComponent({
   const canDrag = !card.agent_state || card.agent_state === 'FINISHED' || card.agent_state === 'CANCELED'
   const isAgentRunning = card.agent_state === 'PENDING' || card.agent_state === 'PROCESSING'
 
-  // Get type badge color - Modern & Minimal: More subtle colors
-  // Lean Kanban: Only UserStory and EnablerStory on board
+  // Get type badge color - Only UserStory and EnablerStory on board
   const getTypeBadgeColor = (type?: string) => {
     const normalizedType = type?.toUpperCase()
     switch (normalizedType) {

@@ -809,7 +809,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     })
   }
 
-  // Get type badge color - Lean Kanban: UserStory, EnablerStory on board; Epic as parent
+  // Get type badge color - UserStory, EnablerStory on board; Epic as parent
   const getTypeBadgeColor = (type?: string) => {
     const normalizedType = type?.toUpperCase()
     switch (normalizedType) {
