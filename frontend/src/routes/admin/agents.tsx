@@ -93,11 +93,14 @@ import {
   ShieldAlert,
   Ban,
   Settings,
+  Shield,
+  Timer,
+  Thermometer,
 } from "lucide-react"
 import { toast } from "@/lib/toast"
 import { formatDistanceToNow } from "date-fns"
 import { MetricCard } from "@/components/admin"
-import { PersonasTab, ActivityTab, AgentConfigDialog, BulkActionsToolbar, SpawnAgentDialog } from "@/components/admin/agents"
+import { PersonasTab, ActivityTab, AgentConfigDialog, BulkActionsToolbar, SpawnAgentDialog, CircuitBreakerTab, SLAMonitoringTab, WarmPoolTab } from "@/components/admin/agents"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AdminLayout } from "@/components/admin/AdminLayout"
 
@@ -145,7 +148,7 @@ function AgentAdminPage() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-9">
           <TabsTrigger value="pools">
             <Server className="w-4 h-4 mr-2" />
             Pools
@@ -169,6 +172,18 @@ function AgentAdminPage() {
           <TabsTrigger value="executions">
             <History className="w-4 h-4 mr-2" />
             Executions
+          </TabsTrigger>
+          <TabsTrigger value="circuit-breaker">
+            <Shield className="w-4 h-4 mr-2" />
+            Circuit Breaker
+          </TabsTrigger>
+          <TabsTrigger value="sla">
+            <Timer className="w-4 h-4 mr-2" />
+            SLA
+          </TabsTrigger>
+          <TabsTrigger value="warm-pool">
+            <Thermometer className="w-4 h-4 mr-2" />
+            Warm Pool
           </TabsTrigger>
         </TabsList>
 
@@ -194,6 +209,18 @@ function AgentAdminPage() {
 
         <TabsContent value="executions" className="mt-6">
           <ExecutionsTab executions={executions || []} isLoading={executionsLoading} />
+        </TabsContent>
+
+        <TabsContent value="circuit-breaker" className="mt-6">
+          <CircuitBreakerTab />
+        </TabsContent>
+
+        <TabsContent value="sla" className="mt-6">
+          <SLAMonitoringTab />
+        </TabsContent>
+
+        <TabsContent value="warm-pool" className="mt-6">
+          <WarmPoolTab />
         </TabsContent>
       </Tabs>
     </div>

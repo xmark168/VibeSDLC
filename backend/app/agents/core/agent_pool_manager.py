@@ -192,6 +192,12 @@ class AgentPoolManager:
                     heartbeat_interval=heartbeat_interval,
                     max_idle_time=max_idle_time,
                 )
+                
+                # 4.5. Attach circuit breaker
+                from app.agents.core.circuit_breaker import get_circuit_breaker_manager
+                cb_manager = get_circuit_breaker_manager()
+                circuit_breaker = cb_manager.get_or_create(agent_id)
+                agent.set_circuit_breaker(circuit_breaker)
 
                 # 5. Start agent (starts Kafka consumer for handling tasks)
                 if await agent.start():
@@ -249,6 +255,11 @@ class AgentPoolManager:
             # 2. Remove from memory
             del self.agents[agent_id]
             self.total_terminated += 1
+            
+            # 2.5. Remove circuit breaker
+            from app.agents.core.circuit_breaker import get_circuit_breaker_manager
+            cb_manager = get_circuit_breaker_manager()
+            cb_manager.remove(agent_id)
 
             # 3. Update DB status and pool counters
             with Session(engine) as db_session:

@@ -792,3 +792,109 @@ export function useDuplicateTemplate() {
     },
   })
 }
+
+// ===== Circuit Breaker Queries =====
+
+export const circuitBreakerQueryKeys = {
+  all: ["circuit-breakers"] as const,
+  list: () => [...circuitBreakerQueryKeys.all, "list"] as const,
+  summary: () => [...circuitBreakerQueryKeys.all, "summary"] as const,
+}
+
+export function useCircuitBreakers(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: circuitBreakerQueryKeys.list(),
+    queryFn: () => agentsApi.getCircuitBreakers(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 10000,
+    staleTime: 5000,
+  })
+}
+
+export function useCircuitBreakerSummary(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: circuitBreakerQueryKeys.summary(),
+    queryFn: () => agentsApi.getCircuitBreakerSummary(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 10000,
+    staleTime: 5000,
+  })
+}
+
+export function useResetAllCircuitBreakers() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => agentsApi.resetAllCircuitBreakers(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: circuitBreakerQueryKeys.all })
+    },
+  })
+}
+
+// ===== SLA Monitoring Queries =====
+
+export const slaQueryKeys = {
+  all: ["sla"] as const,
+  stats: () => [...slaQueryKeys.all, "stats"] as const,
+  summary: () => [...slaQueryKeys.all, "summary"] as const,
+}
+
+export function useSLAStats(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: slaQueryKeys.stats(),
+    queryFn: () => agentsApi.getSLAStats(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 30000,
+    staleTime: 10000,
+  })
+}
+
+export function useSLASummary(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: slaQueryKeys.summary(),
+    queryFn: () => agentsApi.getSLASummary(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 30000,
+    staleTime: 10000,
+  })
+}
+
+// ===== Warm Pool Queries =====
+
+export const warmPoolQueryKeys = {
+  all: ["warm-pool"] as const,
+  status: () => [...warmPoolQueryKeys.all, "status"] as const,
+}
+
+export function useWarmPoolStatus(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: warmPoolQueryKeys.status(),
+    queryFn: () => agentsApi.getWarmPoolStatus(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 10000,
+    staleTime: 5000,
+  })
+}
+
+export function useStartWarmPool() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => agentsApi.startWarmPool(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: warmPoolQueryKeys.all })
+    },
+  })
+}
+
+export function useStopWarmPool() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => agentsApi.stopWarmPool(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: warmPoolQueryKeys.all })
+    },
+  })
+}

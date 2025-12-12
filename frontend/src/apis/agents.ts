@@ -580,6 +580,123 @@ export const agentsApi = {
       query: { limit },
     })
   },
+
+  // ===== Circuit Breaker =====
+  getCircuitBreakers: async (): Promise<CircuitBreakerStatus[]> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agent-management/circuit-breakers",
+    })
+  },
+
+  getCircuitBreakerSummary: async (): Promise<CircuitBreakerSummary> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agent-management/circuit-breakers/summary",
+    })
+  },
+
+  resetAllCircuitBreakers: async (): Promise<{ message: string; reset_count: number }> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agent-management/circuit-breakers/reset-all",
+    })
+  },
+
+  // ===== SLA Monitoring =====
+  getSLAStats: async (): Promise<SLAStats> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agent-management/sla/stats",
+    })
+  },
+
+  getSLASummary: async (): Promise<SLASummary> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agent-management/sla/summary",
+    })
+  },
+
+  // ===== Warm Pool =====
+  getWarmPoolStatus: async (): Promise<WarmPoolStatus> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: "/api/v1/agent-management/warm-pool/status",
+    })
+  },
+
+  startWarmPool: async (): Promise<{ message: string; status: string }> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agent-management/warm-pool/start",
+    })
+  },
+
+  stopWarmPool: async (): Promise<{ message: string; status: string }> => {
+    return __request(OpenAPI, {
+      method: "POST",
+      url: "/api/v1/agent-management/warm-pool/stop",
+    })
+  },
+}
+
+// Circuit Breaker Types
+export interface CircuitBreakerStatus {
+  agent_id: string
+  state: "closed" | "open" | "half_open"
+  failure_count: number
+  success_count: number
+  total_failures: number
+  total_opens: number
+  last_failure_time: string | null
+  last_state_change: string
+  time_in_state_seconds: number
+}
+
+export interface CircuitBreakerSummary {
+  total_breakers: number
+  closed: number
+  open: number
+  half_open: number
+  total_failures: number
+  total_opens: number
+  health_percentage: number
+}
+
+// SLA Types
+export interface SLAStats {
+  total_checks: number
+  total_violations: number
+  stored_violations: number
+  unacknowledged_violations: number
+  critical_unacknowledged: number
+  violation_rate: number
+  violations_by_task_type: Record<string, number>
+  configured_task_types: string[]
+}
+
+export interface SLASummary {
+  health_status: "healthy" | "degraded" | "critical"
+  stats: SLAStats
+  recent_violations: Record<string, unknown>
+  top_violators: Array<{ agent_id: string; count: number }>
+}
+
+// Warm Pool Types
+export interface WarmPoolStatus {
+  enabled: boolean
+  running: boolean
+  check_interval: number
+  min_agents_config: Record<string, number>
+  current_idle_counts: Record<string, number>
+  total_spawned: number
+  spawn_failures: number
+  last_check: string | null
+  health_percentage: number
+  total_required: number
+  total_available: number
+  deficit: number
 }
 
 // Agent Activity Response Type

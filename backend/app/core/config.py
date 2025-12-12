@@ -190,6 +190,36 @@ class Settings(BaseSettings):
         "business_analyst": {"max_agents": 20, "priority": 1},
     })
 
+    # CIRCUIT BREAKER SETTINGS
+    CIRCUIT_BREAKER_ENABLED: bool = True
+    CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = 3
+    CIRCUIT_BREAKER_RECOVERY_TIMEOUT: int = 60
+    CIRCUIT_BREAKER_HALF_OPEN_MAX_CALLS: int = 2
+
+    # WARM POOL SETTINGS
+    WARM_POOL_ENABLED: bool = True
+    WARM_POOL_CHECK_INTERVAL: int = 30
+    WARM_POOL_MIN_AGENTS: dict = Field(default_factory=lambda: {
+        "team_leader": 1,
+        "developer": 2,
+        "tester": 1,
+        "business_analyst": 1,
+    })
+
+    # METRICS SETTINGS
+    METRICS_FLUSH_INTERVAL: int = 10
+    METRICS_BUFFER_SIZE: int = 100
+
+    # SLA SETTINGS
+    SLA_CONFIG: dict = Field(default_factory=lambda: {
+        "MESSAGE": {"p50_ms": 5000, "p95_ms": 10000, "p99_ms": 30000},
+        "ANALYZE_REQUIREMENTS": {"p50_ms": 30000, "p95_ms": 60000, "p99_ms": 120000},
+        "CREATE_STORIES": {"p50_ms": 60000, "p95_ms": 120000, "p99_ms": 180000},
+        "IMPLEMENT_STORY": {"p50_ms": 180000, "p95_ms": 300000, "p99_ms": 600000},
+        "WRITE_TESTS": {"p50_ms": 120000, "p95_ms": 180000, "p99_ms": 360000},
+        "CODE_REVIEW": {"p50_ms": 60000, "p95_ms": 120000, "p99_ms": 180000},
+    })
+
     # PAYOS PAYMENT GATEWAY SETTINGS
     PAYOS_CLIENT_ID: str = ""
     PAYOS_API_KEY: str = ""
