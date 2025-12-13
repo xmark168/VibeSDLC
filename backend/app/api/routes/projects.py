@@ -866,27 +866,35 @@ async def start_project_dev_server(
             else:
                 logger.warning(f"Prisma generate failed: {generate_result.stderr}")
             
-            # Run seed if exists
+            # Run seed if exists and generate succeeded (same command as run_code.py)
             seed_file = workspace_path / "prisma" / "seed.ts"
             seed_file_js = workspace_path / "prisma" / "seed.js"
-            if seed_file.exists() or seed_file_js.exists():
+            if generate_result.returncode == 0 and (seed_file.exists() or seed_file_js.exists()):
                 await broadcast_log("Seeding database...", "running")
-                logger.info("Running Prisma db seed...")
+                logger.info("Running database seed...")
+                
+                # Use same command as run_code.py
+                if seed_file.exists():
+                    seed_cmd = 'pnpm exec ts-node --compiler-options {"module":"CommonJS"} prisma/seed.ts'
+                else:
+                    seed_cmd = "node prisma/seed.js"
+                
                 seed_result = await asyncio.to_thread(
                     subprocess.run,
-                    "pnpm prisma db seed" if is_windows else ["pnpm", "prisma", "db", "seed"],
+                    seed_cmd,
                     cwd=str(workspace_path),
-                    shell=is_windows,
+                    shell=True,
                     capture_output=True,
                     text=True,
-                    timeout=60,
+                    timeout=120,
                 )
                 if seed_result.returncode == 0:
                     await broadcast_log("Database seeded", "success")
-                    logger.info("Prisma db seed completed")
+                    logger.info(f"Database seed completed: {seed_result.stdout}")
                 else:
-                    await broadcast_log("Database seed had issues", "error")
-                    logger.warning(f"Prisma db seed failed: {seed_result.stderr}")
+                    error_msg = seed_result.stderr or seed_result.stdout or "Unknown error"
+                    await broadcast_log(f"Database seed failed", "error")
+                    logger.warning(f"Database seed failed: {error_msg}")
         except Exception as e:
             await broadcast_log(f"Prisma setup failed", "error")
             logger.warning(f"Prisma setup failed: {e}")
@@ -1187,3 +1195,86 @@ async def get_project_logs(
         })
     
     return {"logs": logs, "total": len(logs)}
+
+
+@router.post("/{project_id}/dev-server/seed")
+async def seed_project_database(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    project_id: UUID
+) -> Any:
+    """Manually run database seed for project (same as run_code)."""
+    import subprocess
+    import sys
+    
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not project.project_path:
+        raise HTTPException(status_code=400, detail="Project has no workspace")
+    
+    workspace_path = _get_workspace_path(project.project_path)
+    if not workspace_path.exists():
+        raise HTTPException(status_code=400, detail="Workspace not found")
+    
+    seed_file = workspace_path / "prisma" / "seed.ts"
+    seed_file_js = workspace_path / "prisma" / "seed.js"
+    
+    if not seed_file.exists() and not seed_file_js.exists():
+        raise HTTPException(status_code=400, detail="No seed file found (prisma/seed.ts or prisma/seed.js)")
+    
+    is_windows = sys.platform == "win32"
+    
+    # Use same command as run_code.py
+    if seed_file.exists():
+        seed_cmd = 'pnpm exec ts-node --compiler-options {"module":"CommonJS"} prisma/seed.ts'
+    else:
+        seed_cmd = "node prisma/seed.js"
+    
+    # Broadcast start
+    from app.websocket.connection_manager import connection_manager
+    await connection_manager.broadcast_to_project({
+        "type": "dev_server_log",
+        "project_id": str(project_id),
+        "message": "Running database seed...",
+        "status": "running",
+    }, project_id)
+    
+    try:
+        seed_result = await asyncio.to_thread(
+            subprocess.run,
+            seed_cmd,
+            cwd=str(workspace_path),
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        
+        if seed_result.returncode == 0:
+            await connection_manager.broadcast_to_project({
+                "type": "dev_server_log",
+                "project_id": str(project_id),
+                "message": "Database seeded successfully",
+                "status": "success",
+            }, project_id)
+            return {"success": True, "message": "Database seeded", "output": seed_result.stdout}
+        else:
+            error_msg = seed_result.stderr or seed_result.stdout or "Unknown error"
+            await connection_manager.broadcast_to_project({
+                "type": "dev_server_log",
+                "project_id": str(project_id),
+                "message": f"Seed failed: {error_msg[:200]}",
+                "status": "error",
+            }, project_id)
+            raise HTTPException(status_code=500, detail=f"Seed failed: {error_msg}")
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=500, detail="Seed timeout after 120s")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

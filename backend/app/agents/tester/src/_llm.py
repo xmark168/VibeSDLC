@@ -1,7 +1,5 @@
-"""LLM instances for Tester agent.
-
-Re-exports from centralized llm_factory.
-Token tracking is automatic via LangChain callback in factory.
+"""
+LLM instances for Tester agent.
 """
 import asyncio
 import logging
