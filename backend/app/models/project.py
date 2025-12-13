@@ -51,6 +51,10 @@ class Project(BaseModel, table=True):
     dev_server_port: int | None = Field(default=None)
     dev_server_pid: int | None = Field(default=None)
     
+    # Database container state (for preview)
+    db_container_id: str | None = Field(default=None, max_length=100)
+    db_port: int | None = Field(default=None)
+    
     owner: "User" = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",
@@ -77,19 +81,6 @@ class Project(BaseModel, table=True):
         back_populates="project",
         sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"}
     )
-
-
-class WorkflowPolicy(BaseModel, table=True):
-    __tablename__ = "workflow_policies"
-
-    project_id: UUID = Field(foreign_key="projects.id", nullable=False, ondelete="CASCADE", index=True)
-    from_status: str = Field(max_length=50, nullable=False)
-    to_status: str = Field(max_length=50, nullable=False)
-    criteria: dict | None = Field(default=None, sa_column=Column(JSON))
-    required_role: str | None = Field(default=None, max_length=50)
-    is_active: bool = Field(default=True, nullable=False)
-
-    project: "Project" = Relationship()
 
 
 class ProjectRules(BaseModel, table=True):

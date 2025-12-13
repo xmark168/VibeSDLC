@@ -1,15 +1,9 @@
-"""
-WebSocket Chat API
-
-Real-time chat endpoint for project communication
-"""
-
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException, Depends
+"""WebSocket Chat API."""
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from uuid import UUID
 import logging
 import json
 from datetime import datetime, timezone
-
 from app.websocket.connection_manager import connection_manager
 from app.core.security import decode_access_token
 from app.models import User, Message as MessageModel, Project, AuthorType, MessageVisibility
@@ -17,7 +11,6 @@ from app.kafka import get_kafka_producer, KafkaTopics, UserMessageEvent
 from sqlmodel import select
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 

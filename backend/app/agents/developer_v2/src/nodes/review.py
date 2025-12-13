@@ -3,7 +3,7 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.nodes._llm import review_llm
+from app.agents.developer_v2.src.nodes._llm import get_llm
 from app.agents.developer_v2.src.schemas import SimpleReviewOutput
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
 from app.agents.developer_v2.src.utils.prompt_utils import (
@@ -119,7 +119,7 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
             HumanMessage(content=input_text)
         ]
         
-        structured_llm = review_llm.with_structured_output(SimpleReviewOutput)
+        structured_llm = get_llm("review").with_structured_output(SimpleReviewOutput)
         result = await structured_llm.ainvoke(messages, config=_cfg(state, "review"))
         flush_langfuse(state)
         review_result = result.model_dump()
@@ -167,7 +167,6 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
         }
         
     except Exception as e:
-        # Re-raise GraphInterrupt - it's expected for pause/cancel
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise
@@ -179,14 +178,12 @@ def route_after_review(state: DeveloperState) -> str:
     """Route based on review result."""
     review_result = state.get("review_result", "LGTM")
     
-    # If LBTM, go back to implement (per-step limit enforced in review node)
     if review_result == "LBTM":
         return "implement"
     
-    # LGTM - check if more steps
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
     
     if current_step >= total_steps:
         return "summarize"
-    return "implement"  # Changed from "next_step" to "implement"
+    return "implement" 

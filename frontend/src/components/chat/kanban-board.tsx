@@ -1,6 +1,6 @@
 import type React from "react"
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
-import { Settings, Activity, TrendingUp, Search, Filter, X, Plus, BarChart3 } from "lucide-react"
+import { Search, Filter, X, Plus } from "lucide-react"
 import {
   DndContext,
   DragOverlay,
@@ -22,25 +22,13 @@ import {
   useSortable,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TaskDetailModal } from "./task-detail-modal"
-import { FlowMetricsDashboard } from "./flow-metrics-dashboard"
-import { PolicyValidationDialog, type PolicyViolation } from "./policy-validation-dialog"
-import { PolicySettingsDialog } from "./policy-settings-dialog"
-import { AgingItemsAlert } from "./aging-items-alert"
-import { BottleneckAlert } from "./bottleneck-alert"
-import { CumulativeFlowDiagram } from "./cumulative-flow-diagram"
 import { KanbanCard, type KanbanCardData } from "./kanban-card"
 import { CreateStoryDialog, type StoryFormData, type StoryEditData } from "./create-story-dialog"
 import { useKanbanBoard } from "@/queries/backlog-items"
-import { backlogItemsApi } from "@/apis/backlog-items"
 import { storiesApi } from "@/apis/stories"
 import { toast } from "@/lib/toast"
 import { useQueryClient } from "@tanstack/react-query"
@@ -223,13 +211,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   // Track last updated container to prevent redundant updates
   const lastOverContainerRef = useRef<string | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
-  const [showFlowMetrics, setShowFlowMetrics] = useState(false)
-  const [showPolicySettings, setShowPolicySettings] = useState(false)
-  const [showCFD, setShowCFD] = useState(false)
   const [showCreateStoryDialog, setShowCreateStoryDialog] = useState(false)
   const [editingStory, setEditingStory] = useState<StoryEditData | null>(null)
-  const [policyViolation, setPolicyViolation] = useState<PolicyViolation | null>(null)
-  const [flowMetrics, setFlowMetrics] = useState<any>(null)
   const [wipLimits, setWipLimits] = useState<Record<string, any>>({})
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
@@ -249,25 +232,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
-
-  // Load flow metrics - disabled auto-load, only load when user opens metrics dashboard
-  // useEffect(() => {
-  //   if (projectId) {
-  //     loadFlowMetrics()
-  //     const interval = setInterval(loadFlowMetrics, 5 * 60 * 1000)
-  //     return () => clearInterval(interval)
-  //   }
-  // }, [projectId])
-
-  const loadFlowMetrics = async () => {
-    if (!projectId) return
-    try {
-      const metrics = await backlogItemsApi.getFlowMetrics(projectId, 30)
-      setFlowMetrics(metrics)
-    } catch (error) {
-      console.error('Failed to load flow metrics:', error)
-    }
-  }
 
   // Load data from database
   useEffect(() => {
@@ -647,7 +611,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
             await storiesApi.bulkUpdateRanks(rankUpdates)
             toast.success("Order updated")
           } catch (error) {
-            console.error("Failed to update rank:", error)
             toast.error("Failed to update order")
           }
         }
@@ -843,7 +806,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       }])
       toast.success("Story created successfully!")
     } catch (error) {
-      console.error("Error creating story:", error)
       toast.error("Failed to create story")
     } finally {
       toast.dismiss(toastId)
@@ -895,7 +857,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
         queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
       }
     } catch (error) {
-      console.error("Error updating story:", error)
       toast.error("Failed to update story")
     } finally {
       toast.dismiss(toastId)
@@ -908,7 +869,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       await storiesApi.delete(cardId)
       toast.success("Story deleted")
     } catch (error) {
-      console.error("Failed to delete story:", error)
       toast.error("Failed to delete story")
       if (projectId) {
         queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
@@ -977,7 +937,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       }
       await storiesApi.updateStatus(cardId, statusMap[targetColumnId] || 'Todo')
     } catch (error) {
-      console.error("Failed to move card:", error)
       setCards(prev => prev.map(c =>
         c.id === cardId ? { ...c, columnId: card.columnId } : c
       ))
@@ -1022,25 +981,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
                   <Plus className="w-4 h-4" />
                   <span className="font-medium">Create Story</span>
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-2 h-9 px-3.5 rounded-lg">
-                      <BarChart3 className="w-4 h-4" />
-                      <span className="font-medium">Analytics</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setShowCFD(true)}>
-                      <TrendingUp className="w-4 h-4 mr-2" /> CFD
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setShowFlowMetrics(true)}>
-                      <Activity className="w-4 h-4 mr-2" /> Metrics
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setShowPolicySettings(true)}>
-                      <Settings className="w-4 h-4 mr-2" /> WIP Limits
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
               </div>
             )}
           </div>
@@ -1110,20 +1050,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
         {/* Kanban Board with DnD */}
         <div ref={scrollContainerRef} className="flex-1 overflow-x-auto overflow-y-auto" style={{ scrollBehavior: "smooth" }}>
-          {projectId && flowMetrics && (
-            <div className="px-8 pt-4 space-y-3">
-              <AgingItemsAlert
-                projectId={projectId}
-                agingItems={flowMetrics.aging_items || []}
-                onCardClick={(itemId) => {
-                  const card = cards.find(c => c.taskId === itemId || c.id === itemId)
-                  if (card) setSelectedCard(card)
-                }}
-              />
-              <BottleneckAlert bottlenecks={flowMetrics.bottlenecks || {}} threshold={48} />
-            </div>
-          )}
-
           <DndContext
             sensors={sensors}
             collisionDetection={closestCorners}
@@ -1178,11 +1104,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
         allStories={cards}
         onViewFiles={onViewFiles}
       />
-
-      <FlowMetricsDashboard projectId={projectId} open={showFlowMetrics} onOpenChange={setShowFlowMetrics} />
-      <PolicyValidationDialog violation={policyViolation} cardTitle={activeCard?.content} open={!!policyViolation} onOpenChange={(open) => !open && setPolicyViolation(null)} />
-      <PolicySettingsDialog projectId={projectId} open={showPolicySettings} onOpenChange={setShowPolicySettings} />
-      <CumulativeFlowDiagram projectId={projectId} open={showCFD} onOpenChange={setShowCFD} />
 
       <CreateStoryDialog
         open={showCreateStoryDialog}

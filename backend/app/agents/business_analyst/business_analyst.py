@@ -234,7 +234,12 @@ class BusinessAnalyst(BaseAgent):
         """Handle task using LangGraph.
         
         Note: Langfuse tracing is automatically handled by BaseAgent.
+        Token tracking is handled via callback in BaseAgent._process_task().
         """
+        return await self._handle_task_internal(task)
+    
+    async def _handle_task_internal(self, task: TaskContext) -> TaskResult:
+        """Internal task handling logic."""
         # Check if this is a resume task (user answered a question)
         is_resume = task.task_type == AgentTaskType.RESUME_WITH_ANSWER
         

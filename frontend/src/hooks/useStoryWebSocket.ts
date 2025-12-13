@@ -89,13 +89,10 @@ export function useStoryWebSocket(
       share: true,
       retryOnError: true,
       onReconnectStop: (numAttempts) => {
-        console.warn(`[WebSocket] Reconnection stopped after ${numAttempts} attempts for story ${storyIdRef.current}`)
       },
       onOpen: () => {
-        console.log(`[WebSocket] Connected for story ${storyIdRef.current}`)
       },
       onClose: (event) => {
-        console.log(`[WebSocket] Closed (code: ${event.code}) for story ${storyIdRef.current}`)
       },
     },
     !!socketUrl

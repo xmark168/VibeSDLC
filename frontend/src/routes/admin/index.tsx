@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { requireRole } from "@/utils/auth"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, Server, Settings, Activity, CreditCard, Layers } from "lucide-react"
+import { Users, Server, Settings, Activity, CreditCard, Layers, UserCircle } from "lucide-react"
 import { AdminLayout } from "@/components/admin/AdminLayout"
 
 export const Route = createFileRoute("/admin/")({
@@ -122,6 +122,32 @@ function RouteComponent() {
                 <li>• Define stack configurations</li>
                 <li>• Manage skill files with Monaco editor</li>
                 <li>• Organize stack templates</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link to="/admin/personas">
+          <Card className="hover:bg-accent/50 transition-colors cursor-pointer">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <UserCircle className="w-6 h-6 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Persona Management</CardTitle>
+                  <CardDescription>
+                    Manage agent personality templates
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• Create and edit personas</li>
+                <li>• Configure personality traits</li>
+                <li>• Set communication styles</li>
+                <li>• Track persona usage stats</li>
               </ul>
             </CardContent>
           </Card>

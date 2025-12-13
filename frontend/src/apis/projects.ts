@@ -44,4 +44,24 @@ export const projectsApi = {
       body,
     })
   },
+  getLogs: async (projectId: string, params?: { limit?: number; level?: string }): Promise<{
+    logs: Array<{
+      id: string
+      timestamp: string
+      agent: string
+      agentRole: string
+      type: string
+      action: string
+      message: string
+      details: string
+      story_id: string
+    }>
+    total: number
+  }> => {
+    return __request(OpenAPI, {
+      method: "GET",
+      url: `/api/v1/projects/${projectId}/logs`,
+      query: { limit: params?.limit || 100, level: params?.level },
+    })
+  },
 }

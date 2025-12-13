@@ -1,20 +1,16 @@
-"""File management endpoints for project files."""
-
+"""Project files API."""
 import logging
 import os
 from pathlib import Path
 from typing import Any, Optional, Dict
 from uuid import UUID
-
 from fastapi import APIRouter, HTTPException, Query, status
-
 from app.api.deps import CurrentUser, SessionDep
 from app.services import ProjectService
 from app.models import Role
 from app.schemas import FileNode, FileTreeResponse, FileContentResponse, GitStatusResponse
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/projects/{project_id}/files", tags=["files"])
 
 

@@ -80,24 +80,6 @@ export interface UpdateWIPLimitParams {
   limit_type: 'hard' | 'soft'
 }
 
-export interface FlowMetrics {
-  avg_cycle_time_hours: number | null
-  avg_lead_time_hours: number | null
-  throughput_per_week: number
-  total_completed: number
-  work_in_progress: number
-  aging_items: Array<{
-    id: string
-    title: string
-    status: string
-    age_hours: number
-  }>
-  bottlenecks: Record<string, {
-    avg_age_hours: number
-    count: number
-  }>
-}
-
 export interface StoryFormData {
   title: string
   description: string

@@ -16,6 +16,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminStacksRouteImport } from './routes/admin/stacks'
 import { Route as AdminPlansRouteImport } from './routes/admin/plans'
+import { Route as AdminPersonasRouteImport } from './routes/admin/personas'
 import { Route as AdminAgentsRouteImport } from './routes/admin/agents'
 import { Route as UserUpgradeRouteImport } from './routes/_user/upgrade'
 import { Route as UserProjectsRouteImport } from './routes/_user/projects'
@@ -62,6 +63,11 @@ const AdminStacksRoute = AdminStacksRouteImport.update({
 const AdminPlansRoute = AdminPlansRouteImport.update({
   id: '/admin/plans',
   path: '/admin/plans',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminPersonasRoute = AdminPersonasRouteImport.update({
+  id: '/admin/personas',
+  path: '/admin/personas',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminAgentsRoute = AdminAgentsRouteImport.update({
@@ -150,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/projects': typeof UserProjectsRoute
   '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
+  '/admin/personas': typeof AdminPersonasRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/stacks': typeof AdminStacksRoute
   '/admin/users': typeof AdminUsersRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByTo {
   '/projects': typeof UserProjectsRoute
   '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
+  '/admin/personas': typeof AdminPersonasRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/stacks': typeof AdminStacksRoute
   '/admin/users': typeof AdminUsersRoute
@@ -195,6 +203,7 @@ export interface FileRoutesById {
   '/_user/projects': typeof UserProjectsRoute
   '/_user/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
+  '/admin/personas': typeof AdminPersonasRoute
   '/admin/plans': typeof AdminPlansRoute
   '/admin/stacks': typeof AdminStacksRoute
   '/admin/users': typeof AdminUsersRoute
@@ -218,6 +227,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/upgrade'
     | '/admin/agents'
+    | '/admin/personas'
     | '/admin/plans'
     | '/admin/stacks'
     | '/admin/users'
@@ -239,6 +249,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/upgrade'
     | '/admin/agents'
+    | '/admin/personas'
     | '/admin/plans'
     | '/admin/stacks'
     | '/admin/users'
@@ -262,6 +273,7 @@ export interface FileRouteTypes {
     | '/_user/projects'
     | '/_user/upgrade'
     | '/admin/agents'
+    | '/admin/personas'
     | '/admin/plans'
     | '/admin/stacks'
     | '/admin/users'
@@ -278,6 +290,7 @@ export interface RootRouteChildren {
   UserProjectsRoute: typeof UserProjectsRoute
   UserUpgradeRoute: typeof UserUpgradeRoute
   AdminAgentsRoute: typeof AdminAgentsRoute
+  AdminPersonasRoute: typeof AdminPersonasRoute
   AdminPlansRoute: typeof AdminPlansRoute
   AdminStacksRoute: typeof AdminStacksRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -335,6 +348,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/plans'
       fullPath: '/admin/plans'
       preLoaderRoute: typeof AdminPlansRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/personas': {
+      id: '/admin/personas'
+      path: '/admin/personas'
+      fullPath: '/admin/personas'
+      preLoaderRoute: typeof AdminPersonasRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/agents': {
@@ -472,6 +492,7 @@ const rootRouteChildren: RootRouteChildren = {
   UserProjectsRoute: UserProjectsRoute,
   UserUpgradeRoute: UserUpgradeRoute,
   AdminAgentsRoute: AdminAgentsRoute,
+  AdminPersonasRoute: AdminPersonasRoute,
   AdminPlansRoute: AdminPlansRoute,
   AdminStacksRoute: AdminStacksRoute,
   AdminUsersRoute: AdminUsersRoute,

@@ -18,7 +18,6 @@ from uuid import UUID, uuid4
 from app.kafka.producer import KafkaProducer, get_kafka_producer
 from app.kafka.event_schemas import (
     AgentEvent,
-    AgentResponseEvent,
     AgentTaskType,
     DelegationRequestEvent,
     KafkaTopics,
@@ -97,6 +96,7 @@ class BaseAgent(ABC):
         """
         self.agent_id = agent_model.id
         self.project_id = agent_model.project_id
+        self.pool_id = agent_model.pool_id  # Pool this agent belongs to
         self.role_type = agent_model.role_type
         self.agent_model = agent_model
         
@@ -119,6 +119,9 @@ class BaseAgent(ABC):
         self.total_executions = 0  # Total tasks completed
         self.successful_executions = 0  # Successful tasks
         self.failed_executions = 0  # Failed tasks
+
+        # Circuit breaker (set by pool manager)
+        self._circuit_breaker = None
 
         # Callbacks (for AgentPool compatibility)
         self.on_state_change = None
@@ -165,6 +168,10 @@ class BaseAgent(ABC):
 
         # Signal handling for cancel/pause (pushed from pool manager)
         self._pending_signals: Dict[str, str] = {}  # story_id -> signal ('cancel', 'pause')
+
+        # Health tracking
+        self._consecutive_failures: int = 0
+        self._last_activity_at: datetime = datetime.now(timezone.utc)
 
         logger.info(
             f"Initialized {self.role_type} agent: {self.name} "
@@ -1571,6 +1578,8 @@ class BaseAgent(ABC):
                 user_id=task.user_id if hasattr(task, 'user_id') else None,
                 task_type=task.task_type.value if hasattr(task, 'task_type') and task.task_type else None,
                 task_content_preview=task.content[:200] if task.content else None,
+                agent_id=self.agent_id,
+                pool_id=self.pool_id,
             )
         
 
@@ -1618,6 +1627,10 @@ class BaseAgent(ABC):
             f"{'completed' if success else 'failed'} in {duration_ms}ms "
             f"with {len(self._execution_events)} events, {self._total_tokens} tokens, {self._llm_call_count} LLM calls"
         )
+        
+        # Record tokens to budget (single source of truth)
+        if self._total_tokens > 0 and self.project_id:
+            await self._record_token_usage(self._total_tokens)
         
         # Reset token counters for next execution
         self._total_tokens = 0
@@ -1682,29 +1695,66 @@ class BaseAgent(ABC):
 
 
     async def health_check(self) -> dict:
-        """Check if agent is healthy.
+        """Enhanced health check with multiple signals.
         
         Returns:
-            Dict with health status: {"healthy": bool, "reason": str}
+            Dict with health status including severity level:
+            - severity: "ok" | "warning" | "critical"
+            - healthy: bool
+            - reason: str
         """
+        from app.core.config import settings
+        
         try:
-            # Check if consumer is running
+            # 1. Consumer check (critical)
             if not self._consumer:
                 return {
                     "healthy": False,
-                    "reason": "Consumer not started"
+                    "reason": "Consumer not started",
+                    "severity": "critical"
                 }
             
-            # Agent is healthy if it has a consumer
+            # 2. Consecutive failure check (critical)
+            max_failures = settings.AGENT_HEALTH_MAX_CONSECUTIVE_FAILURES
+            if self._consecutive_failures >= max_failures:
+                return {
+                    "healthy": False,
+                    "reason": f"Too many consecutive failures ({self._consecutive_failures})",
+                    "severity": "critical"
+                }
+            
+            # 3. Stale busy check (warning - may recover)
+            if self.state == AgentStatus.busy:
+                stale_timeout = settings.AGENT_HEALTH_STALE_BUSY_TIMEOUT_SECONDS
+                busy_duration = (datetime.now(timezone.utc) - self._last_activity_at).total_seconds()
+                if busy_duration > stale_timeout:
+                    return {
+                        "healthy": False,
+                        "reason": f"Stuck in busy state for {busy_duration:.0f}s",
+                        "severity": "warning"
+                    }
+            
+            # 4. Warning check (degraded but operational)
+            warning_threshold = settings.AGENT_HEALTH_WARNING_THRESHOLD
+            warnings = []
+            if self._consecutive_failures >= warning_threshold:
+                warnings.append(f"consecutive_failures={self._consecutive_failures}")
+            
             return {
                 "healthy": True,
-                "reason": "Consumer running"
+                "reason": "All checks passed",
+                "severity": "ok",
+                "consecutive_failures": self._consecutive_failures,
+                "last_activity": self._last_activity_at.isoformat(),
+                "warnings": warnings if warnings else None
             }
+            
         except Exception as e:
             logger.error(f"[{self.name}] Health check failed: {e}")
             return {
                 "healthy": False,
-                "reason": f"Exception: {str(e)}"
+                "reason": f"Exception: {str(e)}",
+                "severity": "critical"
             }
 
     # ===== Internal Methods =====
@@ -1903,6 +1953,27 @@ class BaseAgent(ABC):
             # Update state to busy
             self.state = AgentStatus.busy
             
+            # CHECK CIRCUIT BREAKER BEFORE PROCESSING
+            if self._circuit_breaker and not self._circuit_breaker.can_execute():
+                logger.warning(
+                    f"[{self.name}] Task {task_id} rejected: circuit breaker OPEN"
+                )
+                
+                await self.message_user(
+                    "error",
+                    "Agent is temporarily unavailable due to recent failures. "
+                    "Please try again in a moment.",
+                    {"circuit_breaker_open": True}
+                )
+                
+                await self._complete_execution_record(
+                    error="Circuit breaker open - agent recovering",
+                    success=False
+                )
+                
+                self.state = AgentStatus.idle
+                return
+            
             # CHECK TOKEN BUDGET BEFORE PROCESSING
             estimated_tokens = self._estimate_task_tokens(task)
             budget_allowed, budget_reason = await self._check_token_budget(estimated_tokens)
@@ -1935,24 +2006,38 @@ class BaseAgent(ABC):
 
             task_failed = False
             try:
+                # Reset token tracking before handle_task
+                from app.agents.core.llm_factory import reset_token_count, get_token_count, get_llm_call_count
+                reset_token_count()
+                
                 # Call agent's implementation
                 result = await self.handle_task(task)
                 
-                # Record actual token usage
-                actual_tokens = self._extract_token_usage(result)
-                if actual_tokens > 0:
-                    await self._record_token_usage(actual_tokens)
+                # Get token counts after task completion
+                self._total_tokens = get_token_count()
+                self._llm_call_count = get_llm_call_count()
                 
-                
-                # Update execution record with success
+                # Update execution record with success (also records tokens to budget)
                 await self._complete_execution_record(result=result, success=True)
                 
                 # Update statistics
                 self.total_executions += 1
                 if result.success:
                     self.successful_executions += 1
+                    # Circuit breaker: record success
+                    if self._circuit_breaker:
+                        self._circuit_breaker.record_success()
+                    # Health tracking: reset failures on success
+                    self._consecutive_failures = 0
+                    self._last_activity_at = datetime.now(timezone.utc)
                 else:
                     self.failed_executions += 1
+                    # Health tracking: increment failures
+                    self._consecutive_failures += 1
+                    self._last_activity_at = datetime.now(timezone.utc)
+                
+                # Record metrics and check SLA
+                await self._record_execution_metrics(task, result)
                 
                 # Emit finish signal (commented out to avoid duplicate messages)
                 # if result.success:
@@ -1962,6 +2047,14 @@ class BaseAgent(ABC):
                 
             except Exception as e:
                 task_failed = True
+                
+                # Circuit breaker: record failure
+                if self._circuit_breaker:
+                    self._circuit_breaker.record_failure(e)
+                
+                # Health tracking: increment failures on exception
+                self._consecutive_failures += 1
+                self._last_activity_at = datetime.now(timezone.utc)
                 
                 # Emit error status to frontend
                 await self.message_user("error", f"Task failed: {str(e)}", {
@@ -2129,7 +2222,8 @@ class BaseAgent(ABC):
                 budget_mgr = TokenBudgetManager(session)
                 allowed, reason = await budget_mgr.check_budget(
                     self.project_id,
-                    estimated_tokens
+                    estimated_tokens,
+                    user_id=self._current_user_id
                 )
                 
                 return allowed, reason
@@ -2143,7 +2237,7 @@ class BaseAgent(ABC):
             return True, ""
     
     async def _record_token_usage(self, tokens_used: int) -> None:
-        """Record actual token usage.
+        """Record actual token usage with per-agent tracking and credit deduction.
         
         Args:
             tokens_used: Actual tokens consumed
@@ -2158,13 +2252,99 @@ class BaseAgent(ABC):
             
             with Session(engine) as session:
                 budget_mgr = TokenBudgetManager(session)
-                await budget_mgr.record_usage(self.project_id, tokens_used)
+                await budget_mgr.record_usage(
+                    project_id=self.project_id,
+                    tokens_used=tokens_used,
+                    agent_id=self.agent_id,
+                    user_id=self._current_user_id,
+                    deduct_credits=True
+                )
                 
         except Exception as e:
             logger.error(
                 f"[{self.name}] Error recording token usage: {e}",
                 exc_info=True
             )
+    
+    def set_circuit_breaker(self, circuit_breaker) -> None:
+        """Set circuit breaker for this agent.
+        
+        Called by AgentPoolManager when spawning agent.
+        
+        Args:
+            circuit_breaker: CircuitBreaker instance
+        """
+        self._circuit_breaker = circuit_breaker
+        logger.debug(f"[{self.name}] Circuit breaker attached")
+    
+    async def _record_execution_metrics(
+        self,
+        task: "TaskContext",
+        result: "TaskResult"
+    ) -> None:
+        """Record execution metrics and check SLA.
+        
+        Args:
+            task: Task context
+            result: Task result
+        """
+        if not self._execution_start_time:
+            return
+        
+        duration_ms = int(
+            (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000
+        )
+        
+        try:
+            # Record to metrics collector
+            from app.agents.core.metrics_collector import (
+                get_metrics_collector,
+                ExecutionMetrics,
+            )
+            
+            collector = get_metrics_collector()
+            
+            metrics = ExecutionMetrics(
+                execution_id=self._current_execution_id,
+                agent_id=self.agent_id,
+                agent_type=self.role_type,
+                project_id=self.project_id,
+                started_at=self._execution_start_time,
+                completed_at=datetime.now(timezone.utc),
+                duration_ms=duration_ms,
+                tokens_used=self._total_tokens,
+                llm_calls=self._llm_call_count,
+                success=result.success if result else False,
+                error_type=result.error_message[:50] if result and result.error_message else None,
+                task_type=task.task_type.value if task.task_type else None,
+            )
+            
+            await collector.record_execution(metrics)
+            
+            # Check SLA
+            from app.agents.core.sla_monitor import get_sla_monitor
+            
+            sla_monitor = get_sla_monitor()
+            task_type_str = task.task_type.value if task.task_type else "MESSAGE"
+            
+            violation = await sla_monitor.check_execution(
+                task_type=task_type_str,
+                duration_ms=duration_ms,
+                agent_id=self.agent_id,
+                agent_type=self.role_type,
+                execution_id=self._current_execution_id,
+                project_id=self.project_id,
+            )
+            
+            if violation:
+                logger.warning(
+                    f"[{self.name}] SLA violation: {violation.severity.value} "
+                    f"for {task_type_str} ({duration_ms}ms > {violation.threshold_ms}ms)"
+                )
+                
+        except Exception as e:
+            # Don't fail task if metrics recording fails
+            logger.debug(f"[{self.name}] Metrics recording error: {e}")
 
 
 class AgentTaskConsumer:

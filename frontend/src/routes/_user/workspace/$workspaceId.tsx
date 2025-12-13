@@ -30,19 +30,16 @@ function WorkspacePage() {
   const insertMentionRef = useRef<((agentName: string) => void) | null>(null)
 
   const handleOpenArtifact = (artifactId: string) => {
-    console.log('[Workspace] Opening artifact:', artifactId)
     setSelectedArtifactId(artifactId)
     setActiveTab('file') // Switch to file tab to show artifact viewer
   }
 
   const handleOpenFile = (filePath: string) => {
-    console.log('[Workspace] Opening file:', filePath)
     setSelectedFile(filePath)
     setActiveTab('file') // Switch to file tab
   }
 
   const handleMessageAgent = (agentName: string) => {
-    console.log('[Workspace] Messaging agent:', agentName)
     // Expand chat if collapsed
     if (chatCollapsed) {
       setChatCollapsed(false)

@@ -18,6 +18,24 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Allow embedding in iframe for App Preview
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'SAMEORIGIN',
+          },
+          {
+            key: 'Content-Security-Policy',
+            value: "frame-ancestors 'self' http://localhost:* http://127.0.0.1:*",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -91,7 +91,6 @@ export function StorySuggestionsCard({
       // Pass updated story data to callback for immediate UI update
       onApplied?.(result.story)
     } catch (error) {
-      console.error("Failed to apply suggestions:", error)
       toast.error("Failed to apply suggestion")
     } finally {
       setIsApplying(false)
@@ -104,7 +103,6 @@ export function StorySuggestionsCard({
       setActionTaken('kept')
       onKeep?.()
     } catch (error) {
-      console.error("Failed to keep story:", error)
       toast.error("An error occurred")
     }
   }
@@ -117,7 +115,6 @@ export function StorySuggestionsCard({
       // Pass storyId for removal from UI
       onRemove?.(storyId)
     } catch (error) {
-      console.error("Failed to remove story:", error)
       toast.error("Failed to remove story")
     } finally {
       setIsRemoving(false)

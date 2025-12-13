@@ -1,17 +1,14 @@
+"""Authentication API."""
 import logging
 import random
 import re
 import secrets
 from datetime import timedelta
 from typing import Annotated
-
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-
-logger = logging.getLogger(__name__)
-
 from app.api.deps import CurrentUser, SessionDep
 from app.core import security
 from app.core.config import settings
@@ -19,29 +16,15 @@ from app.core.redis_client import get_redis_client
 from app.core.security import get_password_hash, verify_password
 from app.models import User
 from app.schemas import (
-    ConfirmCodeRequest,
-    ConfirmCodeResponse,
-    ForgotPasswordRequest,
-    ForgotPasswordResponse,
-    LoginRequest,
-    LoginResponse,
-    LogoutResponse,
-    RefreshTokenRequest,
-    RefreshTokenResponse,
-    RegisterRequest,
-    RegisterResponse,
-    ResendCodeRequest,
-    ResendCodeResponse,
-    ResetPasswordRequest,
-    ResetPasswordResponse,
+    ConfirmCodeRequest, ConfirmCodeResponse, ForgotPasswordRequest, ForgotPasswordResponse,
+    LoginRequest, LoginResponse, LogoutResponse, RefreshTokenRequest, RefreshTokenResponse,
+    RegisterRequest, RegisterResponse, ResendCodeRequest, ResendCodeResponse,
+    ResetPasswordRequest, ResetPasswordResponse,
 )
 from app.services import UserService
-from app.utils import (
-    generate_password_reset_email,
-    generate_verification_code_email,
-    send_email,
-)
+from app.utils import generate_password_reset_email, generate_verification_code_email, send_email
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["authentication"])
 
 # Rate limiter

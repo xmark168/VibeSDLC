@@ -91,7 +91,6 @@ export function useChatWebSocket(
       shouldReconnect: (closeEvent) => {
         // Don't reconnect if explicitly closed or auth failed
         if (closeEvent.code === 1000 || closeEvent.code === 1008) {
-          console.log('[WebSocket] Clean close or auth failed - not reconnecting')
           return false
         }
         return true
@@ -102,16 +101,6 @@ export function useChatWebSocket(
       
       share: false,
       retryOnError: true,
-      
-      onOpen: () => {
-        console.log('[WebSocket] ✅ Connected')
-      },
-      onClose: (event) => {
-        console.log('[WebSocket] ❌ Disconnected - Code:', event.code)
-      },
-      onError: (event) => {
-        console.error('[WebSocket] ⚠️ Error:', event)
-      },
     },
     !!socketUrl
   )
@@ -124,35 +113,27 @@ export function useChatWebSocket(
     
     // Validate message
     if (!msg || typeof msg !== 'object' || !msg.type) {
-      console.warn('[WebSocket] Invalid message:', msg)
       return
     }
     
-    console.log('[WebSocket] 📨', msg.type, msg)
     
     switch (msg.type) {
       case 'connected':
-        console.log('[WS] ✅ Server confirmed connection')
         break
       
       case 'messages_updated':
-        // Trigger refetch messages (for file uploads via REST API)
-        console.log('[WS] 🔄 Messages updated, triggering refetch')
         handleMessagesUpdated()
         break
       
       case 'user_message':
-        // Backend confirms user message was saved
         handleUserMessage(msg)
         break
       
       case 'message_delivered':
-        // Router confirms message was routed to agent
         handleMessageDelivered(msg)
         break
       
       case 'error':
-        // Backend error occurred
         handleError(msg)
         break
       
@@ -163,12 +144,7 @@ export function useChatWebSocket(
       case 'agent.messaging.progress':
         handleProgress(msg)
         break
-      
-      case 'agent.messaging.tool_call':
-        // Tool calls ignored - no dialog anymore
-        console.log('[WS] 🔧 Tool call (ignored):', msg.action, msg.state)
-        break
-      
+    
       case 'agent.messaging.response':
         handleResponse(msg)
         break
@@ -198,8 +174,6 @@ export function useChatWebSocket(
         break
       
       case 'agent.resumed_batch':
-        // Similar to agent.resumed, just log it
-        console.log('[WS] ✅ Agent resumed from batch answers:', msg.agent_name)
         break
       
       case 'conversation.ownership_changed':
@@ -238,8 +212,12 @@ export function useChatWebSocket(
         handleProjectDevServer(msg)
         break
       
+      case 'dev_server_log':
+        handleDevServerLog(msg)
+        break
+      
       default:
-        console.warn('[WebSocket] ⚠️ Unknown message type:', msg.type)
+        console.warn('[WebSocket] Unknown message type:', msg.type)
     }
   }, [lastJsonMessage])
   
@@ -248,15 +226,11 @@ export function useChatWebSocket(
   // ========================================================================
   
   const handleMessagesUpdated = () => {
-    // Trigger refetch - component using this hook should react to refetchTrigger
     setRefetchTrigger(prev => prev + 1)
   }
   
   const handleUserMessage = (msg: any) => {
-    console.log('[WS] 📤 User message confirmed:', msg.message_id)
-    
-    // Replace optimistic (temp_xxx) message with real message from backend
-    setMessages(prev => {
+      setMessages(prev => {
       // Find optimistic message by content match
       const optimisticIndex = prev.findIndex(m => 
         m.id.startsWith('temp_') && 
@@ -304,9 +278,7 @@ export function useChatWebSocket(
     })
   }
   
-  const handleMessageDelivered = (msg: any) => {
-    console.log('[WS] ✓✓ Message delivered to agent:', msg.message_id)
-    
+  const handleMessageDelivered = (msg: any) => {    
     // Update message status to 'delivered'
     setMessages(prev => prev.map(m => 
       m.id === msg.message_id 
@@ -316,7 +288,6 @@ export function useChatWebSocket(
   }
   
   const handleError = (msg: any) => {
-    console.error('[WS] ❌ Server error:', msg.message)
     
     // Mark last pending message as failed
     setMessages(prev => {
@@ -334,9 +305,7 @@ export function useChatWebSocket(
   
   const handleStart = (msg: any) => {
     const displayMode = msg.execution_context?.display_mode || 'chat'
-    
-    console.log('[WS] 🚀 Start:', msg.agent_name, msg.content, 'display:', displayMode)
-    
+        
     // Update agent status to busy/working
     if (msg.agent_name) {
       setAgentStatuses(prev => {
@@ -381,9 +350,7 @@ export function useChatWebSocket(
   const handleProgress = (msg: any) => {
     const displayMode = msg.execution_context?.display_mode || 'chat'
     const details = msg.details || {}
-    
-    console.log('[WS] ⏳ Progress:', msg.agent_name, details, 'display:', displayMode)
-    
+        
     // Handle based on display mode
     switch (displayMode) {
       case 'chat':
@@ -437,9 +404,7 @@ export function useChatWebSocket(
   
   const handleResponse = (msg: any) => {
     const displayMode = msg.execution_context?.display_mode || 'chat'
-    
-    console.log('[WS] 💬 Response:', msg.agent_name, 'display:', displayMode)
-    
+        
     // Remove typing indicator for this execution
     setTypingAgents(prev => {
       const updated = new Map(prev)
@@ -485,8 +450,6 @@ export function useChatWebSocket(
   
   const handleFinish = (msg: any) => {
     const displayMode = msg.execution_context?.display_mode || 'chat'
-    
-    console.log('[WS] ✅ Finish:', msg.summary, 'display:', displayMode)
     setAgentStatus('idle')
     
     // Update agent status back to idle
@@ -541,7 +504,6 @@ export function useChatWebSocket(
   }
   
   const handleAgentQuestion = (msg: any) => {
-    console.log('[WS] ❓ Agent question:', msg.agent_name, msg.question)
     
     const questionMessage: Message = {
       id: msg.question_id,
@@ -564,7 +526,6 @@ export function useChatWebSocket(
   }
   
   const handleQuestionBatch = (msg: any) => {
-    console.log('[WS] ❓❓❓ Question batch:', msg.questions?.length, 'questions')
     
     // Create a single message representing the batch
     const batchMessage: Message = {
@@ -588,7 +549,6 @@ export function useChatWebSocket(
   }
   
   const handleBatchAnswersReceived = (msg: any) => {
-    console.log('[WS] ✓✓✓ Batch answers received:', msg.batch_id, msg.answer_count, 'answers')
     
     // Track this batch as answered (for messages from API that won't update via setMessages)
     setAnsweredBatchIds(prev => new Set([...prev, msg.batch_id]))
@@ -611,7 +571,6 @@ export function useChatWebSocket(
   }
   
   const handleOwnershipChanged = (msg: any) => {
-    console.log('[WS] 👑 Ownership changed:', msg.new_agent_name)
     
     setConversationOwner({
       agentId: msg.new_agent_id,
@@ -641,7 +600,6 @@ export function useChatWebSocket(
   }
   
   const handleOwnershipReleased = (msg: any) => {
-    console.log('[WS] ✅ Ownership released:', msg.agent_name)
     
     setConversationOwner(prev => 
       prev?.agentId === msg.agent_id ? null : prev
@@ -649,8 +607,6 @@ export function useChatWebSocket(
   }
   
   const handleStoryTask = (msg: any) => {
-    // Transient task update - dispatch event for Task component (not saved to DB)
-    console.log('[WS] 📋 Story task:', msg.story_id, msg.content, msg.progress)
     
     window.dispatchEvent(new CustomEvent('story-task', {
       detail: {
@@ -664,8 +620,6 @@ export function useChatWebSocket(
   }
   
   const handleStoryLog = (msg: any) => {
-    // Log message - dispatch event for Logs tab (not Chat tab)
-    console.log('[WS] 📝 Story log:', msg.story_id, msg.level, msg.content?.substring(0, 50))
     
     window.dispatchEvent(new CustomEvent('story-log', {
       detail: {
@@ -678,9 +632,7 @@ export function useChatWebSocket(
     }))
   }
   
-  const handleStoryMessage = (msg: any) => {
-    console.log('[WS] 📋 Story message:', msg.story_id, msg.content, msg.message_type)
-    
+  const handleStoryMessage = (msg: any) => {    
     // Dispatch message event for Chat tab in story detail
     window.dispatchEvent(new CustomEvent('story-message', {
       detail: {
@@ -701,9 +653,7 @@ export function useChatWebSocket(
     }
   }
   
-  const handleStoryStateChanged = (msg: any) => {
-    console.log('[WS] 🔄 Story state changed:', msg.story_id, msg)
-    
+  const handleStoryStateChanged = (msg: any) => {    
     // Dispatch custom event for components to listen
     window.dispatchEvent(new CustomEvent('story-state-changed', {
       detail: { 
@@ -719,9 +669,7 @@ export function useChatWebSocket(
     }))
   }
   
-  const handleStoryStatusChanged = (msg: any) => {
-    console.log('[WS] 📋 Story status changed:', msg.story_id, msg)
-    
+  const handleStoryStatusChanged = (msg: any) => {    
     // Dispatch custom event for KanbanBoard to listen
     window.dispatchEvent(new CustomEvent('story-status-changed', {
       detail: { 
@@ -733,9 +681,7 @@ export function useChatWebSocket(
     }))
   }
   
-  const handleBranchChanged = (msg: any) => {
-    console.log('[WS] 🌿 Branch changed:', msg.project_id, msg.branch)
-    
+  const handleBranchChanged = (msg: any) => {    
     // Dispatch custom event for FileExplorer to listen
     window.dispatchEvent(new CustomEvent('branch-changed', {
       detail: { 
@@ -745,9 +691,7 @@ export function useChatWebSocket(
     }))
   }
   
-  const handleProjectDevServer = (msg: any) => {
-    console.log('[WS] 🖥️ Project dev server:', msg.project_id, msg.running_port)
-    
+  const handleProjectDevServer = (msg: any) => {    
     // Dispatch custom event for AppViewer to listen
     window.dispatchEvent(new CustomEvent('project_dev_server', {
       detail: { 
@@ -758,9 +702,18 @@ export function useChatWebSocket(
     }))
   }
   
-  const handleQuestionAnswerReceived = (msg: any) => {
-    console.log('[WS] ✓ Answer received:', msg.question_id)
-    
+  const handleDevServerLog = (msg: any) => {    
+    // Dispatch custom event for AppViewer to listen
+    window.dispatchEvent(new CustomEvent('dev_server_log', {
+      detail: { 
+        project_id: msg.project_id, 
+        message: msg.message,
+        status: msg.status,
+      }
+    }))
+  }
+  
+  const handleQuestionAnswerReceived = (msg: any) => {    
     // Mark question as answered and store user's answer
     setMessages(prev => prev.map(m => {
       if (m.structured_data?.question_id === msg.question_id) {
@@ -779,9 +732,7 @@ export function useChatWebSocket(
     }))
   }
   
-  const handleAgentResumed = (msg: any) => {
-    console.log('[WS] ▶️ Agent resumed:', msg.agent_name, 'for question:', msg.question_id)
-    
+  const handleAgentResumed = (msg: any) => {    
     // Mark question as processing
     setMessages(prev => prev.map(m => {
       if (m.structured_data?.question_id === msg.question_id) {
@@ -812,17 +763,14 @@ export function useChatWebSocket(
   
   const sendMessage = (content: string, agentName?: string) => {
     if (!projectIdRef.current) {
-      console.error('[WebSocket] ❌ Cannot send: no project ID')
       return
     }
 
     if (readyState !== ReadyState.OPEN) {
-      console.warn('[WebSocket] ⚠️ Cannot send: not connected')
       return
     }
 
     if (!content || !content.trim()) {
-      console.warn('[WebSocket] ⚠️ Cannot send empty message')
       return
     }
 
@@ -839,7 +787,6 @@ export function useChatWebSocket(
             : m
         ))
         tempMessageTimeoutsRef.current.delete(optimisticMsg.id)
-        console.warn(`[WebSocket] ⚠️ Message timeout: ${optimisticMsg.id}`)
       }, 10000) // 10 seconds timeout
       
       tempMessageTimeoutsRef.current.set(optimisticMsg.id, timeoutId)
@@ -850,11 +797,8 @@ export function useChatWebSocket(
         content: content.trim(),
         agent_name: agentName,
         project_id: projectIdRef.current,
-      })
-      
-      console.log('[WebSocket] 📤 Sent:', content.substring(0, 50))
+      })   
     } catch (error) {
-      console.error('[WebSocket] ❌ Failed to send:', error)
     }
   }
   
@@ -864,7 +808,6 @@ export function useChatWebSocket(
     selected_options?: string[]
   ) => {
     if (readyState !== ReadyState.OPEN) {
-      console.error('[WS] Cannot send answer: not connected')
       return false
     }
     
@@ -875,11 +818,8 @@ export function useChatWebSocket(
         answer: answer || '',
         selected_options: selected_options || [],
       })
-      
-      console.log('[WS] 📨 Sent answer:', { question_id, answer, selected_options })
       return true
     } catch (error) {
-      console.error('[WS] Failed to send answer:', error)
       return false
     }
   }
@@ -889,7 +829,6 @@ export function useChatWebSocket(
     answers: Array<{ question_id: string; answer: string; selected_options?: string[] }>
   ) => {
     if (readyState !== ReadyState.OPEN) {
-      console.error('[WS] Cannot send batch answers: not connected')
       return false
     }
     
@@ -900,7 +839,6 @@ export function useChatWebSocket(
         answers,
       })
       
-      console.log('[WS] 📨📨📨 Sent batch answers:', { batch_id, count: answers.length })
       
       // Immediately update local state with answers (don't wait for server confirmation)
       setMessages(prev => prev.map(m => {
@@ -923,7 +861,6 @@ export function useChatWebSocket(
       
       return true
     } catch (error) {
-      console.error('[WS] Failed to send batch answers:', error)
       return false
     }
   }

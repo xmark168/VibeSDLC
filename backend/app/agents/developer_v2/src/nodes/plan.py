@@ -8,8 +8,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
-from app.agents.developer_v2.src.nodes._llm import fast_llm
-from app.agents.developer_v2.src.tools import set_tool_context
+from app.agents.developer_v2.src.nodes._llm import get_llm, fast_llm
 from app.agents.developer_v2.src.schemas import SimplePlanOutput
 from app.agents.developer_v2.src.skills.registry import SkillRegistry
 from app.agents.developer_v2.src.skills import get_plan_prompts
@@ -189,7 +188,6 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     await story_logger.info("📋 Analyzing requirements...")
     workspace_path = state.get("workspace_path", "")
     tech_stack = state.get("tech_stack", "nextjs")
-    set_tool_context(root_dir=workspace_path, project_id=state.get("project_id", ""), task_id=state.get("task_id") or state.get("story_id", ""))
     
     try:
         await story_logger.info("📂 Scanning project files...")

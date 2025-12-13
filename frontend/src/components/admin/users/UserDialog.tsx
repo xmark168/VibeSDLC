@@ -129,7 +129,6 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
       form.reset()
       onSuccess?.()
     } catch (error) {
-      console.error("Form submission error:", error)
     }
   }
 

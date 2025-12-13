@@ -12,7 +12,6 @@ from uuid import UUID, uuid4
 from sqlmodel import Session, select
 
 from app.kafka.event_schemas import (
-    AgentResponseEvent,
     AgentTaskType,
     BaseKafkaEvent,
     RouterTaskEvent,

@@ -29,6 +29,8 @@ class ExecutionService:
         user_id: Optional[UUID] = None,
         task_type: Optional[str] = None,
         task_content_preview: Optional[str] = None,
+        agent_id: Optional[UUID] = None,
+        pool_id: Optional[UUID] = None,
     ) -> UUID:
         """Create execution record (async-safe, uses thread pool).
         
@@ -40,6 +42,8 @@ class ExecutionService:
             user_id: Optional user ID
             task_type: Optional task type
             task_content_preview: Optional preview of task content
+            agent_id: Optional agent UUID
+            pool_id: Optional pool UUID
             
         Returns:
             Created execution ID
@@ -48,6 +52,8 @@ class ExecutionService:
             project_id=project_id,
             agent_name=agent_name,
             agent_type=agent_type,
+            agent_id=agent_id,
+            pool_id=pool_id,
             status=AgentExecutionStatus.RUNNING,
             started_at=datetime.now(timezone.utc),
             trigger_message_id=trigger_message_id,
