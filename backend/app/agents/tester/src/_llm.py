@@ -4,7 +4,7 @@ LLM instances for Tester agent.
 import asyncio
 import logging
 
-from app.agents.core.llm_factory import (
+from app.core.agent.llm_factory import (
     MODELS,
     STEP_CONFIG,
     MAX_RETRIES,

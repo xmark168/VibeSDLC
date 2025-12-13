@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, update
-from app.agents.core.agent_pool_manager import AgentPoolManager
+from app.core.agent.agent_pool_manager import AgentPoolManager
 from app.api.deps import SessionDep, get_current_user, get_db
 from app.models import Agent, AgentExecution, AgentExecutionStatus, AgentStatus, User
 from app.schemas import (
@@ -699,7 +699,7 @@ async def spawn_agent(
     )
 
     # Get the best pool for this agent based on role type and load
-    from app.agents.core.pool_helpers import get_best_pool_for_agent
+    from app.core.agent.pool_helpers import get_best_pool_for_agent
     from app.core.config import settings
 
     manager = get_best_pool_for_agent(

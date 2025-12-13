@@ -9,16 +9,16 @@ from uuid import UUID
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.agents.core.prompt_utils import (
+from app.core.agent.prompt_utils import (
     build_system_prompt as _build_system_prompt,
 )
-from app.agents.core.prompt_utils import (
+from app.core.agent.prompt_utils import (
     build_user_prompt as _build_user_prompt,
 )
-from app.agents.core.prompt_utils import (
+from app.core.agent.prompt_utils import (
     get_task_prompts as _get_task_prompts,
 )
-from app.agents.core.prompt_utils import (
+from app.core.agent.prompt_utils import (
     load_prompts_yaml,
 )
 from app.agents.team_leader.src.schemas import ExtractedPreferences, RoutingDecision
@@ -420,7 +420,7 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
 async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Delegate task to specialist agent."""
     if agent:
-        from app.agents.core.base_agent import TaskContext
+        from app.core.agent.base_agent import TaskContext
         from app.kafka.event_schemas import AgentTaskType
 
         msg = state.get("message") or f"Chuyển cho @{state['target_role']} nhé!"

@@ -1,21 +1,4 @@
 """Centralized LLM factory with LangChain callback-based token tracking.
-
-Architecture:
-- 3 model tiers: fast, medium, complex
-- Step-based LLM configuration
-- Token tracking via LangChain BaseCallbackHandler (thread-safe with ContextVar)
-
-Usage:
-    # In base_agent._process_task():
-    reset_token_count()
-    result = await self.handle_task(task)
-    self._total_tokens = get_token_count()
-    
-    # In graph nodes:
-    from app.agents.core.llm_factory import get_llm
-    llm = get_llm("implement")
-    response = await llm.ainvoke(messages)
-    # Tokens automatically tracked!
 """
 
 import logging

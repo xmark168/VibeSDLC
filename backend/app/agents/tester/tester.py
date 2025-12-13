@@ -8,7 +8,7 @@ from uuid import UUID
 
 from sqlmodel import Session
 
-from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
 from app.agents.tester.src.graph import TesterGraph
 from app.core.db import engine
 from app.core.langfuse_client import flush_langfuse

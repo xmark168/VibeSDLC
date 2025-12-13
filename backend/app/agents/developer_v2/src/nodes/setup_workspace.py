@@ -507,7 +507,7 @@ def _build_project_config(tech_stack: str = "nextjs") -> dict:
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
     """Setup git workspace/branch for code modification."""
     from langgraph.types import interrupt
-    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
     from app.agents.developer_v2.src.utils.story_logger import StoryLogger
     
     # Create story logger for detailed logging to frontend

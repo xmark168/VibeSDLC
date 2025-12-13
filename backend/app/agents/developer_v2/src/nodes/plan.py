@@ -173,7 +173,7 @@ def _auto_fix_dependencies(steps: list) -> list:
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Zero-shot planning with FileRepository."""
     from langgraph.types import interrupt
-    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
     from app.agents.developer_v2.src.utils.story_logger import StoryLogger
     
     story_logger = StoryLogger.from_state(state, agent).with_node("plan")

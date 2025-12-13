@@ -15,7 +15,7 @@ from sqlmodel import Session
 
 from app.models import PoolType, AgentPool
 from app.services.pool_service import PoolService
-from app.agents.core.agent_pool_manager import AgentPoolManager
+from app.core.agent.agent_pool_manager import AgentPoolManager
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

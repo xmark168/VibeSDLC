@@ -1,4 +1,4 @@
-"""Seed tech stack configurations for projects."""
+﻿"""Seed tech stack configurations for projects."""
 
 import logging
 import shutil
