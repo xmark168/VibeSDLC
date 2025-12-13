@@ -245,7 +245,7 @@ class AgentMonitor:
         
         Creates overflow pools when universal pool exceeds threshold.
         """
-        from app.agents.core.pool_helpers import get_pool_load, should_create_new_pool
+        from app.core.agent.pool_helpers import get_pool_load, should_create_new_pool
         
         threshold = settings.AGENT_POOL_AUTO_SCALE_THRESHOLD
         
@@ -280,7 +280,7 @@ class AgentMonitor:
         from app.core.db import engine
         from app.services.pool_service import PoolService
         from app.models import PoolType
-        from app.agents.core.agent_pool_manager import AgentPoolManager
+        from app.core.agent.agent_pool_manager import AgentPoolManager
         
         # Count existing overflow pools
         overflow_count = len([p for p in self.manager_registry.keys() if "overflow" in p])

@@ -1,13 +1,9 @@
 """LLM utilities with token tracking.
-
-Provides wrapper functions to track token usage from LLM calls.
 """
 
 import logging
-from typing import Any, Optional, List, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from app.agents.core.base_agent import BaseAgent
+from typing import Any, Optional, List
+from app.core.agent.base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -19,17 +15,6 @@ async def tracked_ainvoke(
     config: Optional[dict] = None,
 ) -> Any:
     """Invoke LLM and track token usage.
-    
-    Wrapper around llm.ainvoke() that extracts and tracks token usage.
-    
-    Args:
-        llm: LangChain LLM instance (ChatOpenAI, etc.)
-        messages: List of messages to send
-        agent: Optional BaseAgent instance to track tokens on
-        config: Optional config dict for the LLM call
-        
-    Returns:
-        LLM response
     """
     response = await llm.ainvoke(messages, config=config)
     
@@ -55,15 +40,8 @@ async def tracked_ainvoke(
 
 
 def extract_tokens_from_response(response: Any) -> int:
-    """Extract token count from LLM response.
-    
-    Supports multiple LLM providers (OpenAI, Anthropic, etc.)
-    
-    Args:
-        response: LLM response object
-        
-    Returns:
-        Total tokens used, or 0 if not available
+    """
+    Extract token count from LLM response.
     """
     if not hasattr(response, 'response_metadata'):
         return 0

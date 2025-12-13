@@ -1823,7 +1823,7 @@ async def route_story_event(
     from app.core.db import engine
     from app.services import AgentService
     from app.models import Story
-    from app.agents.core.agent_pool_manager import AgentPoolManager
+    from app.core.agent.agent_pool_manager import AgentPoolManager
     from app.api.routes.agent_management import _manager_registry
     
     logger = logging.getLogger(__name__)

@@ -8,8 +8,8 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.agents.core.project_context import ProjectContext
+from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
+from app.core.agent.project_context import ProjectContext
 from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType
 from app.models.base import StoryAgentState
 from app.utils.project_files import ProjectFiles

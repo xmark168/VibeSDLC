@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlmodel import Session, select, update
 
-from app.agents.core.base_agent import BaseAgent
+from app.core.agent.base_agent import BaseAgent
 from app.models import Agent as AgentModel, AgentStatus, AgentPool, PoolType
 from app.core.db import engine
 from app.services.pool_service import PoolService
@@ -194,7 +194,7 @@ class AgentPoolManager:
                 )
                 
                 # 4.5. Attach circuit breaker
-                from app.agents.core.circuit_breaker import get_circuit_breaker_manager
+                from app.core.agent.circuit_breaker import get_circuit_breaker_manager
                 cb_manager = get_circuit_breaker_manager()
                 circuit_breaker = cb_manager.get_or_create(agent_id)
                 agent.set_circuit_breaker(circuit_breaker)
@@ -257,7 +257,7 @@ class AgentPoolManager:
             self.total_terminated += 1
             
             # 2.5. Remove circuit breaker
-            from app.agents.core.circuit_breaker import get_circuit_breaker_manager
+            from app.core.agent.circuit_breaker import get_circuit_breaker_manager
             cb_manager = get_circuit_breaker_manager()
             cb_manager.remove(agent_id)
 

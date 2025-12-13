@@ -1657,7 +1657,7 @@ class BaseAgent(ABC):
         Returns:
             True if started successfully, False otherwise
         """
-        from app.agents.core.base_agent_consumer import BaseAgentInstanceConsumer
+        from app.core.agent.base_agent_consumer import BaseAgentInstanceConsumer
 
         try:
             # Start task queue worker
@@ -2007,7 +2007,7 @@ class BaseAgent(ABC):
             task_failed = False
             try:
                 # Reset token tracking before handle_task
-                from app.agents.core.llm_factory import reset_token_count, get_token_count, get_llm_call_count
+                from app.core.agent.llm_factory import reset_token_count, get_token_count, get_llm_call_count
                 reset_token_count()
                 
                 # Call agent's implementation
@@ -2297,7 +2297,7 @@ class BaseAgent(ABC):
         
         try:
             # Record to metrics collector
-            from app.agents.core.metrics_collector import (
+            from app.core.agent.metrics_collector import (
                 get_metrics_collector,
                 ExecutionMetrics,
             )
@@ -2322,7 +2322,7 @@ class BaseAgent(ABC):
             await collector.record_execution(metrics)
             
             # Check SLA
-            from app.agents.core.sla_monitor import get_sla_monitor
+            from app.core.agent.sla_monitor import get_sla_monitor
             
             sla_monitor = get_sla_monitor()
             task_type_str = task.task_type.value if task.task_type else "MESSAGE"
@@ -2368,7 +2368,7 @@ class AgentTaskConsumer:
         Args:
             seek_to_end: If True, skip all existing messages and start from latest.
         """
-        from app.agents.core.base_agent_consumer import BaseAgentInstanceConsumer
+        from app.core.agent.base_agent_consumer import BaseAgentInstanceConsumer
 
         # Create a dynamic consumer class that wraps the agent
         class DynamicConsumer(BaseAgentInstanceConsumer):

@@ -3,8 +3,8 @@ import asyncio
 import logging
 from typing import Dict, List, Optional, Set
 
-from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.agents.core.project_context import ProjectContext
+from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
+from app.core.agent.project_context import ProjectContext
 from app.models import Agent as AgentModel
 from app.models.base import StoryAgentState
 from app.agents.developer_v2.src import DeveloperGraph
