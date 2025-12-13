@@ -11,25 +11,10 @@ from app.agents.developer_v2.src import DeveloperGraph
 from app.agents.developer_v2.src.utils.workspace_manager import ProjectWorkspaceManager
 from app.kafka.event_schemas import AgentTaskType
 
+from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
+from app.agents.developer_v2.src.exceptions import StoryStoppedException
+
 logger = logging.getLogger(__name__)
-
-
-def check_interrupt_signal(story_id: str, agent=None) -> Optional[str]:
-    """Check for interrupt signal. Returns 'pause', 'cancel', or None."""
-    if agent is not None and hasattr(agent, 'check_signal'):
-        signal = agent.check_signal(story_id)
-        if signal:
-            return signal
-    return None
-
-
-class StoryStoppedException(Exception):
-    """Raised when story processing should stop."""
-    def __init__(self, story_id: str, state: StoryAgentState, message: str = ""):
-        self.story_id = story_id
-        self.state = state
-        self.message = message or f"Story {story_id} stopped: {state.value}"
-        super().__init__(self.message)
 
 
 class DeveloperV2(BaseAgent):

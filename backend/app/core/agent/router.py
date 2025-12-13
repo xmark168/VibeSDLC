@@ -40,7 +40,8 @@ class BaseEventRouter(ABC):
 
     @abstractmethod
     async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Route the event to appropriate agent(s).
+        """
+        Route the event to appropriate agent(s).
         """
         pass
 

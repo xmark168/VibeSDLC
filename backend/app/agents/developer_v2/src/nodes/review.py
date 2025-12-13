@@ -38,7 +38,7 @@ def _smart_truncate(content: str, max_tokens: int = MAX_REVIEW_TOKENS) -> tuple[
 async def review(state: DeveloperState, agent=None) -> DeveloperState:
     """Review implemented code with LGTM/LBTM decision."""
     from langgraph.types import interrupt
-    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
     from app.agents.developer_v2.src.utils.story_logger import StoryLogger
     
     # Create story logger

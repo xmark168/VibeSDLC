@@ -91,13 +91,8 @@ class AgentPoolManager:
             return False
 
     async def stop(self, graceful: bool = True) -> bool:
-        """Stop the pool manager and all agents.
-
-        Args:
-            graceful: If True, wait for agents to finish current tasks
-
-        Returns:
-            True if stopped successfully
+        """
+        Stop the pool manager and all agents.
         """
         try:
             logger.info(f"Stopping pool manager '{self.pool_name}' (graceful={graceful})...")
@@ -147,25 +142,8 @@ class AgentPoolManager:
         heartbeat_interval: int = 30,
         max_idle_time: int = 300,
     ) -> bool:
-        """Spawn an agent directly in memory.
-
-        No multiprocessing, no IPC overhead.
-        Flow:
-        1. Check capacity
-        2. Load agent from DB
-        3. Create agent instance
-        4. Start agent (starts Kafka consumer)
-        5. Store in memory dict
-        6. Update DB status
-
-        Args:
-            agent_id: Agent UUID (must exist in database)
-            role_class: Agent role class to instantiate
-            heartbeat_interval: Agent heartbeat interval
-            max_idle_time: Agent max idle time
-
-        Returns:
-            True if spawned successfully
+        """
+        Spawn an agent directly in memory.
         """
         # 1. Check capacity
         if len(self.agents) >= self.max_agents:
@@ -193,12 +171,6 @@ class AgentPoolManager:
                     max_idle_time=max_idle_time,
                 )
                 
-                # 4.5. Attach circuit breaker
-                from app.core.agent.circuit_breaker import get_circuit_breaker_manager
-                cb_manager = get_circuit_breaker_manager()
-                circuit_breaker = cb_manager.get_or_create(agent_id)
-                agent.set_circuit_breaker(circuit_breaker)
-
                 # 5. Start agent (starts Kafka consumer for handling tasks)
                 if await agent.start():
                     # 6. Store in memory
@@ -255,11 +227,6 @@ class AgentPoolManager:
             # 2. Remove from memory
             del self.agents[agent_id]
             self.total_terminated += 1
-            
-            # 2.5. Remove circuit breaker
-            from app.core.agent.circuit_breaker import get_circuit_breaker_manager
-            cb_manager = get_circuit_breaker_manager()
-            cb_manager.remove(agent_id)
 
             # 3. Update DB status and pool counters
             with Session(engine) as db_session:
