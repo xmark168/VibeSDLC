@@ -137,3 +137,6 @@ backend/uv.lock
 VibeSDLC/backend/app/projects
 backend/app/projects/.llm-cache
 backend/app/agents/developer_v2/tests/test_output
+
+# Documentation folder
+doc/
