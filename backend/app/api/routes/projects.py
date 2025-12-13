@@ -1133,3 +1133,57 @@ async def clean_project_dev_server(
                     logger.warning(f"Failed to remove .next: {e}")
     
     return {"success": True, "message": "Dev server cleaned"}
+
+
+@router.get("/{project_id}/logs")
+async def get_project_logs(
+    *,
+    session: SessionDep,
+    current_user: CurrentUser,
+    project_id: UUID,
+    limit: int = Query(100, ge=1, le=500),
+    agent_name: str = Query(None),
+    level: str = Query(None),
+) -> Any:
+    """Get aggregated logs from all stories in project."""
+    from app.models import Story, StoryLog
+    
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    story_ids = session.exec(
+        select(Story.id).where(Story.project_id == project_id)
+    ).all()
+    
+    if not story_ids:
+        return {"logs": [], "total": 0}
+    
+    stmt = (
+        select(StoryLog, Story.title.label("story_title"))
+        .join(Story, StoryLog.story_id == Story.id)
+        .where(StoryLog.story_id.in_(story_ids))
+    )
+    
+    if level:
+        stmt = stmt.where(StoryLog.level == level)
+    
+    stmt = stmt.order_by(StoryLog.created_at.desc()).limit(limit)
+    results = session.exec(stmt).all()
+    
+    logs = []
+    for log, story_title in results:
+        logs.append({
+            "id": str(log.id),
+            "timestamp": log.created_at.isoformat(),
+            "agent": log.node or "System",
+            "agentRole": log.node or "Agent",
+            "type": log.level.value if log.level else "info",
+            "action": log.node or "Activity",
+            "message": log.content,
+            "details": f"Story: {story_title}",
+            "story_id": str(log.story_id),
+        })
+    
+    return {"logs": logs, "total": len(logs)}
