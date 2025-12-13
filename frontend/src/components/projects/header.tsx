@@ -43,8 +43,6 @@ export const HeaderProject = ({
   // Get avatar URL with fallback
   const avatarUrl = import.meta.env.VITE_API_URL + profile?.avatar_url || DEFAULT_AVATAR
   const displayName = profile?.full_name || user?.full_name || ""
-  console.log('Profile data:', profile)
-  // Handle URL params for opening settings (e.g., after OAuth link callback)
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const success = params.get("success")
@@ -53,7 +51,6 @@ export const HeaderProject = ({
     const tab = params.get("tab")
 
     if (success === "account_linked" && provider) {
-      // toast.success(`${provider.charAt(0).toUpperCase() + provider.slice(1)} account linked successfully!`)
       setDefaultTab(tab || "security")
       setSettingsOpen(true)
       // Clear URL params

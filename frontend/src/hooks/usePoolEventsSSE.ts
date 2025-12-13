@@ -73,11 +73,8 @@ export function usePoolEventsSSE(options?: {
     const baseUrl = OpenAPI.BASE || ''
     const url = `${baseUrl}/api/v1/agent-management/pools/events`
     
-    // EventSource doesn't support headers, so we need to pass token as query param
-    // Alternative: use fetch with ReadableStream if you need headers
-    const urlWithToken = `${url}?token=${encodeURIComponent(token)}`
 
-    console.log('[SSE] Connecting to pool events stream...')
+    const urlWithToken = `${url}?token=${encodeURIComponent(token)}`
 
     // Create EventSource
     const eventSource = new EventSource(urlWithToken)
@@ -85,21 +82,18 @@ export function usePoolEventsSSE(options?: {
 
     // Handle connection open
     eventSource.addEventListener('open', () => {
-      console.log('[SSE] Connected to pool events stream')
       setState((prev) => ({ ...prev, connected: true, error: null }))
     })
 
     // Handle 'connected' event
     eventSource.addEventListener('connected', (event) => {
       const data = JSON.parse(event.data)
-      console.log('[SSE] Connection confirmed:', data.message)
     })
 
     // Handle 'pool_stats' event
     eventSource.addEventListener('pool_stats', (event) => {
       try {
         const stats: PoolStatsEvent[] = JSON.parse(event.data)
-        console.log('[SSE] Pool stats update:', stats)
 
         // Update state
         setState((prev) => ({ ...prev, lastUpdate: new Date() }))
@@ -111,7 +105,6 @@ export function usePoolEventsSSE(options?: {
         queryClient.invalidateQueries({ queryKey: agentQueryKeys.pools() })
         queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
       } catch (error) {
-        console.error('[SSE] Error parsing pool_stats:', error)
       }
     })
 
@@ -119,7 +112,6 @@ export function usePoolEventsSSE(options?: {
     eventSource.addEventListener('agent_health', (event) => {
       try {
         const health: AgentHealthEvent[] = JSON.parse(event.data)
-        console.log('[SSE] Agent health update:', health.length, 'agents')
 
         // Call callback if provided
         options?.onAgentHealth?.(health)
@@ -127,7 +119,6 @@ export function usePoolEventsSSE(options?: {
         // Invalidate health queries
         queryClient.invalidateQueries({ queryKey: agentQueryKeys.health() })
       } catch (error) {
-        console.error('[SSE] Error parsing agent_health:', error)
       }
     })
 
@@ -135,34 +126,26 @@ export function usePoolEventsSSE(options?: {
     eventSource.addEventListener('heartbeat', (event) => {
       try {
         const data = JSON.parse(event.data)
-        // Silent heartbeat - just update timestamp
         setState((prev) => ({ ...prev, lastUpdate: new Date(data.timestamp) }))
       } catch (error) {
-        console.error('[SSE] Error parsing heartbeat:', error)
       }
     })
 
-    // Handle 'error' event from server
     eventSource.addEventListener('error_event', (event) => {
       try {
         const data = JSON.parse(event.data)
-        console.error('[SSE] Server error:', data.error)
         setState((prev) => ({ ...prev, error: data.error }))
         options?.onError?.(new Error(data.error))
       } catch (error) {
-        console.error('[SSE] Error parsing error event:', error)
       }
     })
 
     // Handle connection errors
     eventSource.onerror = (event) => {
-      console.error('[SSE] Connection error:', event)
       
       if (eventSource.readyState === EventSource.CLOSED) {
-        console.log('[SSE] Connection closed by server')
         setState({ connected: false, error: 'Connection closed', lastUpdate: null })
       } else if (eventSource.readyState === EventSource.CONNECTING) {
-        console.log('[SSE] Reconnecting...')
         setState((prev) => ({ ...prev, connected: false, error: 'Reconnecting...' }))
       } else {
         setState((prev) => ({ ...prev, error: 'Connection error' }))
@@ -172,7 +155,6 @@ export function usePoolEventsSSE(options?: {
 
     // Cleanup on unmount
     return () => {
-      console.log('[SSE] Closing connection...')
       eventSource.close()
       eventSourceRef.current = null
     }

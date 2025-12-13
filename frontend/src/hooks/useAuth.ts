@@ -51,7 +51,6 @@ export const useAuth = () => {
 
   const login = async (data: AuthenticationLoginData): Promise<{ userData?: UserPublic; requires2FA?: boolean; tempToken?: string }> => {
     const response = await AuthenticationService.login(data) as LoginResult
-    console.log("login1");
     // Check if 2FA is required
     if (isLoginRequires2FA(response)) {
       return {

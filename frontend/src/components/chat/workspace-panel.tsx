@@ -157,42 +157,29 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
   // Debug: Log projectId changes
   useEffect(() => {
-    console.log('[WorkspacePanel] projectId changed:', projectId, 'Query enabled:', !!projectId)
-  }, [projectId])
+   }, [projectId])
 
-  // Fetch project agents from database
   const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
     enabled: !!projectId,
   })
 
-  // State for agent detail sheet
   const [selectedAgent, setSelectedAgent] = useState<AgentPublic | null>(null)
   const [agentDetailOpen, setAgentDetailOpen] = useState(false)
 
-  // Transform agents for AnimatedTooltip component
   const agentItems = useMemo(() => {
-    console.log('[WorkspacePanel] Project agents data:', projectAgents)
-    console.log('[WorkspacePanel] Agents loading:', agentsLoading)
-    console.log('[WorkspacePanel] WebSocket agent statuses:', agentStatuses)
-
-    // Handle both { data: [...] } and direct array response
+  
     const agentsList: AgentPublic[] = Array.isArray(projectAgents) 
       ? projectAgents 
       : (projectAgents?.data || [])
 
     if (!agentsList.length) {
-      console.log('[WorkspacePanel] No agents to display')
-      return []
+       return []
     }
 
     const items = agentsList.map((agent: AgentPublic) => {
-      // Lấy status từ WebSocket (real-time), fallback về database nếu chưa có
       const wsStatus = agentStatuses?.get(agent.human_name)
       const displayStatus = wsStatus?.status || agent.status || 'idle'
 
-      console.log(`[WorkspacePanel] Agent ${agent.human_name}: WS status=${wsStatus?.status}, DB status=${agent.status}, Display=${displayStatus}`)
-
-      // Use persona_avatar if available, otherwise generate from role type
       const avatarUrl = agent.persona_avatar || generateAvatarUrl(agent.human_name, agent.role_type)
 
       return {
@@ -209,7 +196,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       }
     })
 
-    console.log('[WorkspacePanel] Agent items for AnimatedTooltip:', items)
     return items
   }, [projectAgents, agentsLoading, agentStatuses]) // Include agentStatuses in dependencies
 
@@ -232,7 +218,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       }
       const targetTabId = tabMap[wsActiveTab]
       if (targetTabId) {
-        console.log('[WorkspacePanel] Auto-switching to tab:', wsActiveTab, targetTabId)
         setActiveTabId(targetTabId)
       }
     }
@@ -287,9 +272,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       const { artifactsApi } = await import('@/apis/artifacts')
       const artifact = await artifactsApi.getArtifact(artifactId)
       setSelectedArtifact(artifact)
-      console.log('[WorkspacePanel] Loaded artifact:', artifact)
     } catch (err: any) {
-      console.error('Failed to fetch artifact:', err)
       setSelectedArtifact(null)
     } finally {
       setIsLoadingArtifact(false)
@@ -319,7 +302,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       setFileContent(response.content)
       setIsFileBinary(response.is_binary || false)
     } catch (err: any) {
-      console.error("Failed to fetch file content:", err)
       setFileError(err.message || "Failed to load file")
       setFileContent("")
     } finally {
@@ -362,7 +344,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
     } catch (err) {
-      console.error('Download failed:', err)
       alert('Failed to download file. Please try again.')
     }
   }

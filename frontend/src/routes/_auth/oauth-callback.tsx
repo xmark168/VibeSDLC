@@ -25,16 +25,10 @@ function OAuthCallback() {
 
         const handleOAuthCallback = async () => {
             try {
-                // Debug: Check current URL
-                console.log("Current URL:", window.location.href);
-                console.log("URL params:", window.location.search);
-
                 // Check if we have OAuth params
                 const urlParams = new URLSearchParams(window.location.search);
                 const userId = urlParams.get('userId');
                 const secret = urlParams.get('secret');
-
-                console.log("OAuth params - userId:", userId, "secret:", secret);
 
                 if (!userId || !secret) {
                     throw new Error("OAuth callback missing required parameters. Make sure OAuth is configured in Appwrite Console.");
@@ -51,16 +45,12 @@ function OAuthCallback() {
                     try {
                         // First, try to get the session
                         const session = await account.getSession('current');
-                        console.log("Current session:", session);
 
                         // Then get user info
                         user = await account.get();
-                        console.log("OAuth user:", user);
                         break; // Success, exit retry loop
                     } catch (err: any) {
-                        console.log(`Retry ${4 - retries}, error:`, err);
                         if (err.code === 401 && retries > 1) {
-                            // Session not ready yet, wait and retry
                             await new Promise(resolve => setTimeout(resolve, 1000));
                             retries--;
                         } else {
@@ -109,7 +99,6 @@ function OAuthCallback() {
                     err instanceof Error ? err.message : "OAuth callback failed"
                 setError(errorMessage)
                 setIsProcessing(false)
-                console.error("OAuth callback error:", err)
 
                 setTimeout(() => {
                     navigate({ to: "/login" })

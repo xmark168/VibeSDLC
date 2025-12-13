@@ -91,12 +91,13 @@ def get_available_pool(role_type: Optional[str] = None) -> Optional[AgentPoolMan
     Selection criteria (in order):
     1. Pool must be active (is_active=True)
     2. Pool must have capacity (current_agents < max_agents)
-    3. If role_type provided, prefer pools with matching role_type
-    4. Sort by priority (lower number = higher priority)
-    5. Among same priority, choose pool with least agents (load balancing)
+    3. Sort by priority (lower number = higher priority)
+    4. Among same priority, choose pool with least agents (load balancing)
+    
+    Note: role_type is ignored - agents are assigned to pools purely by priority and load.
     
     Args:
-        role_type: Optional role type to prefer matching pools
+        role_type: Ignored, kept for backward compatibility
         
     Returns:
         AgentPoolManager or None if no pools available
@@ -107,14 +108,9 @@ def get_available_pool(role_type: Optional[str] = None) -> Optional[AgentPoolMan
     if not _manager_registry:
         return None
     
-    # Query active pools from DB with priority info
+    # Query ALL active pools from DB
     with Session(engine) as session:
         statement = select(AgentPool).where(AgentPool.is_active == True)
-        if role_type:
-            # Prefer pools with matching role_type, but include universal pools (role_type=None)
-            statement = statement.where(
-                (AgentPool.role_type == role_type) | (AgentPool.role_type == None)
-            )
         db_pools = {p.pool_name: p for p in session.exec(statement).all()}
     
     # Build candidate list with metrics
@@ -131,27 +127,23 @@ def get_available_pool(role_type: Optional[str] = None) -> Optional[AgentPoolMan
         # Calculate load (0.0 to 1.0)
         load = current_agents / manager.max_agents if manager.max_agents > 0 else 1.0
         
-        # Bonus for role-specific pool
-        role_match = 1 if (role_type and db_pool.role_type == role_type) else 0
-        
         candidates.append({
             "manager": manager,
             "priority": db_pool.priority,
             "load": load,
             "current_agents": current_agents,
-            "role_match": role_match,
         })
     
     if not candidates:
-        logger.warning(f"No available pool for role_type={role_type}")
+        logger.warning(f"No available pool (all pools at capacity or inactive)")
         return None
     
-    # Sort by: role_match (desc), priority (asc), load (asc)
-    candidates.sort(key=lambda x: (-x["role_match"], x["priority"], x["load"]))
+    # Sort by: priority (asc), load (asc)
+    candidates.sort(key=lambda x: (x["priority"], x["load"]))
     
     best = candidates[0]
-    logger.debug(
-        f"Selected pool '{best['manager'].pool_name}' for role={role_type} "
+    logger.info(
+        f"Selected pool '{best['manager'].pool_name}' "
         f"(priority={best['priority']}, load={best['load']:.1%}, agents={best['current_agents']})"
     )
     

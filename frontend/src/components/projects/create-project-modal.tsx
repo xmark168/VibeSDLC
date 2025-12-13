@@ -293,8 +293,6 @@ export function CreateProjectModal({
       resetForm()
       setIsOpen(false)
     } catch (error: any) {
-      console.error("Error creating project:", error)
-      // Extract error message from API response
       const errorMessage = error?.body?.detail || error?.message || "Failed to create project. Please try again."
       toast.error(errorMessage, { duration: 5000 })
       setIsLoading(false)

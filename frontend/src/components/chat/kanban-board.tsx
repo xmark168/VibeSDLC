@@ -611,7 +611,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
             await storiesApi.bulkUpdateRanks(rankUpdates)
             toast.success("Order updated")
           } catch (error) {
-            console.error("Failed to update rank:", error)
             toast.error("Failed to update order")
           }
         }
@@ -807,7 +806,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       }])
       toast.success("Story created successfully!")
     } catch (error) {
-      console.error("Error creating story:", error)
       toast.error("Failed to create story")
     } finally {
       toast.dismiss(toastId)
@@ -859,7 +857,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
         queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
       }
     } catch (error) {
-      console.error("Error updating story:", error)
       toast.error("Failed to update story")
     } finally {
       toast.dismiss(toastId)
@@ -872,7 +869,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       await storiesApi.delete(cardId)
       toast.success("Story deleted")
     } catch (error) {
-      console.error("Failed to delete story:", error)
       toast.error("Failed to delete story")
       if (projectId) {
         queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
@@ -941,7 +937,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       }
       await storiesApi.updateStatus(cardId, statusMap[targetColumnId] || 'Todo')
     } catch (error) {
-      console.error("Failed to move card:", error)
       setCards(prev => prev.map(c =>
         c.id === cardId ? { ...c, columnId: card.columnId } : c
       ))

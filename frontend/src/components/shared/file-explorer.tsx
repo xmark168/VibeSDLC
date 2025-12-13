@@ -55,17 +55,13 @@ export function FileExplorer({
   const [branches, setBranches] = useState<BranchesResponse | null>(null)
   const [selectedWorktree, setSelectedWorktree] = useState<string | null>(initialWorktree || null)
 
-  // Set worktree when initialWorktree prop changes
   useEffect(() => {
-    console.log("[FileExplorer] initialWorktree changed:", initialWorktree)
     if (initialWorktree) {
       setSelectedWorktree(initialWorktree)
     }
   }, [initialWorktree])
 
-  // Fetch file tree when projectId or selectedWorktree changes
   useEffect(() => {
-    console.log("[FileExplorer] useEffect triggered, projectId:", projectId, "selectedWorktree:", selectedWorktree)
     if (projectId) {
       fetchFileTree()
       fetchGitStatus()
@@ -128,7 +124,6 @@ export function FileExplorer({
         setFileTree([])
       }
     } catch (err: any) {
-      console.error("Failed to fetch file tree:", err)
       setError(err.message || "Failed to load files")
     } finally {
       setIsLoading(false)
@@ -140,11 +135,8 @@ export function FileExplorer({
 
     try {
       const response = await filesApi.getGitStatus(projectId, selectedWorktree || undefined)
-      console.log("[FileExplorer] Git status:", response)
       setGitStatus(response)
     } catch (err: any) {
-      console.error("Failed to fetch git status:", err)
-      // Silent fail - git status is optional
     }
   }
 
@@ -155,7 +147,6 @@ export function FileExplorer({
       const response = await filesApi.getBranches(projectId)
       setBranches(response)
     } catch (err: any) {
-      console.error("Failed to fetch branches:", err)
     }
   }
 
@@ -187,7 +178,6 @@ export function FileExplorer({
       // Update the tree with loaded children
       setFileTree(prev => updateNodeChildren(prev, path, response.children))
     } catch (err) {
-      console.error("Failed to load folder children:", err)
     } finally {
       setLoadingFolders(prev => {
         const next = new Set(prev)

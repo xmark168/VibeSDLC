@@ -4,7 +4,10 @@ import re
 import logging
 from typing import Dict, Optional
 from uuid import UUID
-
+from testcontainers.postgres import PostgresContainer
+from sqlmodel import Session
+from app.core.db import engine
+from app.models import Story
 logger = logging.getLogger(__name__)
 
 # Disable Ryuk auto-cleanup so containers persist after process exit
@@ -15,28 +18,16 @@ _containers: Dict[str, any] = {}
 
 
 def start_postgres_container(story_id: Optional[str] = None) -> Dict[str, str]:
-    """Start a postgres container and return connection info.
-    
-    Args:
-        story_id: Optional story ID to track container for cleanup
-        
-    Returns:
-        Dict with host, port, user, password, database, container_id
+    """
+    Start a postgres container and return connection info.
     """
     # Check if container already exists for this story
     if story_id and story_id in _containers:
         return get_connection_info(story_id)
     
-    try:
-        from testcontainers.postgres import PostgresContainer
-    except ImportError:
-        logger.warning("[db_container] testcontainers not installed")
-        return {}
-    
     container = PostgresContainer("postgres:16")
     container.start()
     
-    # Store container reference
     if story_id:
         _containers[story_id] = container
     
@@ -45,7 +36,7 @@ def start_postgres_container(story_id: Optional[str] = None) -> Dict[str, str]:
 
 
 def get_connection_info(story_id: Optional[str] = None, container=None) -> Dict[str, str]:
-    """Get connection info for a container."""
+    """Get connection info"""
     if container is None and story_id:
         container = _containers.get(story_id)
     
@@ -112,11 +103,6 @@ def stop_container(story_id: str) -> bool:
 
 
 def clear_container_from_registry(story_id: str) -> bool:
-    """Remove container reference from in-memory registry without stopping it.
-    
-    Use this when container was already stopped externally (e.g., via docker cli).
-    This ensures fresh start when story is restarted.
-    """
     if story_id in _containers:
         del _containers[story_id]
         logger.info(f"[db_container] Cleared container from registry: {story_id}")
@@ -147,9 +133,7 @@ def update_story_db_info(story_id: str, worktree_path: str, branch_name: str = N
     info = get_connection_info(story_id)
     
     try:
-        from sqlmodel import Session
-        from app.core.db import engine
-        from app.models import Story
+        
         
         # Validate UUID format
         try:

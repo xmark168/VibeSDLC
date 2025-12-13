@@ -5,9 +5,7 @@ export function useKanbanBoard(projectId: string | undefined) {
   return useQuery({
     queryKey: ['kanban-board', projectId],
     queryFn: async () => {
-      console.log('[useKanbanBoard] Fetching data for projectId:', projectId)
       const result = await backlogItemsApi.getKanbanBoard(projectId!)
-      console.log('[useKanbanBoard] Received data:', result)
       return result
     },
     enabled: !!projectId,

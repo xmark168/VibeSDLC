@@ -51,6 +51,10 @@ class Project(BaseModel, table=True):
     dev_server_port: int | None = Field(default=None)
     dev_server_pid: int | None = Field(default=None)
     
+    # Database container state (for preview)
+    db_container_id: str | None = Field(default=None, max_length=100)
+    db_port: int | None = Field(default=None)
+    
     owner: "User" = Relationship(back_populates="owned_projects")
     stories: list["Story"] = Relationship(
         back_populates="project",

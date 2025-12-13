@@ -287,29 +287,23 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   // Listen for story state changes via WebSocket
   useEffect(() => {
     const handleStoryStateChanged = (event: CustomEvent) => {
-      console.log('[TaskDetailModal] Received story-state-changed:', event.detail, 'card?.id:', card?.id)
       if (event.detail.story_id === card?.id) {
         if (event.detail.agent_state !== undefined) {
-          console.log('[TaskDetailModal] Updating localAgentState to:', event.detail.agent_state)
-          setLocalAgentState(event.detail.agent_state)
+           setLocalAgentState(event.detail.agent_state)
         }
         if (event.detail.pr_state !== undefined) {
-          console.log('[TaskDetailModal] Updating localPrState to:', event.detail.pr_state)
-          setLocalPrState(event.detail.pr_state)
+           setLocalPrState(event.detail.pr_state)
         }
       }
     }
     
     // Also listen for story-status-changed (merge success sends this)
     const handleStoryStatusChanged = (event: CustomEvent) => {
-      console.log('[TaskDetailModal] Received story-status-changed:', event.detail, 'card?.id:', card?.id)
-      if (event.detail.story_id === card?.id) {
+     if (event.detail.story_id === card?.id) {
         if (event.detail.pr_state !== undefined) {
-          console.log('[TaskDetailModal] Updating localPrState to:', event.detail.pr_state)
           setLocalPrState(event.detail.pr_state)
         }
         if (event.detail.status !== undefined) {
-          console.log('[TaskDetailModal] Updating localStatus to:', event.detail.status)
           setLocalStatus(event.detail.status)
         }
       }
@@ -405,7 +399,6 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
             })))
           }
         } catch (error) {
-          console.error('Failed to fetch logs:', error)
         }
       }
       fetchLogs()
@@ -656,14 +649,11 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
   // Fetch initial messages from API
   const fetchMessages = useCallback(async (storyId: string) => {
     const authToken = getToken()
-    console.log('[fetchMessages] storyId:', storyId, 'token:', authToken ? 'exists' : 'missing')
     if (!storyId || !authToken) {
-      console.log('[fetchMessages] Skipping - missing storyId or token')
       return
     }
     
     const apiUrl = `${import.meta.env.VITE_API_URL}/api/v1/stories/${storyId}/messages`
-    console.log('[fetchMessages] Fetching:', apiUrl)
     
     setIsLoadingMessages(true)
     try {
@@ -677,11 +667,9 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
         }
       )
       
-      console.log('[fetchMessages] Response status:', response.status)
-      if (response.ok) {
+       if (response.ok) {
         const data = await response.json()
-        console.log('[fetchMessages] Data:', data)
-        setInitialMessages(
+         setInitialMessages(
           data.data.map((msg: {
             id: string
             author_name: string
@@ -697,10 +685,8 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
           }))
         )
       } else {
-        console.error('[fetchMessages] Error response:', response.status, response.statusText)
       }
     } catch (error) {
-      console.error('[fetchMessages] Failed to fetch story messages:', error)
     } finally {
       setIsLoadingMessages(false)
     }
@@ -708,12 +694,10 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
 
   // Reset and fetch messages when dialog opens or card changes
   useEffect(() => {
-    console.log('[useEffect] open:', open, 'card?.id:', card?.id)
-    
+     
     if (open && card?.id) {
       setInitialMessages([])
-      console.log('[useEffect] Triggering fetchMessages for:', card.id)
-      fetchMessages(card.id)
+        fetchMessages(card.id)
     }
   }, [open, card?.id, fetchMessages])
 
@@ -750,13 +734,11 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
       if (!response.ok) {
         // Restore message on error
         setChatMessage(messageContent)
-        console.error('Failed to send message:', response.status)
       }
       // Message will arrive via WebSocket, no need to manually add
     } catch (error) {
       // Restore message on error
       setChatMessage(messageContent)
-      console.error('Failed to send message:', error)
     }
   }
 
@@ -782,7 +764,6 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
         toast.error('Failed to clear messages')
       }
     } catch (error) {
-      console.error('Failed to clear messages:', error)
       toast.error('Failed to clear messages')
     }
   }

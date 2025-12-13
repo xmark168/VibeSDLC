@@ -21,7 +21,6 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
       toast.success('Artifact approved')
     } catch (error) {
       toast.error('Failed to approve artifact')
-      console.error(error)
     } finally {
       setIsUpdating(false)
     }
@@ -34,7 +33,6 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
       toast.success('Artifact rejected')
     } catch (error) {
       toast.error('Failed to reject artifact')
-      console.error(error)
     } finally {
       setIsUpdating(false)
     }

@@ -3,7 +3,6 @@ import logging
 import os
 import sys
 
-# On Windows, use SelectorEventLoop for psycopg async compatibility
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -43,8 +42,7 @@ async def cleanup_stale_story_states():
     """
     from sqlmodel import Session
     from sqlalchemy import text
-    from app.models import Story
-    from app.models.base import StoryAgentState
+
     
     try:
         with Session(engine) as session:
@@ -215,5 +213,4 @@ app.add_middleware(
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-# Mount static files for uploads
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")

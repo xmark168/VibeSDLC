@@ -43,7 +43,6 @@ function OAuthSuccess() {
                 navigate({ to: redirectPath })
 
             } catch (err) {
-                console.error("OAuth success handler error:", err)
                 navigate({ to: "/login?error=oauth_failed" })
             }
         }

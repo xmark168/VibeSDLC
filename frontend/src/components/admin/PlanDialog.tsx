@@ -188,7 +188,6 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
       form.reset()
       onSuccess?.()
     } catch (error) {
-      console.error("Form submission error:", error)
     }
   }
 

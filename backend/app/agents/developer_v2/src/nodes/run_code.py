@@ -15,6 +15,9 @@ from app.agents.developer_v2.src.state import DeveloperState
 from app.agents.developer_v2.src.utils.shell_utils import run_shell
 from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_span
 
+from langgraph.types import interrupt
+from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+from app.agents.developer_v2.src.utils.story_logger import log_to_story, StoryLogger
 logger = logging.getLogger(__name__)
 
 
@@ -312,82 +315,8 @@ def _find_free_port() -> int:
         port = s.getsockname()[1]
     return port
 
-
-def _start_dev_server(workspace_path: str, story_id: str) -> dict:
-    """Start pnpm dev on a free port. Returns {port, pid} or empty dict on failure."""
-    try:
-        port = _find_free_port()
-        
-        # Start dev server in background
-        process = subprocess.Popen(
-            f"pnpm dev --port {port}",
-            cwd=workspace_path,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        
-        # Wait for server to be ready (max 30s)
-        start_time = time.time()
-        while time.time() - start_time < 30:
-            if process.poll() is not None:
-                # Process exited
-                logger.warning(f"[run_code] Dev server exited early")
-                return {}
-            
-            # Check if port is listening
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                if s.connect_ex(('localhost', port)) == 0:
-                    logger.debug(f"[run_code] Dev server ready on port {port}")
-                    
-                    # Update story in DB
-                    _update_story_dev_server(story_id, port, process.pid)
-                    return {"port": port, "pid": process.pid}
-            
-            time.sleep(0.5)
-        
-        logger.warning(f"[run_code] Dev server timeout")
-        process.terminate()
-        return {}
-    except Exception as e:
-        logger.error(f"[run_code] Failed to start dev server: {e}")
-        return {}
-
-
-def _update_story_dev_server(story_id: str, port: int, pid: int):
-    """Update story with dev server info."""
-    try:
-        from uuid import UUID
-        from sqlmodel import Session
-        from app.core.db import engine
-        from app.models import Story
-        
-        with Session(engine) as session:
-            story = session.get(Story, UUID(story_id))
-            if story:
-                story.running_port = port
-                story.running_pid = pid
-                session.add(story)
-                session.commit()
-    except Exception as e:
-        logger.error(f"[run_code] Failed to update story: {e}")
-
-
 async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
-    """
-    Execute format, lint fix, typecheck, build.
-    
-    Flow:
-    1. Format all services (prettier)
-    2. Lint fix all services (eslint)
-    3. Build all services (install → typecheck → build)
-    
-    Note: Dev server is NOT auto-started. User starts it manually via frontend.
-    """
-    from langgraph.types import interrupt
-    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
-    from app.agents.developer_v2.src.utils.story_logger import log_to_story, StoryLogger
+
     
     # Get IDs for logging
     story_id = state.get("story_id", "")

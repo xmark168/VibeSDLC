@@ -134,11 +134,6 @@ backend/app/agents/developer/projects_workspace
 backend/projects
 
 backend/uv.lock
-/.bun-cache
-backend/app/projects/.bun-cache
-# ignore mọi thư mục .bun-cache trong project
-**/.bun-cache/
-**/.bun-cache/**
 VibeSDLC/backend/app/projects
 backend/app/projects/.llm-cache
 backend/app/agents/developer_v2/tests/test_output

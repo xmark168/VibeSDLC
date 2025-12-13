@@ -9,10 +9,6 @@ export const isLoggedIn = (): boolean => {
   return localStorage.getItem('access_token') !== null
 }
 
-/**
- * Route protection for authenticated routes
- * Use in beforeLoad hook for protected routes
- */
 export const requireAuth = async () => {
   if (!isLoggedIn()) {
     throw redirect({
@@ -23,7 +19,6 @@ export const requireAuth = async () => {
     })
   }
 
-  // Wait for user data to load
   const store = useAppStore.getState()
   if (!store.user && !store.isLoading) {
     throw redirect({
@@ -35,10 +30,6 @@ export const requireAuth = async () => {
   }
 }
 
-/**
- * Route protection for role-specific routes
- * Use in beforeLoad hook for role-protected routes
- */
 export const requireRole = async (requiredRole: Role) => {
   if (!isLoggedIn()) {
     throw redirect({

@@ -1,5 +1,3 @@
-"""Application configuration management"""
-
 import os
 import warnings
 from pathlib import Path
@@ -91,7 +89,6 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def oauth_callback_url(self) -> str:
-        """Build OAuth callback URL"""
         return f"{self.BACKEND_HOST.rstrip('/')}{self.API_V1_STR}/oauth-callback"
 
     @computed_field

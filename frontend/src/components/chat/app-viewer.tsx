@@ -1,7 +1,13 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Play, Loader2, RefreshCw, ExternalLink, Monitor, Square } from "lucide-react"
+import { Play, Loader2, RefreshCw, ExternalLink, Monitor, Square, CheckCircle2, XCircle, Circle } from "lucide-react"
 import { toast } from "@/lib/toast"
+
+interface LogEntry {
+  message: string
+  status: "running" | "success" | "error"
+  timestamp: Date
+}
 
 interface AppViewerProps {
   projectId?: string
@@ -13,6 +19,7 @@ export function AppViewer({ projectId }: AppViewerProps) {
   const [iframeKey, setIframeKey] = useState(0)
   const [runningPort, setRunningPort] = useState<number | null>(null)
   const [hasWorkspace, setHasWorkspace] = useState(false)
+  const [logs, setLogs] = useState<LogEntry[]>([])
 
   // Fetch initial status
   useEffect(() => {
@@ -33,7 +40,6 @@ export function AppViewer({ projectId }: AppViewerProps) {
           setHasWorkspace(data.has_workspace)
         }
       } catch (error) {
-        console.error('Failed to fetch dev server status:', error)
       }
     }
     
@@ -45,11 +51,44 @@ export function AppViewer({ projectId }: AppViewerProps) {
     const handleDevServer = (event: CustomEvent) => {
       if (event.detail.project_id === projectId) {
         setRunningPort(event.detail.running_port)
+        if (event.detail.running_port) {
+          // Clear logs when server is ready
+          setLogs([])
+        }
+      }
+    }
+    
+    const handleDevServerLog = (event: CustomEvent) => {
+      if (event.detail.project_id === projectId) {
+        setLogs(prev => {
+          // Update last log if same status "running", otherwise add new
+          const newLog: LogEntry = {
+            message: event.detail.message,
+            status: event.detail.status,
+            timestamp: new Date()
+          }
+          
+          // If last log was "running" and new one is different message, update it
+          if (prev.length > 0 && prev[prev.length - 1].status === "running" && event.detail.status !== "running") {
+            return [...prev.slice(0, -1), newLog]
+          }
+          
+          // Replace running log with new running log, or add new log
+          if (prev.length > 0 && prev[prev.length - 1].status === "running" && event.detail.status === "running") {
+            return [...prev.slice(0, -1), newLog]
+          }
+          
+          return [...prev, newLog]
+        })
       }
     }
     
     window.addEventListener('project_dev_server', handleDevServer as EventListener)
-    return () => window.removeEventListener('project_dev_server', handleDevServer as EventListener)
+    window.addEventListener('dev_server_log', handleDevServerLog as EventListener)
+    return () => {
+      window.removeEventListener('project_dev_server', handleDevServer as EventListener)
+      window.removeEventListener('dev_server_log', handleDevServerLog as EventListener)
+    }
   }, [projectId])
 
   const handleStartDevServer = async () => {
@@ -59,6 +98,7 @@ export function AppViewer({ projectId }: AppViewerProps) {
     }
     
     setIsStarting(true)
+    setLogs([]) // Clear previous logs
     try {
       const token = localStorage.getItem('access_token')
       const response = await fetch(
@@ -81,7 +121,6 @@ export function AppViewer({ projectId }: AppViewerProps) {
         toast.error(error.detail || 'Failed to start dev server')
       }
     } catch (error) {
-      console.error('Failed to start dev server:', error)
       toast.error('Failed to start dev server')
     } finally {
       setIsStarting(false)
@@ -113,7 +152,6 @@ export function AppViewer({ projectId }: AppViewerProps) {
         toast.error(error.detail || 'Failed to stop dev server')
       }
     } catch (error) {
-      console.error('Failed to stop dev server:', error)
       toast.error('Failed to stop dev server')
     } finally {
       setIsStopping(false)
@@ -194,24 +232,55 @@ export function AppViewer({ projectId }: AppViewerProps) {
         </div>
         
         {hasWorkspace && projectId && (
-          <Button 
-            size="lg" 
-            onClick={handleStartDevServer}
-            disabled={isStarting}
-            className="gap-2"
-          >
-            {isStarting ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <Play className="w-5 h-5" />
-                Start Dev Server
-              </>
+          <>
+            <Button 
+              size="lg" 
+              onClick={handleStartDevServer}
+              disabled={isStarting}
+              className="gap-2"
+            >
+              {isStarting ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <Play className="w-5 h-5" />
+                  Start Dev Server
+                </>
+              )}
+            </Button>
+            
+            {/* Logs display */}
+            {isStarting && logs.length > 0 && (
+              <div className="w-full max-w-sm mt-4 space-y-2">
+                {logs.map((log, index) => (
+                  <div 
+                    key={index} 
+                    className="flex items-center gap-2 text-sm"
+                  >
+                    {log.status === "running" && (
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                    )}
+                    {log.status === "success" && (
+                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    )}
+                    {log.status === "error" && (
+                      <XCircle className="w-4 h-4 text-red-500" />
+                    )}
+                    <span className={
+                      log.status === "running" ? "text-blue-600" :
+                      log.status === "success" ? "text-green-600" :
+                      "text-red-600"
+                    }>
+                      {log.message}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
-          </Button>
+          </>
         )}
       </div>
     </div>

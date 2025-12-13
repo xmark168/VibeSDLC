@@ -205,11 +205,6 @@ def setup_git_worktree(
         "workspace_ready": workspace_ready,
     }
 
-
-# =============================================================================
-# Context helpers
-# =============================================================================
-
 def get_agents_md(workspace_path: str | Path) -> str:
     """Read AGENTS.md from workspace root."""
     if not workspace_path:
