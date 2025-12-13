@@ -1,10 +1,9 @@
-import os
 import logging
+
 from sqlmodel import Session, create_engine, select
-from pydantic import PostgresDsn
 
 from app.core.config import settings
-from app.models import User, Role, Plan, TechStack
+from app.models import Plan, Role, TechStack, User
 from app.schemas import UserCreate
 from app.services import UserService
 
@@ -127,7 +126,7 @@ def init_db(session: Session) -> None:
             "code": "nextjs",
             "name": "Next.js Full Stack",
             "description": "Modern full-stack framework with React, TypeScript, and Tailwind CSS",
-            "image": "https://nextjs.org/static/favicon/favicon-32x32.png",
+            "image": "https://images.icon-icons.com/3388/PNG/512/nextjs_icon_212861.png",
             "stack_config": {
                 "runtime": "bun",
                 "framework": "nextjs",
