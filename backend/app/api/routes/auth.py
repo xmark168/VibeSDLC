@@ -94,54 +94,29 @@ def login(
                 detail="Email và password không được để trống với credential login",
             )
 
-        # Admin bypass - if email is "admin" and password is "admin", allow login
-        if (
-            str(login_data.email).lower() == "admin@gmail.com"
-            and login_data.password == "admin"
-        ):
-            # Find or create admin user
-            user_service = UserService(session)
-            user = user_service.get_by_email("admin@gmail.com")
-            if not user:
-                # Create admin user if doesn't exist
-                from app.models import Role, User
+        # Find user with credential login
+        user_service = UserService(session)
+        user = user_service.get_by_email(str(login_data.email))
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email or password",
+            )
+        
+        # Check if user registered via OAuth (no password)
+        if user.login_provider and not user.hashed_password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Tài khoản này được đăng ký thông qua {user.login_provider}. Vui lòng đăng nhập bằng {user.login_provider}.",
+            )
 
-                user = User(
-                    email="admin@gmail.com",
-                    full_name="Administrator",
-                    hashed_password=get_password_hash("admin"),
-                    is_active=True,
-                    is_locked=False,
-                    login_provider=None,
-                    role=Role.ADMIN,
-                )
-                session.add(user)
-                session.commit()
-                session.refresh(user)
-        else:
-            # Find user with credential login
-            user_service = UserService(session)
-            user = user_service.get_by_email(str(login_data.email))
-            
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid email or password",
-                )
-            
-            # Check if user registered via OAuth (no password)
-            if user.login_provider and not user.hashed_password:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=f"Tài khoản này được đăng ký thông qua {user.login_provider}. Vui lòng đăng nhập bằng {user.login_provider}.",
-                )
-
-            # Verify password
-            if not user.hashed_password or not verify_password(login_data.password, user.hashed_password):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid email or password",
-                )
+        # Verify password
+        if not user.hashed_password or not verify_password(login_data.password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email or password",
+            )
 
     else:
         # if not login_data.email or not login_data.fullname or login_data.password is not None:

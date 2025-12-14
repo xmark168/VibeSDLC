@@ -1,8 +1,5 @@
 """
 WebSocket Connection Manager
-
-Manages WebSocket connections for real-time communication.
-Messages are saved to DB, so frontend can query missed messages on reconnect.
 """
 
 from typing import Dict, List, Set
@@ -19,7 +16,6 @@ class ConnectionManager:
     """Manages WebSocket connections for projects."""
 
     def __init__(self):
-        # project_id -> set of WebSocket connections
         self.active_connections: Dict[UUID, Set[WebSocket]] = {}
         # websocket -> project_id mapping for cleanup
         self.websocket_to_project: Dict[WebSocket, UUID] = {}
@@ -27,8 +23,6 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket, project_id: UUID):
         """
         Connect a WebSocket to a project room.
-        
-        Frontend should query DB for missed messages on reconnect.
         """
         if project_id not in self.active_connections:
             self.active_connections[project_id] = set()

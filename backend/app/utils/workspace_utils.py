@@ -44,13 +44,8 @@ def cleanup_old_worktree(
     worktree_path: Path,
     agent_name: str = "Agent"
 ) -> None:
-    """Clean up worktree and branch. Order: prune → kill → remove → delete dir → prune → delete branch.
-    
-    Args:
-        main_workspace: Path to main project workspace
-        branch_name: Git branch name to delete
-        worktree_path: Path to worktree directory to remove
-        agent_name: Agent name for logging
+    """
+    Clean up worktree and branch
     """
     import platform
     

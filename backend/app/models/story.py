@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import JSON, Text, ForeignKey
+from sqlalchemy import JSON, Text, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlmodel import Field, Relationship, Column
 
@@ -54,18 +54,25 @@ class Story(BaseModel, table=True):
     type: StoryType = Field(default=StoryType.USER_STORY)
     title: str
     description: str | None = Field(default=None, sa_column=Column(Text))
-    status: StoryStatus = Field(default=StoryStatus.TODO)
+    status: StoryStatus = Field(default=StoryStatus.TODO, index=True)  # Added index for status filtering
 
-    epic_id: UUID | None = Field(default=None, foreign_key="epics.id", ondelete="SET NULL")
+    epic_id: UUID | None = Field(default=None, foreign_key="epics.id", ondelete="SET NULL", index=True)  # Added index
 
     acceptance_criteria: list | None = Field(default=None, sa_column=Column(JSON))
     requirements: list | None = Field(default=None, sa_column=Column(JSON))
 
     assignee_id: UUID | None = Field(
-        default=None, foreign_key="users.id", ondelete="SET NULL"
+        default=None, foreign_key="users.id", ondelete="SET NULL", index=True  # Added index
     )
     reviewer_id: UUID | None = Field(
         default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
+    
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        Index('ix_stories_project_status', 'project_id', 'status'),  # Kanban board queries
+        Index('ix_stories_project_assignee', 'project_id', 'assignee_id'),  # Assignment queries
+        Index('ix_stories_project_created', 'project_id', 'created_at'),  # Timeline queries
     )
 
     rank: int | None = Field(default=None)
