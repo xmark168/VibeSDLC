@@ -100,7 +100,7 @@ export function PasswordSettings() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Key className="h-5 w-5" />
-          Mật khẩu
+          Password
         </CardTitle>
         <CardDescription>
           {hasPassword

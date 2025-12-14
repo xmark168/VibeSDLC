@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { useLocation, useNavigate } from "@tanstack/react-router"
-import { ChevronDown, LogOut, CreditCard, User, Sun, Moon, Monitor } from "lucide-react"
+import { ChevronDown, LogOut, CreditCard, User, Sun, Moon, Monitor, Home } from "lucide-react"
 import toast from "react-hot-toast"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ import useAuth from "@/hooks/useAuth"
 import { useTheme } from "@/components/provider/theme-provider"
 import { SettingsDialog } from "@/components/settings"
 import { useProfile } from "@/queries/profile"
+import { useCurrentSubscription } from "@/queries/subscription"
 
 const DEFAULT_AVATAR = "https://github.com/shadcn.png"
 
@@ -36,6 +37,7 @@ export const HeaderProject = ({
   const user = useAppStore((state) => state.user)
   const { theme, setTheme } = useTheme()
   const { data: profile } = useProfile()
+  const { data: subscriptionData } = useCurrentSubscription()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [defaultTab, setDefaultTab] = useState<string | undefined>(undefined)
   const location = useLocation()
@@ -43,6 +45,7 @@ export const HeaderProject = ({
   // Get avatar URL with fallback
   const avatarUrl = import.meta.env.VITE_API_URL + profile?.avatar_url || DEFAULT_AVATAR
   const displayName = profile?.full_name || user?.full_name || ""
+  const planName = subscriptionData?.subscription?.plan?.name || "Free"
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const success = params.get("success")
@@ -92,9 +95,9 @@ export const HeaderProject = ({
       }}
       className="sticky top-0 z-50 w-full flex items-center border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
-      <div className="container flex h-16 items-center justify-between px-6">
+      <div className="container flex h-16 items-center justify-between px-4 md:px-8">
         {/* Left side - Logo/Brand */}
-        <div className="flex items-center gap-2 ml-2">
+        <a href="/" className="flex items-center gap-2 cursor-pointer">
           <div className="flex items-center justify-center rounded-lg">
             <img 
               src="/assets/images/logo.png" 
@@ -102,19 +105,16 @@ export const HeaderProject = ({
               className="h-5 object-contain" 
             />
           </div>
-        </div>
+        </a>
 
         {/* Right side - User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              className="flex items-center gap-3 hover:bg-accent transition-colors"
+              className="flex items-center gap-2 hover:bg-accent transition-colors focus-visible:ring-0 focus-visible:ring-offset-0"
             >
-              <Avatar
-                className="h-8 w-8 ring-2 ring-primary/20"
-
-              >
+              <Avatar className="h-8 w-8">
                 <AvatarImage src={avatarUrl} alt={displayName} />
                 <AvatarFallback className="bg-[var(--gradient-primary)] text-sm font-semibold">
                   {getInitials(user?.full_name || "")}
@@ -126,7 +126,7 @@ export const HeaderProject = ({
                 </span>
 
                 <span className="text-xs text-muted-foreground">
-                  base user
+                  {planName}
                 </span>
               </div>
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -142,6 +142,12 @@ export const HeaderProject = ({
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <a href="/">
+                <Home className="mr-2 h-4 w-4" />
+                <span>Homepage</span>
+              </a>
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={handleViewProfile}
               className="cursor-pointer"

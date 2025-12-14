@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as PublicRouteImport } from './routes/_public'
 import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as AuthRouteRouteImport } from './routes/_auth/route'
 import { Route as IndexRouteImport } from './routes/index'
@@ -20,7 +21,11 @@ import { Route as AdminPersonasRouteImport } from './routes/admin/personas'
 import { Route as AdminAgentsRouteImport } from './routes/admin/agents'
 import { Route as UserUpgradeRouteImport } from './routes/_user/upgrade'
 import { Route as UserProjectsRouteImport } from './routes/_user/projects'
-import { Route as UserHihiRouteImport } from './routes/_user/hihi'
+import { Route as PublicTermsOfServiceRouteImport } from './routes/_public/terms-of-service'
+import { Route as PublicPrivacyPolicyRouteImport } from './routes/_public/privacy-policy'
+import { Route as PublicFaqsRouteImport } from './routes/_public/faqs'
+import { Route as PublicCompanyRouteImport } from './routes/_public/company'
+import { Route as PublicAboutUsRouteImport } from './routes/_public/about-us'
 import { Route as AuthVerifyOtpRouteImport } from './routes/_auth/verify-otp'
 import { Route as AuthVerify2faRouteImport } from './routes/_auth/verify-2fa'
 import { Route as AuthSignupRouteImport } from './routes/_auth/signup'
@@ -32,6 +37,10 @@ import { Route as AuthForgotPasswordRouteImport } from './routes/_auth/forgot-pa
 import { Route as UserWorkspaceWorkspaceIdRouteImport } from './routes/_user/workspace/$workspaceId'
 import { Route as UserChatChatIdRouteImport } from './routes/_user/chat/$chatId'
 
+const PublicRoute = PublicRouteImport.update({
+  id: '/_public',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LayoutRoute = LayoutRouteImport.update({
   id: '/_layout',
   getParentRoute: () => rootRouteImport,
@@ -85,10 +94,30 @@ const UserProjectsRoute = UserProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => rootRouteImport,
 } as any)
-const UserHihiRoute = UserHihiRouteImport.update({
-  id: '/_user/hihi',
-  path: '/hihi',
-  getParentRoute: () => rootRouteImport,
+const PublicTermsOfServiceRoute = PublicTermsOfServiceRouteImport.update({
+  id: '/terms-of-service',
+  path: '/terms-of-service',
+  getParentRoute: () => PublicRoute,
+} as any)
+const PublicPrivacyPolicyRoute = PublicPrivacyPolicyRouteImport.update({
+  id: '/privacy-policy',
+  path: '/privacy-policy',
+  getParentRoute: () => PublicRoute,
+} as any)
+const PublicFaqsRoute = PublicFaqsRouteImport.update({
+  id: '/faqs',
+  path: '/faqs',
+  getParentRoute: () => PublicRoute,
+} as any)
+const PublicCompanyRoute = PublicCompanyRouteImport.update({
+  id: '/company',
+  path: '/company',
+  getParentRoute: () => PublicRoute,
+} as any)
+const PublicAboutUsRoute = PublicAboutUsRouteImport.update({
+  id: '/about-us',
+  path: '/about-us',
+  getParentRoute: () => PublicRoute,
 } as any)
 const AuthVerifyOtpRoute = AuthVerifyOtpRouteImport.update({
   id: '/verify-otp',
@@ -152,7 +181,11 @@ export interface FileRoutesByFullPath {
   '/signup': typeof AuthSignupRoute
   '/verify-2fa': typeof AuthVerify2faRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
-  '/hihi': typeof UserHihiRoute
+  '/about-us': typeof PublicAboutUsRoute
+  '/company': typeof PublicCompanyRoute
+  '/faqs': typeof PublicFaqsRoute
+  '/privacy-policy': typeof PublicPrivacyPolicyRoute
+  '/terms-of-service': typeof PublicTermsOfServiceRoute
   '/projects': typeof UserProjectsRoute
   '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
@@ -174,7 +207,11 @@ export interface FileRoutesByTo {
   '/signup': typeof AuthSignupRoute
   '/verify-2fa': typeof AuthVerify2faRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
-  '/hihi': typeof UserHihiRoute
+  '/about-us': typeof PublicAboutUsRoute
+  '/company': typeof PublicCompanyRoute
+  '/faqs': typeof PublicFaqsRoute
+  '/privacy-policy': typeof PublicPrivacyPolicyRoute
+  '/terms-of-service': typeof PublicTermsOfServiceRoute
   '/projects': typeof UserProjectsRoute
   '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
@@ -191,6 +228,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_auth': typeof AuthRouteRouteWithChildren
   '/_layout': typeof LayoutRoute
+  '/_public': typeof PublicRouteWithChildren
   '/_auth/forgot-password': typeof AuthForgotPasswordRoute
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/oauth-callback': typeof AuthOauthCallbackRoute
@@ -199,7 +237,11 @@ export interface FileRoutesById {
   '/_auth/signup': typeof AuthSignupRoute
   '/_auth/verify-2fa': typeof AuthVerify2faRoute
   '/_auth/verify-otp': typeof AuthVerifyOtpRoute
-  '/_user/hihi': typeof UserHihiRoute
+  '/_public/about-us': typeof PublicAboutUsRoute
+  '/_public/company': typeof PublicCompanyRoute
+  '/_public/faqs': typeof PublicFaqsRoute
+  '/_public/privacy-policy': typeof PublicPrivacyPolicyRoute
+  '/_public/terms-of-service': typeof PublicTermsOfServiceRoute
   '/_user/projects': typeof UserProjectsRoute
   '/_user/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
@@ -223,7 +265,11 @@ export interface FileRouteTypes {
     | '/signup'
     | '/verify-2fa'
     | '/verify-otp'
-    | '/hihi'
+    | '/about-us'
+    | '/company'
+    | '/faqs'
+    | '/privacy-policy'
+    | '/terms-of-service'
     | '/projects'
     | '/upgrade'
     | '/admin/agents'
@@ -245,7 +291,11 @@ export interface FileRouteTypes {
     | '/signup'
     | '/verify-2fa'
     | '/verify-otp'
-    | '/hihi'
+    | '/about-us'
+    | '/company'
+    | '/faqs'
+    | '/privacy-policy'
+    | '/terms-of-service'
     | '/projects'
     | '/upgrade'
     | '/admin/agents'
@@ -261,6 +311,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_auth'
     | '/_layout'
+    | '/_public'
     | '/_auth/forgot-password'
     | '/_auth/login'
     | '/_auth/oauth-callback'
@@ -269,7 +320,11 @@ export interface FileRouteTypes {
     | '/_auth/signup'
     | '/_auth/verify-2fa'
     | '/_auth/verify-otp'
-    | '/_user/hihi'
+    | '/_public/about-us'
+    | '/_public/company'
+    | '/_public/faqs'
+    | '/_public/privacy-policy'
+    | '/_public/terms-of-service'
     | '/_user/projects'
     | '/_user/upgrade'
     | '/admin/agents'
@@ -286,7 +341,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRouteRoute: typeof AuthRouteRouteWithChildren
   LayoutRoute: typeof LayoutRoute
-  UserHihiRoute: typeof UserHihiRoute
+  PublicRoute: typeof PublicRouteWithChildren
   UserProjectsRoute: typeof UserProjectsRoute
   UserUpgradeRoute: typeof UserUpgradeRoute
   AdminAgentsRoute: typeof AdminAgentsRoute
@@ -301,6 +356,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/_public': {
+      id: '/_public'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof PublicRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_layout': {
       id: '/_layout'
       path: ''
@@ -378,12 +440,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UserProjectsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_user/hihi': {
-      id: '/_user/hihi'
-      path: '/hihi'
-      fullPath: '/hihi'
-      preLoaderRoute: typeof UserHihiRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_public/terms-of-service': {
+      id: '/_public/terms-of-service'
+      path: '/terms-of-service'
+      fullPath: '/terms-of-service'
+      preLoaderRoute: typeof PublicTermsOfServiceRouteImport
+      parentRoute: typeof PublicRoute
+    }
+    '/_public/privacy-policy': {
+      id: '/_public/privacy-policy'
+      path: '/privacy-policy'
+      fullPath: '/privacy-policy'
+      preLoaderRoute: typeof PublicPrivacyPolicyRouteImport
+      parentRoute: typeof PublicRoute
+    }
+    '/_public/faqs': {
+      id: '/_public/faqs'
+      path: '/faqs'
+      fullPath: '/faqs'
+      preLoaderRoute: typeof PublicFaqsRouteImport
+      parentRoute: typeof PublicRoute
+    }
+    '/_public/company': {
+      id: '/_public/company'
+      path: '/company'
+      fullPath: '/company'
+      preLoaderRoute: typeof PublicCompanyRouteImport
+      parentRoute: typeof PublicRoute
+    }
+    '/_public/about-us': {
+      id: '/_public/about-us'
+      path: '/about-us'
+      fullPath: '/about-us'
+      preLoaderRoute: typeof PublicAboutUsRouteImport
+      parentRoute: typeof PublicRoute
     }
     '/_auth/verify-otp': {
       id: '/_auth/verify-otp'
@@ -484,11 +574,30 @@ const AuthRouteRouteWithChildren = AuthRouteRoute._addFileChildren(
   AuthRouteRouteChildren,
 )
 
+interface PublicRouteChildren {
+  PublicAboutUsRoute: typeof PublicAboutUsRoute
+  PublicCompanyRoute: typeof PublicCompanyRoute
+  PublicFaqsRoute: typeof PublicFaqsRoute
+  PublicPrivacyPolicyRoute: typeof PublicPrivacyPolicyRoute
+  PublicTermsOfServiceRoute: typeof PublicTermsOfServiceRoute
+}
+
+const PublicRouteChildren: PublicRouteChildren = {
+  PublicAboutUsRoute: PublicAboutUsRoute,
+  PublicCompanyRoute: PublicCompanyRoute,
+  PublicFaqsRoute: PublicFaqsRoute,
+  PublicPrivacyPolicyRoute: PublicPrivacyPolicyRoute,
+  PublicTermsOfServiceRoute: PublicTermsOfServiceRoute,
+}
+
+const PublicRouteWithChildren =
+  PublicRoute._addFileChildren(PublicRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRouteRoute: AuthRouteRouteWithChildren,
   LayoutRoute: LayoutRoute,
-  UserHihiRoute: UserHihiRoute,
+  PublicRoute: PublicRouteWithChildren,
   UserProjectsRoute: UserProjectsRoute,
   UserUpgradeRoute: UserUpgradeRoute,
   AdminAgentsRoute: AdminAgentsRoute,

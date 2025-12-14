@@ -153,7 +153,7 @@ def login(
         
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password",
             )
         
@@ -167,7 +167,7 @@ def login(
         # Verify password
         if not user.hashed_password or not verify_password(login_data.password, user.hashed_password):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password",
             )
 
@@ -406,7 +406,7 @@ def confirm_code(
 
     if verification_code_str != confirm_code_str:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Mã xác thực không đúng"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Mã xác thực không đúng"
         )
 
     # Create user
@@ -612,43 +612,41 @@ def forgot_password(
     # Check if email exists in database
     user_service = UserService(session)
     user = user_service.get_by_email(str(forgot_data.email))
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Email không tồn tại trong hệ thống",
-        )
+    
+    # Security: Always return success message to prevent email enumeration
+    # Only send email if user actually exists
+    if user:
+        # Generate reset token
+        reset_token = secrets.token_urlsafe(32)
 
-    # Generate reset token
-    reset_token = secrets.token_urlsafe(32)
+        # Store token in Redis with email as value
+        token_key = f"password_reset:{reset_token}"
+        if not redis_client.set(token_key, str(forgot_data.email), ttl=900):  # 15 minutes
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Lỗi hệ thống, vui lòng thử lại",
+            )
 
-    # Store token in Redis with email as value
-    token_key = f"password_reset:{reset_token}"
-    if not redis_client.set(token_key, str(forgot_data.email), ttl=900):  # 15 minutes
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Lỗi hệ thống, vui lòng thử lại",
-        )
+        # Create reset link
+        reset_link = f"{settings.FRONTEND_HOST}/reset-password?token={reset_token}"
 
-    # Create reset link
-    reset_link = f"{settings.FRONTEND_HOST}/reset-password?token={reset_token}"
-
-    # Send reset password email
-    try:
-        email_data = generate_password_reset_email(
-            email_to=str(forgot_data.email), reset_link=reset_link
-        )
-        send_email(
-            email_to=str(forgot_data.email),
-            subject=email_data.subject,
-            html_content=email_data.html_content,
-        )
-    except Exception:
-        # Clean up Redis data if email fails
-        redis_client.delete(token_key)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Không thể gửi email reset password",
-        )
+        # Send reset password email
+        try:
+            email_data = generate_password_reset_email(
+                email_to=str(forgot_data.email), reset_link=reset_link
+            )
+            send_email(
+                email_to=str(forgot_data.email),
+                subject=email_data.subject,
+                html_content=email_data.html_content,
+            )
+        except Exception:
+            # Clean up Redis data if email fails
+            redis_client.delete(token_key)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Không thể gửi email reset password",
+            )
 
     return ForgotPasswordResponse(
         message="Link reset mật khẩu đã được gửi đến email của bạn",
@@ -675,7 +673,7 @@ def reset_password(
     # Check password confirmation
     if reset_data.new_password != reset_data.confirm_password:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Mật khẩu xác nhận không khớp",
         )
 
@@ -685,7 +683,7 @@ def reset_password(
 
     if not email:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token không hợp lệ hoặc đã hết hạn",
         )
 
