@@ -2,7 +2,7 @@
 Skills package
 """
 
-from app.agents.developer_v2.src.skills.skill_loader import (
+from app.agents.developer.src.skills.skill_loader import (
     Skill,
     SkillMetadata,
     load_skill,
@@ -10,7 +10,7 @@ from app.agents.developer_v2.src.skills.skill_loader import (
     get_project_structure,
     get_plan_prompts,
 )
-from app.agents.developer_v2.src.skills.registry import SkillRegistry
+from app.agents.developer.src.skills.registry import SkillRegistry
 
 __all__ = [
     "Skill",

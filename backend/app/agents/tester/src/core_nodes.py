@@ -15,7 +15,7 @@ from app.agents.tester.src._llm import get_llm, default_llm
 from app.core.db import engine
 from app.models import Project, Story, StoryStatus
 from app.models.base import StoryAgentState
-from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+from app.agents.developer.src.utils.story_logger import StoryLogger
 
 logger = logging.getLogger(__name__)
 
@@ -454,7 +454,8 @@ async def send_response(state: TesterState, agent=None) -> dict:
     
     # Only commit when tests PASS, revert on FAIL/ERROR
     if workspace_ready and workspace_path:
-        from app.agents.tester.src.tools.workspace_tools import commit_workspace_changes, revert_test_changes
+        from app.utils.workspace_utils import commit_workspace_changes
+        from app.agents.tester.src.tools.workspace_tools import revert_test_changes
         
         if run_status == "PASS" and files_created:
             try:

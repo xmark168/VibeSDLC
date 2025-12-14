@@ -6,12 +6,12 @@ import glob as glob_module
 from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
-from app.agents.developer_v2.src.nodes._llm import get_llm, fast_llm
-from app.agents.developer_v2.src.schemas import SimplePlanOutput
-from app.agents.developer_v2.src.skills.registry import SkillRegistry
-from app.agents.developer_v2.src.skills import get_plan_prompts
+from app.agents.developer.src.state import DeveloperState
+from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
+from app.agents.developer.src.nodes._llm import get_llm, fast_llm
+from app.agents.developer.src.schemas import SimplePlanOutput
+from app.agents.developer.src.skills.registry import SkillRegistry
+from app.agents.developer.src.skills import get_plan_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -173,8 +173,8 @@ def _auto_fix_dependencies(steps: list) -> list:
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Zero-shot planning with FileRepository."""
     from langgraph.types import interrupt
-    from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
-    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+    from app.agents.developer.src.utils.story_logger import StoryLogger
     
     story_logger = StoryLogger.from_state(state, agent).with_node("plan")
     story_id = state.get("story_id", "")
@@ -250,7 +250,7 @@ Create implementation plan. Output JSON steps directly."""
         SkillRegistry.load(tech_stack)
         deps_content = _preload_dependencies(workspace_path, steps)
         
-        from app.agents.developer_v2.src.nodes.parallel_utils import group_steps_by_layer, should_use_parallel
+        from app.agents.developer.src.nodes.parallel_utils import group_steps_by_layer, should_use_parallel
         layers = group_steps_by_layer(steps)
         can_parallel = should_use_parallel(steps)
         

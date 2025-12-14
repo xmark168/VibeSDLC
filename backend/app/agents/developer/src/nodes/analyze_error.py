@@ -7,13 +7,13 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
 from typing import Literal, List, Optional
 
-from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.schemas import PlanStep
-from app.agents.developer_v2.src.config import MAX_DEBUG_ATTEMPTS
-from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
-from app.agents.developer_v2.src.utils.prompt_utils import build_system_prompt as _build_system_prompt
-from app.agents.developer_v2.src.nodes._llm import code_llm
-from app.agents.developer_v2.src.skills import SkillRegistry
+from app.agents.developer.src.state import DeveloperState
+from app.agents.developer.src.schemas import PlanStep
+from app.agents.developer.src.config import MAX_DEBUG_ATTEMPTS
+from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
+from app.agents.developer.src.utils.prompt_utils import build_system_prompt as _build_system_prompt
+from app.agents.developer.src.nodes._llm import code_llm
+from app.agents.developer.src.skills import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +112,8 @@ def _clean_logs(logs: str, max_lines: int = 50) -> str:
 async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
     """Zero-shot error analysis with structured output."""
     from langgraph.types import interrupt
-    from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
-    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+    from app.agents.developer.src.utils.story_logger import StoryLogger
     
     story_logger = StoryLogger.from_state(state, agent).with_node("analyze_error")
     story_id = state.get("story_id", "")
@@ -133,7 +133,7 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
         debug_count = state.get("debug_count", 0)
         debug_history = state.get("debug_history", [])
         
-        from app.agents.developer_v2.src.utils.story_logger import analyze_error_type, try_auto_fix
+        from app.agents.developer.src.utils.story_logger import analyze_error_type, try_auto_fix
         
         if workspace_path and error_logs:
             error_analysis = analyze_error_type(error_logs)

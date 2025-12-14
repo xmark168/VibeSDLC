@@ -63,13 +63,13 @@ _maintenance_message: str | None = None
 def get_role_class_map():
     """Get role class mapping with lazy imports."""
     from app.agents.business_analyst import BusinessAnalyst
-    from app.agents.developer_v2 import DeveloperV2
+    from app.agents.developer import Developer
     from app.agents.team_leader import TeamLeader
     from app.agents.tester import Tester
 
     return {
         "team_leader": TeamLeader,
-        "developer": DeveloperV2,
+        "developer": Developer,
         "tester": Tester,
         "business_analyst": BusinessAnalyst,
     }

@@ -723,7 +723,7 @@ async def cancel_story_task(
         story.db_port = None
     
     # Clear container from in-memory registry
-    from app.agents.developer_v2.src.utils.db_container import clear_container_from_registry
+    from app.agents.developer.src.utils.db_container import clear_container_from_registry
     clear_container_from_registry(str(story_id))
     
     # Update state to canceled and clear checkpoint (cancel = permanent stop)
@@ -1148,7 +1148,7 @@ async def restart_story_task(
             logger.warning(f"[restart] Failed to stop docker container: {e}")
     
     # Clear container from in-memory registry to ensure fresh start
-    from app.agents.developer_v2.src.utils.db_container import clear_container_from_registry
+    from app.agents.developer.src.utils.db_container import clear_container_from_registry
     clear_container_from_registry(str(story_id))
     
     # Clear agent's in-memory cache for this story (critical for restart after cancel)

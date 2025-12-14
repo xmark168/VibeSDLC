@@ -1,6 +1,6 @@
 """Database container management using testcontainers.
 
-Copied from developer_v2 to avoid import chain issues.
+Copied from developer to avoid import chain issues.
 """
 import os
 import re

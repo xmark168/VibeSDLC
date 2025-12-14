@@ -9,15 +9,15 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.schemas import ImplementOutput
-from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_config as _cfg
-from app.agents.developer_v2.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
-from app.agents.developer_v2.src.utils.token_utils import truncate_to_tokens
-from app.agents.developer_v2.src.nodes._llm import get_llm
-from app.agents.developer_v2.src.skills import SkillRegistry
-from app.agents.developer_v2.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
-from app.agents.developer_v2.src.utils.story_logger import git_with_retry
+from app.agents.developer.src.state import DeveloperState
+from app.agents.developer.src.schemas import ImplementOutput
+from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg
+from app.agents.developer.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
+from app.agents.developer.src.utils.token_utils import truncate_to_tokens
+from app.agents.developer.src.nodes._llm import get_llm
+from app.agents.developer.src.skills import SkillRegistry
+from app.agents.developer.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
+from app.agents.developer.src.utils.story_logger import git_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -264,8 +264,8 @@ def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundl
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute implementation step with preloaded skills."""
     from langgraph.types import interrupt
-    from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
-    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+    from app.agents.developer.src.utils.story_logger import StoryLogger
     
     # Create story logger
     story_logger = StoryLogger.from_state(state, agent).with_node("implement")
@@ -420,7 +420,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         return {**state, "error": str(e), "action": "RESPOND"}
 
 
-from app.agents.developer_v2.src.nodes.parallel_utils import group_steps_by_layer, run_layer_parallel, MAX_CONCURRENT
+from app.agents.developer.src.nodes.parallel_utils import group_steps_by_layer, run_layer_parallel, MAX_CONCURRENT
 
 
 async def _implement_single_step(step: Dict, state: DeveloperState, skill_registry: SkillRegistry, workspace_path: str, deps_content: Dict, created_components: Dict[str, str] = None) -> Dict:
@@ -473,8 +473,8 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
 async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute steps in parallel by layer."""
     from langgraph.types import interrupt
-    from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
-    from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+    from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+    from app.agents.developer.src.utils.story_logger import StoryLogger
     
     # Create story logger
     story_logger = StoryLogger.from_state(state, agent).with_node("implement_parallel")
@@ -527,7 +527,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                 signal = check_interrupt_signal(story_id, agent)
                 if signal:
                     if signal == "cancel":
-                        from app.agents.developer_v2.src.exceptions import StoryStoppedException
+                        from app.agents.developer.src.exceptions import StoryStoppedException
                         from app.models.base import StoryAgentState
                         raise StoryStoppedException(
                             story_id,
@@ -618,7 +618,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "current_layer": total_layers, "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:
         from langgraph.errors import GraphInterrupt
-        from app.agents.developer_v2.src.exceptions import StoryStoppedException
+        from app.agents.developer.src.exceptions import StoryStoppedException
         if isinstance(e, (GraphInterrupt, StoryStoppedException)):
             raise
         await story_logger.error(f"Parallel implementation failed: {str(e)}", exc=e)

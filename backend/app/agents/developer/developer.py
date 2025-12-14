@@ -1,4 +1,4 @@
-"""Developer V2 Agent - LangGraph-based Story Processor."""
+"""Developer Agent"""
 import asyncio
 import logging
 from typing import Dict, List, Optional, Set
@@ -7,17 +7,17 @@ from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
 from app.core.agent.project_context import ProjectContext
 from app.models import Agent as AgentModel
 from app.models.base import StoryAgentState
-from app.agents.developer_v2.src import DeveloperGraph
-from app.agents.developer_v2.src.utils.workspace_manager import ProjectWorkspaceManager
+from app.agents.developer.src import DeveloperGraph
+from app.utils.workspace_utils import ProjectWorkspaceManager
 from app.kafka.event_schemas import AgentTaskType
 
-from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
-from app.agents.developer_v2.src.exceptions import StoryStoppedException
+from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+from app.agents.developer.src.exceptions import StoryStoppedException
 
 logger = logging.getLogger(__name__)
 
 
-class DeveloperV2(BaseAgent):
+class Developer(BaseAgent):
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
@@ -388,7 +388,7 @@ class DeveloperV2(BaseAgent):
                     langfuse = get_client()
                     langfuse_ctx = langfuse.start_as_current_observation(
                         as_type="span",
-                        name="developer_v2_graph"
+                        name="developer_graph"
                     )
                     langfuse_span = langfuse_ctx.__enter__()
                     langfuse_span.update_trace(
@@ -399,7 +399,7 @@ class DeveloperV2(BaseAgent):
                             "title": story_data.get("title", "")[:200],
                             "content": story_data.get("content", "")[:300]
                         },
-                        tags=["developer_v2", self.role_type],
+                        tags=["developer", self.role_type],
                         metadata={"agent": self.name, "task_id": str(task.task_id)}
                     )
                     langfuse_handler = CallbackHandler()
@@ -606,7 +606,7 @@ class DeveloperV2(BaseAgent):
                 # Git operations based on reason
                 workspace_path = final_state.get("workspace_path", "")
                 if workspace_path:
-                    from app.agents.developer_v2.src.nodes.implement import git_revert_uncommitted, git_reset_all
+                    from app.agents.developer.src.nodes.implement import git_revert_uncommitted, git_reset_all
                     if reason == "pause":
                         # Revert uncommitted changes (keep commits)
                         git_revert_uncommitted(workspace_path)
@@ -680,7 +680,7 @@ class DeveloperV2(BaseAgent):
                 workspace_path = final_state.get("workspace_path", "")
                 if workspace_path:
                     try:
-                        from app.agents.developer_v2.src.nodes.implement import git_squash_wip_commits
+                        from app.agents.developer.src.nodes.implement import git_squash_wip_commits
                         story_title = initial_state.get("title", "implement story")
                         base_branch = final_state.get("base_branch", "main")
                         git_squash_wip_commits(workspace_path, base_branch, f"feat: {story_title}")
@@ -946,7 +946,7 @@ class DeveloperV2(BaseAgent):
         from app.core.db import engine
         from app.models import Story
         from app.models.story import StoryStatus
-        from app.agents.developer_v2.src.utils.story_logger import log_to_story
+        from app.agents.developer.src.utils.story_logger import log_to_story
         
         # Extract task context
         ctx = task.context or {}

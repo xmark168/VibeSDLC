@@ -1,4 +1,4 @@
-"""LLM instances for developer_v2 agent.
+"""LLM instances for developer agent.
 
 Re-exports from centralized llm_factory.
 Token tracking is automatic via LangChain callback in factory.

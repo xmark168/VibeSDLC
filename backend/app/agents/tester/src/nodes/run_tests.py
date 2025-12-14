@@ -10,7 +10,7 @@ from uuid import UUID
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.core_nodes import send_message, generate_user_message
-from app.agents.developer_v2.src.utils.story_logger import StoryLogger
+from app.agents.developer.src.utils.story_logger import StoryLogger
 
 logger = logging.getLogger(__name__)
 

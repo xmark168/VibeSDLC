@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from typing import Dict, List
 
-from app.agents.developer_v2.src.config import MAX_CONCURRENT
+from app.agents.developer.src.config import MAX_CONCURRENT
 
 logger = logging.getLogger(__name__)
 

@@ -11,13 +11,13 @@ import time
 from pathlib import Path
 from typing import Tuple, Optional, List
 
-from app.agents.developer_v2.src.state import DeveloperState
-from app.agents.developer_v2.src.utils.shell_utils import run_shell
-from app.agents.developer_v2.src.utils.llm_utils import get_langfuse_span
+from app.agents.developer.src.state import DeveloperState
+from app.agents.developer.src.utils.shell_utils import run_shell
+from app.agents.developer.src.utils.llm_utils import get_langfuse_span
 
 from langgraph.types import interrupt
-from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
-from app.agents.developer_v2.src.utils.story_logger import log_to_story, StoryLogger
+from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+from app.agents.developer.src.utils.story_logger import log_to_story, StoryLogger
 logger = logging.getLogger(__name__)
 
 
