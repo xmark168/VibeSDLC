@@ -272,7 +272,7 @@ def change_password(
     if not current_user.hashed_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bạn chưa có mật khẩu. Vui lòng sử dụng chức năng tạo mật khẩu.",
+            detail="You don't have a password yet. Please use the create password feature.",
         )
 
     # Verify current password
@@ -327,7 +327,7 @@ def set_password(
     if current_user.hashed_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Bạn đã có mật khẩu. Vui lòng sử dụng chức năng đổi mật khẩu.",
+            detail="You already have a password. Please use the change password feature.",
         )
 
     # Validate new password
