@@ -152,26 +152,6 @@ function RouteComponent() {
             </CardContent>
           </Card>
         </Link>
-
-        <Card className="opacity-50">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-muted rounded-lg">
-                <Activity className="w-6 h-6 text-muted-foreground" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">System Metrics</CardTitle>
-                <CardDescription>
-                  View detailed system performance metrics
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">Coming soon...</p>
-          </CardContent>
-        </Card>
-        
       </div>
     </div>
     </AdminLayout>

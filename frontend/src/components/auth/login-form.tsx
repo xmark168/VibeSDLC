@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import useAuth from "@/hooks/useAuth"
 import { toast } from "@/lib/toast"
-import { Facebook, Github, Loader2 } from "lucide-react"
+import { Facebook, Github, Loader2, Eye, EyeOff } from "lucide-react"
 import { FaGooglePlusG } from "react-icons/fa6";
 
 const REMEMBER_EMAIL_KEY = "vibeSDLC_remembered_email"
@@ -18,6 +18,7 @@ type OAuthLoadingProvider = "google" | "github" | "facebook" | null
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [oauthLoading, setOauthLoading] = useState<OAuthLoadingProvider>(null)
   const { loginMutation } = useAuth()
@@ -33,6 +34,13 @@ export function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (rememberMe) {
+      localStorage.setItem(REMEMBER_EMAIL_KEY, email)
+    } else {
+      localStorage.removeItem(REMEMBER_EMAIL_KEY)
+    }
+
     loginMutation.mutate(
       {
         requestBody: { email, password },
@@ -41,8 +49,10 @@ export function LoginForm() {
         onSuccess: () => {
           toast.success("Welcome back!")
         },
-        onError: () => {
-          toast.error("Login failed. Please try again.")
+        onError: (error: any) => {
+          // handleError already shows toast in useAuth, but we can add more specific message here
+          const errorMessage = error?.body?.detail || "Invalid email or password"
+          console.error("Login error:", error)
         },
       },
     )
@@ -131,15 +141,29 @@ export function LoginForm() {
             <Label htmlFor="password" className="sr-only">
               Password
             </Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="h-12"
-              required
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="h-12 pr-10"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? (
+                  <EyeOff className="h-5 w-5" />
+                ) : (
+                  <Eye className="h-5 w-5" />
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between">
@@ -172,12 +196,6 @@ export function LoginForm() {
           >
             {loginMutation.isPending ? "Signing in..." : "Sign in"}
           </Button>
-
-          {loginMutation.error && (
-            <div className="text-sm text-red-500 text-center">
-              {loginMutation.error.message || "Login failed"}
-            </div>
-          )}
 
           <div className="relative my-2">
             <div className="absolute inset-0 flex items-center">
