@@ -13,7 +13,7 @@ from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.skills import SkillRegistry
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.nodes.core_nodes import send_message, generate_user_message
-from app.agents.tester.src.utils.token_utils import truncate_to_tokens
+from app.utils.token_utils import truncate_to_tokens
 from app.agents.tester.src._llm import (
     implement_llm,
     get_llm,

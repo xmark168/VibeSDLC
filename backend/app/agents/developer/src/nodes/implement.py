@@ -13,7 +13,7 @@ from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.schemas import ImplementOutput
 from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg
 from app.agents.developer.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
-from app.agents.developer.src.utils.token_utils import truncate_to_tokens
+from app.utils.token_utils import truncate_to_tokens
 from app.agents.developer.src.nodes._llm import implement_llm
 from app.agents.developer.src.skills import SkillRegistry
 from app.agents.developer.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS

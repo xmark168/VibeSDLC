@@ -84,7 +84,7 @@ def smart_truncate_tokens(
     
     truncated = head + "\n\n/* ... TRUNCATED (showing head + tail) ... */\n\n" + tail
     
-    logger.info(f"[token_utils] Truncated: {len(tokens)} -> {max_tokens} tokens")
+    logger.debug(f"[token_utils] Truncated: {len(tokens)} -> {max_tokens} tokens")
     return truncated, True
 
 

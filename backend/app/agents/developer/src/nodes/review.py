@@ -10,7 +10,7 @@ from app.agents.developer.src.utils.prompt_utils import (
     format_input_template as _format_input_template,
     build_system_prompt as _build_system_prompt,
 )
-from app.agents.developer.src.utils.token_utils import (
+from app.utils.token_utils import (
     smart_truncate_tokens,
 )
 

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, Optional, List
 from dataclasses import dataclass, field
 
-from app.agents.tester.src.skills.skill_loader import (
+from app.core.skills.skill_loader import (
     Skill,
     discover_skills,
 )

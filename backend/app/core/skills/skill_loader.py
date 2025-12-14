@@ -1,7 +1,14 @@
-"""Skill Loader - Load skills using Anthropic's Agent Skills pattern.
+"""
+Skill Loader - Load skills using Anthropic's Agent Skills pattern.
 
-Progressive disclosure: L1=metadata, L2=content, L3=bundled files.
-Skills use SKILL.md with YAML frontmatter (name, description, internal).
+Skills use SKILL.md format with YAML frontmatter:
+- name: skill identifier
+- description: what the skill does and when to use it
+
+Progressive disclosure:
+1. Level 1: name + description (loaded at startup for catalog)
+2. Level 2: Full SKILL.md body (loaded when skill is activated)
+3. Level 3: Bundled files in references/, scripts/, assets/ (loaded as needed)
 """
 import logging
 from pathlib import Path
@@ -12,11 +19,10 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-SKILLS_DIR = Path(__file__).parent
-
 
 @dataclass
 class SkillMetadata:
+    """Level 1: Skill metadata from YAML frontmatter."""
     name: str
     description: str
     internal: bool = False
@@ -31,7 +37,7 @@ class SkillMetadata:
 
 @dataclass
 class Skill:
-    """Full skill with progressive disclosure (L1=metadata, L2=content, L3=bundled files)."""
+    """Full skill definition with progressive disclosure."""
     id: str
     metadata: SkillMetadata
     skill_dir: Path
@@ -225,9 +231,9 @@ def discover_skills(base_dir: Path) -> Dict[str, Skill]:
     return skills
 
 
-def get_project_structure(tech_stack: str = "nextjs") -> str:
+def get_project_structure(tech_stack: str, skills_dir: Path) -> str:
     """Load project-structure.md for a tech stack."""
-    structure_file = SKILLS_DIR / tech_stack / "project-structure.md"
+    structure_file = skills_dir / tech_stack / "project-structure.md"
     
     if not structure_file.exists():
         return ""
@@ -239,19 +245,18 @@ def get_project_structure(tech_stack: str = "nextjs") -> str:
         return ""
 
 
-def get_plan_prompts(tech_stack: str = "nextjs") -> dict:
+def get_plan_prompts(tech_stack: str, skills_dir: Path) -> dict:
     """Load plan_prompts.yaml for a tech stack.
     
     Returns:
         dict with 'system_prompt' and 'input_template' keys
     """
-    prompts_file = SKILLS_DIR / tech_stack / "plan_prompts.yaml"
+    prompts_file = skills_dir / tech_stack / "plan_prompts.yaml"
     
     if not prompts_file.exists():
         return {"system_prompt": "", "input_template": ""}
     
     try:
-        import yaml
         content = prompts_file.read_text(encoding='utf-8')
         data = yaml.safe_load(content)
         return {

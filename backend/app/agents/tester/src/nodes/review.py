@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.utils.token_utils import smart_truncate_tokens
+from app.utils.token_utils import smart_truncate_tokens
 from app.agents.tester.src._llm import review_llm
 
 logger = logging.getLogger(__name__)

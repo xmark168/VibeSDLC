@@ -65,9 +65,9 @@ class StoryHandler(BaseEventHandler):
                 return
 
             ws_message = {
-                "type": "kanban_update",
-                "action": "story_status_changed",
+                "type": "story_status_changed",
                 "story_id": str(event_data.get("story_id", "")),
+                "status": event_data.get("new_status", ""),
                 "old_status": event_data.get("old_status", ""),
                 "new_status": event_data.get("new_status", ""),
                 "timestamp": self._get_timestamp(event_data),

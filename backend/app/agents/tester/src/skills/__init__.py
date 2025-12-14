@@ -14,7 +14,7 @@ Usage:
     content = skill.load_content()  # Level 2
 """
 
-from app.agents.tester.src.skills.skill_loader import (
+from app.core.skills.skill_loader import (
     Skill,
     SkillMetadata,
     load_skill,

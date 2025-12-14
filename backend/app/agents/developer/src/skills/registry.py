@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, Optional, List
 from dataclasses import dataclass, field
 
-from app.agents.developer.src.skills.skill_loader import Skill, discover_skills
+from app.core.skills.skill_loader import Skill, discover_skills
 
 logger = logging.getLogger(__name__)
 SKILLS_DIR = Path(__file__).parent

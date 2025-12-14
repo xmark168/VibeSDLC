@@ -447,7 +447,6 @@ class StoryService:
 
         type_counts = {
             StoryType.USER_STORY: 0,
-            StoryType.ENABLER_STORY: 0,
         }
 
         total_points = 0
@@ -476,7 +475,6 @@ class StoryService:
             "completed_story_points": completed_points,
             "completion_percentage_by_points": (completed_points / total_points * 100) if total_points > 0 else 0,
             "user_stories": type_counts[StoryType.USER_STORY],
-            "enabler_stories": type_counts[StoryType.ENABLER_STORY],
         }
 
     def bulk_update_status(
