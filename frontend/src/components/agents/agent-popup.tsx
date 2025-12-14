@@ -2,7 +2,9 @@ import { useEffect, useState } from "react"
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog"
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -114,6 +116,9 @@ export function AgentPopup({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm p-0 gap-0 overflow-hidden rounded-2xl border shadow-2xl">
+        <VisuallyHidden>
+          <DialogTitle>{agent.human_name} - Agent Details</DialogTitle>
+        </VisuallyHidden>
         {/* Header with theme-aware gradient */}
         <div className="p-5 bg-gradient-to-br from-primary/10 via-primary/5 to-background border-b">
           <div className="flex items-start gap-4">

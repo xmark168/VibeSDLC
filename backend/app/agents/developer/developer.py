@@ -823,14 +823,14 @@ Quy tắc:
                 if run_status == "PASS":
                     await self.message_story(
                         story_uuid,
-                        f"✅ Story hoàn thành! Đã tạo/sửa {total_files} files.",
+                        f"Story hoàn thành! Đã tạo/sửa {total_files} files.",
                         message_type="text",
                         details={"files_created": files_created, "files_modified": files_modified, "branch_name": final_state.get('branch_name')}
                     )
                 else:
                     await self.message_story(
                         story_uuid,
-                        f"❌ Story chưa hoàn thành. Build failed.",
+                        f"Story chưa hoàn thành. Build failed.",
                         message_type="text",
                         details={"files_created": files_created, "files_modified": files_modified, "error": final_state.get("run_stderr", "")[:200]}
                     )
@@ -940,7 +940,7 @@ Quy tắc:
                 story_uuid = UUID(story_id)
                 await self.message_story(
                     story_uuid,
-                    f"❌ Lỗi: {str(e)[:200]}",
+                    f"Lỗi: {str(e)[:200]}",
                     message_type="error"
                 )
             except Exception:
@@ -1135,7 +1135,7 @@ Quy tắc:
             )
             if checkout_result.returncode != 0:
                 await self._update_merge_status(story_id, "error", "checkout_failed")
-                await log_to_story(story_id, project_id, f"❌ Failed to checkout {base_branch}: {checkout_result.stderr}", "error", "merge")
+                await log_to_story(story_id, project_id, f"Failed to checkout {base_branch}: {checkout_result.stderr}", "error", "merge")
                 return TaskResult(success=False, output=f"Failed to checkout {base_branch}")
             
             from app.utils.git_utils import git_pull
@@ -1154,16 +1154,16 @@ Quy tắc:
                 if "CONFLICT" in merge_result.stdout or "CONFLICT" in merge_result.stderr:
                     git_merge_abort(main_ws, timeout=10)
                     await self._update_merge_status(story_id, "conflict", "merge_conflict")
-                    await log_to_story(story_id, project_id, f"❌ Merge conflict! Please resolve manually.", "error", "merge")
+                    await log_to_story(story_id, project_id, f"Merge conflict! Please resolve manually.", "error", "merge")
                     return TaskResult(success=False, output=f"Merge conflict. Manual resolution required.")
                 else:
                     error_msg = merge_result.stderr or merge_result.stdout
                     git_merge_abort(main_ws, timeout=10)
                     await self._update_merge_status(story_id, "error", "merge_failed")
-                    await log_to_story(story_id, project_id, f"❌ Merge failed: {error_msg[:200]}", "error", "merge")
+                    await log_to_story(story_id, project_id, f"Merge failed: {error_msg[:200]}", "error", "merge")
                     return TaskResult(success=False, output=f"Merge failed: {error_msg}")
             
-            await log_to_story(story_id, project_id, f"✅ Successfully merged {branch_name} into {base_branch}", "success", "merge")
+            await log_to_story(story_id, project_id, f"Successfully merged {branch_name} into {base_branch}", "success", "merge")
             
             # 5. Cleanup
             await log_to_story(story_id, project_id, f"🧹 Cleaning up worktree and branch...", "info", "merge")
@@ -1190,7 +1190,7 @@ Quy tắc:
             }, UUID(project_id))
             
             await log_to_story(story_id, project_id, f"📋 Story moved to Done", "success", "merge")
-            await log_to_story(story_id, project_id, f"✅ Successfully merged {branch_name} into {base_branch}!", "success", "merge")
+            await log_to_story(story_id, project_id, f"Successfully merged {branch_name} into {base_branch}!", "success", "merge")
             
             return TaskResult(
                 success=True,
@@ -1204,12 +1204,12 @@ Quy tắc:
             
         except subprocess.TimeoutExpired:
             await self._update_merge_status(story_id, "error", "timeout")
-            await log_to_story(story_id, project_id, "❌ Merge operation timed out", "error", "merge")
+            await log_to_story(story_id, project_id, "Merge operation timed out", "error", "merge")
             return TaskResult(success=False, output="Merge operation timed out")
         except Exception as e:
             logger.error(f"[{self.name}] Merge error: {e}")
             await self._update_merge_status(story_id, "error", "exception")
-            await log_to_story(story_id, project_id, f"❌ Merge error: {str(e)[:200]}", "error", "merge")
+            await log_to_story(story_id, project_id, f"Merge error: {str(e)[:200]}", "error", "merge")
             return TaskResult(success=False, output=f"Merge error: {e}")
 
     async def _update_merge_status(self, story_id: str, pr_state: str, merge_status: str):

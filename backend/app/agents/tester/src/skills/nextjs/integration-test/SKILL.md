@@ -23,14 +23,14 @@ src/__tests__/integration/
 ### One File Per Feature
 Consolidate ALL related API tests into ONE file:
 ```typescript
-// ✅ CORRECT: One file for all book APIs
+//  CORRECT: One file for all book APIs
 // src/__tests__/integration/books.test.ts
 describe('Books API', () => {
   describe('GET /api/books/featured', () => {...});
   describe('GET /api/books/bestsellers', () => {...});
 });
 
-// ❌ WRONG: Multiple files for same feature
+// WRONG: Multiple files for same feature
 // featured-books.test.ts
 // bestsellers.test.ts
 ```
@@ -52,7 +52,7 @@ Focus on **BRANCH COVERAGE**, not quantity! Each API needs only 3 tests:
 describe('GET /api/books/featured', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  // ✅ Branch 1: Happy path
+  //  Branch 1: Happy path
   it('returns books when data exists', async () => {
     (prisma.book.findMany as jest.Mock).mockResolvedValue([
       { id: '1', title: 'Book 1' }
@@ -63,7 +63,7 @@ describe('GET /api/books/featured', () => {
     expect(data.data).toHaveLength(1);
   });
 
-  // ✅ Branch 2: Empty case
+  //  Branch 2: Empty case
   it('returns empty array when no books', async () => {
     (prisma.book.findMany as jest.Mock).mockResolvedValue([]);
     const response = await GET();
@@ -72,7 +72,7 @@ describe('GET /api/books/featured', () => {
     expect(data.data).toEqual([]);
   });
 
-  // ✅ Branch 3: Error case
+  //  Branch 3: Error case
   it('handles database error', async () => {
     (prisma.book.findMany as jest.Mock).mockRejectedValue(new Error('DB Error'));
     const response = await GET();
@@ -83,9 +83,9 @@ describe('GET /api/books/featured', () => {
 // Total: 3 tests covering ALL branches!
 ```
 
-### ❌ Anti-pattern: Redundant Tests
+### Anti-pattern: Redundant Tests
 ```typescript
-// ❌ WRONG: Multiple tests for same branch (happy path)
+// WRONG: Multiple tests for same branch (happy path)
 it('returns featured books', async () => {...});     // Happy path
 it('returns books with correct fields', async () => {...}); // Same branch!
 it('returns books sorted by date', async () => {...});      // Same branch!
@@ -100,20 +100,20 @@ it('returns max 10 books', async () => {...});              // Same branch!
 **NEVER hardcode calculated values** - they cause mock-assertion mismatch!
 
 ```typescript
-// ❌ WRONG - Hardcoded value causes failures
+// WRONG - Hardcoded value causes failures
 const mockReviews = [{ rating: 5 }, { rating: 4 }];  // avg = 4.5
 expect(data.averageRating).toBe(5);  // FAILS! Mock gives 4.5, not 5
 
-// ❌ WRONG - Hardcoded specific values
+// WRONG - Hardcoded specific values
 expect(data.data[0].price).toBe(29.99);
 expect(data.data[0].totalSold).toBe(100);
 expect(data.data[0].averageRating).toBe(4.5);
 ```
 
-### ✅ Use Flexible Matchers Instead:
+###  Use Flexible Matchers Instead:
 
 ```typescript
-// ✅ Check structure exists (RECOMMENDED)
+//  Check structure exists (RECOMMENDED)
 expect(data.data[0]).toMatchObject({
   id: expect.any(String),
   title: expect.any(String),
@@ -121,18 +121,18 @@ expect(data.data[0]).toMatchObject({
   averageRating: expect.any(Number),
 });
 
-// ✅ Check array has items
+//  Check array has items
 expect(data.data).toHaveLength(1);  // or toBeGreaterThan(0)
 
-// ✅ Check value ranges (not exact)
+//  Check value ranges (not exact)
 expect(data.data[0].averageRating).toBeGreaterThanOrEqual(0);
 expect(data.data[0].averageRating).toBeLessThanOrEqual(5);
 
-// ✅ Check field exists
+//  Check field exists
 expect(data.data[0].totalSold).toBeDefined();
 expect(data.data[0].category).toBeDefined();
 
-// ✅ Check boolean/success flags (OK to be exact)
+//  Check boolean/success flags (OK to be exact)
 expect(data.success).toBe(true);
 ```
 
@@ -156,14 +156,14 @@ expect(data.success).toBe(true);
 const response = await GET(request);
 expect(response.status).toBe(200);  // FAILS: Expected 200, Received: undefined
 
-// ✅ CORRECT - Check data.success or data properties instead
+//  CORRECT - Check data.success or data properties instead
 const response = await GET(request);
 const data = await response.json();
 expect(data.success).toBe(true);     // Check API response structure
 expect(data.data).toBeDefined();     // Check data exists
 expect(data.error).toBeUndefined();  // No error for success
 
-// ✅ For error cases - Check error response structure
+//  For error cases - Check error response structure
 const response = await POST(invalidRequest);
 const data = await response.json();
 expect(data.success).toBe(false);    // API returns success: false
@@ -184,15 +184,15 @@ expect(data.error).toBeDefined();    // Error message exists
 In Jest mock environment, use `response.json()` directly - do NOT use `response.text()`.
 
 ```typescript
-// ❌ WRONG - response.text() is not available in Jest mock
+// WRONG - response.text() is not available in Jest mock
 const response = await GET(request);
 const text = await response.text();  // ERROR: response.text is not a function
 
-// ❌ WRONG - response.status is undefined
+// WRONG - response.status is undefined
 const response = await GET(request);
 expect(response.status).toBe(200);   // FAILS: undefined !== 200
 
-// ✅ CORRECT - Use response.json() and check data properties
+//  CORRECT - Use response.json() and check data properties
 const response = await GET(request);
 const data = await response.json();
 expect(data.success).toBe(true);     // Check success flag
@@ -220,7 +220,7 @@ mockFindMany.mockResolvedValue([
 const response = await GET(request);
 const data = await response.json();
 
-// ✅ CORRECT - Check wrapped response
+//  CORRECT - Check wrapped response
 expect(data.success).toBe(true);           // Check success flag
 expect(data.data).toHaveLength(2);         // Check data array length
 expect(data.data[0].title).toBe('Book 1'); // Check data content
@@ -242,7 +242,7 @@ import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/books/search/route';
 
 it('searches books by query', async () => {
-  // ✅ CORRECT - Create NextRequest with URL containing query params
+  //  CORRECT - Create NextRequest with URL containing query params
   const request = new NextRequest('http://localhost/api/books/search?q=math&page=1');
   
   const response = await GET(request);
@@ -252,12 +252,12 @@ it('searches books by query', async () => {
   expect(data.data).toBeDefined();
 });
 
-// ❌ WRONG - Basic Request doesn't have nextUrl property
+// WRONG - Basic Request doesn't have nextUrl property
 const request = new Request('http://localhost/api/search');
 // In route.ts: request.nextUrl.searchParams.get('q')
 // ERROR: Cannot read property 'searchParams' of undefined!
 
-// ❌ WRONG - Missing query params in URL
+// WRONG - Missing query params in URL
 const request = new NextRequest('http://localhost/api/search');
 // route expects ?q=... but URL has no params → validation error or empty results
 ```
@@ -266,23 +266,23 @@ const request = new NextRequest('http://localhost/api/search');
 
 ## ⚠️ TYPESCRIPT STRICT RULES
 ```typescript
-// ✅ CORRECT - Explicit types for ALL parameters
+//  CORRECT - Explicit types for ALL parameters
 const mockFn = jest.fn((...args: unknown[]) => mockImpl(...args));
 const handler = (req: Request, params: { id: string }) => {...};
 
-// ❌ WRONG - Implicit any (will cause TS errors)
+// WRONG - Implicit any (will cause TS errors)
 const mockFn = jest.fn((...args) => mockImpl(...args));  // Error: implicit any
 const handler = (req, params) => {...};  // Error: implicit any
 ```
 
 ## ⚠️ IMPORT RULES
 ```typescript
-// ✅ CORRECT imports
+//  CORRECT imports
 import { getServerSession } from 'next-auth';           // Named import
 import { prisma } from '@/lib/prisma';                  // Named import
 import { GET, POST } from '@/app/api/users/route';      // Named imports for route handlers
 
-// ❌ WRONG imports - DO NOT USE
+// WRONG imports - DO NOT USE
 import getServerSession from 'next-auth';               // Wrong: not default export
 import prisma from '@/lib/prisma';                      // Wrong: check actual export
 ```
@@ -433,18 +433,18 @@ pnpm test --watch                   # Watch mode
 3. **Async/await** - Always await async operations
 4. **Isolation** - Each test should be independent
 
-## ❌ Anti-Patterns - DO NOT DO
+## Anti-Patterns - DO NOT DO
 
 ### Don't create helper functions for response extraction
 ```typescript
-// ❌ WRONG - Unnecessary abstraction, prone to errors
+// WRONG - Unnecessary abstraction, prone to errors
 async function extractResponse(response: Response) {
   const data = await response.json();
   return { status: response.status, data };
 }
 const { status, data } = await extractResponse(response);
 
-// ✅ CORRECT - Use directly, simple and clear
+//  CORRECT - Use directly, simple and clear
 const response = await GET(request);
 const data = await response.json();
 expect(response.status).toBe(200);
@@ -452,7 +452,7 @@ expect(response.status).toBe(200);
 
 ### Don't check exact Prisma query structure
 ```typescript
-// ❌ WRONG - Brittle, breaks on any refactor
+// WRONG - Brittle, breaks on any refactor
 expect(mockFindMany).toHaveBeenCalledWith({
   where: { OR: [{ title: { contains: 'test', mode: 'insensitive' } }] },
   skip: 0,
@@ -461,7 +461,7 @@ expect(mockFindMany).toHaveBeenCalledWith({
   orderBy: [{ featured: 'desc' }, { createdAt: 'desc' }],
 });
 
-// ✅ CORRECT - Check behavior via response data
+//  CORRECT - Check behavior via response data
 expect(mockFindMany).toHaveBeenCalled();
 expect(data).toHaveLength(2);
 expect(data[0].title).toBe('Expected Title');
@@ -469,14 +469,14 @@ expect(data[0].title).toBe('Expected Title');
 
 ### Don't use Date objects in mock data
 ```typescript
-// ❌ WRONG - Date comparison issues in assertions
+// WRONG - Date comparison issues in assertions
 const mockBook = {
   id: 'book-1',
   createdAt: new Date('2023-01-15'),
   updatedAt: new Date('2023-01-15'),
 };
 
-// ✅ CORRECT - Use ISO strings for dates
+//  CORRECT - Use ISO strings for dates
 const mockBook = {
   id: 'book-1',
   createdAt: '2023-01-15T00:00:00.000Z',
@@ -486,7 +486,7 @@ const mockBook = {
 
 ### Keep mock data minimal
 ```typescript
-// ❌ WRONG - Too many fields, hard to maintain
+// WRONG - Too many fields, hard to maintain
 const mockUser = {
   id: 'user-1',
   name: 'Test User',
@@ -502,7 +502,7 @@ const mockUser = {
   // ... more fields
 };
 
-// ✅ CORRECT - Only include fields being tested
+//  CORRECT - Only include fields being tested
 const mockUser = { id: 'user-1', name: 'Test User' };
 ```
 

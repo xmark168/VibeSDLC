@@ -25,12 +25,12 @@ FALLBACK_MESSAGES = {
     "plan_created": "📋 Đã tạo test plan! Bắt đầu implement nhé~",
     "tests_running": "🧪 Đang chạy tests, đợi mình chút nhé...",
     "tests_passed": "🎉 Tuyệt vời! All tests passed!",
-    "tests_failed": "❌ Có tests fail rồi, để mình xem...",
+    "tests_failed": "Có tests fail rồi, để mình xem...",
     "analyzing": "🔍 Đang phân tích lỗi...",
     "fixing": "🔧 Đang fix, đợi mình chút nhé!",
-    "implement_done": "✅ Đã implement xong tests!",
+    "implement_done": "Đã implement xong tests!",
     "max_retries": "⚠️ Đã thử nhiều lần nhưng vẫn fail. Cần review manual.",
-    "typecheck_error": "❌ Có lỗi TypeScript, để mình xem...",
+    "typecheck_error": "Có lỗi TypeScript, để mình xem...",
     "default": "Đã nhận! 👍",
 }
 
@@ -173,7 +173,7 @@ ESM PACKAGES TO AVOID (break Jest):
 
 SAFE PACKAGES:
 - bcryptjs ✅
-- date-fns ✅ (but mock if needed)
+- date-fns (but mock if needed)
 - zod ✅
 """
 
@@ -466,10 +466,10 @@ async def send_response(state: TesterState, agent=None) -> dict:
 
     # Build message
     if error:
-        msg = f"❌ Có lỗi xảy ra: {error}"
+        msg = f"Có lỗi xảy ra: {error}"
     elif run_status == "PASS":
         passed = run_result.get("passed", 0)
-        msg = f"✅ Tests passed! ({passed} tests passed)"
+        msg = f"Tests passed! ({passed} tests passed)"
         if files_created:
             msg += f"\n\nFiles created:\n" + "\n".join(f"  - {f}" for f in files_created)
         msg += commit_msg
@@ -486,11 +486,11 @@ async def send_response(state: TesterState, agent=None) -> dict:
     elif run_status == "FAIL":
         passed = run_result.get("passed", 0)
         failed = run_result.get("failed", 0)
-        msg = f"❌ Tests failed! ({passed} passed, {failed} failed)"
+        msg = f"Tests failed! ({passed} passed, {failed} failed)"
     elif not test_plan:
         msg = "Không có tests được tạo."
     else:
-        msg = f"✅ Đã tạo test plan với {len(test_plan)} steps."
+        msg = f"Đã tạo test plan với {len(test_plan)} steps."
         if files_created:
             msg += f"\n\nFiles created:\n" + "\n".join(f"  - {f}" for f in files_created)
         msg += commit_msg

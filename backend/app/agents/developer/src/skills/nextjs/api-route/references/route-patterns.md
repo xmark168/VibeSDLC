@@ -5,11 +5,11 @@
 **LUÔN trả về array trực tiếp trong `data`, KHÔNG wrap trong object:**
 
 ```typescript
-// ✅ CORRECT - data is array
+//  CORRECT - data is array
 return successResponse(items);
 // Result: { success: true, data: [...] }
 
-// ❌ WRONG - data is object with nested array
+// WRONG - data is object with nested array
 return successResponse({ results: items, metadata: {...} });
 // Result: { success: true, data: { results: [...], metadata: {...} } }
 // Frontend sẽ CRASH khi gọi data.data.map()!
@@ -18,7 +18,7 @@ return successResponse({ results: items, metadata: {...} });
 **Nếu cần metadata (pagination, filters), dùng `meta` field riêng:**
 
 ```typescript
-// ✅ CORRECT with meta
+//  CORRECT with meta
 return NextResponse.json({
   success: true,
   data: items,           // Array trực tiếp

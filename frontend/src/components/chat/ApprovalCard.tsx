@@ -2,52 +2,93 @@ import { useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { FileText, ExternalLink, Check, Pencil, X } from "lucide-react"
+import { FileText, ListTodo, ExternalLink, Check, Pencil, X, type LucideIcon } from "lucide-react"
 
-interface PrdCreatedCardProps {
-  title: string
-  filePath: string
+type CardType = 'prd' | 'stories'
+
+interface ApprovalCardProps {
+  type: CardType
+  title?: string
   status?: 'pending' | 'approved' | 'editing' | 'submitted'
-  showActions?: boolean  // Only show buttons on latest PRD card
-  submitted?: boolean  // User has already submitted approve/edit
+  showActions?: boolean
+  submitted?: boolean
   onView?: () => void
   onApprove?: () => void
   onEdit?: (feedback: string) => void
 }
 
-export function PrdCreatedCard({ 
+const cardConfig: Record<CardType, {
+  icon: LucideIcon
+  label: string
+  approvedLabel: string
+  placeholder: string
+  colors: {
+    gradient: string
+    border: string
+    iconBg: string
+    iconColor: string
+    textColor: string
+  }
+}> = {
+  prd: {
+    icon: FileText,
+    label: 'PRD created',
+    approvedLabel: 'PRD has been approved',
+    placeholder: 'Enter PRD edit request...',
+    colors: {
+      gradient: 'from-blue-500/10 to-cyan-500/10',
+      border: 'border-blue-500/20',
+      iconBg: 'bg-blue-500/20',
+      iconColor: 'text-blue-600',
+      textColor: 'text-blue-700 dark:text-blue-400',
+    }
+  },
+  stories: {
+    icon: ListTodo,
+    label: 'Stories created',
+    approvedLabel: 'Stories have been approved',
+    placeholder: 'Enter Epics/Stories edit request...',
+    colors: {
+      gradient: 'from-purple-500/10 to-violet-500/10',
+      border: 'border-purple-500/20',
+      iconBg: 'bg-purple-500/20',
+      iconColor: 'text-purple-600',
+      textColor: 'text-purple-700 dark:text-purple-400',
+    }
+  }
+}
+
+export function ApprovalCard({ 
+  type,
   title, 
-  filePath, 
   status = 'pending',
   showActions = true,
   submitted = false,
   onView, 
   onApprove,
   onEdit 
-}: PrdCreatedCardProps) {
+}: ApprovalCardProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [feedback, setFeedback] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   
-  // Check if already submitted (from prop or status)
+  const config = cardConfig[type]
+  const Icon = config.icon
   const hasSubmitted = submitted || status === 'submitted' || isLoading
 
   const handleApprove = () => {
     setIsLoading(true)
     onApprove?.()
-    // Loading will stay until new message arrives
   }
 
   const handleSubmitEdit = () => {
     if (!feedback.trim()) return
     setIsLoading(true)
     onEdit?.(feedback)
-    // Keep loading, hide editing form
     setIsEditing(false)
     setFeedback("")
   }
 
-  // Already approved
   if (status === 'approved') {
     return (
       <Card className="p-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-500/20">
@@ -57,9 +98,9 @@ export function PrdCreatedCard({
           </div>
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-medium text-green-700 dark:text-green-400">
-              ✅ PRD has been approved
+               {config.approvedLabel}
             </h4>
-            <p className="text-xs text-muted-foreground">{title}</p>
+            {title && <p className="text-xs text-muted-foreground">{title}</p>}
           </div>
           <Button size="sm" variant="outline" onClick={onView}>
             <ExternalLink className="w-3.5 h-3.5 mr-1" />
@@ -71,33 +112,35 @@ export function PrdCreatedCard({
   }
 
   return (
-    <Card className="p-4 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-blue-500/20">
+    <Card className={`p-4 bg-gradient-to-r ${config.colors.gradient} ${config.colors.border}`}>
       <div className="space-y-3">
-        {/* Header */}
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-blue-500/20">
-            <FileText className="w-5 h-5 text-blue-600" />
+          <div className={`p-2 rounded-lg ${config.colors.iconBg}`}>
+            <Icon className={`w-5 h-5 ${config.colors.iconColor}`} />
           </div>
           <div className="flex-1 min-w-0">
-            <h4 className="text-sm font-medium text-blue-700 dark:text-blue-400">
-              📋 PRD created {!hasSubmitted && '- Awaiting approval'}
+            <h4 className={`text-sm font-medium ${config.colors.textColor}`}>
+              📋 {config.label} {!hasSubmitted && '- Awaiting approval'}
             </h4>
-            <p className="text-xs text-muted-foreground">{title}</p>
+            {title && <p className="text-xs text-muted-foreground">{title}</p>}
           </div>
-          <Button size="sm" variant="outline" onClick={onView}>
-            <ExternalLink className="w-3.5 h-3.5 mr-1" />
+          <Button 
+            size="sm" 
+            variant="outline"
+            className={type === 'stories' ? 'gap-1.5 border-purple-500/30 hover:bg-purple-500/10' : ''}
+            onClick={onView}
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
             View
           </Button>
         </div>
 
-        {/* Old version - no actions */}
         {!showActions && (
           <div className="text-xs text-muted-foreground italic">
             Old version
           </div>
         )}
 
-        {/* Submitted state - show after user submits approve/edit */}
         {showActions && hasSubmitted && (
           <div className="flex items-center gap-2 text-sm">
             <Check className="w-4 h-4" />
@@ -105,14 +148,13 @@ export function PrdCreatedCard({
           </div>
         )}
 
-        {/* Edit feedback input */}
         {showActions && isEditing && !hasSubmitted && (
           <div className="space-y-2">
             <Textarea
-              placeholder="Enter PRD edit request..."
+              placeholder={config.placeholder}
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
-              className="min-h-[80px] text-sm"
+              className="min-h-[80px] text-sm bg-white dark:bg-gray-900"
             />
             <div className="flex gap-2">
               <Button 
@@ -138,7 +180,6 @@ export function PrdCreatedCard({
           </div>
         )}
 
-        {/* Action buttons */}
         {showActions && !isEditing && !hasSubmitted && (
           <div className="flex gap-2">
             <Button 
