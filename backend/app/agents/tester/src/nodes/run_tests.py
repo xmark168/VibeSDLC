@@ -1,6 +1,5 @@
 """Run Tests node - Execute tests and capture results."""
 
-import json
 import logging
 import os
 import re
@@ -9,9 +8,11 @@ from pathlib import Path
 from uuid import UUID
 
 from app.agents.tester.src.state import TesterState
-from app.agents.tester.src.nodes.core_nodes import send_message, generate_user_message
+from app.agents.tester.src.nodes.helpers import send_message, generate_user_message
 from app.agents.developer.src.utils.story_logger import StoryLogger
-
+from langgraph.types import interrupt
+from app.agents.tester.src.utils.interrupt import check_interrupt_signal
+    
 logger = logging.getLogger(__name__)
 
 
@@ -36,17 +37,6 @@ def _get_workspace_path(state: dict) -> Path | None:
         if project and project.project_path:
             return Path(project.project_path)
     return None
-
-
-def _detect_package_manager(project_path: Path) -> tuple[str, str]:
-    """Detect package manager and run command. Default: pnpm."""
-    if (project_path / "pnpm-lock.yaml").exists():
-        return ("pnpm", "pnpm")
-    if (project_path / "bun.lockb").exists() or (project_path / "bun.lock").exists():
-        return ("bun", "bun run")
-    if (project_path / "yarn.lock").exists():
-        return ("yarn", "yarn")
-    return ("pnpm", "pnpm")  # Default: pnpm
 
 
 def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dict]:
@@ -195,24 +185,8 @@ def _run_typecheck(project_path: Path, test_files: list[str]) -> dict | None:
 
 async def run_tests(state: TesterState, agent=None) -> dict:
     """Execute tests and capture results.
-    
-    This node:
-    1. Runs TypeScript type checking first
-    2. Detects test commands based on test_plan
-    3. Executes integration tests
-    4. Parses results
-    
-    Includes interrupt signal check for pause/cancel support.
-    
-    Output:
-    - run_status: "PASS" | "FAIL" | "ERROR"
-    - run_result: Parsed test results
-    - run_stdout: Raw stdout
-    - run_stderr: Raw stderr
     """
-    from langgraph.types import interrupt
-    from app.agents.tester.src.graph import check_interrupt_signal
-    
+
     # Ensure story_id is set for StoryLogger
     stories = state.get("stories", [])
     if stories and not state.get("story_id"):

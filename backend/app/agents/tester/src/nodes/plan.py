@@ -1,4 +1,4 @@
-"""Plan Tests node - Analyze stories and create test plan using FileRepository for zero-shot planning."""
+"""Plan Tests node"""
 
 import json
 import logging
@@ -9,13 +9,13 @@ from typing import List
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.nodes.core_nodes import detect_testing_context, send_message, generate_user_message
-from app.agents.tester.src._llm import plan_llm
+from app.agents.tester.src.nodes.helpers import detect_testing_context, send_message, generate_user_message, get_llm_config as _cfg
+from app.agents.tester.src.schemas import TestPlanStep, TestPlanOutput
+from app.core.agent.llm_factory import get_llm
 from app.agents.tester.src.config import MAX_SCENARIOS_UNIT, MAX_SCENARIOS_INTEGRATION
 from app.agents.tester.src.utils.file_repository import FileRepository
 from app.core.db import engine
@@ -23,30 +23,13 @@ from app.models import Project
 
 logger = logging.getLogger(__name__)
 
-_llm = plan_llm
+_llm = get_llm("plan")
 
 
 def _cfg(state: dict, name: str) -> dict:
     """Get LLM config with Langfuse callback."""
     h = state.get("langfuse_handler")
     return {"callbacks": [h], "run_name": name} if h else {}
-
-
-class TestPlanStep(BaseModel):
-    """Single test plan step."""
-    order: int
-    type: str  # "integration" or "unit"
-    story_id: str
-    story_title: str
-    file_path: str
-    description: str
-    scenarios: List[str]
-    dependencies: List[str] = []
-
-
-class TestPlanOutput(BaseModel):
-    """Test plan output from LLM."""
-    test_plan: List[TestPlanStep]
 
 
 def _slugify(text: str) -> str:
@@ -515,7 +498,7 @@ def _detect_test_structure(project_path: str) -> dict:
 async def plan_tests(state: TesterState, agent=None) -> dict:
     """Analyze stories and create test plan with interrupt support."""
     from langgraph.types import interrupt
-    from app.agents.tester.src.graph import check_interrupt_signal
+    from app.agents.tester.src.utils.interrupt import check_interrupt_signal
     
     print("[NODE] plan_tests")
     

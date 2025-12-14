@@ -332,7 +332,6 @@ class Developer(BaseAgent, PausableAgentMixin):
                 "branch_name": "",
                 "main_workspace": str(self.main_workspace),
                 "workspace_ready": False,
-                "index_ready": False,
                 "merged": False,
                 
                 # Workflow state

@@ -194,7 +194,7 @@ class ConnectionManager:
                 session.commit()
 
         try:
-            from app.core.db import DB
+            from app.core.async_db import DB
             await DB.execute(_update)
             logger.debug(f"Updated WebSocket status: project={project_id}, connected={connected}")
         except Exception as e:
@@ -215,7 +215,7 @@ class ConnectionManager:
             return None
 
         try:
-            from app.core.db import DB
+            from app.core.async_db import DB
             old_agent = await DB.execute(_clear)
             if old_agent:
                 logger.info(f"Cleared active agent for project {project_id} (was: {old_agent})")

@@ -43,7 +43,6 @@ class DeveloperState(TypedDict, total=False):
     main_workspace: str
     workspace_ready: bool
     branch_name: str
-    index_ready: bool
 
     # Output
     message: str

@@ -332,21 +332,7 @@ tasks:
       {debug_history}
       </previous_fixes>
       
-      SPECIFIC fix instructions:
-      {{
-        "root_cause": "brief description",
-        "error_code": "CODE from tables above",
-        "fix_steps": [
-          {{
-            "order": 1,
-            "file_path": "path/to/test.test.tsx",
-            "action": "modify",
-            "description": "What to fix",
-            "find_code": "exact code snippet to find and remove/replace",
-            "replace_with": "replacement code OR empty string to delete"
-          }}
-        ]
-      }}
+     
 
   # ---------------------------------------------------------------------------
   # ROUTING

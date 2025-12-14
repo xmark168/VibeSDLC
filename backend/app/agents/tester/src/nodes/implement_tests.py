@@ -5,20 +5,16 @@ import logging
 import os
 from pathlib import Path
 from typing import Dict, List
-from pydantic import BaseModel, Field
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.skills import SkillRegistry
 from app.agents.tester.src.state import TesterState
-from app.agents.tester.src.nodes.core_nodes import send_message, generate_user_message
+from app.agents.tester.src.nodes.helpers import send_message, generate_user_message
+from app.agents.tester.src.schemas import TestFileOutput
 from app.utils.token_utils import truncate_to_tokens
-from app.agents.tester.src._llm import (
-    implement_llm,
-    get_llm,
-    invoke_structured_with_retry,
-)
+from app.core.agent.llm_factory import get_llm
 from app.agents.tester.src.config import (
     MAX_RETRIES,
     RETRY_WAIT_MIN as RETRY_DELAY,
@@ -27,7 +23,7 @@ from app.agents.tester.src.config import (
 
 logger = logging.getLogger(__name__)
 
-_llm = implement_llm
+_llm = get_llm("implement")
 
 
 def git_commit_tests(workspace_path: str, description: str, files: List[str] = None) -> bool:
@@ -79,17 +75,6 @@ def git_commit_tests(workspace_path: str, description: str, files: List[str] = N
     except Exception as e:
         logger.warning(f"[git] Commit error: {e}")
         return False
-
-
-# =============================================================================
-# Structured Output Schema (Developer V2 pattern)
-# =============================================================================
-
-class TestFileOutput(BaseModel):
-    """Structured output for test file generation. NO tool calling needed."""
-    file_path: str = Field(description="Relative path to the test file")
-    content: str = Field(description="Complete test file content (TypeScript/JavaScript)")
-    summary: str = Field(default="", description="Brief summary of what was tested")
 
 
 # =============================================================================
@@ -587,7 +572,7 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
     - Same quality: Each step gets full context
     """
     from langgraph.types import interrupt
-    from app.agents.tester.src.graph import check_interrupt_signal
+    from app.agents.tester.src.utils.interrupt import check_interrupt_signal
     
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")

@@ -208,9 +208,6 @@ def should_save_or_end(state: BAState) -> Literal["save", "end"]:
     needs_clarification = state.get("needs_clarification", False)
     awaiting_user = state.get("awaiting_user_decision", False)
     
-    # DEBUG logging
-    logger.info(f"[BA Graph] should_save_or_end check: found_existing={found_existing}, needs_clarification={needs_clarification}, awaiting_user={awaiting_user}")
-    
     if found_existing or awaiting_user:
         logger.info("[BA Graph] Found existing story - ending flow (waiting for user)")
         return "end"

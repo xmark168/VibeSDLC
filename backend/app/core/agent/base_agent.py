@@ -101,6 +101,9 @@ class BaseAgent(ABC):
         self.role_type = agent_model.role_type
         self.agent_model = agent_model
         
+        # Load tech_stack from project
+        self.tech_stack = self._load_tech_stack()
+        
         # Name (short and display)
         self.name = agent_model.human_name  # "Sarah"
         self.display_name = agent_model.name  # "Sarah (Business Analyst)"
@@ -173,8 +176,24 @@ class BaseAgent(ABC):
 
         logger.info(
             f"Initialized {self.role_type} agent: {self.name} "
-            f"(style: {self.communication_style or 'N/A'}, traits: {', '.join(self.personality_traits[:2]) if self.personality_traits else 'N/A'})"
+            f"(tech_stack: {self.tech_stack}, style: {self.communication_style or 'N/A'}, traits: {', '.join(self.personality_traits[:2]) if self.personality_traits else 'N/A'})"
         )
+
+    def _load_tech_stack(self) -> str:
+        """Load tech stack from project (called once during init)."""
+        try:
+            from sqlmodel import Session
+            from app.core.db import engine
+            from app.models import Project
+            
+            with Session(engine) as session:
+                project = session.get(Project, self.project_id)
+                if project and project.tech_stack:
+                    return project.tech_stack
+        except Exception as e:
+            logger.warning(f"[BaseAgent] Failed to load tech_stack: {e}")
+        
+        return "nextjs"  # Default fallback
 
     @abstractmethod
     async def handle_task(self, task: TaskContext) -> TaskResult:

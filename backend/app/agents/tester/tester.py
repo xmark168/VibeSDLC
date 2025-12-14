@@ -21,18 +21,6 @@ from app.models.base import StoryAgentState
 logger = logging.getLogger(__name__)
 
 
-def _get_project_workspace(project_id) -> str:
-    """Get project workspace path from database."""
-    try:
-        with Session(engine) as session:
-            project = session.get(Project, UUID(str(project_id)))
-            if project and project.project_path:
-                return str(project.project_path)
-    except Exception as e:
-        logger.warning(f"[_get_project_workspace] Error: {e}")
-    return ""
-
-
 class Tester(BaseAgent, PausableAgentMixin):
     """Tester agent with LangGraph workflow. Supports pause/resume/cancel via PostgresSaver."""
 
@@ -40,12 +28,11 @@ class Tester(BaseAgent, PausableAgentMixin):
         super().__init__(agent_model, **kwargs)
         self.graph_engine = TesterGraph(agent=self)
         
-        self.main_workspace = _get_project_workspace(self.project_id)
         self._is_auto_task = False
         self._current_story_ids: list[str] = []
         # Initialize PausableAgentMixin (provides pause/resume/cancel functionality)
         self.init_pausable_mixin()
-        logger.info(f"[{self.name}] Tester initialized, workspace: {self.main_workspace}")
+        logger.info(f"[{self.name}] Tester initialized")
 
     async def message_user(self, event_type: str, content: str, details=None, **kwargs):
         """Override to redirect messages to story channel when auto-triggered."""
@@ -101,9 +88,10 @@ class Tester(BaseAgent, PausableAgentMixin):
                 "user_message": task.content or "",
                 "is_auto": is_auto,
                 "is_resume": is_resume,
-                "main_workspace": self.main_workspace,
-                "workspace_path": "",
-                "branch_name": "",
+                # Get workspace_path from task context (set by router from Story.worktree_path)
+                "workspace_path": context.get("worktree_path", ""),
+                "branch_name": context.get("branch_name", ""),
+                "tech_stack": self.tech_stack,  # Pass from agent
                 "workspace_ready": False,
                 "merged": False,
                 "base_branch": "main",

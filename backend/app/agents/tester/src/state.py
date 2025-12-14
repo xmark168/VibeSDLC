@@ -28,7 +28,6 @@ class TesterState(TypedDict, total=False):
     # Workspace
     workspace_path: str
     branch_name: str
-    main_workspace: str
     workspace_ready: bool
     merged: bool
     project_path: str

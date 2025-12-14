@@ -1,14 +1,12 @@
-"""Analyze and Plan node - Zero-shot planning with FileRepository."""
+"""Analyze and Plan node"""
 import os
-import re
 import logging
-import glob as glob_module
 from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
-from app.agents.developer.src.nodes._llm import get_llm, fast_llm
+from app.agents.developer.src.nodes._llm import  fast_llm
 from app.agents.developer.src.schemas import SimplePlanOutput
 from app.agents.developer.src.skills.registry import SkillRegistry
 from app.agents.developer.src.skills import get_plan_prompts
@@ -16,7 +14,6 @@ from app.agents.developer.src.skills import get_plan_prompts
 logger = logging.getLogger(__name__)
 
 BOILERPLATE_FILES = {"src/lib/prisma.ts", "src/lib/utils.ts", "src/auth.ts"}
-
 
 class FileRepository:
     """Pre-computed workspace context for zero-shot planning."""
@@ -185,12 +182,12 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
             await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
     
-    await story_logger.info("📋 Analyzing requirements...")
+    await story_logger.info("Analyzing requirements...")
     workspace_path = state.get("workspace_path", "")
     tech_stack = state.get("tech_stack", "nextjs")
     
     try:
-        await story_logger.info("📂 Scanning project files...")
+        await story_logger.info("Scanning project files...")
         repo = FileRepository(workspace_path)
         context = repo.to_context()
         
@@ -201,7 +198,7 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
         ac_text = chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
         
         input_text = f"""## Project Context
-{context}
+        {context}
 
 ## Story
 **Title**: {state.get('story_title', '')}
@@ -209,9 +206,9 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
 **Requirements**: {req_text}
 **Acceptance**: {ac_text}
 
-Create implementation plan. Output JSON steps directly."""
+Create implementation plan."""
 
-        await story_logger.info("🤖 Generating implementation plan...")
+        await story_logger.info("Generating implementation plan...")
         structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
         result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "plan_zero_shot"))
         flush_langfuse(state)
@@ -255,12 +252,12 @@ Create implementation plan. Output JSON steps directly."""
         can_parallel = should_use_parallel(steps)
         
         if steps:
-            await story_logger.message(f"📋 Kế hoạch: {len(steps)} files, {len(layers)} layers")
+            await story_logger.message(f"Plan: {len(steps)} files, {len(layers)} layers")
         
         return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
     except Exception as e:
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise
-        logger.error(f"[plan] Error: {e}", exc_info=True)
+        logger.error(f"[plan] Error: something wrong. Please restart this story!")
         return {**state, "error": str(e), "action": "RESPOND"}

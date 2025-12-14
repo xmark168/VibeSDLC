@@ -785,6 +785,8 @@ class StoryEventRouter(BaseEventRouter):
         """
         with Session(engine) as session:
             from app.services import AgentService
+            from app.models import Story
+            
             agent_service = AgentService(session)
 
             tester = agent_service.get_by_project_and_role(
@@ -794,7 +796,12 @@ class StoryEventRouter(BaseEventRouter):
 
             if tester:
                 story_id = event_dict.get("story_id")
-                story_title = event_dict.get('story_title', 'Unknown Story')
+                
+                # Load story to get workspace info
+                story = session.get(Story, UUID(story_id))
+                if not story:
+                    self.logger.error(f"Story {story_id} not found")
+                    return
                 
                 await self.publish_task(
                     agent_id=tester.id,
@@ -806,14 +813,17 @@ class StoryEventRouter(BaseEventRouter):
                         "trigger_type": "status_review",
                         "story_ids": [str(story_id)],
                         "auto_generated": True,
-                        "content": f"Auto-generate integration tests for story '{story_title}'",
+                        "content": f"Auto-generate integration tests for story '{story.title}'",
                         "execution_mode": "background",
+                        # Pass workspace info from Story
+                        "worktree_path": story.worktree_path,
+                        "branch_name": story.branch_name,
                     }
                 )
 
                 self.logger.info(
-                    f"Routed story status change to Tester: {tester.name} ({tester.id}) "
-                    f"for integration test generation"
+                    f"Routed to Tester with workspace: {story.worktree_path} "
+                    f"({tester.name})"
                 )
             else:
                 self.logger.warning(
@@ -1738,8 +1748,6 @@ class MessageRouterService(BaseKafkaConsumer):
         """Handle incoming event by dispatching to appropriate router."""
         event_type = raw_data.get("event_type", "unknown")
 
-        # DEBUG: Force print to ensure visibility
-        print(f"[ROUTER] >>> Received event: {event_type} from topic: {topic}")
         self.logger.info(f"[ROUTER] Received event: {event_type} from topic: {topic}")
         
         event_dict = raw_data if isinstance(raw_data, dict) else (event if isinstance(event, dict) else event.model_dump())
