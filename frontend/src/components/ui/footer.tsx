@@ -2,7 +2,7 @@
 import React from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { FacebookIcon, FrameIcon, InstagramIcon, LinkedinIcon, YoutubeIcon } from 'lucide-react';
+import { FacebookIcon, InstagramIcon, LinkedinIcon, YoutubeIcon } from 'lucide-react';
 
 interface FooterLink {
     title: string;
@@ -62,9 +62,13 @@ export function Footer() {
 
             <div className="grid w-full gap-8 xl:grid-cols-3 xl:gap-8">
                 <AnimatedContainer className="space-y-4">
-                    <FrameIcon className="size-8" />
+                    <img 
+                        src="/assets/images/logo.png" 
+                        alt="VibeSDLC" 
+                        className="h-8 object-contain" 
+                    />
                     <p className="text-muted-foreground mt-8 text-sm md:mt-0">
-                        © {new Date().getFullYear()} Asme. All rights reserved.
+                        © {new Date().getFullYear()} VibeSDLC. All rights reserved.
                     </p>
                 </AnimatedContainer>
 

@@ -8,6 +8,11 @@ html {
   scrollbar-gutter: stable;
 }
 
+body {
+  overflow-x: hidden;
+  width: 100vw;
+}
+
 @font-face {
   font-family: "IBM Plex Sans";
   src:

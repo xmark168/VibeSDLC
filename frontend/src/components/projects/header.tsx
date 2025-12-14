@@ -92,6 +92,8 @@ export const HeaderProject = ({
       style={{
         display: "flex",
         justifyContent: "center",
+        transform: "translateZ(0)",
+        willChange: "transform",
       }}
       className="sticky top-0 z-50 w-full flex items-center border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
@@ -112,7 +114,7 @@ export const HeaderProject = ({
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              className="flex items-center gap-2 hover:bg-accent transition-colors focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="flex items-center gap-2 hover:bg-accent transition-colors focus-visible:ring-0 focus-visible:ring-offset-0 min-w-0"
             >
               <Avatar className="h-8 w-8">
                 <AvatarImage src={avatarUrl} alt={displayName} />
