@@ -17,7 +17,7 @@ from app.agents.developer.src.utils.token_utils import truncate_to_tokens
 from app.agents.developer.src.nodes._llm import get_llm
 from app.agents.developer.src.skills import SkillRegistry
 from app.agents.developer.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
-from app.agents.developer.src.utils.story_logger import git_with_retry
+from app.utils.git_utils import git_commit_step
 
 logger = logging.getLogger(__name__)
 
@@ -28,53 +28,6 @@ def get_modified_files() -> list:
 
 def reset_modified_files():
     _modified_files.clear()
-
-
-def git_commit_step(workspace_path: str, step_num: int, description: str, files: List[str] = None) -> bool:
-    """Commit changes after a successful implement step."""
-    # Validate workspace_path
-    if not workspace_path:
-        logger.warning(f"[git] Cannot commit: workspace_path is empty")
-        return False
-    
-    workspace = Path(workspace_path)
-    if not workspace.exists():
-        logger.warning(f"[git] Cannot commit: workspace does not exist: {workspace_path}")
-        return False
-    
-    # Normalize path for Windows
-    workspace_path = str(workspace.resolve())
-    
-    try:
-        # Stage files with retry
-        if files:
-            for f in files:
-                try:
-                    # Use absolute path for file
-                    file_path = str((workspace / f).resolve()) if not os.path.isabs(f) else f
-                    git_with_retry(["git", "add", file_path], cwd=workspace_path)
-                except Exception:
-                    pass  # Individual file add failure is OK
-        else:
-            git_with_retry(["git", "add", "-A"], cwd=workspace_path)
-        
-        # Check if there are staged changes
-        result = subprocess.run(
-            ["git", "diff", "--cached", "--quiet"],
-            cwd=workspace_path, capture_output=True, timeout=30
-        )
-        if result.returncode == 0:
-            logger.debug(f"[git] No changes to commit for step {step_num}")
-            return True
-        
-        # Commit with WIP message (with retry)
-        msg = f"wip: step {step_num} - {description}"
-        git_with_retry(["git", "commit", "-m", msg, "--no-verify"], cwd=workspace_path)
-        logger.info(f"[git] Committed step {step_num}: {description}")
-        return True
-    except Exception as e:
-        logger.warning(f"[git] Commit error (after retries): {e}")
-        return False
 
 
 def git_revert_uncommitted(workspace_path: str) -> bool:

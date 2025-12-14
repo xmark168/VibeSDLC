@@ -188,30 +188,12 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {}
 
 
-def _parse_json(content: str) -> list | dict:
-    """Parse JSON from LLM response with better error handling."""
-    original = content
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError:
-        pass
-
-    # Extract from markdown code blocks
-    if "```json" in content:
-        content = content.split("```json")[1].split("```")[0]
-    elif "```" in content:
-        content = content.split("```")[1].split("```")[0]
-
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError as e:
-        logger.warning(f"[_parse_json] Failed to parse: {original[:500]}...")
-        raise e
+class RoutingDecision(BaseModel):
+    """Routing decision for tester."""
+    action: str = Field(description="PLAN_TESTS | TEST_STATUS | CONVERSATION")
+    reason: str = Field(description="Brief reason for routing decision")
 
 
-def _should_message_user(state: TesterState) -> bool:
-    """Check if should send message to user - only for user messages."""
-    return state.get("task_type") == "message"
 
 
 async def send_message(state: TesterState, agent, content: str, message_type: str = "update"):
@@ -345,7 +327,9 @@ async def router(state: TesterState, agent=None) -> dict:
     # 3. User message: route via LLM
     user_message = state.get("user_message", "")
     try:
-        response = await _llm.ainvoke(
+        # Use structured output for routing
+        structured_llm = _llm.with_structured_output(RoutingDecision)
+        result = await structured_llm.ainvoke(
             [
                 SystemMessage(content=get_system_prompt("routing")),
                 HumanMessage(
@@ -355,9 +339,8 @@ async def router(state: TesterState, agent=None) -> dict:
             config=_cfg(state, "router"),
         )
 
-        result = _parse_json(response.content)
-        action = result.get("action", "CONVERSATION")
-        logger.info(f"[router] Action={action}, reason={result.get('reason')}")
+        action = result.action
+        logger.info(f"[router] Action={action}, reason={result.reason}")
 
         # If PLAN_TESTS from user message, also query stories
         if action == "PLAN_TESTS":

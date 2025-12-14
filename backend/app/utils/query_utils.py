@@ -1,7 +1,5 @@
-"""Query utilities for optimized database access.
-
-This module provides reusable eager loading options and query patterns
-to prevent N+1 query problems.
+"""
+Query utilities for optimized database access.
 """
 
 from sqlalchemy.orm import selectinload, joinedload

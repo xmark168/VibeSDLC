@@ -221,3 +221,123 @@ def git_merge_abort(cwd: Path, timeout: int = 10) -> bool:
     except Exception as e:
         logger.error(f"Git merge abort failed: {e}")
         return False
+
+
+def git_with_retry(
+    cmd: List[str],
+    cwd: str,
+    retries: int = 3,
+    timeout: int = 30
+) -> subprocess.CompletedProcess:
+    """Execute git command with retry logic.
+    
+    Args:
+        cmd: Git command as list (e.g., ["git", "add", "file.txt"])
+        cwd: Working directory
+        retries: Number of retry attempts
+        timeout: Command timeout in seconds
+        
+    Returns:
+        CompletedProcess instance
+        
+    Raises:
+        Exception: If all retries fail
+    """
+    import time
+    
+    for attempt in range(retries):
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            if result.returncode == 0:
+                return result
+            
+            # If failed but not last attempt, retry
+            if attempt < retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            
+            # Last attempt failed
+            raise Exception(f"Command failed: {' '.join(cmd)}, stderr: {result.stderr}")
+            
+        except subprocess.TimeoutExpired:
+            if attempt < retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise
+        except Exception as e:
+            if attempt < retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise
+    
+    raise Exception(f"All {retries} attempts failed for: {' '.join(cmd)}")
+
+
+def git_commit_step(
+    workspace_path: str,
+    step_num: int,
+    description: str,
+    files: Optional[List[str]] = None
+) -> bool:
+    """Commit changes after a successful implement step.
+    
+    Args:
+        workspace_path: Path to git repository
+        step_num: Step number for commit message
+        description: Description of changes
+        files: Optional list of specific files to commit (None = all changes)
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    import os
+    
+    if not workspace_path:
+        logger.warning("[git_commit_step] workspace_path is empty")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.warning(f"[git_commit_step] workspace does not exist: {workspace_path}")
+        return False
+    
+    workspace_path = str(workspace.resolve())
+    
+    try:
+        # Stage files with retry
+        if files:
+            for f in files:
+                try:
+                    file_path = str((workspace / f).resolve()) if not os.path.isabs(f) else f
+                    git_with_retry(["git", "add", file_path], cwd=workspace_path)
+                except Exception:
+                    pass  # Individual file add failure is OK
+        else:
+            git_with_retry(["git", "add", "-A"], cwd=workspace_path)
+        
+        # Check if there are staged changes
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=workspace_path,
+            capture_output=True,
+            timeout=30
+        )
+        if result.returncode == 0:
+            logger.debug(f"[git_commit_step] No changes to commit for step {step_num}")
+            return True
+        
+        # Commit with WIP message
+        msg = f"wip: step {step_num} - {description}"
+        git_with_retry(["git", "commit", "-m", msg, "--no-verify"], cwd=workspace_path)
+        logger.info(f"[git_commit_step] Committed step {step_num}: {description}")
+        return True
+        
+    except Exception as e:
+        logger.warning(f"[git_commit_step] Commit error: {e}")
+        return False

@@ -12,7 +12,7 @@ from sqlmodel import Session
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.core_nodes import detect_testing_context, send_message, generate_user_message
+from app.agents.tester.src.nodes.core_nodes import detect_testing_context, send_message, generate_user_message
 from app.agents.tester.src._llm import plan_llm
 from app.agents.tester.src.config import MAX_SCENARIOS_UNIT, MAX_SCENARIOS_INTEGRATION
 from app.agents.tester.src.utils.file_repository import FileRepository

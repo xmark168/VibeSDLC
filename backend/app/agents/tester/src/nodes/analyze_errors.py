@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.core_nodes import send_message, generate_user_message
+from app.agents.tester.src.nodes.core_nodes import send_message, generate_user_message
 from app.agents.tester.src.utils.token_utils import truncate_error_logs
 from app.agents.tester.src._llm import analyze_llm
 from app.agents.tester.src.config import MAX_DEBUG_ATTEMPTS
