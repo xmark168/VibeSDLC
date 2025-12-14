@@ -6,6 +6,8 @@ from uuid import UUID, uuid4
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import RedirectResponse
+from sqlmodel import select
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
@@ -91,8 +93,8 @@ def create_sepay_payment(
     session.commit()
     session.refresh(order)
 
-    # Build QR URL
-    qr_url = build_qr_url(amount, transaction_code)
+    # Build proxy QR URL instead of direct SePay URL
+    qr_url = f"/api/v1/sepay/qr-proxy/{transaction_code}"
 
     # Expires in 15 minutes
     expires_at = datetime.utcnow() + timedelta(minutes=15)
@@ -153,8 +155,8 @@ def create_sepay_credit_purchase(
     session.commit()
     session.refresh(order)
 
-    # Build QR URL
-    qr_url = build_qr_url(amount, transaction_code)
+    # Build proxy QR URL instead of direct SePay URL
+    qr_url = f"/api/v1/sepay/qr-proxy/{transaction_code}"
 
     # Expires in 15 minutes
     expires_at = datetime.utcnow() + timedelta(minutes=15)
@@ -317,6 +319,42 @@ async def _activate_order(session: SessionDep, order: Order):
 
     except Exception as e:
         logger.error(f"Error activating order {order.id}: {e}")
+
+
+@router.get("/qr-proxy/{transaction_code}")
+async def proxy_qr_code(
+    transaction_code: str,
+    session: SessionDep,
+    current_user: CurrentUser
+):
+    """Proxy endpoint for QR code - không expose URL gốc"""
+    
+    # Kiểm tra order thuộc về user
+    statement = select(Order).where(
+        Order.sepay_transaction_code == transaction_code,
+        Order.user_id == current_user.id
+    )
+    order = session.exec(statement).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Kiểm tra thời gian hết hạn (15 phút)
+    if datetime.utcnow() > order.created_at + timedelta(minutes=15):
+        raise HTTPException(status_code=410, detail="QR code expired")
+    
+    # Kiểm tra order status
+    if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
+        raise HTTPException(status_code=400, detail="Invalid order status")
+    
+    # Build URL thật (chỉ backend biết)
+    real_url = build_qr_url(order.amount, transaction_code)
+    
+    # Log access for security audit
+    logger.info(f"QR proxy accessed: transaction={transaction_code}, user={current_user.id}")
+    
+    # Chuyển hướng đến URL thật
+    return RedirectResponse(real_url, status_code=302)
 
 
 @router.post("/cancel/{order_id}")
