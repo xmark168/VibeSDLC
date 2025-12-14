@@ -192,15 +192,6 @@ async def create_message_with_file(
         # Validate file size (read file first)
         file_bytes = await file.read()
         
-        # Debug: verify bytes immediately after reading
-        logger.info(f"=== FILE UPLOAD DEBUG ===")
-        logger.info(f"  - Filename: {file.filename}")
-        logger.info(f"  - Content-Type: {file.content_type}")
-        logger.info(f"  - Size: {len(file_bytes)} bytes")
-        logger.info(f"  - First 20 bytes (hex): {file_bytes[:20].hex() if len(file_bytes) >= 20 else file_bytes.hex()}")
-        logger.info(f"  - Is valid ZIP/DOCX (starts with PK): {file_bytes[:2] == b'PK'}")
-        logger.info(f"=== END FILE UPLOAD DEBUG ===")
-        
         if len(file_bytes) > DOCUMENT_UPLOAD_LIMITS["max_file_size"]:
             max_mb = DOCUMENT_UPLOAD_LIMITS["max_file_size"] // 1024 // 1024
             raise HTTPException(

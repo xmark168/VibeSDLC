@@ -14,7 +14,7 @@ from app.agents.developer.src.schemas import ImplementOutput
 from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg
 from app.agents.developer.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
 from app.agents.developer.src.utils.token_utils import truncate_to_tokens
-from app.agents.developer.src.nodes._llm import get_llm
+from app.agents.developer.src.nodes._llm import implement_llm
 from app.agents.developer.src.skills import SkillRegistry
 from app.agents.developer.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
 from app.utils.git_utils import git_commit_step
@@ -184,14 +184,7 @@ def _build_debug_summary(state: dict) -> str:
     return "\n".join(parts)
 
 
-def _parse_implement_output(content: str) -> Optional[ImplementOutput]:
-    if not content:
-        return None
-    match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
-    try:
-        return ImplementOutput(**json.loads(match.group(1) if match else content.strip()))
-    except:
-        return None
+
 
 
 def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundled: bool = True) -> str:
@@ -307,7 +300,11 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         input_text = _format_input_template("implement_step", step_number=current_step + 1, total_steps=len(plan_steps), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files=_build_modified_files_context(state.get("files_modified", [])), related_context=truncate_to_tokens("\n\n".join(context_parts), 4000), feedback_section=feedback, logic_analysis="", legacy_code=legacy_code, debug_logs=state.get("error", "")[:2000] if state.get("error") else "")
         
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
-        response = await get_llm("implement").ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "implement_code"))
+        
+        # Use structured output
+        structured_llm = implement_llm.with_structured_output(ImplementOutput)
+        output = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "implement_code"))
+        file_content = output.content if output else None
         
         # Check for interrupt after LLM call (can be long-running)
         if story_id:
@@ -316,21 +313,12 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                 await story_logger.info(f"Interrupt after LLM: {signal}")
                 interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
         
-        output = _parse_implement_output(response.content or "")
-        if output and file_path:
+        if file_content and file_path:
             fp = os.path.join(workspace_path, file_path)
             os.makedirs(os.path.dirname(fp), exist_ok=True)
             with open(fp, 'w', encoding='utf-8') as f:
-                f.write(output.content)
+                f.write(file_content)
             _modified_files.add(file_path)
-        elif not output and response.content and file_path:
-            match = re.search(r'```(?:typescript|tsx|javascript|jsx|python|prisma)?\s*([\s\S]*?)\s*```', response.content)
-            if match:
-                fp = os.path.join(workspace_path, file_path)
-                os.makedirs(os.path.dirname(fp), exist_ok=True)
-                with open(fp, 'w', encoding='utf-8') as f:
-                    f.write(match.group(1))
-                _modified_files.add(file_path)
         
         new_modified = get_modified_files()
         if any(f.replace("\\", "/").endswith("schema.prisma") for f in new_modified):
@@ -409,14 +397,18 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
         
         input_text = _format_input_template("implement_step", step_number=step.get("order", 1), total_steps=state.get("total_steps", 1), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files="", related_context="\n\n".join(context_parts), feedback_section="", logic_analysis="", legacy_code=legacy, debug_logs="")
         
-        response = await get_llm("implement").ainvoke([SystemMessage(content=_build_system_prompt("implement_step", skills_content=skills_content)), HumanMessage(content=input_text)], config=_cfg(state, f"impl_{file_path}"))
-        output = _parse_implement_output(response.content or "")
+        system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
-        if output and file_path:
+        # Use structured output
+        structured_llm = implement_llm.with_structured_output(ImplementOutput)
+        output = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, f"impl_{file_path}"))
+        file_content = output.content if output else None
+        
+        if file_content and file_path:
             fp = os.path.join(workspace_path, file_path)
             os.makedirs(os.path.dirname(fp), exist_ok=True)
             with open(fp, 'w', encoding='utf-8') as f:
-                f.write(output.content)
+                f.write(file_content)
             return {"file_path": file_path, "success": True, "modified_files": [file_path]}
         return {"file_path": file_path, "success": False, "error": "No output"}
     except Exception as e:

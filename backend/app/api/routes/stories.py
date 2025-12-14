@@ -591,6 +591,27 @@ async def send_story_message(
         story.project_id
     )
     
+    # Publish to Kafka for routing to agent (if story is being processed)
+    from app.kafka.producer import get_kafka_producer
+    from app.kafka.event_schemas import StoryMessageEvent, KafkaTopics
+    
+    try:
+        producer = await get_kafka_producer()
+        event = StoryMessageEvent(
+            story_id=story_id,
+            message_id=message.id,
+            author_type="user",
+            author_name=message.author_name,
+            content=request.content,
+            project_id=story.project_id,
+            user_id=current_user.id,
+        )
+        await producer.publish(KafkaTopics.STORY_EVENTS, event)
+    except Exception as e:
+        # Log but don't fail the request
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to publish story message to Kafka: {e}")
+    
     return {
         "id": str(message.id),
         "author_type": message.author_type,

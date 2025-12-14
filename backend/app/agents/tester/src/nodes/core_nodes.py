@@ -4,9 +4,11 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import List
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt, build_system_prompt_with_persona

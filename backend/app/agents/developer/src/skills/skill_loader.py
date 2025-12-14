@@ -17,7 +17,6 @@ SKILLS_DIR = Path(__file__).parent
 
 @dataclass
 class SkillMetadata:
-    """Level 1 metadata from SKILL.md frontmatter (name, description, internal)."""
     name: str
     description: str
     internal: bool = False

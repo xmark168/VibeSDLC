@@ -72,6 +72,7 @@ class AgentTaskType(str, Enum):
     # Abstraction task types (high-level)
     USER_STORY = "user_story"  # BA: Analyze requirements → create user stories
     MESSAGE = "message"  # Any agent: Handle/respond to user message
+    STORY_MESSAGE = "story_message"  # User message in story chat context
     
     # Clarification questions
     RESUME_WITH_ANSWER = "resume_with_answer"  # Resume task with clarification answer

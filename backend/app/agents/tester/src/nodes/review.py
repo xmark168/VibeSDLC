@@ -32,17 +32,6 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {"run_name": name}
 
 
-def _get_file_extension(file_path: str) -> str:
-    """Get file extension for code block."""
-    ext_map = {
-        ".ts": "typescript", ".tsx": "typescript",
-        ".js": "javascript", ".jsx": "javascript",
-        ".py": "python",
-    }
-    for ext, lang in ext_map.items():
-        if file_path.endswith(ext):
-            return lang
-    return ""
 
 
 class ReviewDecision(BaseModel):

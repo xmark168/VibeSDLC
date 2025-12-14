@@ -2,8 +2,9 @@
 
 from typing import TypedDict, Literal, Any, List, Optional, Dict
 
-Action = Literal["ANALYZE", "PLAN", "IMPLEMENT", "RESPOND"]
+Action = Literal["ANALYZE", "PLAN", "IMPLEMENT", "RESPOND", "END"]
 TaskType = Literal["feature", "bugfix", "refactor", "enhancement", "documentation", "bug_fix"]
+GraphTaskType = Literal["story_message", "message", "implement_story"]
 Complexity = Literal["low", "medium", "high"]
 
 
@@ -85,3 +86,8 @@ class DeveloperState(TypedDict, total=False):
 
     # Summarize
     summarize_feedback: Optional[str]
+
+    # Router/Chat
+    graph_task_type: GraphTaskType  # Task type for graph routing
+    user_message: str  # User message content (for chat nodes)
+    response: str  # Agent response (from chat nodes)

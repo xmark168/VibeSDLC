@@ -341,3 +341,137 @@ def git_commit_step(
     except Exception as e:
         logger.warning(f"[git_commit_step] Commit error: {e}")
         return False
+
+
+def git_revert_uncommitted(workspace_path: str) -> bool:
+    """Revert uncommitted changes (discard unstaged + remove untracked).
+    
+    Args:
+        workspace_path: Path to git repository
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    if not workspace_path:
+        logger.warning("[git_revert_uncommitted] workspace_path is empty")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.warning(f"[git_revert_uncommitted] workspace does not exist: {workspace_path}")
+        return False
+    
+    workspace_path = str(workspace.resolve())
+    
+    try:
+        # Discard unstaged changes
+        git_with_retry(["git", "checkout", "."], cwd=workspace_path)
+        # Remove untracked files
+        git_with_retry(["git", "clean", "-fd"], cwd=workspace_path)
+        logger.info("[git_revert_uncommitted] Reverted uncommitted changes")
+        return True
+    except Exception as e:
+        logger.warning(f"[git_revert_uncommitted] Revert error: {e}")
+        return False
+
+
+def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
+    """Reset all changes to base branch (hard reset to merge-base).
+    
+    Args:
+        workspace_path: Path to git repository
+        base_branch: Base branch name (default: main)
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    if not workspace_path:
+        logger.warning("[git_reset_all] workspace_path is empty")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.warning(f"[git_reset_all] workspace does not exist: {workspace_path}")
+        return False
+    
+    workspace_path = str(workspace.resolve())
+    
+    try:
+        # Get merge-base with origin
+        result = subprocess.run(
+            ["git", "merge-base", f"origin/{base_branch}", "HEAD"],
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            base_commit = result.stdout.strip()
+            git_with_retry(["git", "reset", "--hard", base_commit], cwd=workspace_path)
+            logger.info(f"[git_reset_all] Reset to {base_commit[:8]}")
+        else:
+            # Fallback: reset to origin/base_branch
+            git_with_retry(["git", "reset", "--hard", f"origin/{base_branch}"], cwd=workspace_path)
+            logger.info(f"[git_reset_all] Reset to origin/{base_branch}")
+        
+        return True
+    except Exception as e:
+        logger.warning(f"[git_reset_all] Reset error: {e}")
+        return False
+
+
+def git_squash_wip_commits(
+    workspace_path: str,
+    base_branch: str = "main",
+    final_message: Optional[str] = None
+) -> bool:
+    """Squash all WIP commits into a single commit.
+    
+    Args:
+        workspace_path: Path to git repository
+        base_branch: Base branch name (default: main)
+        final_message: Final commit message (default: "feat: implement story")
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    if not workspace_path:
+        logger.warning("[git_squash_wip_commits] workspace_path is empty")
+        return False
+    
+    workspace = Path(workspace_path)
+    if not workspace.exists():
+        logger.warning(f"[git_squash_wip_commits] workspace does not exist: {workspace_path}")
+        return False
+    
+    workspace_path = str(workspace.resolve())
+    
+    try:
+        # Get merge-base
+        result = subprocess.run(
+            ["git", "merge-base", f"origin/{base_branch}", "HEAD"],
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            logger.warning("[git_squash_wip_commits] Could not find merge-base")
+            return False
+        
+        base_commit = result.stdout.strip()
+        
+        # Soft reset to base
+        git_with_retry(["git", "reset", "--soft", base_commit], cwd=workspace_path)
+        
+        # Commit with final message
+        msg = final_message or "feat: implement story"
+        git_with_retry(["git", "commit", "-m", msg, "--no-verify"], cwd=workspace_path)
+        logger.info(f"[git_squash_wip_commits] Squashed commits: {msg}")
+        return True
+        
+    except Exception as e:
+        logger.warning(f"[git_squash_wip_commits] Squash error: {e}")
+        return False
