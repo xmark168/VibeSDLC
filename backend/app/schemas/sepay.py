@@ -1,9 +1,10 @@
 """SePay payment schemas"""
 
-from pydantic import BaseModel, Field
-from uuid import UUID
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 
 class SePayCreateRequest(BaseModel):
@@ -16,8 +17,6 @@ class SePayCreateRequest(BaseModel):
 class SePayCreditPurchaseRequest(BaseModel):
     """Request to purchase credits via SePay"""
     credit_amount: int = Field(ge=10, description="Number of credits to purchase")
-
-
 class SePayQRResponse(BaseModel):
     """Response with SePay QR code info"""
     order_id: UUID
@@ -33,19 +32,19 @@ class SePayStatusResponse(BaseModel):
     order_id: UUID
     transaction_code: str
     status: str  # pending, paid, expired
-    paid_at: Optional[datetime] = None
+    paid_at: datetime | None = None
 
 
 class SePayTransaction(BaseModel):
     """SePay transaction from API"""
     id: int
-    transaction_date: Optional[str] = None
-    amount_in: Optional[float] = None
-    amount_out: Optional[float] = None
-    accumulated: Optional[float] = None
-    transaction_content: Optional[str] = None
-    reference_number: Optional[str] = None
-    code: Optional[str] = None
-    sub_account: Optional[str] = None
-    bank_brand_name: Optional[str] = None
-    account_number: Optional[str] = None
+    transaction_date: str | None = None
+    amount_in: float | None = None
+    amount_out: float | None = None
+    accumulated: float | None = None
+    transaction_content: str | None = None
+    reference_number: str | None = None
+    code: str | None = None
+    sub_account: str | None = None
+    bank_brand_name: str | None = None
+    account_number: str | None = None
