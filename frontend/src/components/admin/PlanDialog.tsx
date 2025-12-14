@@ -326,16 +326,16 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                     )}
                   />
                 </div>
-                {form.watch("monthly_price") && form.watch("yearly_discount_percentage") && (
+                {form.watch("monthly_price") != null && form.watch("yearly_discount_percentage") != null && (
                   <p className="text-sm text-green-500">
                     Yearly price: {(() => {
                       const monthly = form.watch("monthly_price")
                       const discount = form.watch("yearly_discount_percentage")
-                      if (monthly && discount != null) {
+                      if (typeof monthly === "number" && typeof discount === "number") {
                         const yearlyPrice = Math.round(monthly * 12 * (1 - discount / 100))
                         return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(yearlyPrice)
                       }
-                      return "0"
+                      return "0 ₫"
                     })()}
                   </p>
                 )}
