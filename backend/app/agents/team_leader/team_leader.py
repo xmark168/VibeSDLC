@@ -1,11 +1,8 @@
-"""Team Leader Agent - LangGraph-based Routing."""
+"""Team Leader Agent"""
 
 import logging
 from pathlib import Path
-from uuid import UUID
-
 from sqlmodel import Session
-
 from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
 from app.core.agent.project_context import ProjectContext
 from app.models import Agent as AgentModel, ArtifactType, Epic, Story, Project
@@ -25,10 +22,7 @@ class TeamLeader(BaseAgent):
         super().__init__(agent_model, **kwargs)
         logger.info(f"[{self.name}] Initializing Team Leader Agent")
         
-        # Shared project context (memory + preferences)
-        self.context = ProjectContext.get(self.project_id)
-        
-        # Initialize project files for archiving
+        self.context = ProjectContext.get(self.project_id) 
         self.project_files = None
         if self.project_id:
             with Session(engine) as session:
