@@ -9,8 +9,24 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.nodes import (
     setup_workspace, plan, implement, implement_parallel,
-    run_code, analyze_error, review,
+    run_code, analyze_error, review, story_chat, respond,
 )
+
+
+def route_by_task_type(state: DeveloperState) -> Literal["story_chat", "respond", "setup_workspace"]:
+    """Route based on graph_task_type - no LLM needed.
+    
+    Routes:
+    - story_message → story_chat node (reply in story chat)
+    - message → respond node (reply to @Developer in main chat)
+    - implement_story (default) → setup_workspace (start story implementation)
+    """
+    task_type = state.get("graph_task_type", "implement_story")
+    if task_type == "story_message":
+        return "story_chat"
+    elif task_type == "message":
+        return "respond"
+    return "setup_workspace"
 
 
 def route_after_implement(state: DeveloperState) -> Literal["review", "implement", "run_code"]:
@@ -145,6 +161,11 @@ class DeveloperGraph:
         self._graph_compiled = False
         g = StateGraph(DeveloperState)
         
+        # Chat/Response nodes
+        g.add_node("story_chat", partial(story_chat, agent=agent))
+        g.add_node("respond", partial(respond, agent=agent))
+        
+        # Story implementation nodes
         g.add_node("setup_workspace", partial(setup_workspace, agent=agent))
         g.add_node("plan", partial(plan, agent=agent))
         g.add_node("implement", partial(implement, agent=agent))
@@ -154,7 +175,14 @@ class DeveloperGraph:
         g.add_node("run_code", partial(run_code, agent=agent))
         g.add_node("analyze_error", partial(analyze_error, agent=agent))
         
-        g.set_entry_point("setup_workspace")
+        # Router is entry point - routes by task type
+        g.set_conditional_entry_point(route_by_task_type)
+        
+        # Chat nodes go directly to END
+        g.add_edge("story_chat", "__end__")
+        g.add_edge("respond", "__end__")
+        
+        # Story implementation flow
         g.add_conditional_edges("setup_workspace", route_after_setup)
         
         if parallel:

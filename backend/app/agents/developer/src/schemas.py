@@ -34,3 +34,10 @@ class SimpleReviewOutput(BaseModel):
 class ImplementOutput(BaseModel):
     """LLM output for implement step."""
     content: str = Field(description="Complete file content")
+
+
+class StoryChatResponse(BaseModel):
+    """Response for story chat message."""
+    response: str = Field(description="Reply message to user in Vietnamese")
+    action: str = Field(default="none", description="'pause' | 'cancel' | 'info' | 'none'")
+    details: str = Field(default="", description="Additional context if action needed")

@@ -2,6 +2,7 @@
 import asyncio
 import logging
 from typing import Dict, List, Optional, Set
+from uuid import UUID
 
 from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
 from app.core.agent.project_context import ProjectContext
@@ -218,17 +219,71 @@ class Developer(BaseAgent):
         return False
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
-        """Handle task - route to story processing or user message handling."""
+        """Handle task - route to story processing or user message handling.
         
+        All task types are handled through the graph with routing based on graph_task_type:
+        - STORY_MESSAGE → story_chat node
+        - MESSAGE → respond node  
+        - IMPLEMENT_STORY → setup_workspace → plan → implement...
+        - REVIEW_PR → handled separately (not in graph)
+        """
         await self.context.ensure_loaded()
         
-        # Route based on task type
-        if task.task_type == AgentTaskType.IMPLEMENT_STORY:
-            return await self._handle_story_processing(task)
-        elif task.task_type == AgentTaskType.REVIEW_PR:
+        # REVIEW_PR is handled separately (not in graph)
+        if task.task_type == AgentTaskType.REVIEW_PR:
             return await self._handle_merge_to_main(task)
-        else:
-            return await self._handle_user_message(task)
+        
+        # Route MESSAGE and STORY_MESSAGE through graph
+        if task.task_type == AgentTaskType.STORY_MESSAGE:
+            return await self._handle_chat_task(task, graph_task_type="story_message")
+        elif task.task_type == AgentTaskType.MESSAGE:
+            return await self._handle_chat_task(task, graph_task_type="message")
+        
+        # IMPLEMENT_STORY - use full story processing flow
+        return await self._handle_story_processing(task)
+    
+    async def _handle_chat_task(self, task: TaskContext, graph_task_type: str) -> TaskResult:
+        """Handle chat tasks (MESSAGE/STORY_MESSAGE) through graph.
+        
+        Uses lightweight graph invocation for quick responses.
+        """
+        context = task.context or {}
+        story_id = context.get("story_id", str(task.task_id))
+        story_title = context.get("story_title", "Unknown Story")
+        user_message = context.get("content", task.content)
+        
+        initial_state = {
+            "graph_task_type": graph_task_type,
+            "story_id": story_id,
+            "story_title": story_title,
+            "user_message": user_message,
+            "project_id": str(self.project_id),
+            "task_id": str(task.task_id),
+            "user_id": str(task.user_id) if task.user_id else "",
+        }
+        
+        try:
+            await self.graph_engine.setup()
+            config = {"configurable": {"thread_id": f"chat_{task.task_id}"}}
+            
+            final_state = None
+            async for state in self.graph_engine.graph.astream(initial_state, config):
+                final_state = state
+            
+            response = ""
+            if final_state:
+                # Get response from the node output
+                for node_name, node_state in final_state.items():
+                    if isinstance(node_state, dict) and "response" in node_state:
+                        response = node_state.get("response", "")
+                        break
+            
+            logger.info(f"[{self.name}] Chat task completed: {graph_task_type}")
+            return TaskResult(success=True, output=response)
+            
+        except Exception as e:
+            logger.error(f"[{self.name}] Chat task error: {e}", exc_info=True)
+            return TaskResult(success=False, output="", error_message=str(e))
 
     async def _handle_user_message(self, task: TaskContext) -> TaskResult:
         """Handle direct @Developer messages."""
@@ -273,6 +328,68 @@ class Developer(BaseAgent):
             "acceptance_criteria": [],
         }
         return await self._process_story(story_data, task)
+
+    async def _handle_story_message(self, task: TaskContext) -> TaskResult:
+        """Handle user message in story chat context using LLM.
+        
+        This allows user to communicate with Developer while story is being processed.
+        """
+        from app.agents.developer.src.utils.story_logger import StoryLogger
+        from app.agents.developer.src.nodes._llm import fast_llm
+        from app.agents.developer.src.schemas import StoryChatResponse
+        from langchain_core.messages import SystemMessage, HumanMessage
+        
+        context = task.context or {}
+        story_id = context.get("story_id")
+        story_title = context.get("story_title", "Unknown Story")
+        user_message = context.get("content", task.content)
+        
+        if not story_id:
+            logger.warning(f"[{self.name}] Story message without story_id")
+            return TaskResult(success=False, output="Missing story context")
+        
+        # Create story logger to reply in story chat
+        story_logger = StoryLogger(
+            story_id=UUID(story_id),
+            agent=self,
+            node_name="story_chat"
+        )
+        
+        system_prompt = f"""Bạn là Developer Agent đang xử lý story "{story_title}".
+User vừa gửi tin nhắn trong story chat. Hãy trả lời ngắn gọn, thân thiện.
+
+Quy tắc:
+- Nếu user hỏi về tiến độ → Thông báo đang xử lý
+- Nếu user muốn dừng/pause → Hướng dẫn dùng nút Pause
+- Nếu user muốn hủy → Hướng dẫn dùng nút Cancel  
+- Nếu user có yêu cầu thay đổi → Khuyên pause trước khi thay đổi
+- Trả lời bằng tiếng Việt, ngắn gọn (1-3 câu)"""
+
+        user_prompt = f"User message: {user_message}"
+        
+        try:
+            structured_llm = fast_llm.with_structured_output(StoryChatResponse)
+            result = await structured_llm.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ])
+            
+            reply = result.response
+            
+            # Handle special actions if needed
+            if result.action == "pause":
+                reply += "\n\n💡 Tip: Nhấn nút ⏸️ Pause để tạm dừng task."
+            elif result.action == "cancel":
+                reply += "\n\n💡 Tip: Nhấn nút ❌ Cancel để hủy task."
+                
+        except Exception as e:
+            logger.warning(f"[{self.name}] LLM error in story chat: {e}")
+            reply = f"📝 Đã nhận tin nhắn. Tôi đang xử lý story '{story_title}'."
+        
+        await story_logger.message(reply)
+        
+        logger.info(f"[{self.name}] Replied to story message for {story_id[:8]}")
+        return TaskResult(success=True, output=reply)
 
     async def _handle_story_processing(self, task: TaskContext) -> TaskResult:
         """Handle story processing using LangGraph."""
@@ -411,6 +528,9 @@ class Developer(BaseAgent):
             # in state - they will cause checkpoint serialization errors
             story_code = story_data.get("story_code", f"STORY-{story_id[:8]}")
             initial_state = {
+                # Graph routing - implement_story routes to setup_workspace
+                "graph_task_type": "implement_story",
+                
                 "story_id": story_id,
                 "story_code": story_code,
                 "story_title": story_data.get("title", "Untitled Story"),

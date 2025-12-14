@@ -1552,6 +1552,14 @@ class BaseAgent(ABC):
         from app.services import ExecutionService
         from sqlmodel import Session
         from app.core.db import engine
+        from app.kafka.event_schemas import AgentTaskType
+        
+        # Don't use trigger_message_id for STORY_MESSAGE tasks
+        # (story messages are in story_messages table, not messages table)
+        trigger_msg_id = None
+        if hasattr(task, 'message_id') and task.message_id:
+            if not (hasattr(task, 'task_type') and task.task_type == AgentTaskType.STORY_MESSAGE):
+                trigger_msg_id = task.message_id
         
         # Use ExecutionService for async-safe execution creation
         with Session(engine) as db:
@@ -1560,7 +1568,7 @@ class BaseAgent(ABC):
                 project_id=self.project_id,
                 agent_name=self.name,
                 agent_type=self.role_type,
-                trigger_message_id=task.message_id if hasattr(task, 'message_id') else None,
+                trigger_message_id=trigger_msg_id,
                 user_id=task.user_id if hasattr(task, 'user_id') else None,
                 task_type=task.task_type.value if hasattr(task, 'task_type') and task.task_type else None,
                 task_content_preview=task.content[:200] if task.content else None,
