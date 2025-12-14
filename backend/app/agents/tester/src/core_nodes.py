@@ -466,7 +466,7 @@ async def send_response(state: TesterState, agent=None) -> dict:
                     agent_name="tester",
                 )
                 if commit_result.get("success"):
-                    commit_msg = f"\n\n📝 {commit_result.get('message', 'Changes committed')}"
+                    commit_msg = f"\n\n{commit_result.get('message', 'Changes committed')}"
                     await story_logger.info(f"Committed changes: {commit_result.get('message')}")
             except Exception as e:
                 await story_logger.warning(f"Failed to commit: {e}")

@@ -288,10 +288,12 @@ export function BatchQuestionsCard({
       // For open questions, check chat input value OR saved answer
       return chatInputValue.trim().length > 0 || currentAnswer.answer.trim().length > 0
     } else {
-      // For multichoice: either has selected options OR has custom text from chat
+      // For multichoice: has selected options OR has text in chat input (treated as custom answer)
       const hasSelectedOptions = currentAnswer.selectedOptions.size > 0
-      const hasCustomText = customInputs.get(currentQuestionId)?.trim() || chatInputValue.trim()
-      return hasSelectedOptions || hasCustomText
+      const hasChatInput = chatInputValue.trim().length > 0
+      const hasCustomText = customInputs.get(currentQuestionId)?.trim()
+      
+      return hasSelectedOptions || hasChatInput || !!hasCustomText
     }
   }
   
@@ -302,15 +304,18 @@ export function BatchQuestionsCard({
     if (!ans) return false
     
     if (q.question_type === 'open') {
-      return ans.answer.trim().length > 0
+      // For open questions: check saved answer OR (if current question) chat input
+      const isCurrentQ = questionId === currentQuestionId
+      const hasSavedAnswer = ans.answer.trim().length > 0
+      const hasChatInput = isCurrentQ && chatInputValue.trim().length > 0
+      return hasSavedAnswer || hasChatInput
     } else {
-      // For multichoice: either has selected options OR has custom text
+      // For multichoice: has selected options OR has custom text OR (if current question) has chat input
       const hasSelectedOptions = ans.selectedOptions.size > 0
       const hasCustomText = customInputs.get(questionId)?.trim()
-      // For current question, also check chatInputValue
       const isCurrentQ = questionId === currentQuestionId
-      const currentHasCustom = isCurrentQ && chatInputValue.trim()
-      return hasSelectedOptions || hasCustomText || currentHasCustom
+      const hasChatInput = isCurrentQ && chatInputValue.trim().length > 0
+      return hasSelectedOptions || !!hasCustomText || hasChatInput
     }
   })
 
@@ -338,18 +343,18 @@ export function BatchQuestionsCard({
               </span>
             </div>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               onClick={() => setShowQA(!showQA)}
-              className="text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50"
+              className="-p-2 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50"
             >
               {showQA ? (
                 <>
-                  Ẩn <ChevronUp className="w-4 h-4 ml-1" />
+                  <ChevronUp className="w-4 h-4" />
                 </>
               ) : (
                 <>
-                  Xem <ChevronDown className="w-4 h-4 ml-1" />
+                  <ChevronDown className="w-4 h-4" />
                 </>
               )}
             </Button>
@@ -361,9 +366,14 @@ export function BatchQuestionsCard({
               {questions.map((q, idx) => {
                 const questionId = questionIds[idx]
                 const ans = answersMap.get(questionId)
-                const answerText = ans?.selected_options?.length
-                  ? ans.selected_options.join(', ')
-                  : ans?.answer || ''
+                
+                // Get answer text - check both selected_options and answer
+                let answerText = ''
+                if (ans?.selected_options && ans.selected_options.length > 0) {
+                  answerText = ans.selected_options.join(', ')
+                } else if (ans?.answer && ans.answer.trim()) {
+                  answerText = ans.answer
+                }
 
                 return (
                   <div key={questionId}>

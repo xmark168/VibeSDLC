@@ -991,7 +991,7 @@ class BusinessAnalyst(BaseAgent):
                 logger.warning(f"[{self.name}] No existing PRD found for update")
                 await self.message_user(
                     "response",
-                    "Chưa có PRD nào để cập nhật. Bạn cần tạo PRD trước khi thêm feature mới nhé! 📝\n\nHãy mô tả dự án bạn muốn làm để mình tạo PRD."
+                    "Chưa có PRD nào để cập nhật. Bạn cần tạo PRD trước khi thêm feature mới nhé!\nHãy mô tả dự án bạn muốn làm để mình tạo PRD."
                 )
                 return TaskResult(
                     success=True,
@@ -1002,7 +1002,7 @@ class BusinessAnalyst(BaseAgent):
             # Send acknowledgment
             await self.message_user(
                 "response",
-                f"📝 Đang cập nhật PRD \"{existing_title}\" với feature mới: {feature_description[:50]}..."
+                f"Đang cập nhật PRD \"{existing_title}\" với feature mới: {feature_description[:50]}..."
             )
             await self.message_user("thinking", "Đang cập nhật PRD...")
             
@@ -1060,7 +1060,7 @@ class BusinessAnalyst(BaseAgent):
             logger.error(f"[{self.name}] Error in UPDATE MODE: {e}", exc_info=True)
             await self.message_user(
                 "response",
-                "Có lỗi xảy ra khi cập nhật PRD. Vui lòng thử lại! 😅"
+                "Có lỗi xảy ra khi cập nhật PRD. Vui lòng thử lại!"
             )
             return TaskResult(
                 success=False,

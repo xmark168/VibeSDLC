@@ -602,8 +602,8 @@ async def analyze_document_content(document_text: str, agent=None) -> dict:
 # Fallback messages for document analysis feedback
 _DOC_FALLBACK_MESSAGES = {
     "complete_requirements": "Tài liệu đầy đủ thông tin! Mình sẽ tạo PRD trực tiếp từ nội dung này.",
-    "partial_requirements": "📝 Đã trích xuất một số thông tin từ tài liệu. Mình cần hỏi thêm vài câu để làm rõ.",
-    "not_requirements": "📄 Đây không phải tài liệu yêu cầu dự án. Bạn muốn mình làm gì với nội dung này?",
+    "partial_requirements": "Đã trích xuất một số thông tin từ tài liệu. Mình cần hỏi thêm vài câu để làm rõ.",
+    "not_requirements": "Đây không phải tài liệu yêu cầu dự án. Bạn muốn mình làm gì với nội dung này?",
 }
 
 
@@ -2522,7 +2522,7 @@ async def _save_prd_artifact(state: BAState, agent, project_files) -> dict:
         
         # Fallback message if LLM didn't generate one
         if not prd_message:
-            prd_message = f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝" if is_update else f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi!"
+            prd_message = f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé!" if is_update else f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi!"
         
         await agent.message_user(
             event_type="response",
@@ -2665,7 +2665,7 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         result["error"] = error_msg
         await agent.message_user(
             event_type="response",
-            content=f"Hmm, mình gặp chút vấn đề khi tạo stories nè 😅 Bạn thử kiểm tra lại PRD hoặc nhờ mình thử lại nhé!",
+            content=f"Hmm, mình gặp chút vấn đề khi tạo stories nè. Bạn thử kiểm tra lại PRD hoặc nhờ mình thử lại nhé!",
             details={
                 "message_type": "error",
                 "error": error_msg

@@ -533,7 +533,7 @@ async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         return {**state, "message": response.content, "action": "CONVERSATION"}
     except Exception as e:
         logger.error(f"[conversational] {e}")
-        msg = "Hmm, có gì đó không ổn. Bạn thử lại được không? 😅"
+        msg = "Hmm, có gì đó không ổn. Bạn thử lại được không?"
         if agent:
             await agent.message_user("response", msg)
         return {**state, "message": msg, "action": "CONVERSATION"}
