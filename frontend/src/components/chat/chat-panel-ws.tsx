@@ -37,7 +37,6 @@ import { useInfiniteMessages, useCreateMessageWithFile } from "@/queries/message
 import { messagesApi } from "@/apis/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { MessageStatusIndicator } from "./message-status-indicator";
-import { AgentQuestionCard } from "./AgentQuestionCard";
 import { BatchQuestionsCard } from "./BatchQuestionsCard";
 import { ConversationOwnerBadge } from "./ConversationOwnerBadge";
 import { AgentHandoffNotification } from "./AgentHandoffNotification";
@@ -518,10 +517,10 @@ export function ChatPanelWS({
   }, [typingAgentsCount])
 
   // Determine if chat should be blocked
-  // Block chat when agent is typing, but ALLOW typing when batch question is active (for custom answers)
-  // Also block when there's a pending approval card (PRD/Stories awaiting approval)
+  // Block chat when agent is typing, but ALLOW typing when batch question or single question is active (for answers)
+  // Also block when there's a pending approval card (PRD/Stories awaiting approval) without active question
   const isAgentTyping = typingAgents.size > 0
-  const shouldBlockChat = (isAgentTyping && !activeBatchQuestion) || (!!pendingApprovalCard && !pendingQuestion)
+  const shouldBlockChat = (isAgentTyping && !activeBatchQuestion && !pendingQuestion) || (!!pendingApprovalCard && !pendingQuestion)
 
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
@@ -583,20 +582,7 @@ export function ChatPanelWS({
 
     let finalMessage = message.trim();
 
-    // Check if this is answering an open question
-    if (pendingQuestion && pendingQuestion.structured_data?.question_type === 'open') {
-      // Send as question answer instead of regular message
-      sendQuestionAnswer(
-        pendingQuestion.structured_data.question_id!,
-        finalMessage,
-        undefined
-      )
-      setMessage("");
-      setPendingQuestion(null); // Hide notification immediately
-      // Force scroll to bottom after sending
-      forceScrollRef.current = true;
-      return;
-    }
+    // BatchQuestionsCard handles question submission now, so no need to check here
 
     // Handle file upload via REST API
     if (selectedFile && projectId) {
@@ -977,9 +963,12 @@ export function ChatPanelWS({
             );
           }
 
-          // Agent Question Handling
+          // Agent Question Handling - show agent message here, interaction in chat wrapper
           if (msg.message_type === 'agent_question') {
+            const isActiveQuestion = pendingQuestion?.id === msg.id;
+            const isAnswered = msg.structured_data?.answered || false;
             const agentStatus = msg.agent_name ? getAgentStatus(msg.agent_name) : 'idle';
+
             return (
               <div key={msg.id} id={`question-${msg.id}`} className="flex items-start gap-3">
                 <div 
@@ -999,25 +988,35 @@ export function ChatPanelWS({
                   <div className="text-xs font-medium text-muted-foreground mb-2">
                     {msg.agent_name || 'Agent'}
                   </div>
-                  <AgentQuestionCard
-                    question={msg.content}
-                    questionType={msg.structured_data?.question_type || 'open'}
-                    options={msg.structured_data?.options || []}
-                    allowMultiple={msg.structured_data?.allow_multiple || false}
-                    answered={msg.structured_data?.answered || false}
-                    processing={msg.structured_data?.processing || false}
-                    userAnswer={msg.structured_data?.user_answer}
-                    userSelectedOptions={msg.structured_data?.user_selected_options}
-                    agentName={msg.agent_name}
-                    onSubmit={(answer, selectedOptions) => {
-                      sendQuestionAnswer(
-                        msg.structured_data!.question_id!,
-                        answer,
-                        selectedOptions
-                      )
-                      setPendingQuestion(null) // Hide notification immediately
-                    }}
-                  />
+                  {/* Show message bubble indicating question or full card if answered */}
+                  {!isAnswered ? (
+                    <div className="rounded-lg px-3 py-2 bg-muted w-fit">
+                      <div className="text-sm leading-loose text-foreground">
+                        Đang hỏi 1 câu hỏi
+                      </div>
+                    </div>
+                  ) : (
+                    <BatchQuestionsCard
+                      batchId={msg.structured_data?.question_id || msg.id}
+                      questions={[{
+                        question_id: msg.structured_data?.question_id,
+                        question_text: msg.content,
+                        question_type: msg.structured_data?.question_type || 'open',
+                        options: msg.structured_data?.options,
+                        allow_multiple: msg.structured_data?.allow_multiple || false,
+                      }]}
+                      questionIds={[msg.structured_data?.question_id || msg.id]}
+                      agentName={msg.agent_name}
+                      answered={true}
+                      submittedAnswers={[{
+                        question_id: msg.structured_data?.question_id || msg.id,
+                        answer: msg.structured_data?.user_answer,
+                        selected_options: msg.structured_data?.user_selected_options,
+                      }]}
+                      chatInputValue=""
+                      onSubmit={() => {}}
+                    />
+                  )}
                 </div>
               </div>
             );
@@ -1302,22 +1301,18 @@ export function ChatPanelWS({
 
       {/* Chat Input Area - fixed at bottom */}
       <div className={`mx-4 mb-4 rounded-2xl flex-shrink-0 ${pendingQuestion || activeBatchQuestion || pendingApprovalCard ? 'border bg-blue-300/20 border-blue-500/20' : ''}`}>
-        {/* Pending Notification Banner - for questions or approval cards */}
-        {(pendingQuestion || pendingApprovalCard) && (() => {
-          const targetMsg = pendingQuestion || pendingApprovalCard
+        {/* Pending Notification Banner - only for approval cards (questions now show in card) */}
+        {(pendingApprovalCard && !pendingQuestion) && (() => {
+          const targetMsg = pendingApprovalCard
           if (!targetMsg) return null
           
-          const isPrdCard = !pendingQuestion && pendingApprovalCard?.structured_data?.message_type === 'prd_created'
-          const isStoriesCard = !pendingQuestion && pendingApprovalCard?.structured_data?.message_type === 'stories_created'
-          const elementId = pendingQuestion 
-            ? `question-${targetMsg.id}` 
-            : `message-${targetMsg.id}`
+          const isPrdCard = pendingApprovalCard?.structured_data?.message_type === 'prd_created'
+          const isStoriesCard = pendingApprovalCard?.structured_data?.message_type === 'stories_created'
+          const elementId = `message-${targetMsg.id}`
           
-          const description = pendingQuestion 
-            ? targetMsg.content
-            : isPrdCard
-              ? `Bạn đã có PRD '${pendingApprovalCard?.structured_data?.title || 'PRD'}' - Vui lòng Approve hoặc Edit`
-              : `Bạn đã có Stories - Vui lòng Approve hoặc Edit`
+          const description = isPrdCard
+            ? `Bạn đã có PRD '${pendingApprovalCard?.structured_data?.title || 'PRD'}' - Vui lòng Approve hoặc Edit`
+            : `Bạn đã có Stories - Vui lòng Approve hoặc Edit`
 
           const scrollToElement = () => {
             const container = messagesContainerRef.current
@@ -1350,6 +1345,39 @@ export function ChatPanelWS({
             </div>
           )
         })()}
+
+        {/* Team Leader Single Question Display - shown above chat input */}
+        {pendingQuestion && (
+          <div className="">
+            <BatchQuestionsCard
+              batchId={pendingQuestion.structured_data?.question_id || pendingQuestion.id}
+              questions={[{
+                question_id: pendingQuestion.structured_data?.question_id,
+                question_text: pendingQuestion.content,
+                question_type: pendingQuestion.structured_data?.question_type || 'open',
+                options: pendingQuestion.structured_data?.options,
+                allow_multiple: pendingQuestion.structured_data?.allow_multiple || false,
+              }]}
+              questionIds={[pendingQuestion.structured_data?.question_id || pendingQuestion.id]}
+              agentName={pendingQuestion.agent_name}
+              answered={false}
+              chatInputValue={message}
+              onChatInputUsed={() => setMessage('')}
+              onQuestionChange={(questionId, savedInput) => {
+                setMessage(savedInput);
+              }}
+              onSubmit={(answers) => {
+                const answer = answers[0];
+                sendQuestionAnswer(
+                  answer.question_id,
+                  answer.answer,
+                  answer.selected_options
+                )
+                setPendingQuestion(null) // Hide notification immediately
+              }}
+            />
+          </div>
+        )}
 
         {/* Batch Question Display - shown above chat input */}
         {activeBatchQuestion && (
@@ -1463,7 +1491,7 @@ export function ChatPanelWS({
             placeholder={
               selectedFile
                 ? "Add description for file..."
-                : activeBatchQuestion
+                : (pendingQuestion || activeBatchQuestion)
                   ? "Hoặc gõ câu trả lời khác tại đây..."
                   : pendingApprovalCard
                     ? "Vui lòng Approve hoặc Edit trước khi tiếp tục..."
@@ -1481,7 +1509,7 @@ export function ChatPanelWS({
               </PromptInputButton>
 
             </PromptInputTools>
-            {!activeBatchQuestion && (
+            {!activeBatchQuestion && !pendingQuestion && (
               <PromptInputSubmit disabled={(!isConnected && !selectedFile) || shouldBlockChat || isUploading || (!message.trim() && !selectedFile)} />
             )}
           </PromptInputToolbar>

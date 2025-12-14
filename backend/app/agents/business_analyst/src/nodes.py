@@ -1135,8 +1135,8 @@ async def update_prd(state: BAState, agent=None) -> dict:
         batch_questions = [
             {
                 "question_text": detail,
-                "question_type": "open",
-                "options": None,
+                "question_type": "multichoice",
+                "options": ["Có", "Không", "Khác (vui lòng mô tả)"],
                 "allow_multiple": False,
                 "context": context_msg if i == 0 else None,  # Only add context to first question
             }
@@ -1424,8 +1424,8 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             return await _extract_stories_single_call(state, agent, prd)
         
         # Use hardcoded messages (LLM-generated templates were unreliable - often mentioned "Phase 2" incorrectly)
-        message = f"🎉 Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé! 📋"
-        approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+        message = f"Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé!"
+        approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog!"
         
         logger.info(f"[BA] Stories message: {message[:50]}...")
         
@@ -1493,8 +1493,8 @@ async def _extract_stories_single_call(state: BAState, agent, prd: dict) -> dict
     logger.info(f"[BA] Single-call extraction: {total_epics} epics, {total_stories} stories")
     
     # Use hardcoded messages (LLM templates unreliable)
-    message = f"🎉 Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé! 📋"
-    approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+    message = f"Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé!"
+    approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog!"
     
     return {
         "epics": epics,
@@ -1610,8 +1610,8 @@ async def update_stories(state: BAState, agent=None) -> dict:
         batch_questions = [
             {
                 "question_text": detail,
-                "question_type": "open",
-                "options": None,
+                "question_type": "multichoice",
+                "options": ["Có", "Không", "Khác (vui lòng mô tả)"],
                 "allow_multiple": False,
                 "context": context_msg if i == 0 else None,
             }
@@ -1758,8 +1758,8 @@ async def update_stories(state: BAState, agent=None) -> dict:
     # No more validation needed here - STEP 2 already checked for existing functionality
     # If we reach here, user has confirmed they want to proceed
     # Use hardcoded messages (LLM templates unreliable)
-    message = f"✏️ Đã cập nhật xong! Hiện có {total_stories} Stories trong {total_epics} Epics. Bạn xem qua và bấm 'Phê duyệt Stories' nhé! 📋"
-    approval_message = f"Đã cập nhật và lưu {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+    message = f"Đã cập nhật xong! Hiện có {total_stories} Stories trong {total_epics} Epics. Bạn xem qua và bấm 'Phê duyệt Stories' nhé!"
+    approval_message = f"Đã cập nhật và lưu {total_epics} Epics, {total_stories} Stories vào backlog!"
     
     return {
         "epics": final_epics,

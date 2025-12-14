@@ -103,40 +103,58 @@ export function BatchQuestionsCard({
   
   const handleNext = () => {
     // ALWAYS save current chat input (even if empty) before switching
+    const newAnswers = new Map(answers)
     const newCustom = new Map(customInputs)
-    newCustom.set(currentQuestionId, chatInputValue) // Save current value (can be empty)
-    setCustomInputs(newCustom)
-
-    // Mark as selected if user typed something
-    if (chatInputValue.trim() && currentQuestion.question_type === 'multichoice') {
-      const newAnswers = new Map(answers)
+    
+    if (currentQuestion.question_type === 'open') {
+      // For open questions, save chat input as answer directly
       const current = newAnswers.get(currentQuestionId)
       if (current) {
-        const newSelected = new Set(current.selectedOptions)
-        newSelected.add('__CUSTOM__') // Special marker for custom answer
-        newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
+        newAnswers.set(currentQuestionId, { ...current, answer: chatInputValue })
         setAnswers(newAnswers)
       }
-    } else if (!chatInputValue.trim() && currentQuestion.question_type === 'multichoice') {
-      // If user cleared the input, remove the __CUSTOM__ marker
-      const newAnswers = new Map(answers)
-      const current = newAnswers.get(currentQuestionId)
-      if (current) {
-        const newSelected = new Set(current.selectedOptions)
-        newSelected.delete('__CUSTOM__')
-        newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
-        setAnswers(newAnswers)
+    } else if (currentQuestion.question_type === 'multichoice') {
+      // For multichoice, save as custom input
+      newCustom.set(currentQuestionId, chatInputValue)
+      setCustomInputs(newCustom)
+
+      // Mark as selected if user typed something
+      if (chatInputValue.trim()) {
+        const current = newAnswers.get(currentQuestionId)
+        if (current) {
+          const newSelected = new Set(current.selectedOptions)
+          newSelected.add('__CUSTOM__')
+          newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
+          setAnswers(newAnswers)
+        }
+      } else {
+        // If user cleared the input, remove the __CUSTOM__ marker
+        const current = newAnswers.get(currentQuestionId)
+        if (current) {
+          const newSelected = new Set(current.selectedOptions)
+          newSelected.delete('__CUSTOM__')
+          newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
+          setAnswers(newAnswers)
+        }
       }
     }
 
     if (currentIndex < questions.length - 1) {
       const nextIndex = currentIndex + 1
       const nextQuestionId = questionIds[nextIndex]
+      const nextQuestion = questions[nextIndex]
       setCurrentIndex(nextIndex)
 
       // Notify parent to restore saved input for next question
       if (onQuestionChange) {
-        const savedInput = newCustom.get(nextQuestionId) || ''
+        let savedInput = ''
+        if (nextQuestion.question_type === 'open') {
+          // For open questions, restore from answer
+          savedInput = newAnswers.get(nextQuestionId)?.answer || ''
+        } else {
+          // For multichoice, restore from custom inputs
+          savedInput = newCustom.get(nextQuestionId) || ''
+        }
         onQuestionChange(nextQuestionId, savedInput)
       }
     }
@@ -144,39 +162,57 @@ export function BatchQuestionsCard({
 
   const handleBack = () => {
     // ALWAYS save current chat input (even if empty) before switching
+    const newAnswers = new Map(answers)
     const newCustom = new Map(customInputs)
-    newCustom.set(currentQuestionId, chatInputValue) // Save current value (can be empty)
-    setCustomInputs(newCustom)
-
-    // Update __CUSTOM__ marker based on current input
-    if (chatInputValue.trim() && currentQuestion.question_type === 'multichoice') {
-      const newAnswers = new Map(answers)
+    
+    if (currentQuestion.question_type === 'open') {
+      // For open questions, save chat input as answer directly
       const current = newAnswers.get(currentQuestionId)
       if (current) {
-        const newSelected = new Set(current.selectedOptions)
-        newSelected.add('__CUSTOM__')
-        newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
+        newAnswers.set(currentQuestionId, { ...current, answer: chatInputValue })
         setAnswers(newAnswers)
       }
-    } else if (!chatInputValue.trim() && currentQuestion.question_type === 'multichoice') {
-      const newAnswers = new Map(answers)
-      const current = newAnswers.get(currentQuestionId)
-      if (current) {
-        const newSelected = new Set(current.selectedOptions)
-        newSelected.delete('__CUSTOM__')
-        newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
-        setAnswers(newAnswers)
+    } else if (currentQuestion.question_type === 'multichoice') {
+      // For multichoice, save as custom input
+      newCustom.set(currentQuestionId, chatInputValue)
+      setCustomInputs(newCustom)
+
+      // Update __CUSTOM__ marker based on current input
+      if (chatInputValue.trim()) {
+        const current = newAnswers.get(currentQuestionId)
+        if (current) {
+          const newSelected = new Set(current.selectedOptions)
+          newSelected.add('__CUSTOM__')
+          newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
+          setAnswers(newAnswers)
+        }
+      } else {
+        const current = newAnswers.get(currentQuestionId)
+        if (current) {
+          const newSelected = new Set(current.selectedOptions)
+          newSelected.delete('__CUSTOM__')
+          newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
+          setAnswers(newAnswers)
+        }
       }
     }
 
     if (currentIndex > 0) {
       const prevIndex = currentIndex - 1
       const prevQuestionId = questionIds[prevIndex]
+      const prevQuestion = questions[prevIndex]
       setCurrentIndex(prevIndex)
 
       // Notify parent to restore saved input for previous question
       if (onQuestionChange) {
-        const savedInput = newCustom.get(prevQuestionId) || ''
+        let savedInput = ''
+        if (prevQuestion.question_type === 'open') {
+          // For open questions, restore from answer
+          savedInput = newAnswers.get(prevQuestionId)?.answer || ''
+        } else {
+          // For multichoice, restore from custom inputs
+          savedInput = newCustom.get(prevQuestionId) || ''
+        }
         onQuestionChange(prevQuestionId, savedInput)
       }
     }
@@ -191,14 +227,23 @@ export function BatchQuestionsCard({
       let finalCustomInputs = new Map(customInputs)
       
       // Save current chat input before submitting
-      if (chatInputValue.trim() && currentQuestion.question_type === 'multichoice') {
-        finalCustomInputs.set(currentQuestionId, chatInputValue.trim())
-        
-        const current = finalAnswers.get(currentQuestionId)
-        if (current) {
-          const newSelected = new Set(current.selectedOptions)
-          newSelected.add('__CUSTOM__')
-          finalAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
+      if (chatInputValue.trim()) {
+        if (currentQuestion.question_type === 'open') {
+          // For open questions, use chat input as the answer
+          const current = finalAnswers.get(currentQuestionId)
+          if (current) {
+            finalAnswers.set(currentQuestionId, { ...current, answer: chatInputValue.trim() })
+          }
+        } else if (currentQuestion.question_type === 'multichoice') {
+          // For multichoice with custom input
+          finalCustomInputs.set(currentQuestionId, chatInputValue.trim())
+          
+          const current = finalAnswers.get(currentQuestionId)
+          if (current) {
+            const newSelected = new Set(current.selectedOptions)
+            newSelected.add('__CUSTOM__')
+            finalAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
+          }
         }
         
         if (onChatInputUsed) {
@@ -240,7 +285,8 @@ export function BatchQuestionsCard({
     if (!currentAnswer) return false
     
     if (currentQuestion.question_type === 'open') {
-      return currentAnswer.answer.trim().length > 0
+      // For open questions, check chat input value OR saved answer
+      return chatInputValue.trim().length > 0 || currentAnswer.answer.trim().length > 0
     } else {
       // For multichoice: either has selected options OR has custom text from chat
       const hasSelectedOptions = currentAnswer.selectedOptions.size > 0
@@ -416,13 +462,8 @@ export function BatchQuestionsCard({
 
           {/* Answer Options */}
           {currentQuestion.question_type === 'open' ? (
-            <Textarea
-              value={currentAnswer?.answer || ''}
-              onChange={(e) => updateAnswer(currentQuestionId, e.target.value)}
-              placeholder="Nhập câu trả lời của bạn..."
-              rows={3}
-              className="w-full text-sm resize-none"
-            />
+            // For open questions, user types in main chat input (no input here)
+            null
           ) : (
             <div className="space-y-1.5">
               {currentQuestion.allow_multiple ? (

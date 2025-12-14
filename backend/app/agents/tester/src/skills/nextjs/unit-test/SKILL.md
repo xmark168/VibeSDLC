@@ -167,7 +167,7 @@ beforeEach(() => {
 
 ---
 
-## 📋 QUERY PRIORITY
+##  QUERY PRIORITY
 
 | Priority | Query | Use Case |
 |----------|-------|----------|

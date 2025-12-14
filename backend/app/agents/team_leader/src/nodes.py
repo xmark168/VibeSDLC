@@ -138,11 +138,11 @@ def _user_prompt(msg: str, task: str = "routing_decision", **kw) -> str:
 
 # Fallback messages when LLM fails
 _FALLBACK_MESSAGES = {
-    "replace": "Đã thay thế project cũ, xóa dữ liệu liên quan và chuyển cho BA phân tích yêu cầu mới nhé! 📋",
-    "keep": "OK, giữ nguyên project hiện tại nhé! 😊",
+    "replace": "Đã thay thế project cũ, xóa dữ liệu liên quan và chuyển cho BA phân tích yêu cầu mới nhé!",
+    "keep": "OK, giữ nguyên project hiện tại nhé!",
     "view": "Đây là thông tin project của bạn! 📄",
-    "update": "Đã ghi nhận yêu cầu cập nhật và chuyển cho BA xử lý nhé! 📝",
-    "default": "Đã nhận yêu cầu của bạn! 👍",
+    "update": "Đã ghi nhận yêu cầu cập nhật và chuyển cho BA xử lý nhé!",
+    "default": "Đã nhận yêu cầu của bạn!",
 }
 
 
