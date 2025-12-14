@@ -643,7 +643,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             ],
             config=_cfg(state, "plan_tests"),
         )
-        test_plan = result.test_plan
+        test_plan = [step.model_dump() for step in result.test_plan]
         
         # FIXED folder paths - always use standard structure
         integration_folder = "src/__tests__/integration"

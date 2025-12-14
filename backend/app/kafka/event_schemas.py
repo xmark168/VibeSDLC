@@ -72,7 +72,6 @@ class AgentTaskType(str, Enum):
     # Abstraction task types (high-level)
     USER_STORY = "user_story"  # BA: Analyze requirements → create user stories
     MESSAGE = "message"  # Any agent: Handle/respond to user message
-    STORY_MESSAGE = "story_message"  # User message in story chat context
     
     # Clarification questions
     RESUME_WITH_ANSWER = "resume_with_answer"  # Resume task with clarification answer
@@ -166,20 +165,6 @@ class StoryEvent(BaseKafkaEvent):
     updated_by: Optional[str] = None
     changed_by: Optional[str] = None
     assigned_by: Optional[str] = None
-
-
-class StoryMessageEvent(BaseKafkaEvent):
-    """Agent/User message in story channel."""
-    
-    event_type: str = "story.message.created"
-    story_id: UUID
-    message_id: UUID
-    author_type: str  # "agent" | "user" | "system"
-    author_name: str
-    agent_id: Optional[UUID] = None
-    content: str
-    message_type: str = "update"  # "update" | "test_result" | "progress" | "error"
-    structured_data: Optional[Dict[str, Any]] = None
 
 
 class StoryAgentStateEvent(BaseKafkaEvent):
@@ -418,7 +403,6 @@ EVENT_TYPE_TO_SCHEMA = {
     StoryEventType.PAUSE.value: StoryEvent,
     StoryEventType.RESUME.value: StoryEvent,
     StoryEventType.REVIEW_ACTION.value: StoryEvent,
-    "story.message.created": StoryMessageEvent,
     "story.agent_state.changed": StoryAgentStateEvent,
     "story.review_action": StoryEvent,  # Use unified StoryEvent
     

@@ -199,7 +199,7 @@ class RoutingDecision(BaseModel):
 
 
 async def send_message(state: TesterState, agent, content: str, message_type: str = "update"):
-    """Send message to story channel (auto) or main chat (user mention)."""
+    """Send message to main chat (user mention) or log for auto tasks."""
     if not agent:
         logger.warning("[send_message] No agent provided, skipping message")
         return
@@ -210,14 +210,8 @@ async def send_message(state: TesterState, agent, content: str, message_type: st
     logger.debug(f"[send_message] is_auto={is_auto}, story_ids={story_ids}, content={content[:50]}...")
     
     if is_auto and story_ids:
-        # Auto-run: message to story channel (not main chat)
-        for story_id in story_ids:
-            try:
-                logger.info(f"[send_message] Sending to story {story_id}: {content[:50]}...")
-                await agent.message_story(UUID(story_id), content, message_type)
-                logger.info(f"[send_message] Successfully sent to story {story_id}")
-            except Exception as e:
-                logger.error(f"[send_message] Failed to message story {story_id}: {e}", exc_info=True)
+        # Auto-run: just log (no longer saving to story messages)
+        logger.info(f"[send_message] Auto task message: {content[:100]}...")
     elif not is_auto:
         # User chat (@mention or direct): message to user
         await agent.message_user("response", content)

@@ -222,7 +222,6 @@ class Developer(BaseAgent):
         """Handle task - route to story processing or user message handling.
         
         All task types are handled through the graph with routing based on graph_task_type:
-        - STORY_MESSAGE → story_chat node
         - MESSAGE → respond node  
         - IMPLEMENT_STORY → setup_workspace → plan → implement...
         - REVIEW_PR → handled separately (not in graph)
@@ -233,20 +232,17 @@ class Developer(BaseAgent):
         if task.task_type == AgentTaskType.REVIEW_PR:
             return await self._handle_merge_to_main(task)
         
-        # Route MESSAGE and STORY_MESSAGE through graph
-        if task.task_type == AgentTaskType.STORY_MESSAGE:
-            return await self._handle_chat_task(task, graph_task_type="story_message")
-        elif task.task_type == AgentTaskType.MESSAGE:
+        # Route MESSAGE through graph
+        if task.task_type == AgentTaskType.MESSAGE:
             return await self._handle_chat_task(task, graph_task_type="message")
         
         # IMPLEMENT_STORY - use full story processing flow
         return await self._handle_story_processing(task)
     
     async def _handle_chat_task(self, task: TaskContext, graph_task_type: str) -> TaskResult:
-        """Handle chat tasks (MESSAGE/STORY_MESSAGE) through graph.
+        """Handle chat tasks (MESSAGE) through graph.
         
         Uses lightweight graph invocation for quick responses.
-        Story info will be loaded directly in the node.
         """
         context = task.context or {}
         story_id = context.get("story_id", str(task.task_id))
@@ -345,68 +341,6 @@ class Developer(BaseAgent):
         }
         return await self._process_story(story_data, task)
 
-    async def _handle_story_message(self, task: TaskContext) -> TaskResult:
-        """Handle user message in story chat context using LLM.
-        
-        This allows user to communicate with Developer while story is being processed.
-        """
-        from app.agents.developer.src.utils.story_logger import StoryLogger
-        from app.agents.developer.src.nodes._llm import fast_llm
-        from app.agents.developer.src.schemas import StoryChatResponse
-        from langchain_core.messages import SystemMessage, HumanMessage
-        
-        context = task.context or {}
-        story_id = context.get("story_id")
-        story_title = context.get("story_title", "Unknown Story")
-        user_message = context.get("content", task.content)
-        
-        if not story_id:
-            logger.warning(f"[{self.name}] Story message without story_id")
-            return TaskResult(success=False, output="Missing story context")
-        
-        # Create story logger to reply in story chat
-        story_logger = StoryLogger(
-            story_id=UUID(story_id),
-            agent=self,
-            node_name="story_chat"
-        )
-        
-        system_prompt = f"""Bạn là Developer Agent đang xử lý story "{story_title}".
-User vừa gửi tin nhắn trong story chat. Hãy trả lời ngắn gọn, thân thiện.
-
-Quy tắc:
-- Nếu user hỏi về tiến độ → Thông báo đang xử lý
-- Nếu user muốn dừng/pause → Hướng dẫn dùng nút Pause
-- Nếu user muốn hủy → Hướng dẫn dùng nút Cancel  
-- Nếu user có yêu cầu thay đổi → Khuyên pause trước khi thay đổi
-- Trả lời bằng tiếng Việt, ngắn gọn (1-3 câu)"""
-
-        user_prompt = f"User message: {user_message}"
-        
-        try:
-            structured_llm = fast_llm.with_structured_output(StoryChatResponse)
-            result = await structured_llm.ainvoke([
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt)
-            ])
-            
-            reply = result.response
-            
-            # Handle special actions if needed
-            if result.action == "pause":
-                reply += "\n\n💡 Tip: Nhấn nút ⏸️ Pause để tạm dừng task."
-            elif result.action == "cancel":
-                reply += "\n\n💡 Tip: Nhấn nút ❌ Cancel để hủy task."
-                
-        except Exception as e:
-            logger.warning(f"[{self.name}] LLM error in story chat: {e}")
-            reply = f"📝 Đã nhận tin nhắn. Tôi đang xử lý story '{story_title}'."
-        
-        await story_logger.message(reply)
-        
-        logger.info(f"[{self.name}] Replied to story message for {story_id[:8]}")
-        return TaskResult(success=True, output=reply)
-
     async def _handle_story_processing(self, task: TaskContext) -> TaskResult:
         """Handle story processing using LangGraph."""
         story_id = None
@@ -432,14 +366,6 @@ Quy tắc:
                 
                 story_data = await self._load_story_from_db(story_id)
                 
-                if not is_resume:
-                    # Send milestone message for new story start
-                    from uuid import UUID
-                    await self.message_story(
-                        UUID(story_id),
-                        f"🚀 Bắt đầu: {story_data.get('title', 'Story')}",
-                        message_type="text"
-                    )
             else:
                 # Parse from task content (legacy/direct call)
                 story_data = self._parse_story_content(task)
@@ -708,12 +634,6 @@ Quy tắc:
                 # Fallback: start fresh if resume failed
                 if final_state is None:
                     logger.warning(f"[{self.name}] Auto-restarting from beginning")
-                    from uuid import UUID
-                    await self.message_story(
-                        UUID(story_id),
-                        f"⚠️ Không thể tiếp tục từ checkpoint, tự động khởi động lại từ đầu...",
-                        message_type="warning"
-                    )
                     is_resume = False
                     # Use signal-checking wrapper for fresh start
                     final_state = await self._run_graph_with_signal_check(
@@ -758,22 +678,6 @@ Quy tắc:
                         base_branch = final_state.get("base_branch", "main")
                         git_reset_all(workspace_path, base_branch)
                         logger.info(f"[{self.name}] Reset all changes on cancel")
-                
-                # Notify user (milestone messages for pause/cancel)
-                from uuid import UUID
-                story_uuid = UUID(story_id)
-                if reason == "pause":
-                    await self.message_story(
-                        story_uuid,
-                        f"⏸️ Đã tạm dừng. Bấm Resume để tiếp tục.",
-                        message_type="text"
-                    )
-                elif reason == "cancel":
-                    await self.message_story(
-                        story_uuid,
-                        f"🛑 Đã hủy story.",
-                        message_type="text"
-                    )
                 
                 # Cleanup langfuse
                 if langfuse_ctx:
@@ -837,28 +741,6 @@ Quy tắc:
                 if not await self._update_story_state(story_id, StoryAgentState.CANCELED):
                     logger.error(f"Failed to set CANCELED state for {story_id}")
             
-            # Notify user of completion
-            from uuid import UUID
-            try:
-                story_uuid = UUID(story_id)
-                total_files = len(files_created) + len(files_modified)
-                if run_status == "PASS":
-                    await self.message_story(
-                        story_uuid,
-                        f"✅ Story hoàn thành! Đã tạo/sửa {total_files} files.",
-                        message_type="text",
-                        details={"files_created": files_created, "files_modified": files_modified, "branch_name": final_state.get('branch_name')}
-                    )
-                else:
-                    await self.message_story(
-                        story_uuid,
-                        f"❌ Story chưa hoàn thành. Build failed.",
-                        message_type="text",
-                        details={"files_created": files_created, "files_modified": files_modified, "error": final_state.get("run_stderr", "")[:200]}
-                    )
-            except Exception:
-                pass
-            
             return TaskResult(
                 success=True,
                 output=message,
@@ -909,29 +791,10 @@ Quy tắc:
             self.consume_signal(story_id)
             
             # Handle based on state
-            try:
-                from uuid import UUID
-                story_uuid = UUID(story_id)
-                
-                if e.state == StoryAgentState.PAUSED:
-                    # Paused - checkpoint auto-saved by LangGraph, just notify
-                    await self.message_story(
-                        story_uuid,
-                        f"⏸️ Đã tạm dừng. Bấm Resume để tiếp tục.",
-                        message_type="system"
-                    )
-                elif e.state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
-                    # Cancel requested/canceled - transition to CANCELED and notify
-                    if e.state == StoryAgentState.CANCEL_REQUESTED:
-                        # Agent acknowledges cancel by transitioning to CANCELED
-                        await self._update_story_state(story_id, StoryAgentState.CANCELED)
-                    await self.message_story(
-                        story_uuid,
-                        f"🛑 Đã hủy story.",
-                        message_type="system"
-                    )
-            except Exception:
-                pass
+            if e.state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
+                # Cancel requested/canceled - transition to CANCELED
+                if e.state == StoryAgentState.CANCEL_REQUESTED:
+                    await self._update_story_state(story_id, StoryAgentState.CANCELED)
             
             # Cleanup langfuse
             if langfuse_ctx:
@@ -955,18 +818,6 @@ Quy tắc:
             # Set CANCELED on error
             if not await self._update_story_state(story_id, StoryAgentState.CANCELED):
                 logger.error(f"Failed to set CANCELED state after graph error for {story_id}")
-            
-            # Notify user of error
-            from uuid import UUID
-            try:
-                story_uuid = UUID(story_id)
-                await self.message_story(
-                    story_uuid,
-                    f"❌ Lỗi: {str(e)[:200]}",
-                    message_type="error"
-                )
-            except Exception:
-                pass
             
             # Cleanup langfuse span on error
             if langfuse_ctx:

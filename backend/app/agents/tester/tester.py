@@ -257,15 +257,8 @@ class Tester(BaseAgent):
             return None
         
         if is_auto and self._current_story_ids and event_type == "response":
-            for story_id in self._current_story_ids:
-                try:
-                    await self.message_story(
-                        UUID(story_id), 
-                        content, 
-                        message_type=details.get("message_type", "update") if details else "update"
-                    )
-                except Exception as e:
-                    logger.warning(f"[{self.name}] Failed to message story {story_id}: {e}")
+            # Log response for auto tasks (no longer saving to story messages)
+            logger.info(f"[{self.name}] Auto task response: {content[:100]}...")
             return None
         
         return await super().message_user(event_type, content, details, **kwargs)
@@ -402,21 +395,10 @@ class Tester(BaseAgent):
                 
                 self._running_tasks.pop(story_id, None)
                 if story_ids:
-                    try:
-                        if reason == "pause":
-                            await self.message_story(
-                                UUID(story_ids[0]),
-                                f"⏸️ Tests đã tạm dừng tại node '{node}'. Checkpoint đã được lưu.",
-                                message_type="system"
-                            )
-                        elif reason == "cancel":
-                            await self.message_story(
-                                UUID(story_ids[0]),
-                                f"🛑 Tests đã bị hủy tại node '{node}'.",
-                                message_type="system"
-                            )
-                    except Exception:
-                        pass
+                    if reason == "pause":
+                        logger.info(f"[{self.name}] Tests paused at node '{node}'. Checkpoint saved.")
+                    elif reason == "cancel":
+                        logger.info(f"[{self.name}] Tests cancelled at node '{node}'.")
                 
                 if langfuse_ctx:
                     try:
@@ -473,25 +455,12 @@ class Tester(BaseAgent):
             self._running_tasks.pop(story_id, None)
             self.consume_signal(story_id)
             if story_ids:
-                try:
-                    story_uuid = UUID(story_ids[0])
-                    
-                    if e.state == StoryAgentState.PAUSED:
-                        await self.message_story(
-                            story_uuid,
-                            f"⏸️ Tests đã tạm dừng. Checkpoint đã được lưu.",
-                            message_type="system"
-                        )
-                    elif e.state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
-                        if e.state == StoryAgentState.CANCEL_REQUESTED:
-                            await self._update_story_state(story_id, StoryAgentState.CANCELED)
-                        await self.message_story(
-                            story_uuid,
-                            f"🛑 Tests đã bị hủy.",
-                            message_type="system"
-                        )
-                except Exception:
-                    pass
+                if e.state == StoryAgentState.PAUSED:
+                    logger.info(f"[{self.name}] Tests paused. Checkpoint saved.")
+                elif e.state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
+                    if e.state == StoryAgentState.CANCEL_REQUESTED:
+                        await self._update_story_state(story_id, StoryAgentState.CANCELED)
+                    logger.info(f"[{self.name}] Tests cancelled.")
             
             if langfuse_ctx:
                 try:
