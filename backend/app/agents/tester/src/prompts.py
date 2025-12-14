@@ -44,11 +44,7 @@ def _resolve_shared_context(template: str) -> str:
 
 
 def _safe_format(template: str, **kwargs) -> str:
-    """Safely format template, only replacing provided keys.
-    
-    Unlike str.format(), this doesn't fail on unmatched placeholders.
-    Handles code examples with curly braces gracefully.
-    """
+    """Safely format template, only replacing provided keys."""
     result = template
     for key, value in kwargs.items():
         # Simple string replacement - no regex special chars in replacement

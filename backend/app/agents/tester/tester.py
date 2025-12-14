@@ -1,4 +1,4 @@
-"""Tester Agent with LangGraph, pause/resume/cancel support and PostgresSaver checkpoints."""
+"""Tester Agent"""
 
 import asyncio
 import logging

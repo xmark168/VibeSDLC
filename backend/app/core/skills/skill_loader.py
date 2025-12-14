@@ -1,14 +1,5 @@
 """
-Skill Loader - Load skills using Anthropic's Agent Skills pattern.
-
-Skills use SKILL.md format with YAML frontmatter:
-- name: skill identifier
-- description: what the skill does and when to use it
-
-Progressive disclosure:
-1. Level 1: name + description (loaded at startup for catalog)
-2. Level 2: Full SKILL.md body (loaded when skill is activated)
-3. Level 3: Bundled files in references/, scripts/, assets/ (loaded as needed)
+Skill Loader
 """
 import logging
 from pathlib import Path
