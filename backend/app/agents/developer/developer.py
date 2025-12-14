@@ -1004,7 +1004,8 @@ class Developer(BaseAgent):
             
             # 2. Fetch all branches
             await log_to_story(story_id, project_id, f"📥 Fetching latest changes...", "info", "merge")
-            subprocess.run(["git", "fetch", "--all"], cwd=main_ws, capture_output=True, timeout=60)
+            from app.utils.git_utils import git_fetch_all
+            git_fetch_all(main_ws, timeout=60)
             
             # 3. Switch to base branch and pull latest
             await log_to_story(story_id, project_id, f"🔀 Switching to {base_branch}...", "info", "merge")
@@ -1017,7 +1018,8 @@ class Developer(BaseAgent):
                 await log_to_story(story_id, project_id, f"❌ Failed to checkout {base_branch}: {checkout_result.stderr}", "error", "merge")
                 return TaskResult(success=False, output=f"Failed to checkout {base_branch}")
             
-            subprocess.run(["git", "pull", "origin", base_branch], cwd=main_ws, capture_output=True, timeout=60)
+            from app.utils.git_utils import git_pull
+            git_pull(base_branch, remote="origin", cwd=main_ws, timeout=60)
             
             # 4. Merge story branch into base branch (local merge)
             await log_to_story(story_id, project_id, f"🔀 Merging {branch_name} into {base_branch}...", "info", "merge")
@@ -1027,15 +1029,16 @@ class Developer(BaseAgent):
             )
             
             if merge_result.returncode != 0:
+                from app.utils.git_utils import git_merge_abort
                 # Check if conflict
                 if "CONFLICT" in merge_result.stdout or "CONFLICT" in merge_result.stderr:
-                    subprocess.run(["git", "merge", "--abort"], cwd=main_ws, capture_output=True, timeout=10)
+                    git_merge_abort(main_ws, timeout=10)
                     await self._update_merge_status(story_id, "conflict", "merge_conflict")
                     await log_to_story(story_id, project_id, f"❌ Merge conflict! Please resolve manually.", "error", "merge")
                     return TaskResult(success=False, output=f"Merge conflict. Manual resolution required.")
                 else:
                     error_msg = merge_result.stderr or merge_result.stdout
-                    subprocess.run(["git", "merge", "--abort"], cwd=main_ws, capture_output=True, timeout=10)
+                    git_merge_abort(main_ws, timeout=10)
                     await self._update_merge_status(story_id, "error", "merge_failed")
                     await log_to_story(story_id, project_id, f"❌ Merge failed: {error_msg[:200]}", "error", "merge")
                     return TaskResult(success=False, output=f"Merge failed: {error_msg}")

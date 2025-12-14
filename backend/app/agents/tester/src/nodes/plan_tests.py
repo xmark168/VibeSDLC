@@ -30,24 +30,21 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {}
 
 
-def _parse_json(content: str) -> dict:
-    """Parse JSON from LLM response."""
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError:
-        pass
-    
-    # Extract from markdown
-    if "```json" in content:
-        content = content.split("```json")[1].split("```")[0]
-    elif "```" in content:
-        content = content.split("```")[1].split("```")[0]
-    
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError as e:
-        logger.warning(f"[_parse_json] Failed: {content[:300]}...")
-        raise e
+class TestPlanStep(BaseModel):
+    """Single test plan step."""
+    order: int
+    type: str  # "integration" or "unit"
+    story_id: str
+    story_title: str
+    file_path: str
+    description: str
+    scenarios: List[str]
+    dependencies: List[str] = []
+
+
+class TestPlanOutput(BaseModel):
+    """Test plan output from LLM."""
+    test_plan: List[TestPlanStep]
 
 
 def _slugify(text: str) -> str:
@@ -696,8 +693,9 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
     logger.info(f"[plan_tests] Analyzed {len(unit_test_components)} components for unit tests")
     
     try:
-        # Call LLM to create test plan
-        response = await _llm.ainvoke(
+        # Call LLM to create test plan using structured output
+        structured_llm = _llm.with_structured_output(TestPlanOutput)
+        result = await structured_llm.ainvoke(
             [
                 SystemMessage(content=get_system_prompt("plan_tests")),
                 HumanMessage(content=get_user_prompt(
@@ -713,9 +711,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             ],
             config=_cfg(state, "plan_tests"),
         )
-        
-        result = _parse_json(response.content)
-        test_plan = result.get("test_plan", [])
+        test_plan = result.test_plan
         
         # FIXED folder paths - always use standard structure
         integration_folder = "src/__tests__/integration"

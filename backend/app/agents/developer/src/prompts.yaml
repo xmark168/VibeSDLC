@@ -1,8 +1,5 @@
 # ============================================================================
-# DEVELOPER V2 - Prompts (OPTIMIZED)
-# ============================================================================
-# Tasks: implement_step, analyze_error
-# analyze_and_plan uses plan_prompts.md from skills/{tech_stack}/
+# DEVELOPER V2 - Prompts 
 # ============================================================================
 
 shared_context:
@@ -11,10 +8,6 @@ shared_context:
 
 tasks:
   # analyze_and_plan: loaded from skills/{tech_stack}/plan_prompts.yaml
-
-  # ---------------------------------------------------------------------------
-  # IMPLEMENT - Execute code changes with preloaded skills
-  # ---------------------------------------------------------------------------
   implement_step:
     system_prompt: |
       Role: Professional engineer writing google-style, elegant, modular, easy to read and maintain code.
@@ -54,9 +47,6 @@ tasks:
 
       Output JSON: {"content": "COMPLETE FILE CODE"}
 
-  # ---------------------------------------------------------------------------
-  # ANALYZE ERROR - Debug and create fix plan
-  # ---------------------------------------------------------------------------
   analyze_error:
     system_prompt: |
       <role>

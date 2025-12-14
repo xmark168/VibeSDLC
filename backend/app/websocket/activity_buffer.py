@@ -1,8 +1,5 @@
 """
 Activity Buffer
-
-Buffers activity updates in memory and batches database writes
-to reduce database load while maintaining real-time WebSocket updates.
 """
 
 import asyncio
@@ -55,23 +52,13 @@ class ActivityData:
 
 class ActivityBuffer:
     """
-    Buffer activity updates in memory, batch write to database.
-    
-    Features:
-    - In-memory buffering of activity progress
-    - Periodic batch writes (every 5 seconds)
-    - Immediate WebSocket updates (real-time)
-    - Reduced database load (80%+ reduction)
-    - Automatic cleanup of completed activities
+    Buffer activity updates 
     """
     
     def __init__(self, flush_interval: int = 5):
         """
         Initialize activity buffer.
-        
-        Args:
-            flush_interval: Seconds between database flushes (default: 5)
-        """
+           """
         self.flush_interval = flush_interval
         
         # execution_id (str) -> ActivityData
@@ -143,17 +130,7 @@ class ActivityBuffer:
     ) -> Optional[UUID]:
         """
         Add event to activity buffer (event-based, no step numbers).
-        
-        Args:
-            execution_id: Execution ID for the activity (used as buffer key)
-            project_id: Project ID
-            agent_name: Agent name
-            event_description: Description of the event
-            event_details: Additional event details (milestone, confidence, etc.)
-            agent_execution_id: AgentExecution record ID for linking
-            
-        Returns:
-            Message ID if this is a new activity, None if updating existing
+        Message ID if this is a new activity, None if updating existing
         """
         try:
             # Get or create activity data

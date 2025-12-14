@@ -900,19 +900,15 @@ def _cleanup_story_resources_sync(
     
     # Prune first
     if main_workspace and Path(main_workspace).exists():
-        try:
-            subprocess.run(["git", "worktree", "prune"], cwd=main_workspace, capture_output=True, timeout=10)
-        except Exception:
-            pass
+        from app.utils.git_utils import git_worktree_prune
+        git_worktree_prune(Path(main_workspace), timeout=10)
     
     # Remove worktree
     if worktree_path:
         worktree = Path(worktree_path)
         if worktree.exists() and main_workspace and Path(main_workspace).exists():
-            try:
-                subprocess.run(["git", "worktree", "remove", str(worktree), "--force"], cwd=main_workspace, capture_output=True, timeout=30)
-            except Exception:
-                pass
+            from app.utils.git_utils import git_worktree_remove
+            git_worktree_remove(worktree, Path(main_workspace), force=True, timeout=30)
         
         if worktree.exists():
             for attempt in range(3):
@@ -934,20 +930,16 @@ def _cleanup_story_resources_sync(
         
         # Prune again
         if main_workspace and Path(main_workspace).exists():
-            try:
-                subprocess.run(["git", "worktree", "prune"], cwd=main_workspace, capture_output=True, timeout=10)
-            except Exception:
-                pass
+            from app.utils.git_utils import git_worktree_prune
+            git_worktree_prune(Path(main_workspace), timeout=10)
         
         results["worktree"] = not worktree.exists()
     
     # Delete branch
     if branch_name and main_workspace and Path(main_workspace).exists():
-        try:
-            result = subprocess.run(["git", "branch", "-D", branch_name], cwd=main_workspace, capture_output=True, timeout=10)
-            results["branch"] = result.returncode == 0
-        except Exception:
-            pass
+        from app.utils.git_utils import git_branch_delete
+        success, _ = git_branch_delete(branch_name, Path(main_workspace), force=True, timeout=10)
+        results["branch"] = success
     
     return results
 

@@ -22,6 +22,7 @@ from app.kafka.event_schemas import (
     DelegationRequestEvent,
     KafkaTopics,
     RouterTaskEvent,
+    TaskRejectionEvent,
 )
 from app.models import Agent as AgentModel, AgentStatus
 from datetime import datetime, timezone
@@ -1827,7 +1828,13 @@ class BaseAgent(ABC):
                 f"[{self.name}] Task queue FULL! Rejecting task {task_id}. "
                 f"Agent is overloaded ({self._task_queue.maxsize} tasks pending)"
             )
-            # TODO: Publish task rejection event back to router
+            # Publish task rejection event back to router
+            await self._publish_task_rejection(
+                task_id=task_id,
+                reason="queue_full",
+                queue_size=self._task_queue.qsize(),
+                max_queue_size=self._task_queue.maxsize
+            )
 
     async def _execute_task(self, task_data: Dict[str, Any]) -> None:
         """Execute a single task (called by worker loop) with execution tracking.
@@ -2215,6 +2222,49 @@ class BaseAgent(ABC):
         except Exception as e:
             logger.error(
                 f"[{self.name}] Error recording token usage: {e}",
+                exc_info=True
+            )
+    
+    async def _publish_task_rejection(
+        self,
+        task_id: UUID,
+        reason: str,
+        queue_size: int,
+        max_queue_size: int
+    ) -> None:
+        """Publish task rejection event to router for handling.
+        
+        Args:
+            task_id: ID of rejected task
+            reason: Rejection reason (e.g., "queue_full")
+            queue_size: Current queue size
+            max_queue_size: Maximum queue capacity
+        """
+        try:
+            event = TaskRejectionEvent(
+                task_id=task_id,
+                agent_id=self.agent_id,
+                agent_name=self.name,
+                reason=reason,
+                queue_size=queue_size,
+                max_queue_size=max_queue_size,
+                project_id=str(self.project_id) if self.project_id else None,
+                details={
+                    "agent_role": self.role_type,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            )
+            
+            producer = get_kafka_producer()
+            await producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=event)
+            
+            logger.info(
+                f"[{self.name}] Published task rejection event: "
+                f"task_id={task_id}, reason={reason}, queue={queue_size}/{max_queue_size}"
+            )
+        except Exception as e:
+            logger.error(
+                f"[{self.name}] Failed to publish task rejection event: {e}",
                 exc_info=True
             )
     

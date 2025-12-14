@@ -329,6 +329,19 @@ class AgentTaskEvent(BaseKafkaEvent):
     details: Dict[str, Any] = Field(default_factory=dict)
 
 
+class TaskRejectionEvent(BaseKafkaEvent):
+    """Event published when agent rejects a task due to queue overflow."""
+    
+    event_type: str = "agent.task.rejected"
+    task_id: UUID
+    agent_id: UUID
+    agent_name: str
+    reason: str  # "queue_full", "resource_unavailable", etc.
+    queue_size: int
+    max_queue_size: int
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
 class RouterTaskEvent(BaseKafkaEvent):
     """Router task dispatch to agents."""
 

@@ -123,25 +123,8 @@ def setup_git_worktree(
     worktree_type: str = "story",
     agent_name: str = "Agent"
 ) -> dict:
-    """Setup git worktree for agent tasks.
-    
-    Worktree path patterns:
-    - "story": {main_workspace}/.worktrees/{story_code}
-    - "test": {main_workspace_parent}/ws_test_{short_id}
-    - "ba": {main_workspace}/.worktrees/ba_{story_code}
-    
-    Args:
-        story_code: Unique story code (e.g., "US-001", "EPIC-001-US-001")
-        main_workspace: Path to main project workspace
-        worktree_type: Type of worktree ("story", "test", "ba")
-        agent_name: Agent name for logging
-    
-    Returns:
-        dict with keys:
-        - workspace_path: Path to created worktree
-        - branch_name: Git branch name
-        - main_workspace: Path to main workspace
-        - workspace_ready: bool indicating if worktree was created successfully
+    """
+    Setup git worktree for agent tasks.
     """
     main_workspace = Path(main_workspace).resolve()
     safe_code = story_code.replace('/', '-').replace('\\', '-')

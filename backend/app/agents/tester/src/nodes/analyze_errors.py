@@ -363,23 +363,18 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {}
 
 
-def _parse_json(content: str) -> dict:
-    """Parse JSON from LLM response."""
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError:
-        pass
-    
-    if "```json" in content:
-        content = content.split("```json")[1].split("```")[0]
-    elif "```" in content:
-        content = content.split("```")[1].split("```")[0]
-    
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError as e:
-        logger.warning(f"[_parse_json] Failed: {content[:300]}...")
-        raise e
+class FixStep(BaseModel):
+    """Single fix step."""
+    file_path: str = Field(description="Path to file to fix")
+    changes: str = Field(description="Specific changes to make")
+    reason: str = Field(description="Why this change is needed")
+
+
+class ErrorAnalysisOutput(BaseModel):
+    """Structured output for error analysis."""
+    root_cause: str = Field(description="Root cause of the error")
+    error_code: str = Field(default="UNKNOWN", description="Error classification code")
+    fix_steps: List[FixStep] = Field(description="List of fix steps")
 
 
 def _is_test_file(file_path: str) -> bool:
@@ -623,9 +618,6 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
         # Build new test_plan from fix_steps with sanitized file paths
         new_test_plan = []
         skipped_source_files = []
-        
-        # Extract error_code for better fix context
-        error_code = result.get("error_code", "UNKNOWN")
         
         for i, step in enumerate(fix_steps):
             raw_file_path = step.get("file_path", "")
