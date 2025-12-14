@@ -303,6 +303,19 @@ async def oauth_callback(
                 
                 logger.info(f"Created new user {user.id} with linked {provider} account")
 
+        # Check account status before proceeding
+        if not user.is_active:
+            logger.warning(f"User {user.id} account is deactivated")
+            return RedirectResponse(
+                f"{settings.FRONTEND_HOST}/login?error=account_deactivated"
+            )
+        
+        if user.is_locked:
+            logger.warning(f"User {user.id} account is locked")
+            return RedirectResponse(
+                f"{settings.FRONTEND_HOST}/login?error=account_locked"
+            )
+
         # Check if 2FA is enabled for this user
         if user.two_factor_enabled and user.totp_secret:
             # Generate temp token for 2FA verification

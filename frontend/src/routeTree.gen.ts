@@ -20,7 +20,6 @@ import { Route as AdminPersonasRouteImport } from './routes/admin/personas'
 import { Route as AdminAgentsRouteImport } from './routes/admin/agents'
 import { Route as UserUpgradeRouteImport } from './routes/_user/upgrade'
 import { Route as UserProjectsRouteImport } from './routes/_user/projects'
-import { Route as UserHihiRouteImport } from './routes/_user/hihi'
 import { Route as AuthVerifyOtpRouteImport } from './routes/_auth/verify-otp'
 import { Route as AuthVerify2faRouteImport } from './routes/_auth/verify-2fa'
 import { Route as AuthSignupRouteImport } from './routes/_auth/signup'
@@ -85,11 +84,6 @@ const UserProjectsRoute = UserProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => rootRouteImport,
 } as any)
-const UserHihiRoute = UserHihiRouteImport.update({
-  id: '/_user/hihi',
-  path: '/hihi',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AuthVerifyOtpRoute = AuthVerifyOtpRouteImport.update({
   id: '/verify-otp',
   path: '/verify-otp',
@@ -152,7 +146,6 @@ export interface FileRoutesByFullPath {
   '/signup': typeof AuthSignupRoute
   '/verify-2fa': typeof AuthVerify2faRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
-  '/hihi': typeof UserHihiRoute
   '/projects': typeof UserProjectsRoute
   '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
@@ -174,7 +167,6 @@ export interface FileRoutesByTo {
   '/signup': typeof AuthSignupRoute
   '/verify-2fa': typeof AuthVerify2faRoute
   '/verify-otp': typeof AuthVerifyOtpRoute
-  '/hihi': typeof UserHihiRoute
   '/projects': typeof UserProjectsRoute
   '/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
@@ -199,7 +191,6 @@ export interface FileRoutesById {
   '/_auth/signup': typeof AuthSignupRoute
   '/_auth/verify-2fa': typeof AuthVerify2faRoute
   '/_auth/verify-otp': typeof AuthVerifyOtpRoute
-  '/_user/hihi': typeof UserHihiRoute
   '/_user/projects': typeof UserProjectsRoute
   '/_user/upgrade': typeof UserUpgradeRoute
   '/admin/agents': typeof AdminAgentsRoute
@@ -223,7 +214,6 @@ export interface FileRouteTypes {
     | '/signup'
     | '/verify-2fa'
     | '/verify-otp'
-    | '/hihi'
     | '/projects'
     | '/upgrade'
     | '/admin/agents'
@@ -245,7 +235,6 @@ export interface FileRouteTypes {
     | '/signup'
     | '/verify-2fa'
     | '/verify-otp'
-    | '/hihi'
     | '/projects'
     | '/upgrade'
     | '/admin/agents'
@@ -269,7 +258,6 @@ export interface FileRouteTypes {
     | '/_auth/signup'
     | '/_auth/verify-2fa'
     | '/_auth/verify-otp'
-    | '/_user/hihi'
     | '/_user/projects'
     | '/_user/upgrade'
     | '/admin/agents'
@@ -286,7 +274,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRouteRoute: typeof AuthRouteRouteWithChildren
   LayoutRoute: typeof LayoutRoute
-  UserHihiRoute: typeof UserHihiRoute
   UserProjectsRoute: typeof UserProjectsRoute
   UserUpgradeRoute: typeof UserUpgradeRoute
   AdminAgentsRoute: typeof AdminAgentsRoute
@@ -376,13 +363,6 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/projects'
       preLoaderRoute: typeof UserProjectsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_user/hihi': {
-      id: '/_user/hihi'
-      path: '/hihi'
-      fullPath: '/hihi'
-      preLoaderRoute: typeof UserHihiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_auth/verify-otp': {
@@ -488,7 +468,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRouteRoute: AuthRouteRouteWithChildren,
   LayoutRoute: LayoutRoute,
-  UserHihiRoute: UserHihiRoute,
   UserProjectsRoute: UserProjectsRoute,
   UserUpgradeRoute: UserUpgradeRoute,
   AdminAgentsRoute: AdminAgentsRoute,

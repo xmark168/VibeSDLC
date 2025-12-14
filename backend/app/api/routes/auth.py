@@ -144,7 +144,7 @@ def login(
         if not login_data.email or not login_data.password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email và password không được để trống với credential login",
+                detail="Email and password are required for credential login",
             )
 
         # Find user with credential login
@@ -157,11 +157,24 @@ def login(
                 detail="Invalid email or password",
             )
         
+        # Check account status BEFORE password verification
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="Account has been deactivated"
+            )
+        
+        if user.is_locked:
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED, 
+                detail="Account has been locked"
+            )
+        
         # Check if user registered via OAuth (no password)
         if user.login_provider and not user.hashed_password:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Tài khoản này được đăng ký thông qua {user.login_provider}. Vui lòng đăng nhập bằng {user.login_provider}.",
+                detail=f"This account was registered via {user.login_provider}. Please login with {user.login_provider}.",
             )
 
         # Verify password
@@ -198,17 +211,19 @@ def login(
             
             # Assign FREE plan to new OAuth user
             assign_free_plan_to_user(session, user)
-
-    # Check account status
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản đã bị vô hiệu hóa"
-        )
-
-    if user.is_locked:
-        raise HTTPException(
-            status_code=status.HTTP_423_LOCKED, detail="Tài khoản đã bị khóa"
-        )
+        else:
+            # Check account status for existing OAuth users
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, 
+                    detail="Account has been deactivated"
+                )
+            
+            if user.is_locked:
+                raise HTTPException(
+                    status_code=status.HTTP_423_LOCKED, 
+                    detail="Account has been locked"
+                )
 
     # Check if 2FA is enabled
     if user.two_factor_enabled and user.totp_secret:
@@ -268,7 +283,7 @@ def register(
     if not validate_email(str(register_data.email)):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Định dạng email không hợp lệ",
+            detail="Invalid email format",
         )
 
     if register_data.full_name and (
@@ -276,19 +291,19 @@ def register(
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Họ tên không được rỗng và tối đa 50 ký tự",
+            detail="Full name cannot be empty and must be maximum 50 characters",
         )
 
     if not validate_password(register_data.password):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Mật khẩu phải có ít nhất 8 ký tự, chứa ít nhất 1 chữ cái và 1 chữ số",
+            detail="Password must be at least 8 characters with at least 1 letter and 1 number",
         )
 
     if register_data.password != register_data.confirm_password:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Mật khẩu xác nhận không khớp",
+            detail="Password confirmation does not match",
         )
 
     # Check if email already exists in the system (any provider)
@@ -299,12 +314,12 @@ def register(
         if existing_user.login_provider:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Email này đã được đăng ký thông qua {existing_user.login_provider}. Vui lòng đăng nhập bằng {existing_user.login_provider}."
+                detail=f"This email is already registered via {existing_user.login_provider}. Please login with {existing_user.login_provider}."
             )
         else:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Email này đã được đăng ký"
+                detail="This email is already registered"
             )
 
     # Generate verification code
@@ -326,7 +341,7 @@ def register(
     ):  # 30 minutes
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Lỗi hệ thống, vui lòng thử lại",
+            detail="System error, please try again",
         )
 
     # Store verification code with 3 minutes TTL
@@ -335,7 +350,7 @@ def register(
         redis_client.delete(registration_key)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Lỗi hệ thống, vui lòng thử lại",
+            detail="System error, please try again",
         )
 
     # Send verification email
@@ -354,11 +369,11 @@ def register(
         redis_client.delete(verification_key)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Không thể gửi email xác thực",
+            detail="Unable to send verification email",
         )
 
     return RegisterResponse(
-        message="Mã xác thực đã được gửi đến email của bạn",
+        message="Verification code has been sent to your email",
         email=register_data.email,
         expires_in=180,
     )
@@ -383,19 +398,19 @@ def confirm_code(
     if not registration_data and not verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Dữ liệu đăng ký đã hết hạn. Vui lòng đăng ký lại từ đầu",
+            detail="Registration data has expired. Please register again",
         )
 
     if not registration_data and verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Dữ liệu đăng ký đã hết hạn. Vui lòng đăng ký lại từ đầu",
+            detail="Registration data has expired. Please register again",
         )
 
     if registration_data and not verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Mã xác thực đã hết hạn. Vui lòng yêu cầu gửi lại mã",
+            detail="Verification code has expired. Please request a new code",
         )
 
     # Verify code - ensure both are strings for comparison
@@ -406,7 +421,7 @@ def confirm_code(
 
     if verification_code_str != confirm_code_str:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Mã xác thực không đúng"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code"
         )
 
     # Create user
@@ -432,7 +447,7 @@ def confirm_code(
     redis_client.delete(registration_key)
     redis_client.delete(verification_key)
 
-    return ConfirmCodeResponse(message="Đăng ký thành công", user_id=user.id)
+    return ConfirmCodeResponse(message="Registration successful", user_id=user.id)
 
 
 @router.post("/resend-code", response_model=ResendCodeResponse)
@@ -452,7 +467,7 @@ def resend_code(
     if not registration_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dữ liệu đăng ký đã hết hạn. Vui lòng đăng ký lại từ đầu",
+            detail="Registration data has expired. Please register again",
         )
 
     # Generate new verification code
@@ -462,7 +477,7 @@ def resend_code(
     if not redis_client.set(verification_key, new_code, ttl=180):  # 3 minutes
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Lỗi hệ thống, vui lòng thử lại",
+            detail="System error, please try again",
         )
 
     # Send new verification email
@@ -478,11 +493,11 @@ def resend_code(
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Không thể gửi email xác thực",
+            detail="Unable to send verification email",
         )
 
     return ResendCodeResponse(
-        message="Mã xác thực mới đã được gửi đến email của bạn",
+        message="New verification code has been sent to your email",
         email=resend_data.email,
         expires_in=180,
     )
@@ -506,7 +521,7 @@ def refresh_token(
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token không được cung cấp",
+            detail="Refresh token not provided",
         )
 
     # Decode and validate refresh token
@@ -517,14 +532,14 @@ def refresh_token(
         if payload.get("type") != "refresh":
             logger.warning(f"[REFRESH TOKEN] Invalid token type: {payload.get('type')}")
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Token không hợp lệ"
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
             )
 
         user_id = payload.get("sub")
         if not user_id:
             logger.warning("[REFRESH TOKEN] Missing user_id in token")
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Token không hợp lệ"
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
             )
 
         logger.info(f"[REFRESH TOKEN] User ID from token: {user_id}")
@@ -537,7 +552,7 @@ def refresh_token(
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token không hợp lệ hoặc đã hết hạn",
+            detail="Invalid or expired refresh token",
         )
 
     # Get user
@@ -546,7 +561,7 @@ def refresh_token(
     if not user:
         logger.error(f"[REFRESH TOKEN] User not found: {user_id}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Người dùng không tồn tại"
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
     logger.info(
@@ -557,13 +572,13 @@ def refresh_token(
     if not user.is_active:
         logger.warning(f"[REFRESH TOKEN] User account disabled: {user.email}")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản đã bị vô hiệu hóa"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Account has been deactivated"
         )
 
     if user.is_locked:
         logger.warning(f"[REFRESH TOKEN] User account locked: {user.email}")
         raise HTTPException(
-            status_code=status.HTTP_423_LOCKED, detail="Tài khoản đã bị khóa"
+            status_code=status.HTTP_423_LOCKED, detail="Account has been locked"
         )
 
     # Create new tokens
@@ -606,7 +621,7 @@ def forgot_password(
     if not validate_email(str(forgot_data.email)):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Định dạng email không hợp lệ",
+            detail="Invalid email format",
         )
 
     # Check if email exists in database
@@ -615,7 +630,7 @@ def forgot_password(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Email không tồn tại trong hệ thống",
+            detail="Email does not exist in the system",
         )
 
     # Generate reset token
@@ -626,7 +641,7 @@ def forgot_password(
     if not redis_client.set(token_key, str(forgot_data.email), ttl=900):  # 15 minutes
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Lỗi hệ thống, vui lòng thử lại",
+            detail="System error, please try again",
         )
 
     # Create reset link
@@ -647,11 +662,11 @@ def forgot_password(
         redis_client.delete(token_key)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Không thể gửi email reset password",
+            detail="Unable to send password reset email",
         )
 
     return ForgotPasswordResponse(
-        message="Link reset mật khẩu đã được gửi đến email của bạn",
+        message="Password reset link has been sent to your email",
         email=str(forgot_data.email),
         expires_in=900
     )
@@ -669,14 +684,14 @@ def reset_password(
     if not validate_password(reset_data.new_password):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Mật khẩu phải có ít nhất 8 ký tự, chứa ít nhất 1 chữ cái và 1 chữ số",
+            detail="Password must be at least 8 characters with at least 1 letter and 1 number",
         )
 
     # Check password confirmation
     if reset_data.new_password != reset_data.confirm_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Mật khẩu xác nhận không khớp",
+            detail="Password confirmation does not match",
         )
 
     # Get email from Redis using token
@@ -686,7 +701,7 @@ def reset_password(
     if not email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Token không hợp lệ hoặc đã hết hạn",
+            detail="Invalid or expired token",
         )
 
     # Find user by email
@@ -694,7 +709,7 @@ def reset_password(
     user = user_service.get_by_email(str(email))
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Người dùng không tồn tại"
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
     # Update password
@@ -705,7 +720,7 @@ def reset_password(
     # Clean up Redis token
     redis_client.delete(token_key)
 
-    return ResetPasswordResponse(message="Đặt lại mật khẩu thành công")
+    return ResetPasswordResponse(message="Password reset successful")
 
 
 @router.post("/logout", response_model=LogoutResponse)
@@ -741,11 +756,11 @@ def logout(
         # user_service = UserService(session)
         # user_service.revoke_all_user_tokens(current_user.id)
 
-        return LogoutResponse(message="Đăng xuất thành công")
+        return LogoutResponse(message="Logout successful")
 
     except Exception as e:
         logger.error(f"Logout error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Lỗi khi đăng xuất",
+            detail="Error during logout",
         )
