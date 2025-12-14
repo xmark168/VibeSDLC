@@ -205,8 +205,6 @@ async def review(state: TesterState, agent=None) -> dict:
     review_count = state.get("review_count", 0)
     file_lbtm_counts = state.get("file_lbtm_counts", {})  # Track per-file LBTM
     
-    print(f"[NODE] review - PARALLEL {len(files_modified)} files")
-    
     if not files_modified:
         logger.info("[review] No files to review - advancing to run_tests")
         return {

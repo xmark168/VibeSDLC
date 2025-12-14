@@ -155,9 +155,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     document.body.style.cursor = "col-resize"
   }, [])
 
-  // Debug: Log projectId changes
-  useEffect(() => {
-   }, [projectId])
+
 
   const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
     enabled: !!projectId,

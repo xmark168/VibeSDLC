@@ -1807,9 +1807,6 @@ class MessageRouterService(BaseKafkaConsumer):
     ) -> None:
         """Handle incoming event by dispatching to appropriate router."""
         event_type = raw_data.get("event_type", "unknown")
-
-        # DEBUG: Force print to ensure visibility
-        print(f"[ROUTER] >>> Received event: {event_type} from topic: {topic}")
         self.logger.info(f"[ROUTER] Received event: {event_type} from topic: {topic}")
         
         event_dict = raw_data if isinstance(raw_data, dict) else (event if isinstance(event, dict) else event.model_dump())

@@ -84,9 +84,6 @@ def route_by_intent(state: BAState) -> Literal["conversational", "interview", "p
     epics = state.get("epics", [])
     document_type = state.get("document_type", "")
     
-    # Debug logging
-    logger.info(f"[BA Graph] route_by_intent called: intent={intent}, epics_count={len(epics)}, has_prd={bool(existing_prd)}, document_type={document_type}")
-    
     # Conversational messages go directly to respond node
     if intent == "conversational":
         logger.info("[BA Graph] Routing to 'conversational' (casual chat)")
@@ -207,9 +204,6 @@ def should_save_or_end(state: BAState) -> Literal["save", "end"]:
     found_existing = state.get("found_existing_story", False)
     needs_clarification = state.get("needs_clarification", False)
     awaiting_user = state.get("awaiting_user_decision", False)
-    
-    # DEBUG logging
-    logger.info(f"[BA Graph] should_save_or_end check: found_existing={found_existing}, needs_clarification={needs_clarification}, awaiting_user={awaiting_user}")
     
     if found_existing or awaiting_user:
         logger.info("[BA Graph] Found existing story - ending flow (waiting for user)")
