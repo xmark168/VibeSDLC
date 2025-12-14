@@ -612,11 +612,8 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
             (i, step) for i, step in enumerate(test_plan)
             if step.get("file_path", "") in failed_files
         ]
-        print(f"[NODE] implement_tests - RE-IMPLEMENTING {len(steps_to_run)} failed files")
     else:
-        # First run: implement ALL steps
         steps_to_run = list(enumerate(test_plan))
-        print(f"[NODE] implement_tests - PARALLEL {total_steps} steps")
     
     if not steps_to_run:
         logger.info("[implement_tests] No steps to implement")

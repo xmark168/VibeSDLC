@@ -10,6 +10,7 @@ export default function AuthProvider({
   children: React.ReactNode
 }) {
   const setUser = useAppStore((state) => state.setUser)
+  const setIsLoading = useAppStore((state) => state.setIsLoading)
 
   const accessToken = localStorage.getItem("access_token")
 
@@ -26,13 +27,22 @@ export default function AuthProvider({
   })
 
   useEffect(() => {
+    // No token - set loading to false immediately
+    if (!accessToken) {
+      setIsLoading(false)
+      return
+    }
+
     if (user) {
       setUser(user)
     } else if (error) {
       setUser(undefined)
       localStorage.removeItem("access_token")
+    } else if (!isLoading) {
+      // Query finished but no user and no error
+      setIsLoading(false)
     }
-  }, [user, error, setUser])
+  }, [user, error, isLoading, accessToken, setUser, setIsLoading])
 
   return <>{children}</>
 }

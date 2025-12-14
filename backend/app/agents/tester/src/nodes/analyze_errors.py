@@ -500,8 +500,6 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     debug_count = state.get("debug_count", 0)
     max_debug = state.get("max_debug", 3)
     
-    print(f"[NODE] analyze_errors - attempt {debug_count + 1}/{max_debug}")
-    
     # Check if max retries reached
     if debug_count >= max_debug:
         msg = await generate_user_message(

@@ -40,7 +40,6 @@ export function LoginForm() {
       {
         onSuccess: () => {
           toast.success("Welcome back!")
-          console.log("login2")
         },
         onError: () => {
           toast.error("Login failed. Please try again.")

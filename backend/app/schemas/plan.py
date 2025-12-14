@@ -40,12 +40,20 @@ class PlanBase(SQLModel):
                 raise ValueError('Discount percentage must be between 0 and 100')
         return v
 
-    @field_validator('monthly_credits', 'available_project', 'sort_index')
+    @field_validator('monthly_credits', 'sort_index')
     @classmethod
     def validate_non_negative_integers(cls, v: Optional[int]) -> Optional[int]:
         """Validate that counts are non-negative"""
         if v is not None and v < 0:
             raise ValueError('Value must be greater than or equal to 0')
+        return v
+
+    @field_validator('available_project')
+    @classmethod
+    def validate_available_project(cls, v: Optional[int]) -> Optional[int]:
+        """Validate available_project (-1 for unlimited, >= 0 for limited)"""
+        if v is not None and v < -1:
+            raise ValueError('available_project must be -1 (unlimited) or >= 0')
         return v
 
 
@@ -99,12 +107,20 @@ class PlanUpdate(SQLModel):
                 raise ValueError('Discount percentage must be between 0 and 100')
         return v
 
-    @field_validator('monthly_credits', 'available_project', 'sort_index')
+    @field_validator('monthly_credits', 'sort_index')
     @classmethod
     def validate_non_negative_integers(cls, v: Optional[int]) -> Optional[int]:
         """Validate that counts are non-negative"""
         if v is not None and v < 0:
             raise ValueError('Value must be greater than or equal to 0')
+        return v
+
+    @field_validator('available_project')
+    @classmethod
+    def validate_available_project(cls, v: Optional[int]) -> Optional[int]:
+        """Validate available_project (-1 for unlimited, >= 0 for limited)"""
+        if v is not None and v < -1:
+            raise ValueError('available_project must be -1 (unlimited) or >= 0')
         return v
 
 
