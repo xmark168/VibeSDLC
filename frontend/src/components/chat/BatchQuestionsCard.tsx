@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
-import { Loader2, ArrowLeft, ArrowRight, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
 
 interface BatchQuestion {
   question_id?: string
@@ -34,6 +34,12 @@ interface BatchQuestionsCardProps {
   onChatInputUsed?: () => void  // Callback when chat input is used as answer
   onQuestionChange?: (questionId: string, savedInput: string) => void  // Callback when question changes
   onAllAnsweredChange?: (allAnswered: boolean) => void  // Callback when all questions answered status changes
+  currentQuestionIndex?: number  // Controlled current question index
+  onNavigate?: (direction: 'next' | 'back') => void  // Callback for navigation
+  onCurrentAnsweredChange?: (isAnswered: boolean) => void  // Callback when current question answer status changes
+  onNextReady?: (nextFn: () => void) => void  // Expose next function to parent
+  onBackReady?: (backFn: () => void) => void  // Expose back function to parent
+  onSubmitReady?: (submitFn: () => Promise<void>) => void  // Expose submit function to parent
 }
 
 export function BatchQuestionsCard({
@@ -47,10 +53,18 @@ export function BatchQuestionsCard({
   chatInputValue = '',
   onChatInputUsed,
   onQuestionChange,
-  onAllAnsweredChange
+  onAllAnsweredChange,
+  currentQuestionIndex,
+  onNavigate,
+  onCurrentAnsweredChange,
+  onNextReady,
+  onBackReady,
+  onSubmitReady
 }: BatchQuestionsCardProps) {
   // ALL hooks must be at the top, before any conditional returns
-  const [currentIndex, setCurrentIndex] = useState(0)
+  // Use controlled index if provided, otherwise use local state
+  const [localIndex, setLocalIndex] = useState(0)
+  const currentIndex = currentQuestionIndex !== undefined ? currentQuestionIndex : localIndex
   const [answers, setAnswers] = useState<Map<string, { answer: string; selectedOptions: Set<string> }>>(
     new Map(questions.map((q, idx) => [questionIds[idx], { answer: '', selectedOptions: new Set() }]))
   )
@@ -143,9 +157,8 @@ export function BatchQuestionsCard({
       const nextIndex = currentIndex + 1
       const nextQuestionId = questionIds[nextIndex]
       const nextQuestion = questions[nextIndex]
-      setCurrentIndex(nextIndex)
 
-      // Notify parent to restore saved input for next question
+      // Notify parent to restore saved input for next question BEFORE navigating
       if (onQuestionChange) {
         let savedInput = ''
         if (nextQuestion.question_type === 'open') {
@@ -156,6 +169,13 @@ export function BatchQuestionsCard({
           savedInput = newCustom.get(nextQuestionId) || ''
         }
         onQuestionChange(nextQuestionId, savedInput)
+      }
+
+      // Navigate AFTER restoring input
+      if (onNavigate) {
+        onNavigate('next')
+      } else {
+        setLocalIndex(nextIndex)
       }
     }
   }
@@ -201,9 +221,8 @@ export function BatchQuestionsCard({
       const prevIndex = currentIndex - 1
       const prevQuestionId = questionIds[prevIndex]
       const prevQuestion = questions[prevIndex]
-      setCurrentIndex(prevIndex)
 
-      // Notify parent to restore saved input for previous question
+      // Notify parent to restore saved input for previous question BEFORE navigating
       if (onQuestionChange) {
         let savedInput = ''
         if (prevQuestion.question_type === 'open') {
@@ -214,6 +233,13 @@ export function BatchQuestionsCard({
           savedInput = newCustom.get(prevQuestionId) || ''
         }
         onQuestionChange(prevQuestionId, savedInput)
+      }
+
+      // Navigate AFTER restoring input
+      if (onNavigate) {
+        onNavigate('back')
+      } else {
+        setLocalIndex(prevIndex)
       }
     }
   }
@@ -325,6 +351,47 @@ export function BatchQuestionsCard({
       onAllAnsweredChange(allAnswered)
     }
   }, [allAnswered, onAllAnsweredChange])
+
+  // Notify parent when current question answered status changes
+  useEffect(() => {
+    if (onCurrentAnsweredChange) {
+      const answered = isCurrentAnswered()
+      onCurrentAnsweredChange(answered)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentQuestionId, chatInputValue, answers, customInputs, onCurrentAnsweredChange])
+
+  // Expose navigation functions to parent
+  useEffect(() => {
+    if (onNextReady) {
+      onNextReady(handleNext)
+    }
+  }, [handleNext, onNextReady])
+
+  useEffect(() => {
+    if (onBackReady) {
+      onBackReady(handleBack)
+    }
+  }, [handleBack, onBackReady])
+
+  useEffect(() => {
+    if (onSubmitReady) {
+      onSubmitReady(handleSubmitAll)
+    }
+  }, [handleSubmitAll, onSubmitReady])
+
+  // Expose navigation functions to parent
+  useEffect(() => {
+    if (onNextReady) {
+      onNextReady(handleNext)
+    }
+  }, [handleNext, onNextReady])
+
+  useEffect(() => {
+    if (onBackReady) {
+      onBackReady(handleBack)
+    }
+  }, [handleBack, onBackReady])
   
   if (answered) {
     // Build a map of answers by question_id for quick lookup
@@ -408,49 +475,6 @@ export function BatchQuestionsCard({
   return (
     <Card className="overflow-hidden bg-transparent border-none shadow-none -py-7 pt-3">
       <CardContent className="space-y-2.5 -p-6 px-4">
-        {/* Navigation Header */}
-        <div className="flex items-center justify-between">
-          {!isFirstQuestion ? (
-            <Button
-              variant="outline"
-              onClick={handleBack}
-              className="px-6 h-8"
-            >
-              <ArrowLeft className="w-4 h-4"/>
-              Back
-            </Button>
-          ) : (
-            <div />
-          )}
-
-          {isLastQuestion ? (
-            <Button
-              size="sm"
-              onClick={handleSubmitAll}
-              disabled={!allAnswered || isSubmitting}
-              className="disabled:opacity-20 h-8"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                  Sending...
-                </>
-              ) : (
-                'Submit'
-              )}
-            </Button>
-          ) : (
-            <Button
-              onClick={handleNext}
-              disabled={!isCurrentAnswered()}
-              className="px-6 h-8"
-            >
-              Next
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          )}
-        </div>
-
         {/* Progress bar */}
         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1 overflow-hidden">
           <div

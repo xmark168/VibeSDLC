@@ -14,6 +14,8 @@ import {
 import {
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   ArrowUp,
   ArrowLeft,
   Copy,
@@ -89,6 +91,12 @@ export function ChatPanelWS({
   const [activeBatchQuestion, setActiveBatchQuestion] = useState<Message | null>(null);
   const [batchQuestionInputs, setBatchQuestionInputs] = useState<Map<string, string>>(new Map());
   const [batchQuestionsAllAnswered, setBatchQuestionsAllAnswered] = useState(false);
+  const [batchCurrentQuestionAnswered, setBatchCurrentQuestionAnswered] = useState(false);
+  const [batchCurrentQuestionIndex, setBatchCurrentQuestionIndex] = useState(0);
+  const [batchTotalQuestions, setBatchTotalQuestions] = useState(0);
+  const batchSubmitFnRef = useRef<(() => Promise<void>) | null>(null);
+  const batchNextFnRef = useRef<(() => void) | null>(null);
+  const batchBackFnRef = useRef<(() => void) | null>(null);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -1366,6 +1374,12 @@ export function ChatPanelWS({
               onQuestionChange={(questionId, savedInput) => {
                 setMessage(savedInput);
               }}
+              onAllAnsweredChange={(allAnswered) => {
+                setBatchQuestionsAllAnswered(allAnswered);
+              }}
+              onCurrentAnsweredChange={(isAnswered) => {
+                setBatchCurrentQuestionAnswered(isAnswered);
+              }}
               onSubmit={(answers) => {
                 const answer = answers[0];
                 sendQuestionAnswer(
@@ -1374,18 +1388,36 @@ export function ChatPanelWS({
                   answer.selected_options
                 )
                 setPendingQuestion(null) // Hide notification immediately
+                setBatchQuestionsAllAnswered(false);
+                batchSubmitFnRef.current = null;
+                batchNextFnRef.current = null;
+                batchBackFnRef.current = null;
+              }}
+              onSubmitReady={(submitFn) => {
+                batchSubmitFnRef.current = submitFn;
+              }}
+              onNextReady={(nextFn) => {
+                batchNextFnRef.current = nextFn;
+              }}
+              onBackReady={(backFn) => {
+                batchBackFnRef.current = backFn;
               }}
             />
           </div>
         )}
 
         {/* Batch Question Display - shown above chat input */}
-        {activeBatchQuestion && (
-          <div className="">
-            <BatchQuestionsCard
-              batchId={activeBatchQuestion.structured_data?.batch_id || ''}
-              questions={activeBatchQuestion.structured_data?.questions || []}
-              questionIds={activeBatchQuestion.structured_data?.question_ids || []}
+        {activeBatchQuestion && (() => {
+          const totalQuestions = activeBatchQuestion.structured_data?.questions?.length || 0;
+          if (batchTotalQuestions !== totalQuestions) {
+            setBatchTotalQuestions(totalQuestions);
+          }
+          return (
+            <div className="">
+              <BatchQuestionsCard
+                batchId={activeBatchQuestion.structured_data?.batch_id || ''}
+                questions={activeBatchQuestion.structured_data?.questions || []}
+                questionIds={activeBatchQuestion.structured_data?.question_ids || []}
               agentName={activeBatchQuestion.agent_name}
               answered={activeBatchQuestion.structured_data?.answered || answeredBatchIds.has(activeBatchQuestion.structured_data?.batch_id || '')}
               submittedAnswers={activeBatchQuestion.structured_data?.answers || []}
@@ -1397,10 +1429,18 @@ export function ChatPanelWS({
               onAllAnsweredChange={(allAnswered) => {
                 setBatchQuestionsAllAnswered(allAnswered);
               }}
+              onCurrentAnsweredChange={(isAnswered) => {
+                setBatchCurrentQuestionAnswered(isAnswered);
+              }}
               onSubmit={(answers) => {
                 sendBatchAnswers(activeBatchQuestion.structured_data!.batch_id!, answers);
                 setActiveBatchQuestion(null);
                 setBatchQuestionsAllAnswered(false);
+                batchSubmitFnRef.current = null;
+                batchNextFnRef.current = null;
+                batchBackFnRef.current = null;
+                setBatchCurrentQuestionIndex(0);
+                setBatchTotalQuestions(0);
                 const batchId = activeBatchQuestion.structured_data?.batch_id || '';
                 const newInputs = new Map(batchQuestionInputs);
                 activeBatchQuestion.structured_data?.question_ids?.forEach((qId: string) => {
@@ -1408,9 +1448,27 @@ export function ChatPanelWS({
                 });
                 setBatchQuestionInputs(newInputs);
               }}
+              onSubmitReady={(submitFn) => {
+                batchSubmitFnRef.current = submitFn;
+              }}
+              onNextReady={(nextFn) => {
+                batchNextFnRef.current = nextFn;
+              }}
+              onBackReady={(backFn) => {
+                batchBackFnRef.current = backFn;
+              }}
+              currentQuestionIndex={batchCurrentQuestionIndex}
+              onNavigate={(direction) => {
+                if (direction === 'next') {
+                  setBatchCurrentQuestionIndex(prev => prev + 1);
+                } else {
+                  setBatchCurrentQuestionIndex(prev => prev - 1);
+                }
+              }}
             />
           </div>
-        )}
+        )
+        })()}
 
         <div className={`p-2 ${pendingQuestion || activeBatchQuestion ? 'pt-3' : ''}`}>
         {showMentions && (
@@ -1499,18 +1557,59 @@ export function ChatPanelWS({
             }
           />
           <PromptInputToolbar>
+            {/* Left side - Back button or Attach file */}
             <PromptInputTools>
-              <PromptInputButton
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-                className={selectedFile ? "text-blue-500" : ""}
-              >
-                <PaperclipIcon size={16} />
-              </PromptInputButton>
-
+              {(activeBatchQuestion || pendingQuestion) && batchTotalQuestions > 1 && batchCurrentQuestionIndex > 0 ? (
+                // Back button for multi-question batch (not first question)
+                <PromptInputButton
+                  onClick={() => {
+                    if (batchBackFnRef.current) {
+                      batchBackFnRef.current();
+                    }
+                  }}
+                >
+                  <ChevronLeft size={16} />
+                </PromptInputButton>
+              ) : !pendingQuestion && !activeBatchQuestion ? (
+                // Attach file button for normal chat
+                <PromptInputButton
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  className={selectedFile ? "text-blue-500" : ""}
+                >
+                  <PaperclipIcon size={16} />
+                </PromptInputButton>
+              ) : null}
             </PromptInputTools>
-            {!activeBatchQuestion && !pendingQuestion && (
-              <PromptInputSubmit disabled={(!isConnected && !selectedFile) || shouldBlockChat || isUploading || (!message.trim() && !selectedFile)} />
+            
+            {/* Right side - Next button (for non-last question) or Submit button */}
+            {(activeBatchQuestion || pendingQuestion) && batchTotalQuestions > 1 && batchCurrentQuestionIndex < batchTotalQuestions - 1 ? (
+              // Next button for multi-question batch (not last question)
+              <PromptInputButton
+                onClick={() => {
+                  if (batchNextFnRef.current) {
+                    batchNextFnRef.current();
+                  }
+                }}
+                disabled={!batchCurrentQuestionAnswered}
+              >
+                <ChevronRight size={16} />
+              </PromptInputButton>
+            ) : (
+              // Submit button (for normal chat, single question, or last question)
+              <PromptInputSubmit 
+                disabled={
+                  (activeBatchQuestion || pendingQuestion)
+                    ? !batchQuestionsAllAnswered  // For questions: disabled until all answered
+                    : ((!isConnected && !selectedFile) || shouldBlockChat || isUploading || (!message.trim() && !selectedFile))  // For normal chat: original logic
+                }
+                onClick={(activeBatchQuestion || pendingQuestion) && batchSubmitFnRef.current ? async (e) => {
+                  e.preventDefault();
+                  if (batchSubmitFnRef.current) {
+                    await batchSubmitFnRef.current();
+                  }
+                } : undefined}
+              />
             )}
           </PromptInputToolbar>
         </PromptInput>
