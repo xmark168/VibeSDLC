@@ -10,7 +10,6 @@ from app.core.db import engine
 from app.models import Story
 logger = logging.getLogger(__name__)
 
-# Disable Ryuk auto-cleanup so containers persist after process exit
 os.environ["TESTCONTAINERS_RYUK_DISABLED"] = "true"
 
 # Container registry: story_id -> container

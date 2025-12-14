@@ -91,3 +91,8 @@ class DeveloperState(TypedDict, total=False):
     graph_task_type: GraphTaskType  # Task type for graph routing
     user_message: str  # User message content (for chat nodes)
     response: str  # Agent response (from chat nodes)
+    
+    # Story chat context (additional fields from DB)
+    story_status: str  # Story status (todo, in_progress, review, done)
+    story_agent_state: str  # Agent state (pending, processing, completed, etc)
+    pr_url: str  # PR URL if exists

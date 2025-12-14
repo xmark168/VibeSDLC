@@ -6,8 +6,6 @@ import json
 import logging
 import shutil
 import socket
-import subprocess
-import time
 from pathlib import Path
 from typing import Tuple, Optional, List
 
@@ -181,9 +179,8 @@ def _run_step(
 
 
 async def _run_format_lint_parallel(services: List[dict], workspace_path: str) -> None:
-    """Run format and lint commands in parallel for all services.
-    
-    Optimization: Saves ~20-40s by running format/lint concurrently.
+    """
+    Run format and lint commands in parallel for all services.
     """
     loop = asyncio.get_event_loop()
     tasks = []

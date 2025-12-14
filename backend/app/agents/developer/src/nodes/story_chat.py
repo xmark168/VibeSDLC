@@ -4,28 +4,117 @@ import logging
 from uuid import UUID
 
 from langchain_core.messages import SystemMessage, HumanMessage
+from sqlmodel import Session, select
 
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.nodes._llm import fast_llm
 from app.agents.developer.src.schemas import StoryChatResponse
 from app.agents.developer.src.utils.story_logger import StoryLogger
+from app.agents.developer.src.utils.prompt_utils import build_system_prompt, format_input_template
+from app.core.db import engine
+from app.models.story import StoryMessage, Story
 
 logger = logging.getLogger(__name__)
 
 
-async def story_chat(state: DeveloperState, agent=None) -> DeveloperState:
-    """Reply to user message in story chat using LLM.
+async def _load_story_info(story_id: str) -> dict:
+    """Load story details from database."""
+    try:
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id))
+            if not story:
+                return {}
+            return {
+                "story_code": story.story_code or "",
+                "title": story.title or "Unknown Story",
+                "content": story.description or "",
+                "status": story.status.value if story.status else "",
+                "agent_state": story.agent_state.value if story.agent_state else "",
+                "branch_name": story.branch_name or "",
+                "pr_url": story.pr_url or "",
+            }
+    except Exception as e:
+        logger.warning(f"[story_chat] Failed to load story info: {e}")
+        return {}
+
+
+async def _load_conversation_history(story_id: str) -> list:
+    """Load last 20 messages from story_messages table."""
+    try:
+        with Session(engine) as session:
+            stmt = (
+                select(StoryMessage)
+                .where(StoryMessage.story_id == UUID(story_id))
+                .order_by(StoryMessage.created_at.desc())
+                .limit(20)
+            )
+            messages = session.exec(stmt).all()
+            return [
+                {"role": m.author_type, "author": m.author_name, "content": m.content}
+                for m in reversed(messages)
+            ]
+    except Exception as e:
+        logger.warning(f"[story_chat] Failed to load history: {e}")
+        return []
+
+
+async def _summarize_history(messages: list) -> str:
+    """Summarize older messages using fast_llm."""
+    messages_text = "\n".join([f"{m['author']}: {m['content']}" for m in messages])
     
-    This node handles STORY_MESSAGE task type - when user sends message
-    in story detail chat while story is being processed.
-    """
+    try:
+        result = await fast_llm.ainvoke([
+            SystemMessage(content="Summarize this conversation briefly in 2-3 sentences. Vietnamese."),
+            HumanMessage(content=messages_text)
+        ])
+        return result.content
+    except Exception as e:
+        logger.warning(f"[story_chat] Failed to summarize: {e}")
+        return "(Could not summarize earlier messages)"
+
+
+async def _format_conversation_history(story_id: str) -> str:
+    """Load and format conversation history, summarizing if too long."""
+    conversation_history = await _load_conversation_history(story_id)
+    
+    if not conversation_history:
+        return "(No previous messages)"
+    
+    # If history > 10, summarize older messages and keep recent 5
+    if len(conversation_history) > 10:
+        older_messages = conversation_history[:-5]
+        recent_messages = conversation_history[-5:]
+        
+        summary = await _summarize_history(older_messages)
+        history_text = f"[Summary of earlier conversation]\n{summary}\n\n[Recent messages]\n"
+        history_text += "\n".join([f"{m['author']}: {m['content']}" for m in recent_messages])
+    else:
+        history_text = "\n".join([
+            f"{m['author']}: {m['content']}" 
+            for m in conversation_history
+        ])
+    
+    return history_text
+
+
+async def story_chat(state: DeveloperState, agent=None) -> DeveloperState:
+    """Reply to user message in story chat using LLM"""
     story_id = state.get("story_id", "")
-    story_title = state.get("story_title", "Unknown Story")
     user_message = state.get("user_message", "")
     
     if not story_id:
         logger.warning("[story_chat] No story_id in state")
         return {**state, "response": "Missing story context", "action": "END"}
+    
+    # Load story info from DB
+    story_info = await _load_story_info(story_id)
+    story_title = story_info.get("title", "Unknown Story")
+    story_code = story_info.get("story_code", "")
+    story_content = story_info.get("content", "")
+    story_status = story_info.get("status", "")
+    story_agent_state = story_info.get("agent_state", "")
+    branch_name = story_info.get("branch_name", "")
+    pr_url = story_info.get("pr_url", "")
     
     # Create story logger to reply in story chat
     story_logger = StoryLogger(
@@ -34,17 +123,29 @@ async def story_chat(state: DeveloperState, agent=None) -> DeveloperState:
         node_name="story_chat"
     )
     
-    system_prompt = f"""Bạn là Developer Agent đang xử lý story "{story_title}".
-User vừa gửi tin nhắn trong story chat. Hãy trả lời ngắn gọn, thân thiện.
-
-Quy tắc:
-- Nếu user hỏi về tiến độ → Thông báo đang xử lý
-- Nếu user muốn dừng/pause → Hướng dẫn dùng nút Pause
-- Nếu user muốn hủy → Hướng dẫn dùng nút Cancel  
-- Nếu user có yêu cầu thay đổi → Khuyên pause trước khi thay đổi
-- Trả lời bằng tiếng Việt, ngắn gọn (1-3 câu)"""
-
-    user_prompt = f"User message: {user_message}"
+    # Get progress from state (checkpoint)
+    current_step = state.get("current_step", 0)
+    total_steps = state.get("total_steps", 0)
+    
+    # Load and format conversation history
+    conversation_history = await _format_conversation_history(story_id)
+    
+    # Build prompts from yaml with full context
+    system_prompt = build_system_prompt("story_chat", agent=agent, story_title=story_title)
+    user_prompt = format_input_template(
+        "story_chat", 
+        story_code=story_code,
+        story_title=story_title,
+        story_content=story_content,
+        story_status=story_status,
+        story_agent_state=story_agent_state,
+        branch_name=branch_name,
+        pr_url=pr_url,
+        current_step=current_step,
+        total_steps=total_steps,
+        conversation_history=conversation_history,
+        user_message=user_message
+    )
     
     try:
         structured_llm = fast_llm.with_structured_output(StoryChatResponse)

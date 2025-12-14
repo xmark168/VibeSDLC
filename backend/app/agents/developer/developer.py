@@ -246,17 +246,33 @@ class Developer(BaseAgent):
         """Handle chat tasks (MESSAGE/STORY_MESSAGE) through graph.
         
         Uses lightweight graph invocation for quick responses.
+        Story info will be loaded directly in the node.
         """
         context = task.context or {}
         story_id = context.get("story_id", str(task.task_id))
-        story_title = context.get("story_title", "Unknown Story")
         user_message = context.get("content", task.content)
         
+        # Try to get progress from checkpoint (for story_message only)
+        current_step = 0
+        total_steps = 0
+        if graph_task_type == "story_message":
+            try:
+                config = {"configurable": {"thread_id": f"{self.agent_id}_{story_id}"}}
+                checkpoint = await self.graph_engine.checkpointer.aget(config)
+                if checkpoint and checkpoint.get("channel_values"):
+                    values = checkpoint["channel_values"]
+                    current_step = values.get("current_step", 0)
+                    total_steps = values.get("total_steps", 0)
+            except Exception:
+                pass
+        
+        # Minimal state - node will load story info from DB
         initial_state = {
             "graph_task_type": graph_task_type,
             "story_id": story_id,
-            "story_title": story_title,
             "user_message": user_message,
+            "current_step": current_step,
+            "total_steps": total_steps,
             "project_id": str(self.project_id),
             "task_id": str(task.task_id),
             "user_id": str(task.user_id) if task.user_id else "",
@@ -471,6 +487,12 @@ Quy tắc:
                 "title": story.title or "Untitled Story",
                 "content": story.description or "",
                 "acceptance_criteria": story.acceptance_criteria or [],
+                # Additional fields for chat context
+                "status": story.status.value if story.status else "todo",
+                "agent_state": story.agent_state.value if story.agent_state else None,
+                "branch_name": story.branch_name,
+                "pr_url": story.pr_url,
+                "pr_state": story.pr_state,
             }
 
     async def _process_story(self, story_data: dict, task: TaskContext, is_resume: bool = False) -> TaskResult:

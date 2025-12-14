@@ -2,21 +2,25 @@
 
 import logging
 
+from langchain_core.messages import SystemMessage, HumanMessage
+
 from app.agents.developer.src.state import DeveloperState
+from app.agents.developer.src.nodes._llm import fast_llm
+from app.agents.developer.src.schemas import StoryChatResponse
+from app.agents.developer.src.utils.prompt_utils import build_system_prompt, format_input_template
 
 logger = logging.getLogger(__name__)
 
 
 async def respond(state: DeveloperState, agent=None) -> DeveloperState:
-    """Reply to @Developer message in main chat.
-    
-    This node handles MESSAGE task type - when user mentions @Developer
-    in the main workspace chat.
     """
-    user_message = state.get("user_message", "").lower()
+    Reply to @Developer message in main chat.
+    """
+    user_message = state.get("user_message", "")
+    user_message_lower = user_message.lower()
     
-    # Determine response based on message content
-    if "help" in user_message or "giúp" in user_message:
+    # Quick responses for common queries (no LLM needed)
+    if "help" in user_message_lower or "giúp" in user_message_lower:
         reply = """Tôi là Developer, chuyên phụ trách phát triển code! 💻
 
 **Tôi có thể giúp bạn:**
@@ -29,16 +33,32 @@ async def respond(state: DeveloperState, agent=None) -> DeveloperState:
 - Kéo story sang In Progress → Tôi tự động bắt đầu
 - Hoặc nhắn: "@Developer triển khai chức năng login"
 """
-    elif "status" in user_message or "tiến độ" in user_message or "progress" in user_message:
+    elif "status" in user_message_lower or "tiến độ" in user_message_lower or "progress" in user_message_lower:
         reply = "📊 Hiện tại chưa có task nào đang xử lý. Bạn có thể kéo story sang In Progress để tôi bắt đầu!"
     else:
-        # Default: treat as dev request - signal to start story processing
-        reply = None  # Will be handled by returning action=IMPLEMENT
-        return {**state, "action": "IMPLEMENT", "response": ""}
+        # Use LLM for other messages
+        try:
+            system_prompt = build_system_prompt("respond", agent=agent)
+            user_prompt = format_input_template("respond", user_message=user_message, project_context="")
+            
+            structured_llm = fast_llm.with_structured_output(StoryChatResponse)
+            result = await structured_llm.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ])
+            reply = result.response
+            
+            # Check if this is a dev request that should trigger implementation
+            if result.action == "implement":
+                return {**state, "action": "IMPLEMENT", "response": reply}
+                
+        except Exception as e:
+            logger.warning(f"[respond] LLM error: {e}")
+            reply = "📝 Đã nhận yêu cầu. Bạn có thể tạo story và kéo sang In Progress để tôi bắt đầu triển khai."
     
     # Send response to main chat
     if agent and reply:
         await agent.message_user("response", reply)
     
     logger.info(f"[respond] Replied to @Developer message")
-    return {**state, "response": reply or "", "action": "END"}
+    return {**state, "response": reply, "action": "END"}
