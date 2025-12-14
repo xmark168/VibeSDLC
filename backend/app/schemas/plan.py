@@ -58,7 +58,7 @@ class PlanCreate(PlanBase):
     def validate_plan(self):
         """Validate plan pricing logic"""
         # Check that at least monthly_price is provided for non-custom plans
-        if not self.is_custom_price and not self.monthly_price:
+        if not self.is_custom_price and self.monthly_price is None:
             raise ValueError("monthly_price must be provided for non-custom plans")
 
         return self
