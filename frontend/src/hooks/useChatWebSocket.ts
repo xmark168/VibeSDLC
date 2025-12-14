@@ -184,10 +184,6 @@ export function useChatWebSocket(
         handleOwnershipReleased(msg)
         break
       
-      case 'story_message':
-        handleStoryMessage(msg)
-        break
-      
       case 'story_log':
         handleStoryLog(msg)
         break
@@ -630,27 +626,6 @@ export function useChatWebSocket(
         timestamp: msg.timestamp,
       }
     }))
-  }
-  
-  const handleStoryMessage = (msg: any) => {    
-    // Dispatch message event for Chat tab in story detail
-    window.dispatchEvent(new CustomEvent('story-message', {
-      detail: {
-        story_id: msg.story_id,
-        content: msg.content,
-        message_type: msg.message_type,
-        author_name: msg.author_name,
-        timestamp: msg.timestamp,
-        details: msg.details,
-      }
-    }))
-    
-    // Dispatch custom event for story state updates
-    if (msg.agent_state) {
-      window.dispatchEvent(new CustomEvent('story-state-changed', {
-        detail: { story_id: msg.story_id, agent_state: msg.agent_state }
-      }))
-    }
   }
   
   const handleStoryStateChanged = (msg: any) => {    
