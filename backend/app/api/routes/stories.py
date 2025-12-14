@@ -591,6 +591,27 @@ async def send_story_message(
         story.project_id
     )
     
+    # Publish to Kafka for routing to agent (if story is being processed)
+    from app.kafka.producer import get_kafka_producer
+    from app.kafka.event_schemas import StoryMessageEvent, KafkaTopics
+    
+    try:
+        producer = await get_kafka_producer()
+        event = StoryMessageEvent(
+            story_id=story_id,
+            message_id=message.id,
+            author_type="user",
+            author_name=message.author_name,
+            content=request.content,
+            project_id=story.project_id,
+            user_id=current_user.id,
+        )
+        await producer.publish(KafkaTopics.STORY_EVENTS, event)
+    except Exception as e:
+        # Log but don't fail the request
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to publish story message to Kafka: {e}")
+    
     return {
         "id": str(message.id),
         "author_type": message.author_type,
@@ -723,7 +744,7 @@ async def cancel_story_task(
         story.db_port = None
     
     # Clear container from in-memory registry
-    from app.agents.developer_v2.src.utils.db_container import clear_container_from_registry
+    from app.agents.developer.src.utils.db_container import clear_container_from_registry
     clear_container_from_registry(str(story_id))
     
     # Update state to canceled and clear checkpoint (cancel = permanent stop)
@@ -900,19 +921,15 @@ def _cleanup_story_resources_sync(
     
     # Prune first
     if main_workspace and Path(main_workspace).exists():
-        try:
-            subprocess.run(["git", "worktree", "prune"], cwd=main_workspace, capture_output=True, timeout=10)
-        except Exception:
-            pass
+        from app.utils.git_utils import git_worktree_prune
+        git_worktree_prune(Path(main_workspace), timeout=10)
     
     # Remove worktree
     if worktree_path:
         worktree = Path(worktree_path)
         if worktree.exists() and main_workspace and Path(main_workspace).exists():
-            try:
-                subprocess.run(["git", "worktree", "remove", str(worktree), "--force"], cwd=main_workspace, capture_output=True, timeout=30)
-            except Exception:
-                pass
+            from app.utils.git_utils import git_worktree_remove
+            git_worktree_remove(worktree, Path(main_workspace), force=True, timeout=30)
         
         if worktree.exists():
             for attempt in range(3):
@@ -934,20 +951,16 @@ def _cleanup_story_resources_sync(
         
         # Prune again
         if main_workspace and Path(main_workspace).exists():
-            try:
-                subprocess.run(["git", "worktree", "prune"], cwd=main_workspace, capture_output=True, timeout=10)
-            except Exception:
-                pass
+            from app.utils.git_utils import git_worktree_prune
+            git_worktree_prune(Path(main_workspace), timeout=10)
         
         results["worktree"] = not worktree.exists()
     
     # Delete branch
     if branch_name and main_workspace and Path(main_workspace).exists():
-        try:
-            result = subprocess.run(["git", "branch", "-D", branch_name], cwd=main_workspace, capture_output=True, timeout=10)
-            results["branch"] = result.returncode == 0
-        except Exception:
-            pass
+        from app.utils.git_utils import git_branch_delete
+        success, _ = git_branch_delete(branch_name, Path(main_workspace), force=True, timeout=10)
+        results["branch"] = success
     
     return results
 
@@ -1148,7 +1161,7 @@ async def restart_story_task(
             logger.warning(f"[restart] Failed to stop docker container: {e}")
     
     # Clear container from in-memory registry to ensure fresh start
-    from app.agents.developer_v2.src.utils.db_container import clear_container_from_registry
+    from app.agents.developer.src.utils.db_container import clear_container_from_registry
     clear_container_from_registry(str(story_id))
     
     # Clear agent's in-memory cache for this story (critical for restart after cancel)

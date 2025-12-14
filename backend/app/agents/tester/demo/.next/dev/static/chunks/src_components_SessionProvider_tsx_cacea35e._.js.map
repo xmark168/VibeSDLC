@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///D:/capstone%20project/VibeSDLC3/VibeSDLC/backend/app/agents/tester/demo/src/components/SessionProvider.tsx"],"sourcesContent":["\"use client\";\r\n\r\nimport { SessionProvider as NextAuthSessionProvider } from \"next-auth/react\";\r\n\r\nexport function SessionProvider({ children }: { children: React.ReactNode }) {\r\n  return <NextAuthSessionProvider>{children}</NextAuthSessionProvider>;\r\n}\r\n"],"names":[],"mappings":";;;;;AAEA;AAFA;;;AAIO,SAAS,gBAAgB,EAAE,QAAQ,EAAiC;IACzE,qBAAO,6LAAC,2JAAuB;kBAAE;;;;;;AACnC;KAFgB"}}]
-}

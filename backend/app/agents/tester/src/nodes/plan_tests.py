@@ -5,14 +5,16 @@ import logging
 import os
 import re
 import unicodedata
+from typing import List
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.core_nodes import detect_testing_context, send_message, generate_user_message
+from app.agents.tester.src.nodes.core_nodes import detect_testing_context, send_message, generate_user_message
 from app.agents.tester.src._llm import plan_llm
 from app.agents.tester.src.config import MAX_SCENARIOS_UNIT, MAX_SCENARIOS_INTEGRATION
 from app.agents.tester.src.utils.file_repository import FileRepository
@@ -30,24 +32,21 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {}
 
 
-def _parse_json(content: str) -> dict:
-    """Parse JSON from LLM response."""
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError:
-        pass
-    
-    # Extract from markdown
-    if "```json" in content:
-        content = content.split("```json")[1].split("```")[0]
-    elif "```" in content:
-        content = content.split("```")[1].split("```")[0]
-    
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError as e:
-        logger.warning(f"[_parse_json] Failed: {content[:300]}...")
-        raise e
+class TestPlanStep(BaseModel):
+    """Single test plan step."""
+    order: int
+    type: str  # "integration" or "unit"
+    story_id: str
+    story_title: str
+    file_path: str
+    description: str
+    scenarios: List[str]
+    dependencies: List[str] = []
+
+
+class TestPlanOutput(BaseModel):
+    """Test plan output from LLM."""
+    test_plan: List[TestPlanStep]
 
 
 def _slugify(text: str) -> str:
@@ -384,76 +383,6 @@ def _format_component_context(components: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _get_existing_routes(workspace_path: str) -> list[str]:
-    """Scan project for existing API routes."""
-    from pathlib import Path
-    
-    routes = []
-    path = Path(workspace_path)
-    
-    if not path.exists():
-        return routes
-    
-    # Check common API directories
-    api_dirs = [
-        path / "src" / "app" / "api",  # Next.js 13+ with src
-        path / "app" / "api",           # Next.js 13+ without src
-        path / "pages" / "api",         # Next.js pages router
-    ]
-    
-    for api_dir in api_dirs:
-        if api_dir.exists():
-            for route_file in api_dir.rglob("route.ts"):
-                if "node_modules" not in str(route_file):
-                    relative = route_file.relative_to(path)
-                    routes.append(str(relative).replace("\\", "/"))
-            
-            # Also check for pages API (older Next.js pattern)
-            for api_file in api_dir.rglob("*.ts"):
-                if "node_modules" not in str(api_file) and api_file.name != "route.ts":
-                    relative = api_file.relative_to(path)
-                    routes.append(str(relative).replace("\\", "/"))
-    
-    logger.info(f"[_get_existing_routes] Found {len(routes)} existing API routes")
-    return routes
-
-
-def _load_api_source_code(workspace_path: str, routes: list[str]) -> str:
-    """Load API source code for LLM analysis."""
-    from pathlib import Path
-    
-    if not workspace_path or not routes:
-        return "No API source code available."
-    
-    path = Path(workspace_path)
-    api_sources = []
-    
-    for route in routes[:10]:  # Limit to 10 routes to avoid token overflow
-        route_path = path / route
-        if route_path.exists():
-            try:
-                content = route_path.read_text(encoding="utf-8")
-                # Truncate long files
-                if len(content) > 2000:
-                    content = content[:2000] + "\n// ... (truncated)"
-                
-                # Extract route URL from path
-                # e.g., "src/app/api/categories/route.ts" -> "/api/categories"
-                route_url = route.replace("src/app", "").replace("app", "")
-                route_url = route_url.replace("/route.ts", "").replace("/route.tsx", "")
-                route_url = route_url.replace("\\", "/")
-                if not route_url.startswith("/"):
-                    route_url = "/" + route_url
-                
-                api_sources.append(f"### {route_url}\nFile: {route}\n```typescript\n{content}\n```")
-            except Exception as e:
-                logger.warning(f"[_load_api_source_code] Failed to load {route}: {e}")
-    
-    if not api_sources:
-        return "No API source code available."
-    
-    return "\n\n".join(api_sources)
-
 
 def _preload_test_dependencies(workspace_path: str, test_plan: list, stories: list = None) -> dict:
     """Pre-load source files that tests will need as context."""
@@ -696,8 +625,9 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
     logger.info(f"[plan_tests] Analyzed {len(unit_test_components)} components for unit tests")
     
     try:
-        # Call LLM to create test plan
-        response = await _llm.ainvoke(
+        # Call LLM to create test plan using structured output
+        structured_llm = _llm.with_structured_output(TestPlanOutput)
+        result = await structured_llm.ainvoke(
             [
                 SystemMessage(content=get_system_prompt("plan_tests")),
                 HumanMessage(content=get_user_prompt(
@@ -713,9 +643,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             ],
             config=_cfg(state, "plan_tests"),
         )
-        
-        result = _parse_json(response.content)
-        test_plan = result.get("test_plan", [])
+        test_plan = result.test_plan
         
         # FIXED folder paths - always use standard structure
         integration_folder = "src/__tests__/integration"
@@ -902,3 +830,14 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             "error": str(e),
             "message": error_msg,
         }
+
+
+def _get_existing_routes(workspace_path: str) -> List[str]:
+    """Get existing API routes from workspace using FileRepository."""
+    if not workspace_path:
+        return []
+    try:
+        file_repo = FileRepository(workspace_path)
+        return file_repo.api_routes
+    except Exception:
+        return []

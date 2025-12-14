@@ -783,7 +783,7 @@ async def start_project_dev_server(
         await broadcast_log("Starting PostgreSQL database...", "running")
         logger.info(f"Prisma schema found, starting PostgreSQL container...")
         try:
-            from app.agents.developer_v2.src.utils.db_container import (
+            from app.agents.developer.src.utils.db_container import (
                 start_postgres_container,
                 update_env_file,
             )
@@ -995,7 +995,7 @@ async def stop_project_dev_server(
     # Stop database container if exists
     if project.db_container_id:
         try:
-            from app.agents.developer_v2.src.utils.db_container import stop_container_by_id
+            from app.agents.developer.src.utils.db_container import stop_container_by_id
             stop_container_by_id(project.db_container_id)
             logger.info(f"Stopped database container: {project.db_container_id}")
         except Exception as e:

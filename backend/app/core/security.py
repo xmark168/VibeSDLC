@@ -1,15 +1,12 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
-
 import jwt
 from passlib.context import CryptContext
-
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes= ["bcrypt"], deprecated="auto")
 
-ALGORITHM = "HS256"
 
 def create_access_token(
     subject: str | Any,
@@ -30,7 +27,7 @@ def create_access_token(
     if token_type == "access":
         to_encode["jti"] = secrets.token_urlsafe(16)
 
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 
@@ -38,7 +35,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
     payload = jwt.decode(
         token,
         settings.SECRET_KEY,
-        algorithms=[ALGORITHM]
+        algorithms=[settings.ALGORITHM]
     )
     return payload
 

@@ -5,6 +5,8 @@ import logging
 import os
 import re
 from pathlib import Path
+from typing import List, Literal
+from pydantic import BaseModel, Field
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -30,55 +32,13 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {"run_name": name}
 
 
-def _get_file_extension(file_path: str) -> str:
-    """Get file extension for code block."""
-    ext_map = {
-        ".ts": "typescript", ".tsx": "typescript",
-        ".js": "javascript", ".jsx": "javascript",
-        ".py": "python",
-    }
-    for ext, lang in ext_map.items():
-        if file_path.endswith(ext):
-            return lang
-    return ""
 
 
-def _parse_review_response(response: str) -> dict:
-    """Parse review response to extract decision and feedback."""
-    result = {"decision": "LGTM", "review": "", "feedback": "", "issues": []}
-
-    # Try JSON format first
-    try:
-        # Find JSON in response
-        json_match = re.search(r'\{[^{}]*"decision"[^{}]*\}', response, re.DOTALL)
-        if json_match:
-            parsed = json.loads(json_match.group())
-            result["decision"] = parsed.get("decision", "LGTM").upper()
-            result["feedback"] = parsed.get("feedback", "")
-            result["issues"] = parsed.get("issues", [])
-            return result
-    except (json.JSONDecodeError, AttributeError):
-        pass
-
-    # Fallback to text parsing
-    # Find ALL decisions and take the LAST one (LLM sometimes reconsiders)
-    decisions = re.findall(r"DECISION:\s*(LGTM|LBTM)", response, re.IGNORECASE)
-    if decisions:
-        result["decision"] = decisions[-1].upper()
-
-    # Extract review section
-    review_match = re.search(
-        r"REVIEW:\s*\n([\s\S]*?)(?=FEEDBACK:|$)", response, re.IGNORECASE
-    )
-    if review_match:
-        result["review"] = review_match.group(1).strip()
-
-    # Extract feedback (for LBTM)
-    feedback_match = re.search(r"FEEDBACK:\s*\n?([\s\S]*?)$", response, re.IGNORECASE)
-    if feedback_match:
-        result["feedback"] = feedback_match.group(1).strip()
-
-    return result
+class ReviewDecision(BaseModel):
+    """Structured review decision output."""
+    decision: Literal["LGTM", "LBTM"] = Field(description="LGTM (Looks Good To Me) or LBTM (Looks Bad To Me)")
+    feedback: str = Field(default="", description="Brief explanation of decision")
+    issues: List[str] = Field(default_factory=list, description="List of specific issues found")
 
 
 def _read_test_file(workspace_path: str, file_path: str) -> tuple[str, str]:
@@ -173,15 +133,13 @@ async def _review_single_file(
             HumanMessage(content=user_prompt),
         ]
         
-        # Call LLM
-        response = await _llm.ainvoke(messages, config=_cfg(state, f"review_{step_index + 1}"))
-        response_text = response.content if hasattr(response, "content") else str(response)
+        # Call LLM with structured output
+        structured_llm = _llm.with_structured_output(ReviewDecision)
+        review_result = await structured_llm.ainvoke(messages, config=_cfg(state, f"review_{step_index + 1}"))
         
-        # Parse response
-        review_result = _parse_review_response(response_text)
-        decision = review_result["decision"]
-        feedback = review_result.get("feedback", "")
-        issues = review_result.get("issues", [])
+        decision = review_result.decision
+        feedback = review_result.feedback
+        issues = review_result.issues
         
         logger.info(f"[review] {file_path}: {decision}")
         

@@ -7,7 +7,7 @@ from sqlmodel import Session
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.skills import SkillRegistry
-from app.agents.tester.src.tools.workspace_tools import (
+from app.utils.workspace_utils import (
     setup_git_worktree,
     get_agents_md,
     get_project_context,
@@ -114,8 +114,9 @@ async def setup_workspace(state: TesterState, agent=None) -> dict:
                 }
             
             workspace_info = setup_git_worktree(
-                story_id=story_id,
+                story_code=story_id,
                 main_workspace=main_workspace,
+                worktree_type="test",
                 agent_name="Tester"
             )
         

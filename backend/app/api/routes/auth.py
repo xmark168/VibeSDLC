@@ -94,54 +94,29 @@ def login(
                 detail="Email và password không được để trống với credential login",
             )
 
-        # Admin bypass - if email is "admin" and password is "admin", allow login
-        if (
-            str(login_data.email).lower() == "admin@gmail.com"
-            and login_data.password == "admin"
-        ):
-            # Find or create admin user
-            user_service = UserService(session)
-            user = user_service.get_by_email("admin@gmail.com")
-            if not user:
-                # Create admin user if doesn't exist
-                from app.models import Role, User
+        # Find user with credential login
+        user_service = UserService(session)
+        user = user_service.get_by_email(str(login_data.email))
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email or password",
+            )
+        
+        # Check if user registered via OAuth (no password)
+        if user.login_provider and not user.hashed_password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Tài khoản này được đăng ký thông qua {user.login_provider}. Vui lòng đăng nhập bằng {user.login_provider}.",
+            )
 
-                user = User(
-                    email="admin@gmail.com",
-                    full_name="Administrator",
-                    hashed_password=get_password_hash("admin"),
-                    is_active=True,
-                    is_locked=False,
-                    login_provider=None,
-                    role=Role.ADMIN,
-                )
-                session.add(user)
-                session.commit()
-                session.refresh(user)
-        else:
-            # Find user with credential login
-            user_service = UserService(session)
-            user = user_service.get_by_email(str(login_data.email))
-            
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid email or password",
-                )
-            
-            # Check if user registered via OAuth (no password)
-            if user.login_provider and not user.hashed_password:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=f"Tài khoản này được đăng ký thông qua {user.login_provider}. Vui lòng đăng nhập bằng {user.login_provider}.",
-                )
-
-            # Verify password
-            if not user.hashed_password or not verify_password(login_data.password, user.hashed_password):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid email or password",
-                )
+        # Verify password
+        if not user.hashed_password or not verify_password(login_data.password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid email or password",
+            )
 
     else:
         # if not login_data.email or not login_data.fullname or login_data.password is not None:
@@ -353,39 +328,20 @@ def confirm_code(
     registration_data = redis_client.get(registration_key)
     verification_code = redis_client.get(verification_key)
 
-    # Debug logging
-    logger.info(f"[OTP DEBUG] Email: {confirm_data.email}")
-    logger.info(
-        f"[OTP DEBUG] Received code from client: {confirm_data.code!r} (type: {type(confirm_data.code).__name__})"
-    )
-    logger.info(
-        f"[OTP DEBUG] Retrieved verification_code from Redis: {verification_code!r} (type: {type(verification_code).__name__})"
-    )
-    logger.info(f"[OTP DEBUG] Registration data exists: {bool(registration_data)}")
-
     # Handle edge cases
     if not registration_data and not verification_code:
-        logger.warning(
-            f"[OTP DEBUG] Both registration_data and verification_code are missing for {confirm_data.email}"
-        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Dữ liệu đăng ký đã hết hạn. Vui lòng đăng ký lại từ đầu",
         )
 
     if not registration_data and verification_code:
-        logger.warning(
-            f"[OTP DEBUG] Registration data missing but verification_code exists for {confirm_data.email}"
-        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Dữ liệu đăng ký đã hết hạn. Vui lòng đăng ký lại từ đầu",
         )
 
     if registration_data and not verification_code:
-        logger.warning(
-            f"[OTP DEBUG] Verification code missing but registration_data exists for {confirm_data.email}"
-        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Mã xác thực đã hết hạn. Vui lòng yêu cầu gửi lại mã",
@@ -397,15 +353,7 @@ def confirm_code(
     )
     confirm_code_str = str(confirm_data.code).strip() if confirm_data.code else None
 
-    logger.info(
-        f"[OTP DEBUG] After normalization - verification_code: {verification_code_str!r}, confirm_code: {confirm_code_str!r}"
-    )
-    logger.info(f"[OTP DEBUG] Codes match: {verification_code_str == confirm_code_str}")
-
     if verification_code_str != confirm_code_str:
-        logger.error(
-            f"[OTP DEBUG] Code mismatch for {confirm_data.email}: expected {verification_code_str!r}, got {confirm_code_str!r}"
-        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Mã xác thực không đúng"
         )

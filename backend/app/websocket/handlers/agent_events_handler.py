@@ -1,7 +1,5 @@
-"""Agent Events Handler - Handles agent messaging events (start, tool_call, response, finish).
-
-NOTE: DB saves for agent messages are handled by base_agent._handle_simple_message()
-This handler only broadcasts events to WebSocket clients.
+"""
+Agent Events Handler - Handles agent messaging events broadcast
 """
 
 import logging

@@ -68,8 +68,10 @@ class Settings(BaseSettings):
 
     # SECURITY SETTINGS
     SECRET_KEY: str = Field(
-        default="your-fixed-secret-key-min-32-chars-change-this-in-production"
+        default=...,  # Required - must be set in environment
+        description="Secret key for JWT encoding. Must be at least 32 characters."
     )
+    ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # 7 days
 
