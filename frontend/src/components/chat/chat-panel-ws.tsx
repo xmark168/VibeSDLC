@@ -85,6 +85,9 @@ export function ChatPanelWS({
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [activeBatchQuestion, setActiveBatchQuestion] = useState<Message | null>(null);
+  const [batchQuestionInputs, setBatchQuestionInputs] = useState<Map<string, string>>(new Map());
+  const [batchQuestionsAllAnswered, setBatchQuestionsAllAnswered] = useState(false);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -359,6 +362,21 @@ export function ChatPanelWS({
     }
   }, [uniqueMessages])
 
+  // Detect active batch question (unanswered)
+  useEffect(() => {
+    const unansweredBatches = uniqueMessages.filter(
+      msg => msg.message_type === 'agent_question_batch' &&
+             !msg.structured_data?.answered &&
+             !answeredBatchIds.has(msg.structured_data?.batch_id || '')
+    )
+
+    const latestBatch = unansweredBatches.sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+
+    setActiveBatchQuestion(latestBatch || null)
+  }, [uniqueMessages, answeredBatchIds])
+
   // Detect stories_approved message and refresh Kanban board
   const lastApprovedMsgIdRef = useRef<string | null>(null)
   useEffect(() => {
@@ -473,9 +491,9 @@ export function ChatPanelWS({
   }, [typingAgentsCount])
 
   // Determine if chat should be blocked
-  const isMultichoiceQuestion = pendingQuestion?.structured_data?.question_type === 'multichoice'
+  // Block chat when agent is typing, but ALLOW typing when batch question is active (for custom answers)
   const isAgentTyping = typingAgents.size > 0
-  const shouldBlockChat = (pendingQuestion && isMultichoiceQuestion) || isAgentTyping
+  const shouldBlockChat = isAgentTyping && !activeBatchQuestion
 
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
@@ -955,31 +973,40 @@ export function ChatPanelWS({
             );
           }
 
-          // Batch Question Handling
+          // Batch Question Handling - show agent message here, interaction in chat wrapper
           if (msg.message_type === 'agent_question_batch') {
+            const isActiveBatch = activeBatchQuestion?.id === msg.id;
+            const batchId = msg.structured_data?.batch_id || '';
+            const isAnswered = msg.structured_data?.answered || answeredBatchIds.has(batchId);
+
             return (
               <div key={msg.id} id={`batch-${msg.id}`} className="flex gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-                  ❓
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted overflow-hidden">
+                  {getAgentAvatar(msg)}
                 </div>
                 <div className="flex-1">
                   <div className="text-xs font-medium text-muted-foreground mb-2">
                     {msg.agent_name || 'Agent'}
                   </div>
-                  <BatchQuestionsCard
-                    batchId={msg.structured_data?.batch_id || ''}
-                    questions={msg.structured_data?.questions || []}
-                    questionIds={msg.structured_data?.question_ids || []}
-                    agentName={msg.agent_name}
-                    answered={msg.structured_data?.answered || answeredBatchIds.has(msg.structured_data?.batch_id || '')}
-                    submittedAnswers={msg.structured_data?.answers || []}
-                    onSubmit={(answers) => {
-                      sendBatchAnswers(
-                        msg.structured_data!.batch_id!,
-                        answers
-                      )
-                    }}
-                  />
+                  {/* Show message bubble indicating batch questions */}
+                  {!isAnswered ? (
+                    <div className="rounded-lg px-3 py-2 bg-muted w-fit">
+                      <div className="text-sm leading-loose text-foreground">
+                        ❓ Đang hỏi {msg.structured_data?.questions?.length || 0} câu hỏi
+                      </div>
+                    </div>
+                  ) : (
+                    <BatchQuestionsCard
+                      batchId={batchId}
+                      questions={msg.structured_data?.questions || []}
+                      questionIds={msg.structured_data?.question_ids || []}
+                      agentName={msg.agent_name}
+                      answered={true}
+                      submittedAnswers={msg.structured_data?.answers || []}
+                      chatInputValue=""
+                      onSubmit={() => {}}
+                    />
+                  )}
                 </div>
               </div>
             );
@@ -1201,11 +1228,11 @@ export function ChatPanelWS({
         ))}
       </div>
 
-      {/* Chat Input Area - wrapped with question notification when pending */}
-      <div className={`mx-4 mb-4 rounded-2xl relative ${pendingQuestion ? 'border border-blue-200 bg-blue-100 dark:bg-blue-900/50 dark:border-blue-800' : ''}`}>
+      {/* Chat Input Area - fixed at bottom */}
+      <div className={`mx-4 mb-4 rounded-2xl flex-shrink-0 ${pendingQuestion || activeBatchQuestion ? 'border bg-blue-300/20 border-blue-500/20' : ''}`}>
         {/* Question Notification Banner */}
         {pendingQuestion && (
-          <div className="px-4 py-3 bg-blue-100 dark:bg-blue-900/50 rounded-t-2xl">
+          <div className="px-4 py-3 rounded-t-2xl">
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -1253,7 +1280,40 @@ export function ChatPanelWS({
           </div>
         )}
 
-        <div className={`p-2 ${pendingQuestion ? 'pt-3' : ''}`}>
+        {/* Batch Question Display - shown above chat input */}
+        {activeBatchQuestion && (
+          <div className="">
+            <BatchQuestionsCard
+              batchId={activeBatchQuestion.structured_data?.batch_id || ''}
+              questions={activeBatchQuestion.structured_data?.questions || []}
+              questionIds={activeBatchQuestion.structured_data?.question_ids || []}
+              agentName={activeBatchQuestion.agent_name}
+              answered={activeBatchQuestion.structured_data?.answered || answeredBatchIds.has(activeBatchQuestion.structured_data?.batch_id || '')}
+              submittedAnswers={activeBatchQuestion.structured_data?.answers || []}
+              chatInputValue={message}
+              onChatInputUsed={() => setMessage('')}
+              onQuestionChange={(questionId, savedInput) => {
+                setMessage(savedInput);
+              }}
+              onAllAnsweredChange={(allAnswered) => {
+                setBatchQuestionsAllAnswered(allAnswered);
+              }}
+              onSubmit={(answers) => {
+                sendBatchAnswers(activeBatchQuestion.structured_data!.batch_id!, answers);
+                setActiveBatchQuestion(null);
+                setBatchQuestionsAllAnswered(false);
+                const batchId = activeBatchQuestion.structured_data?.batch_id || '';
+                const newInputs = new Map(batchQuestionInputs);
+                activeBatchQuestion.structured_data?.question_ids?.forEach((qId: string) => {
+                  newInputs.delete(`${batchId}_${qId}`);
+                });
+                setBatchQuestionInputs(newInputs);
+              }}
+            />
+          </div>
+        )}
+
+        <div className={`p-2 ${pendingQuestion || activeBatchQuestion ? 'pt-3' : ''}`}>
         {showMentions && (
           <MentionDropdown
             agents={filteredAgents}
@@ -1329,7 +1389,13 @@ export function ChatPanelWS({
             value={message}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder={selectedFile ? "Add description for file..." : "Type your message..."}
+            placeholder={
+              selectedFile
+                ? "Add description for file..."
+                : activeBatchQuestion
+                  ? "Hoặc gõ câu trả lời khác tại đây..."
+                  : "Type your message..."
+            }
           />
           <PromptInputToolbar>
             <PromptInputTools>
@@ -1342,7 +1408,9 @@ export function ChatPanelWS({
               </PromptInputButton>
 
             </PromptInputTools>
-            <PromptInputSubmit disabled={(!isConnected && !selectedFile) || shouldBlockChat || isUploading || (!message.trim() && !selectedFile)} />
+            {!activeBatchQuestion && (
+              <PromptInputSubmit disabled={(!isConnected && !selectedFile) || shouldBlockChat || isUploading || (!message.trim() && !selectedFile)} />
+            )}
           </PromptInputToolbar>
         </PromptInput>
         {/* <div className="flex items-center justify-between pt-3">
