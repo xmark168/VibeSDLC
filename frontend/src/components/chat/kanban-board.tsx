@@ -944,12 +944,11 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   }, [cards, checkDependenciesCompleted])
 
   const handleEditCard = useCallback((card: KanbanCardData) => {
-    const storyType = card.type?.toLowerCase() === "enablerstory" ? "EnablerStory" : "UserStory"
     setEditingStory({
       id: card.id,
       title: card.content,
       description: card.description,
-      type: storyType,
+      type: "UserStory",
       story_point: card.story_point,
       priority: card.priority,
       rank: card.rank,
@@ -1019,7 +1018,7 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
               <div className="space-y-2">
                 <label className="text-sm font-semibold">Type</label>
                 <div className="flex flex-wrap gap-2">
-                  {[{ value: "UserStory", label: "User Story" }, { value: "EnablerStory", label: "Enabler Story" }].map((type) => (
+                  {[{ value: "UserStory", label: "User Story" }].map((type) => (
                     <button
                       key={type.value}
                       onClick={() => setSelectedFilters(prev => ({

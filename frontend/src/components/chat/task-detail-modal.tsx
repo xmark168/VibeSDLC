@@ -1,5 +1,5 @@
 
-import { Download, Zap, User, Users, Flag, ChevronRight, FileText, ScrollText, Loader2, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye, Sparkles } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, FileText, ScrollText, Loader2, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye, Sparkles } from "lucide-react"
 import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -629,7 +629,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     })
   }
 
-  // Get type badge color - UserStory, EnablerStory on board; Epic as parent
+  // Get type badge color - UserStory on board; Epic as parent
   const getTypeBadgeColor = (type?: string) => {
     const normalizedType = type?.toUpperCase()
     switch (normalizedType) {
@@ -638,9 +638,6 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
       case "USERSTORY":
       case "USER_STORY":
         return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
-      case "ENABLERSTORY":
-      case "ENABLER_STORY":
-        return "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20"
       default:
         return "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20"
     }
@@ -654,9 +651,6 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
       case "USERSTORY":
       case "USER_STORY":
         return "User Story"
-      case "ENABLERSTORY":
-      case "ENABLER_STORY":
-        return "Enabler Story"
       case "EPIC":
         return "Epic"
       default:
@@ -1019,9 +1013,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   <div className="text-sm font-medium font-mono">
                     {card.assignee_id.slice(0, 8)}
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {card.type === "EnablerStory" ? "Developer/Infrastructure" : "Developer"}
-                  </div>
+                  <div className="text-xs text-muted-foreground">Developer</div>
                 </div>
               </div>
             )}
