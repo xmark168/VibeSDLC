@@ -1,0 +1,5 @@
+# Ignore all test output files
+*.html
+*.xml
+*.json
+htmlcov/
