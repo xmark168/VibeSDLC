@@ -1,7 +1,7 @@
 """Prompt building utilities for Developer V2."""
 
 from pathlib import Path
-from app.agents.core.prompt_utils import load_prompts_yaml
+from app.core.agent.prompt_utils import load_prompts_yaml
 
 _PROMPTS = load_prompts_yaml(Path(__file__).parent.parent / "prompts.yaml")
 

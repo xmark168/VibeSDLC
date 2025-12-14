@@ -112,7 +112,7 @@ def _clean_logs(logs: str, max_lines: int = 50) -> str:
 async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
     """Zero-shot error analysis with structured output."""
     from langgraph.types import interrupt
-    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
     from app.agents.developer_v2.src.utils.story_logger import StoryLogger
     
     story_logger = StoryLogger.from_state(state, agent).with_node("analyze_error")

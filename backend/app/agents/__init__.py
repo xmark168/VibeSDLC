@@ -50,7 +50,7 @@ def __getattr__(name: str):
         from app.agents.business_analyst import BusinessAnalyst
         return BusinessAnalyst
     elif name in ("BaseAgent", "TaskContext", "TaskResult"):
-        from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+        from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
         if name == "BaseAgent":
             return BaseAgent
         elif name == "TaskContext":

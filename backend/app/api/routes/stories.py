@@ -2076,7 +2076,7 @@ async def merge_story_to_main(
 async def _trigger_merge_task(story_id: str, project_id: str, branch_name: str, worktree_path: str | None, main_workspace: str):
     """Background task: Trigger Developer agent to merge branch."""
     try:
-        from app.agents.core.router import route_story_event
+        from app.core.agent.router import route_story_event
         from app.kafka.event_schemas import AgentTaskType
         
         # Small delay to ensure DB commit is visible

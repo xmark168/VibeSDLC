@@ -3,7 +3,7 @@
 Re-exports from centralized llm_factory.
 Token tracking is automatic via LangChain callback in factory.
 """
-from app.agents.core.llm_factory import (
+from app.core.agent.llm_factory import (
     MODELS,
     STEP_CONFIG,
     MAX_RETRIES,

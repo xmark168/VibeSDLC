@@ -108,7 +108,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to ensure Kafka topics: {e}")
 
-    from app.agents.core.router import start_router_service, stop_router_service
+    from app.core.agent.router import start_router_service, stop_router_service
     try:
         await start_router_service()
     except Exception as e:
@@ -126,7 +126,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Failed to initialize agent pools: {e}")
 
-    from app.agents.core import get_agent_monitor
+    from app.core.agent import get_agent_monitor
     try:
         monitor = get_agent_monitor()
         await monitor.start(monitor_interval=30)

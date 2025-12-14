@@ -264,7 +264,7 @@ def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundl
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute implementation step with preloaded skills."""
     from langgraph.types import interrupt
-    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
     from app.agents.developer_v2.src.utils.story_logger import StoryLogger
     
     # Create story logger
@@ -473,7 +473,7 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
 async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute steps in parallel by layer."""
     from langgraph.types import interrupt
-    from app.agents.developer_v2.developer_v2 import check_interrupt_signal
+    from app.agents.developer_v2.src.utils.signal_utils import check_interrupt_signal
     from app.agents.developer_v2.src.utils.story_logger import StoryLogger
     
     # Create story logger
@@ -527,8 +527,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                 signal = check_interrupt_signal(story_id, agent)
                 if signal:
                     if signal == "cancel":
-                        # Cancel: raise exception to stop immediately
-                        from app.agents.developer_v2.developer_v2 import StoryStoppedException
+                        from app.agents.developer_v2.src.exceptions import StoryStoppedException
                         from app.models.base import StoryAgentState
                         raise StoryStoppedException(
                             story_id,
@@ -618,9 +617,8 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "current_layer": total_layers, "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:
-        # Re-raise GraphInterrupt and StoryStoppedException - expected for pause/cancel
         from langgraph.errors import GraphInterrupt
-        from app.agents.developer_v2.developer_v2 import StoryStoppedException
+        from app.agents.developer_v2.src.exceptions import StoryStoppedException
         if isinstance(e, (GraphInterrupt, StoryStoppedException)):
             raise
         await story_logger.error(f"Parallel implementation failed: {str(e)}", exc=e)

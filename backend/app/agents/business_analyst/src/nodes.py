@@ -9,7 +9,7 @@ from langchain_core.language_models import BaseChatModel
 from sqlmodel import Session, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.agents.core.llm_factory import get_llm, create_llm, MODELS
+from app.core.agent.llm_factory import get_llm, create_llm, MODELS
 
 from .state import BAState
 from .schemas import (
@@ -26,7 +26,7 @@ from .schemas import (
     SingleStoryEditOutput,
     FeatureClarityOutput,
 )
-from app.agents.core.prompt_utils import (
+from app.core.agent.prompt_utils import (
     load_prompts_yaml,
     extract_agent_personality,
 )
