@@ -334,13 +334,6 @@ export function useChatWebSocket(
       
       setTypingAgents(prev => {
         const updated = new Map(prev)
-        // Clear existing typing indicators for this agent first (prevent duplicates)
-        // for (const [id, state] of prev) {
-        //   if (state.agent_name === msg.agent_name) {
-        //     updated.delete(id)
-        //   }
-        // }
-        // Add new typing indicator
         updated.set(msg.id, typingState)
         return updated
       })

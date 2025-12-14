@@ -133,7 +133,6 @@ def login_access_token(
 
 
 @router.post("/login")
-# @limiter.limit("5/minute")  # Temporarily disabled for debugging
 def login(
     request: Request, response: Response, login_data: LoginRequest, session: SessionDep
 ):
@@ -280,11 +279,6 @@ def register(
     """
     Register API - create new account with credential
     """
-    # Debug: Log received data
-    logger.info(
-        f"Register request received: email={register_data.email}, full_name={register_data.full_name}, has_password={bool(register_data.password)}, has_confirm_password={bool(register_data.confirm_password)}"
-    )
-
     # Validation
     if not validate_email(str(register_data.email)):
         raise HTTPException(

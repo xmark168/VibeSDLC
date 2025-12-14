@@ -517,8 +517,6 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
     from langgraph.types import interrupt
     from app.agents.tester.src.graph import check_interrupt_signal
     
-    print("[NODE] plan_tests")
-    
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")
     if story_id:

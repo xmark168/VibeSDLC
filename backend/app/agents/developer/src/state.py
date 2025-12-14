@@ -59,7 +59,6 @@ class DeveloperState(TypedDict, total=False):
     dev_server_port: Optional[int]
     dev_server_pid: Optional[int]
 
-    # Debug
     debug_count: int
     debug_history: Optional[List[Dict[str, Any]]]
     error_analysis: Optional[Dict[str, Any]]
