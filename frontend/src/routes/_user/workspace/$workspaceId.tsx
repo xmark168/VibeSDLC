@@ -2,6 +2,9 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useRef, useState, useCallback } from "react"
 import { ChatPanelWS } from "@/components/chat/chat-panel-ws"
 import { WorkspacePanel } from "@/components/chat/workspace-panel"
+import { AgentPopup } from "@/components/agents/agent-popup"
+import { useProjectAgents } from "@/queries/agents"
+import type { AgentPublic } from "@/client/types.gen"
 import { requireRole } from "@/utils/auth"
 
 export const Route = createFileRoute("/_user/workspace/$workspaceId")({
@@ -28,6 +31,14 @@ function WorkspacePage() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   // Callback to insert @mention in chat
   const insertMentionRef = useRef<((agentName: string) => void) | null>(null)
+  // Agent popup state
+  const [selectedAgent, setSelectedAgent] = useState<AgentPublic | null>(null)
+  const [agentDetailOpen, setAgentDetailOpen] = useState(false)
+
+  // Fetch project agents for popup
+  const { data: projectAgents } = useProjectAgents(workspaceId || "", {
+    enabled: !!workspaceId,
+  })
 
   const handleOpenArtifact = (artifactId: string) => {
     setSelectedArtifactId(artifactId)
@@ -47,6 +58,19 @@ function WorkspacePage() {
     // Insert @mention via the ref callback
     if (insertMentionRef.current) {
       insertMentionRef.current(agentName)
+    }
+  }
+
+  const handleAgentClick = (agentName: string) => {
+    // Find agent by name from projectAgents
+    const agentsList: AgentPublic[] = Array.isArray(projectAgents) 
+      ? projectAgents 
+      : (projectAgents?.data || [])
+    
+    const agent = agentsList.find(a => a.human_name === agentName || a.name === agentName)
+    if (agent) {
+      setSelectedAgent(agent)
+      setAgentDetailOpen(true)
     }
   }
 
@@ -85,6 +109,7 @@ function WorkspacePage() {
               onInsertMentionReady={(fn) => {
                 insertMentionRef.current = fn
               }}
+              onAgentClick={handleAgentClick}
             />
           </div>
 
@@ -103,6 +128,14 @@ function WorkspacePage() {
             />
           </div>
         </div>
+
+        {/* Agent Popup - shared between chat and workspace */}
+        <AgentPopup
+          agent={selectedAgent}
+          open={agentDetailOpen}
+          onOpenChange={setAgentDetailOpen}
+          onMessage={handleMessageAgent}
+        />
       </div>
   )
 }

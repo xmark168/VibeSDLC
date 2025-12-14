@@ -119,7 +119,7 @@ async def _create_topics_background(admin_config: dict, missing_topics: Set[str]
                         failed += 1
             
             if failed == 0:
-                logger.info(f"✅ Background topic creation complete ({created} topics)")
+                logger.info(f"Background topic creation complete ({created} topics)")
                 return
             else:
                 logger.warning(f"⚠️ {failed} topics failed, {created} created")
@@ -129,7 +129,7 @@ async def _create_topics_background(admin_config: dict, missing_topics: Set[str]
             if attempt < max_attempts - 1:
                 await asyncio.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
     
-    logger.error("❌ Background topic creation failed after all retries")
+    logger.error("Background topic creation failed after all retries")
 
 
 async def ensure_kafka_topics() -> bool:
@@ -161,7 +161,7 @@ async def ensure_kafka_topics() -> bool:
         missing_topics = required_topics - existing_topics
         
         if not missing_topics:
-            logger.info("✅ All Kafka topics already exist")
+            logger.info("All Kafka topics already exist")
             return True
         
         # Create missing topics in background (non-blocking)

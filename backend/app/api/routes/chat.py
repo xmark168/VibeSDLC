@@ -48,7 +48,7 @@ async def websocket_endpoint(
     try:
         # IMPORTANT: Accept WebSocket connection FIRST
         await websocket.accept()
-        logger.info(f"✅ WebSocket connection accepted for project {project_id}")
+        logger.info(f"WebSocket connection accepted for project {project_id}")
 
         # Then authenticate user
         from app.core.db import engine
@@ -161,9 +161,9 @@ async def websocket_endpoint(
                                 
                                 try:
                                     db_session.commit()
-                                    logger.info(f"✅ Message committed to DB")
+                                    logger.info(f"Message committed to DB")
                                 except Exception as commit_error:
-                                    logger.error(f"❌ DB commit failed: {commit_error}", exc_info=True)
+                                    logger.error(f"DB commit failed: {commit_error}", exc_info=True)
                                     db_session.rollback()
                                     await websocket.send_json({
                                         "type": "error",
@@ -177,14 +177,14 @@ async def websocket_endpoint(
                                 # Verify message was actually saved
                                 verify_message = db_session.get(MessageModel, message_id)
                                 if not verify_message:
-                                    logger.error(f"❌ Message {message_id} not found after commit!")
+                                    logger.error(f"Message {message_id} not found after commit!")
                                     raise Exception("Message verification failed")
                                 
-                                logger.info(f"✅ Message saved & verified: {message_id} (user={user.id}, content_len={len(content)})" +
+                                logger.info(f"Message saved & verified: {message_id} (user={user.id}, content_len={len(content)})" +
                                           (f" targeting agent {agent_name} ({agent_id})" if agent_id else ""))
 
                         except Exception as db_error:
-                            logger.error(f"❌ Database error while saving message: {db_error}", exc_info=True)
+                            logger.error(f"Database error while saving message: {db_error}", exc_info=True)
                             await websocket.send_json({
                                 "type": "error",
                                 "message": "Database error occurred"
@@ -193,7 +193,7 @@ async def websocket_endpoint(
 
                         # Only proceed if message was saved successfully
                         if not message_id or not db_message:
-                            logger.error("❌ Message ID is None after DB operation")
+                            logger.error("Message ID is None after DB operation")
                             continue
 
                         # Publish to Kafka for agent processing

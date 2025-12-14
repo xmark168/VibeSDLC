@@ -613,7 +613,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         if all_errors:
             await story_logger.message(f"⚠️ Implemented {len(all_modified)} files with {len(all_errors)} errors")
         else:
-            await story_logger.message(f"✅ Implemented {len(all_modified)} files successfully")
+            await story_logger.message(f"Implemented {len(all_modified)} files successfully")
         
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "current_layer": total_layers, "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:

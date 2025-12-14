@@ -601,7 +601,7 @@ async def analyze_document_content(document_text: str, agent=None) -> dict:
 
 # Fallback messages for document analysis feedback
 _DOC_FALLBACK_MESSAGES = {
-    "complete_requirements": "✅ Tài liệu đầy đủ thông tin! Mình sẽ tạo PRD trực tiếp từ nội dung này.",
+    "complete_requirements": "Tài liệu đầy đủ thông tin! Mình sẽ tạo PRD trực tiếp từ nội dung này.",
     "partial_requirements": "📝 Đã trích xuất một số thông tin từ tài liệu. Mình cần hỏi thêm vài câu để làm rõ.",
     "not_requirements": "📄 Đây không phải tài liệu yêu cầu dự án. Bạn muốn mình làm gì với nội dung này?",
 }
@@ -1425,7 +1425,7 @@ async def extract_stories(state: BAState, agent=None) -> dict:
         
         # Use hardcoded messages (LLM-generated templates were unreliable - often mentioned "Phase 2" incorrectly)
         message = f"🎉 Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé! 📋"
-        approval_message = f"✅ Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+        approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
         
         logger.info(f"[BA] Stories message: {message[:50]}...")
         
@@ -1494,7 +1494,7 @@ async def _extract_stories_single_call(state: BAState, agent, prd: dict) -> dict
     
     # Use hardcoded messages (LLM templates unreliable)
     message = f"🎉 Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé! 📋"
-    approval_message = f"✅ Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+    approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
     
     return {
         "epics": epics,
@@ -1759,7 +1759,7 @@ async def update_stories(state: BAState, agent=None) -> dict:
     # If we reach here, user has confirmed they want to proceed
     # Use hardcoded messages (LLM templates unreliable)
     message = f"✏️ Đã cập nhật xong! Hiện có {total_stories} Stories trong {total_epics} Epics. Bạn xem qua và bấm 'Phê duyệt Stories' nhé! 📋"
-    approval_message = f"✅ Đã cập nhật và lưu {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+    approval_message = f"Đã cập nhật và lưu {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
     
     return {
         "epics": final_epics,
@@ -1928,7 +1928,7 @@ async def edit_single_story(state: BAState, agent=None) -> dict:
             "stories": stories,
             "change_summary": change_summary,
             "stories_message": message,
-            "stories_approval_message": f"✅ Đã xóa story khỏi backlog!"
+            "stories_approval_message": f"Đã xóa story khỏi backlog!"
         }
     else:
         # UPDATE story (keep it, just modify)
@@ -1944,7 +1944,7 @@ async def edit_single_story(state: BAState, agent=None) -> dict:
                     break
         
         change_summary = result.get("change_summary", "Đã cập nhật story")
-        message = result.get("message", f"✅ Đã cập nhật story '{updated_story.get('title', '')[:50]}...'")
+        message = result.get("message", f"Đã cập nhật story '{updated_story.get('title', '')[:50]}...'")
         
         logger.info(f"[BA] Single story edit complete: {change_summary}")
         
@@ -1953,7 +1953,7 @@ async def edit_single_story(state: BAState, agent=None) -> dict:
             "stories": stories,
             "change_summary": change_summary,
             "stories_message": message,
-            "stories_approval_message": f"✅ Đã lưu thay đổi cho story!"
+            "stories_approval_message": f"Đã lưu thay đổi cho story!"
         }
 
 
@@ -2063,8 +2063,8 @@ async def _apply_edit_to_story(state: BAState, agent, epics: list, stories: list
         "epics": epics,
         "stories": stories,
         "change_summary": result.get("change_summary", "Đã cập nhật"),
-        "stories_message": result.get("message", "✅ Đã cập nhật story!"),
-        "stories_approval_message": "✅ Đã lưu thay đổi!"
+        "stories_message": result.get("message", "Đã cập nhật story!"),
+        "stories_approval_message": "Đã lưu thay đổi!"
     }
 
 
@@ -2316,10 +2316,10 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         
         if actions:
             # Show only what changed
-            approval_msg = f"✅ Đã cập nhật backlog! {', '.join(actions)}. 🎉"
+            approval_msg = f"Đã cập nhật backlog! {', '.join(actions)}. 🎉"
         else:
             # Nothing changed
-            approval_msg = "✅ Backlog đã được đồng bộ! 🎉"
+            approval_msg = "Backlog đã được đồng bộ! 🎉"
         
         return {
             "stories_approved": True,

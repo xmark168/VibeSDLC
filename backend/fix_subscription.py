@@ -92,4 +92,4 @@ def fix_subscriptions():
 
 if __name__ == "__main__":
     fix_subscriptions()
-    print("\n✅ Done! All users now have active subscriptions.")
+    print("\nDone! All users now have active subscriptions.")

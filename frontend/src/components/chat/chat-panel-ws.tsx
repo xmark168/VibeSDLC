@@ -44,8 +44,7 @@ import { AgentHandoffNotification } from "./AgentHandoffNotification";
 import { ArtifactCard } from "./ArtifactCard";
 import { StoriesCreatedCard } from "./StoriesCreatedCard";
 import { StorySuggestionsCard } from "./StorySuggestionsCard";
-import { PrdCreatedCard } from "./PrdCreatedCard";
-import { StoriesFileCard } from "./StoriesFileCard";
+import { ApprovalCard } from "./ApprovalCard";
 import { useProjectAgents } from "@/queries/agents";
 import { PromptInput, PromptInputButton, PromptInputSubmit, PromptInputTextarea, PromptInputToolbar, PromptInputTools } from "../ui/shadcn-io/ai/prompt-input";
 import { MentionDropdown, type Agent } from "../ui/mention-dropdown";
@@ -63,6 +62,7 @@ interface ChatPanelProps {
   onOpenArtifact?: (artifactId: string) => void;
   onOpenFile?: (filePath: string) => void;
   onInsertMentionReady?: (fn: (agentName: string) => void) => void; // Callback to insert @mention
+  onAgentClick?: (agentName: string) => void; // Callback when agent avatar is clicked
 }
 
 export function ChatPanelWS({
@@ -76,6 +76,7 @@ export function ChatPanelWS({
   onOpenArtifact,
   onOpenFile,
   onInsertMentionReady,
+  onAgentClick,
 }: ChatPanelProps) {
   const [message, setMessage] = useState("");
   const [showMentions, setShowMentions] = useState(false);
@@ -84,6 +85,7 @@ export function ChatPanelWS({
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null);
+  const [pendingApprovalCard, setPendingApprovalCard] = useState<Message | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [activeBatchQuestion, setActiveBatchQuestion] = useState<Message | null>(null);
   const [batchQuestionInputs, setBatchQuestionInputs] = useState<Map<string, string>>(new Map());
@@ -330,12 +332,12 @@ export function ChatPanelWS({
     // Look for user messages after this card
     const messagesAfterCard = uniqueMessages.slice(cardMsgIndex + 1)
     const keywords = cardType === 'prd' 
-      ? ['Approve PRD', 'Edit PRD']
+      ? ['Approve this PRD', 'Approve PRD', 'Edit PRD']
       : ['Approve Stories', 'Edit Stories']
     
     return messagesAfterCard.some(m => 
       m.author_type === AuthorType.USER && 
-      keywords.some(kw => m.content?.includes(kw))
+      keywords.some(kw => m.content?.toLowerCase().includes(kw.toLowerCase()))
     )
   }
 
@@ -360,6 +362,31 @@ export function ChatPanelWS({
         element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       }, 100)
     }
+  }, [uniqueMessages])
+
+  // Detect pending PRD/Stories approval cards
+  useEffect(() => {
+    // Find unanswered PRD cards (not yet submitted by user)
+    const unansweredPrd = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'prd_created' && 
+             msg.structured_data?.file_path &&
+             !isCardSubmitted(msg.id, 'prd')
+    )
+    
+    // Find unanswered Stories cards (not yet submitted by user)
+    const unansweredStories = uniqueMessages.filter(
+      msg => msg.structured_data?.message_type === 'stories_created' && 
+             msg.structured_data?.file_path &&
+             !isCardSubmitted(msg.id, 'stories')
+    )
+    
+    // Combine and get latest
+    const allPendingCards = [...unansweredPrd, ...unansweredStories]
+    const latestPendingCard = allPendingCards.sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0]
+
+    setPendingApprovalCard(latestPendingCard || null)
   }, [uniqueMessages])
 
   // Detect active batch question (unanswered)
@@ -492,8 +519,9 @@ export function ChatPanelWS({
 
   // Determine if chat should be blocked
   // Block chat when agent is typing, but ALLOW typing when batch question is active (for custom answers)
+  // Also block when there's a pending approval card (PRD/Stories awaiting approval)
   const isAgentTyping = typingAgents.size > 0
-  const shouldBlockChat = isAgentTyping && !activeBatchQuestion
+  const shouldBlockChat = (isAgentTyping && !activeBatchQuestion) || (!!pendingApprovalCard && !pendingQuestion)
 
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
@@ -671,6 +699,17 @@ export function ChatPanelWS({
       }
     }
     return null;
+  };
+
+  // Helper to get agent status by name
+  const getAgentStatus = (agentName: string): string => {
+    if (agentsList.length > 0) {
+      const agent = agentsList.find(a => a.human_name === agentName || a.name === agentName);
+      if (agent) {
+        return agent.status || 'idle';
+      }
+    }
+    return 'idle';
   };
 
   const getAgentAvatar = (msg: Message) => {
@@ -940,10 +979,21 @@ export function ChatPanelWS({
 
           // Agent Question Handling
           if (msg.message_type === 'agent_question') {
+            const agentStatus = msg.agent_name ? getAgentStatus(msg.agent_name) : 'idle';
             return (
-              <div key={msg.id} id={`question-${msg.id}`} className="flex gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted">
-                  ❓
+              <div key={msg.id} id={`question-${msg.id}`} className="flex items-start gap-3">
+                <div 
+                  className="relative flex-shrink-0 cursor-pointer"
+                  onClick={() => msg.author_type === AuthorType.AGENT && msg.agent_name && onAgentClick?.(msg.agent_name)}
+                >
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg bg-muted overflow-hidden hover:ring-2 hover:ring-primary/50 transition-all">
+                    {getAgentAvatar(msg)}
+                  </div>
+                  {msg.author_type === AuthorType.AGENT && (
+                    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${
+                      agentStatus === 'busy' ? 'bg-yellow-500' : agentStatus === 'error' ? 'bg-red-500' : 'bg-green-500'
+                    }`} />
+                  )}
                 </div>
                 <div className="flex-1">
                   <div className="text-xs font-medium text-muted-foreground mb-2">
@@ -978,11 +1028,22 @@ export function ChatPanelWS({
             const isActiveBatch = activeBatchQuestion?.id === msg.id;
             const batchId = msg.structured_data?.batch_id || '';
             const isAnswered = msg.structured_data?.answered || answeredBatchIds.has(batchId);
+            const agentStatus = msg.agent_name ? getAgentStatus(msg.agent_name) : 'idle';
 
             return (
-              <div key={msg.id} id={`batch-${msg.id}`} className="flex gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted overflow-hidden">
-                  {getAgentAvatar(msg)}
+              <div key={msg.id} id={`batch-${msg.id}`} className="flex items-start gap-3">
+                <div 
+                  className="relative flex-shrink-0 cursor-pointer"
+                  onClick={() => msg.author_type === AuthorType.AGENT && msg.agent_name && onAgentClick?.(msg.agent_name)}
+                >
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg bg-muted overflow-hidden hover:ring-2 hover:ring-primary/50 transition-all">
+                    {getAgentAvatar(msg)}
+                  </div>
+                  {msg.author_type === AuthorType.AGENT && (
+                    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${
+                      agentStatus === 'busy' ? 'bg-yellow-500' : agentStatus === 'error' ? 'bg-red-500' : 'bg-green-500'
+                    }`} />
+                  )}
                 </div>
                 <div className="flex-1">
                   <div className="text-xs font-medium text-muted-foreground mb-2">
@@ -992,7 +1053,7 @@ export function ChatPanelWS({
                   {!isAnswered ? (
                     <div className="rounded-lg px-3 py-2 bg-muted w-fit">
                       <div className="text-sm leading-loose text-foreground">
-                        ❓ Đang hỏi {msg.structured_data?.questions?.length || 0} câu hỏi
+                        Đang hỏi {msg.structured_data?.questions?.length || 0} câu hỏi
                       </div>
                     </div>
                   ) : (
@@ -1012,10 +1073,21 @@ export function ChatPanelWS({
             );
           }
 
+          const agentStatus = msg.agent_name ? getAgentStatus(msg.agent_name) : 'idle';
           return (
-            <div key={msg.id} className="flex gap-3">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-lg bg-muted overflow-hidden">
-                {getAgentAvatar(msg)}
+            <div key={msg.id} id={`message-${msg.id}`} className="flex items-start gap-3">
+              <div 
+                className={`relative flex-shrink-0 ${msg.author_type === AuthorType.AGENT ? 'cursor-pointer' : ''}`}
+                onClick={() => msg.author_type === AuthorType.AGENT && msg.agent_name && onAgentClick?.(msg.agent_name)}
+              >
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-lg bg-muted overflow-hidden ${msg.author_type === AuthorType.AGENT ? 'hover:ring-2 hover:ring-primary/50 transition-all' : ''}`}>
+                  {getAgentAvatar(msg)}
+                </div>
+                {msg.author_type === AuthorType.AGENT && (
+                  <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${
+                    agentStatus === 'busy' ? 'bg-yellow-500' : agentStatus === 'error' ? 'bg-red-500' : 'bg-green-500'
+                  }`} />
+                )}
               </div>
 
               <div className="flex-1 space-y-2">
@@ -1084,9 +1156,9 @@ export function ChatPanelWS({
                   
                   {/* Show PRD created card if structured_data has message_type prd_created */}
                   {msg.structured_data?.message_type === 'prd_created' && msg.structured_data?.file_path && (
-                    <PrdCreatedCard
+                    <ApprovalCard
+                      type="prd"
                       title={msg.structured_data.title || 'PRD'}
-                      filePath={msg.structured_data.file_path}
                       status={msg.structured_data.status || 'pending'}
                       showActions={msg.id === latestPrdMessageId}
                       submitted={msg.structured_data.submitted === true || isCardSubmitted(msg.id, 'prd')}
@@ -1109,8 +1181,8 @@ export function ChatPanelWS({
                   
                   {/* Show stories file card if structured_data has message_type stories_created */}
                   {msg.structured_data?.message_type === 'stories_created' && msg.structured_data?.file_path && (
-                    <StoriesFileCard
-                      filePath={msg.structured_data.file_path}
+                    <ApprovalCard
+                      type="stories"
                       status={msg.structured_data.status || 'pending'}
                       showActions={msg.id === latestStoriesMessageId}
                       submitted={msg.structured_data.submitted === true || isCardSubmitted(msg.id, 'stories')}
@@ -1229,56 +1301,55 @@ export function ChatPanelWS({
       </div>
 
       {/* Chat Input Area - fixed at bottom */}
-      <div className={`mx-4 mb-4 rounded-2xl flex-shrink-0 ${pendingQuestion || activeBatchQuestion ? 'border bg-blue-300/20 border-blue-500/20' : ''}`}>
-        {/* Question Notification Banner */}
-        {pendingQuestion && (
-          <div className="px-4 py-3 rounded-t-2xl">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">❓</span>
-                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                    {pendingQuestion.agent_name || 'Agent'} is waiting for your answer
+      <div className={`mx-4 mb-4 rounded-2xl flex-shrink-0 ${pendingQuestion || activeBatchQuestion || pendingApprovalCard ? 'border bg-blue-300/20 border-blue-500/20' : ''}`}>
+        {/* Pending Notification Banner - for questions or approval cards */}
+        {(pendingQuestion || pendingApprovalCard) && (() => {
+          const targetMsg = pendingQuestion || pendingApprovalCard
+          if (!targetMsg) return null
+          
+          const isPrdCard = !pendingQuestion && pendingApprovalCard?.structured_data?.message_type === 'prd_created'
+          const isStoriesCard = !pendingQuestion && pendingApprovalCard?.structured_data?.message_type === 'stories_created'
+          const elementId = pendingQuestion 
+            ? `question-${targetMsg.id}` 
+            : `message-${targetMsg.id}`
+          
+          const description = pendingQuestion 
+            ? targetMsg.content
+            : isPrdCard
+              ? `Bạn đã có PRD '${pendingApprovalCard?.structured_data?.title || 'PRD'}' - Vui lòng Approve hoặc Edit`
+              : `Bạn đã có Stories - Vui lòng Approve hoặc Edit`
+
+          const scrollToElement = () => {
+            const container = messagesContainerRef.current
+            if (!container) return
+            container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+          }
+
+          return (
+            <div className="px-4 py-3 rounded-t-2xl">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                      {targetMsg.agent_name || 'Agent'} is waiting for your answer
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
+                    {description}
                   </p>
                 </div>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
-                  {pendingQuestion.content}
-                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={scrollToElement}
+                  className="text-xs text-blue-600 border-blue-300 hover:bg-blue-100 h-7 px-3"
+                >
+                  View Question
+                </Button>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const element = document.getElementById(`question-${pendingQuestion.id}`)
-                  const container = messagesContainerRef.current
-                  if (!element || !container) return
-
-                  const elementRect = element.getBoundingClientRect()
-                  const containerRect = container.getBoundingClientRect()
-                  const targetScrollTop = container.scrollTop + (elementRect.top - containerRect.top) - (containerRect.height / 2 - elementRect.height / 2)
-
-                  // Smooth scroll animation
-                  const start = container.scrollTop
-                  const distance = targetScrollTop - start
-                  const duration = 400
-                  let startTime: number | null = null
-
-                  const animate = (time: number) => {
-                    if (!startTime) startTime = time
-                    const progress = Math.min((time - startTime) / duration, 1)
-                    const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2
-                    container.scrollTop = start + distance * ease
-                    if (progress < 1) requestAnimationFrame(animate)
-                  }
-                  requestAnimationFrame(animate)
-                }}
-                className="text-xs text-blue-600 border-blue-300 hover:bg-blue-100 h-7 px-3"
-              >
-                View Question
-              </Button>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Batch Question Display - shown above chat input */}
         {activeBatchQuestion && (
@@ -1394,7 +1465,9 @@ export function ChatPanelWS({
                 ? "Add description for file..."
                 : activeBatchQuestion
                   ? "Hoặc gõ câu trả lời khác tại đây..."
-                  : "Type your message..."
+                  : pendingApprovalCard
+                    ? "Vui lòng Approve hoặc Edit trước khi tiếp tục..."
+                    : "Type your message..."
             }
           />
           <PromptInputToolbar>

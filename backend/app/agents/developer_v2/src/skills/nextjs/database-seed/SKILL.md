@@ -5,17 +5,17 @@ description: Create idempotent Prisma seed scripts. CRITICAL - Must use upsert f
 
 ## 🚨🚨🚨 ABSOLUTE RULES - VIOLATION CAUSES SEED FAILURE 🚨🚨🚨
 
-### ❌ FORBIDDEN: createMany/createManyAndReturn on @unique fields
+### FORBIDDEN: createMany/createManyAndReturn on @unique fields
 ```typescript
-// ❌ WILL FAIL with "Unique constraint failed" on re-run
+// WILL FAIL with "Unique constraint failed" on re-run
 await prisma.category.createManyAndReturn({ data: [...] })
 await prisma.author.createMany({ data: [...] })
 await prisma.user.createMany({ data: [...] })
 ```
 
-### ✅ REQUIRED: ALWAYS use upsert for ANY table with @unique
+###  REQUIRED: ALWAYS use upsert for ANY table with @unique
 ```typescript
-// ✅ CORRECT - Safe to run multiple times
+//  CORRECT - Safe to run multiple times
 const items = await Promise.all(
   uniqueValues.map((value) =>
     prisma.model.upsert({
@@ -68,7 +68,7 @@ async function main() {
       })
     )
   );
-  console.log(`✅ Upserted ${categories.length} categories`);
+  console.log(` Upserted ${categories.length} categories`);
 
   // Authors (email is @unique)
   const authorData = [
@@ -85,7 +85,7 @@ async function main() {
       })
     )
   );
-  console.log(`✅ Upserted ${authors.length} authors`);
+  console.log(` Upserted ${authors.length} authors`);
 
   // ============================================================
   // STEP 2: Tables WITHOUT @unique → deleteMany + createMany
@@ -101,13 +101,13 @@ async function main() {
       authorId: faker.helpers.arrayElement(authors).id,
     })),
   });
-  console.log('✅ Created 5 books');
+  console.log(' Created 5 books');
 
   console.log('🌱 Seed completed!');
 }
 
 main()
-  .catch((e) => { console.error('❌ Seed failed:', e); process.exit(1); })
+  .catch((e) => { console.error('Seed failed:', e); process.exit(1); })
   .finally(() => prisma.$disconnect());
 ```
 
@@ -143,9 +143,9 @@ Does the table have @unique field?
 | Boolean | `faker.datatype.boolean()` |
 | Pick from array | `faker.helpers.arrayElement(array)` |
 
-## ❌ DEPRECATED (v8) → ✅ USE (v9+)
+## DEPRECATED (v8) →  USE (v9+)
 
-| ❌ Old | ✅ New |
+| Old |  New |
 |--------|--------|
 | `faker.name.fullName()` | `faker.person.fullName()` |
 | `faker.internet.userName()` | `faker.internet.username()` |

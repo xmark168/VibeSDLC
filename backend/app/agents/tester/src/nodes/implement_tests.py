@@ -290,10 +290,10 @@ def _write_file_direct(workspace_path: str, file_path: str, content: str) -> str
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content, encoding="utf-8")
         logger.info(f"[_write_file_direct] Written: {file_path}")
-        return f"✅ Created: {file_path}"
+        return f"Created: {file_path}"
     except Exception as e:
         logger.error(f"[_write_file_direct] Error writing {file_path}: {e}")
-        return f"❌ Error: {e}"
+        return f"Error: {e}"
 
 
 async def _invoke_with_retry(
