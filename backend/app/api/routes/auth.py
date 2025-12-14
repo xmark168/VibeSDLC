@@ -144,7 +144,7 @@ def login(
         if not login_data.email or not login_data.password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email và password không được để trống với credential login",
+                detail="Email and password are required for credential login",
             )
 
         # Find user with credential login
@@ -161,7 +161,7 @@ def login(
         if user.login_provider and not user.hashed_password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Tài khoản này được đăng ký thông qua {user.login_provider}. Vui lòng đăng nhập bằng {user.login_provider}.",
+                detail=f"This account was registered via {user.login_provider}. Please sign in with {user.login_provider}.",
             )
 
         # Verify password
@@ -175,7 +175,7 @@ def login(
         # if not login_data.email or not login_data.fullname or login_data.password is not None:
         #     raise HTTPException(
         #         status_code=status.HTTP_400_BAD_REQUEST,
-        #         detail="Email và fullname không được để trống, password phải null với provider login"
+        #         detail="Email and fullname are required, password must be null for provider login"
         #     )
 
         # Find or create user with provider login
@@ -202,12 +202,12 @@ def login(
     # Check account status
     if not user.is_active:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản đã bị vô hiệu hóa"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Account has been deactivated"
         )
 
     if user.is_locked:
         raise HTTPException(
-            status_code=status.HTTP_423_LOCKED, detail="Tài khoản đã bị khóa"
+            status_code=status.HTTP_423_LOCKED, detail="Account has been locked"
         )
 
     # Check if 2FA is enabled
@@ -276,19 +276,19 @@ def register(
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Họ tên không được rỗng và tối đa 50 ký tự",
+            detail="Full name is required and must not exceed 50 characters",
         )
 
     if not validate_password(register_data.password):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Mật khẩu phải có ít nhất 8 ký tự, chứa ít nhất 1 chữ cái và 1 chữ số",
+            detail="Password must be at least 8 characters and contain at least 1 letter and 1 number",
         )
 
     if register_data.password != register_data.confirm_password:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Mật khẩu xác nhận không khớp",
+            detail="Passwords do not match",
         )
 
     # Check if email already exists in the system (any provider)
@@ -299,12 +299,12 @@ def register(
         if existing_user.login_provider:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Email này đã được đăng ký thông qua {existing_user.login_provider}. Vui lòng đăng nhập bằng {existing_user.login_provider}."
+                detail=f"This email is already registered via {existing_user.login_provider}. Please sign in with {existing_user.login_provider}."
             )
         else:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Email này đã được đăng ký"
+                detail="This email is already registered"
             )
 
     # Generate verification code
@@ -358,7 +358,7 @@ def register(
         )
 
     return RegisterResponse(
-        message="Mã xác thực đã được gửi đến email của bạn",
+        message="Verification code has been sent to your email",
         email=register_data.email,
         expires_in=180,
     )
@@ -383,19 +383,19 @@ def confirm_code(
     if not registration_data and not verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Dữ liệu đăng ký đã hết hạn. Vui lòng đăng ký lại từ đầu",
+            detail="Registration data has expired. Please register again",
         )
 
     if not registration_data and verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Dữ liệu đăng ký đã hết hạn. Vui lòng đăng ký lại từ đầu",
+            detail="Registration data has expired. Please register again",
         )
 
     if registration_data and not verification_code:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Mã xác thực đã hết hạn. Vui lòng yêu cầu gửi lại mã",
+            detail="Verification code has expired. Please request a new code",
         )
 
     # Verify code - ensure both are strings for comparison
@@ -406,7 +406,7 @@ def confirm_code(
 
     if verification_code_str != confirm_code_str:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Mã xác thực không đúng"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code"
         )
 
     # Create user
@@ -452,7 +452,7 @@ def resend_code(
     if not registration_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dữ liệu đăng ký đã hết hạn. Vui lòng đăng ký lại từ đầu",
+            detail="Registration data has expired. Please register again",
         )
 
     # Generate new verification code
@@ -482,7 +482,7 @@ def resend_code(
         )
 
     return ResendCodeResponse(
-        message="Mã xác thực mới đã được gửi đến email của bạn",
+        message="New verification code has been sent to your email",
         email=resend_data.email,
         expires_in=180,
     )
@@ -506,7 +506,7 @@ def refresh_token(
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token không được cung cấp",
+            detail="Refresh token is required",
         )
 
     # Decode and validate refresh token
@@ -537,7 +537,7 @@ def refresh_token(
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token không hợp lệ hoặc đã hết hạn",
+            detail="Invalid or expired refresh token",
         )
 
     # Get user
@@ -557,13 +557,13 @@ def refresh_token(
     if not user.is_active:
         logger.warning(f"[REFRESH TOKEN] User account disabled: {user.email}")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản đã bị vô hiệu hóa"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Account has been deactivated"
         )
 
     if user.is_locked:
         logger.warning(f"[REFRESH TOKEN] User account locked: {user.email}")
         raise HTTPException(
-            status_code=status.HTTP_423_LOCKED, detail="Tài khoản đã bị khóa"
+            status_code=status.HTTP_423_LOCKED, detail="Account has been locked"
         )
 
     # Create new tokens
@@ -649,7 +649,7 @@ def forgot_password(
             )
 
     return ForgotPasswordResponse(
-        message="Link reset mật khẩu đã được gửi đến email của bạn",
+        message="Password reset link has been sent to your email",
         email=str(forgot_data.email),
         expires_in=900
     )
@@ -684,7 +684,7 @@ def reset_password(
     if not email:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token không hợp lệ hoặc đã hết hạn",
+            detail="Invalid or expired token",
         )
 
     # Find user by email
