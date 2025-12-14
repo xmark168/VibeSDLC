@@ -7,6 +7,7 @@ from uuid import UUID
 from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
 from app.core.agent.project_context import ProjectContext
 from app.core.agent.mixins import PausableAgentMixin, StoryStoppedException
+from app.core.agent.graph_helpers import get_or_create_thread_id
 from app.models import Agent as AgentModel
 from app.models.base import StoryAgentState
 from app.agents.developer.src import DeveloperGraph
@@ -279,12 +280,14 @@ class Developer(BaseAgent, PausableAgentMixin):
             self.clear_signal(story_id)
             logger.info(f"[{self.name}] Cleared signals for story {story_id}")
             
-            # Check if Langfuse is enabled before initializing
+            langfuse_handler = None
+            langfuse_span = None
+            langfuse_ctx = None
+            
             from app.core.config import settings
             if settings.LANGFUSE_ENABLED:
                 try:
                     from langfuse import get_client
-                    from langfuse.langchain import CallbackHandler
                     langfuse = get_client()
                     langfuse_ctx = langfuse.start_as_current_observation(
                         as_type="span",
@@ -302,9 +305,9 @@ class Developer(BaseAgent, PausableAgentMixin):
                         tags=["developer", self.role_type],
                         metadata={"agent": self.name, "task_id": str(task.task_id)}
                     )
-                    langfuse_handler = CallbackHandler()
+
                 except Exception as e:
-                    logger.debug(f"Langfuse setup: {e}")
+                    logger.debug(f"[{self.name}] Langfuse setup: {e}")
             
             # Initial state - workspace will be set up by setup_workspace node if needed
             # NOTE: Do NOT store non-serializable objects (langfuse_handler, skill_registry) 
@@ -399,38 +402,8 @@ class Developer(BaseAgent, PausableAgentMixin):
                 self._running_tasks[story_id] = current_task
             
             # Thread ID for checkpointing (enables pause/resume)
-            # Load from DB on resume, generate and save on fresh start
-            from uuid import UUID
-            from sqlmodel import Session
-            from app.core.db import engine
-            from app.models import Story
-
-            if is_resume:
-                # Load thread_id from database for resume
-                try:
-                    with Session(engine) as session:
-                        story = session.get(Story, UUID(story_id))
-                        if not story:
-                            raise ValueError(f"Story {story_id} not found")
-                        if not story.checkpoint_thread_id:
-                            raise ValueError(f"Cannot resume: no checkpoint_thread_id for story {story_id}")
-                        thread_id = story.checkpoint_thread_id
-                        logger.info(f"[{self.name}] Loaded checkpoint_thread_id from DB: {thread_id}")
-                except Exception as e:
-                    logger.error(f"[{self.name}] Failed to load checkpoint_thread_id: {e}")
-                    raise
-            else:
-                # Generate and persist thread_id for new story (unique per agent)
-                thread_id = f"{self.agent_id}_{story_id}"
-                try:
-                    with Session(engine) as session:
-                        story = session.get(Story, UUID(story_id))
-                        if story:
-                            story.checkpoint_thread_id = thread_id
-                            session.commit()
-                            logger.info(f"[{self.name}] Saved checkpoint_thread_id: {thread_id}")
-                except Exception as e:
-                    logger.error(f"[{self.name}] Failed to save checkpoint_thread_id: {e}")
+            # Use helper to get or create thread_id
+            thread_id = get_or_create_thread_id(story_id, self.agent_id, is_resume)
 
             config = {
                 "configurable": {"thread_id": thread_id},

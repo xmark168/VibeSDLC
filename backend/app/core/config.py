@@ -59,7 +59,7 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = "VibeSDLC"
     VERSION: str = "1.0.0"
-    DESCRIPTION: str = "VibeSDLC unified services"
+    DESCRIPTION: str = "VibeSDLC services"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: Literal["local", "development", "staging", "production", "test"] = (
         "local"
@@ -68,14 +68,13 @@ class Settings(BaseSettings):
 
     # SECURITY SETTINGS
     SECRET_KEY: str = Field(
-        default=...,  # Required - must be set in environment
-        description="Secret key for JWT encoding. Must be at least 32 characters."
+        default=..., 
+        description="Secret key"
     )
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # 7 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # day
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # day
 
-    # OAUTH SETTINGS
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     GITHUB_CLIENT_ID: str = ""

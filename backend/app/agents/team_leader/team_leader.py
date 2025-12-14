@@ -104,26 +104,20 @@ class TeamLeader(BaseAgent):
             # 1. Add user message to shared memory
             self.context.add_message("user", task.content)
             
-            # 2. Setup Langfuse tracing (1 trace for entire graph)
             langfuse_handler = None
-            langfuse_span = None
             langfuse_ctx = None
+            langfuse_span = None
             
-            # Check if Langfuse is enabled before initializing
             from app.core.config import settings
             if settings.LANGFUSE_ENABLED:
                 try:
                     from langfuse import get_client
-                    from langfuse.langchain import CallbackHandler
                     langfuse = get_client()
-                    # Create parent span for entire graph execution
                     langfuse_ctx = langfuse.start_as_current_observation(
                         as_type="span",
                         name="team_leader_graph"
                     )
-                    # Enter context and get span object
                     langfuse_span = langfuse_ctx.__enter__()
-                    # Update trace with metadata (on span, not context)
                     langfuse_span.update_trace(
                         user_id=str(task.user_id) if task.user_id else None,
                         session_id=str(self.project_id),
@@ -131,8 +125,7 @@ class TeamLeader(BaseAgent):
                         tags=["team_leader", self.role_type],
                         metadata={"agent": self.name, "task_id": str(task.task_id)}
                     )
-                    # Handler inherits trace context automatically
-                    langfuse_handler = CallbackHandler()
+
                 except Exception as e:
                     logger.debug(f"Langfuse setup: {e}")
             

@@ -10,6 +10,7 @@ from sqlmodel import Session
 
 from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
 from app.core.agent.mixins import PausableAgentMixin, StoryStoppedException
+from app.core.agent.graph_helpers import get_or_create_thread_id
 from app.agents.tester.src.graph import TesterGraph
 from app.core.db import engine
 from app.core.langfuse_client import flush_langfuse
@@ -108,32 +109,9 @@ class Tester(BaseAgent, PausableAgentMixin):
                 "base_branch": "main",
             }
             
-            from app.models import Story
-            
-            if is_resume:
-                try:
-                    with Session(engine) as session:
-                        story = session.get(Story, UUID(story_id))
-                        if not story:
-                            raise ValueError(f"Story {story_id} not found")
-                        if not story.checkpoint_thread_id:
-                            raise ValueError(f"Cannot resume: no checkpoint_thread_id for story {story_id}")
-                        thread_id = story.checkpoint_thread_id
-                        logger.info(f"[{self.name}] Loaded checkpoint_thread_id from DB: {thread_id}")
-                except Exception as e:
-                    logger.error(f"[{self.name}] Failed to load checkpoint_thread_id: {e}")
-                    raise
-            else:
-                thread_id = f"tester_{story_id}"
-                try:
-                    with Session(engine) as session:
-                        story = session.get(Story, UUID(story_id))
-                        if story:
-                            story.checkpoint_thread_id = thread_id
-                            session.commit()
-                            logger.info(f"[{self.name}] Saved checkpoint_thread_id: {thread_id}")
-                except Exception as e:
-                    logger.warning(f"[{self.name}] Failed to save checkpoint_thread_id: {e}")
+            # Thread ID for checkpointing (enables pause/resume)
+            # Use helper to get or create thread_id
+            thread_id = get_or_create_thread_id(story_id, self.agent_id, is_resume)
             
             config = {
                 "configurable": {"thread_id": thread_id},

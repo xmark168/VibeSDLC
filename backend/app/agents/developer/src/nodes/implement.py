@@ -472,7 +472,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                 signal = check_interrupt_signal(story_id, agent)
                 if signal:
                     if signal == "cancel":
-                        from app.agents.developer.src.exceptions import StoryStoppedException
+                        from app.core.agent.mixins import StoryStoppedException
                         from app.models.base import StoryAgentState
                         raise StoryStoppedException(
                             story_id,
@@ -563,7 +563,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "current_layer": total_layers, "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:
         from langgraph.errors import GraphInterrupt
-        from app.agents.developer.src.exceptions import StoryStoppedException
+        from app.core.agent.mixins import StoryStoppedException
         if isinstance(e, (GraphInterrupt, StoryStoppedException)):
             raise
         await story_logger.error(f"Parallel implementation failed: {str(e)}", exc=e)

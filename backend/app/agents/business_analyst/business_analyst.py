@@ -690,26 +690,18 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
             conversation_context = self.context.format_memory()
             logger.info(f"[{self.name}] Using local conversation context ({len(conversation_context)} chars)")
         
-        # Setup Langfuse tracing (1 trace for entire graph - same as Team Leader)
-        langfuse_handler = None
-        langfuse_span = None
         langfuse_ctx = None
         
-        # Check if Langfuse is enabled before initializing
         from app.core.config import settings
         if settings.LANGFUSE_ENABLED:
             try:
                 from langfuse import get_client
-                from langfuse.langchain import CallbackHandler
                 langfuse = get_client()
-                # Create parent span for entire graph execution
                 langfuse_ctx = langfuse.start_as_current_observation(
                     as_type="span",
                     name="business_analyst_graph"
                 )
-                # Enter context and get span object
                 langfuse_span = langfuse_ctx.__enter__()
-                # Update trace with metadata
                 langfuse_span.update_trace(
                     user_id=str(task.user_id) if task.user_id else None,
                     session_id=str(self.project_id),
@@ -717,8 +709,7 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
                     tags=["business_analyst", self.role_type],
                     metadata={"agent": self.name, "task_id": str(task.task_id)}
                 )
-                # Handler inherits trace context automatically
-                langfuse_handler = CallbackHandler()
+
             except Exception as e:
                 logger.debug(f"[{self.name}] Langfuse setup: {e}")
         
