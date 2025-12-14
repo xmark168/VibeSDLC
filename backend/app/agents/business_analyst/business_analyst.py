@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlmodel import Session, select
 from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
 from app.core.agent.project_context import ProjectContext
+from app.core.agent.mixins import PausableAgentMixin
 from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
@@ -34,7 +35,7 @@ class TaskStoppedException(Exception):
         super().__init__(self.message)
 
 
-class BusinessAnalyst(BaseAgent):
+class BusinessAnalyst(BaseAgent, PausableAgentMixin):
     """
     Business Analyst using LangGraph for workflow management.
     """
@@ -60,10 +61,8 @@ class BusinessAnalyst(BaseAgent):
         # Pass self to graph for Langfuse callback access
         self.graph_engine = BusinessAnalystGraph(agent=self)
         
-        # Pause/Resume/Cancel tracking (Dev V2 pattern)
-        self._running_tasks: Dict[str, asyncio.Task] = {}
-        self._paused_tasks: Set[str] = set()
-        self._cancelled_tasks: Set[str] = set()
+        # Initialize PausableAgentMixin (provides pause/resume/cancel functionality)
+        self.init_pausable_mixin()
         
         logger.info(f"[{self.name}] LangGraph initialized successfully")
     
