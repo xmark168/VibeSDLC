@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Menu, X, User, LogOut, LayoutDashboard, ChevronDown, CreditCard, Sun, Moon, Monitor } from "lucide-react";
 import { useState } from "react";
 import { useAppStore } from "@/stores/auth-store";
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +27,14 @@ const navItems = [
   { title: "Testimonials", path: "#testimonials" },
 ];
 
-const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
+const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, path: string, currentPath: string) => {
+  // If not on landing page, navigate to landing page with hash
+  if (currentPath !== "/") {
+    window.location.href = `/${path}`;
+    return;
+  }
+
+  // On landing page, smooth scroll to section
   e.preventDefault();
   if (path === "#") {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -48,6 +55,7 @@ export const Header = () => {
   const { logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const { data: profile } = useProfile();
+  const location = useLocation();
 
   const DEFAULT_AVATAR = "https://github.com/shadcn.png";
   const avatarUrl = profile?.avatar_url 
@@ -98,7 +106,7 @@ export const Header = () => {
             <a
               key={item.path}
               href={item.path}
-              onClick={(e) => scrollToSection(e, item.path)}
+              onClick={(e) => scrollToSection(e, item.path, location.pathname)}
               className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
             >
               {item.title}
@@ -222,7 +230,7 @@ export const Header = () => {
                 key={item.path}
                 href={item.path}
                 onClick={(e) => {
-                  scrollToSection(e, item.path);
+                  scrollToSection(e, item.path, location.pathname);
                   setMobileMenuOpen(false);
                 }}
                 className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
