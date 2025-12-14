@@ -128,13 +128,14 @@ def create_sepay_credit_purchase(
 
     if not plan or not plan.additional_credit_price:
         raise HTTPException(status_code=400, detail="Credit purchase not available")
-
     # Calculate amount (price per 100 credits)
     credit_packs = request.credit_amount // 100
     if credit_packs < 1:
         raise HTTPException(status_code=400, detail="Minimum purchase is 100 credits")
 
-    amount = credit_packs * plan.additional_credit_price
+    credit_price = plan.additional_credit_price /100
+
+    amount = request.credit_amount * credit_price
 
     # Generate transaction code
     transaction_code = generate_transaction_code()
@@ -144,7 +145,7 @@ def create_sepay_credit_purchase(
         user_id=current_user.id,
         order_type=OrderType.CREDIT,
         credit_amount=request.credit_amount,
-        amount=request.credit_amount,
+        amount=amount,
         status=OrderStatus.PENDING,
         sepay_transaction_code=transaction_code,
     )
@@ -162,7 +163,7 @@ def create_sepay_credit_purchase(
         order_id=order.id,
         transaction_code=transaction_code,
         qr_url=qr_url,
-        amount=request.credit_amount,
+        amount=amount,
         description=f"Purchase {request.credit_amount} credits",
         expires_at=expires_at
     )
