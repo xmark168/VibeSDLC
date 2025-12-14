@@ -5,9 +5,11 @@ import logging
 import os
 import re
 import unicodedata
+from typing import List
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from app.agents.tester.src.state import TesterState
@@ -380,76 +382,6 @@ def _format_component_context(components: list[dict]) -> str:
     
     return "\n".join(lines)
 
-
-def _get_existing_routes(workspace_path: str) -> list[str]:
-    """Scan project for existing API routes."""
-    from pathlib import Path
-    
-    routes = []
-    path = Path(workspace_path)
-    
-    if not path.exists():
-        return routes
-    
-    # Check common API directories
-    api_dirs = [
-        path / "src" / "app" / "api",  # Next.js 13+ with src
-        path / "app" / "api",           # Next.js 13+ without src
-        path / "pages" / "api",         # Next.js pages router
-    ]
-    
-    for api_dir in api_dirs:
-        if api_dir.exists():
-            for route_file in api_dir.rglob("route.ts"):
-                if "node_modules" not in str(route_file):
-                    relative = route_file.relative_to(path)
-                    routes.append(str(relative).replace("\\", "/"))
-            
-            # Also check for pages API (older Next.js pattern)
-            for api_file in api_dir.rglob("*.ts"):
-                if "node_modules" not in str(api_file) and api_file.name != "route.ts":
-                    relative = api_file.relative_to(path)
-                    routes.append(str(relative).replace("\\", "/"))
-    
-    logger.info(f"[_get_existing_routes] Found {len(routes)} existing API routes")
-    return routes
-
-
-def _load_api_source_code(workspace_path: str, routes: list[str]) -> str:
-    """Load API source code for LLM analysis."""
-    from pathlib import Path
-    
-    if not workspace_path or not routes:
-        return "No API source code available."
-    
-    path = Path(workspace_path)
-    api_sources = []
-    
-    for route in routes[:10]:  # Limit to 10 routes to avoid token overflow
-        route_path = path / route
-        if route_path.exists():
-            try:
-                content = route_path.read_text(encoding="utf-8")
-                # Truncate long files
-                if len(content) > 2000:
-                    content = content[:2000] + "\n// ... (truncated)"
-                
-                # Extract route URL from path
-                # e.g., "src/app/api/categories/route.ts" -> "/api/categories"
-                route_url = route.replace("src/app", "").replace("app", "")
-                route_url = route_url.replace("/route.ts", "").replace("/route.tsx", "")
-                route_url = route_url.replace("\\", "/")
-                if not route_url.startswith("/"):
-                    route_url = "/" + route_url
-                
-                api_sources.append(f"### {route_url}\nFile: {route}\n```typescript\n{content}\n```")
-            except Exception as e:
-                logger.warning(f"[_load_api_source_code] Failed to load {route}: {e}")
-    
-    if not api_sources:
-        return "No API source code available."
-    
-    return "\n\n".join(api_sources)
 
 
 def _preload_test_dependencies(workspace_path: str, test_plan: list, stories: list = None) -> dict:
@@ -898,3 +830,14 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             "error": str(e),
             "message": error_msg,
         }
+
+
+def _get_existing_routes(workspace_path: str) -> List[str]:
+    """Get existing API routes from workspace using FileRepository."""
+    if not workspace_path:
+        return []
+    try:
+        file_repo = FileRepository(workspace_path)
+        return file_repo.api_routes
+    except Exception:
+        return []

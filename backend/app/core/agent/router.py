@@ -765,7 +765,8 @@ class StoryEventRouter(BaseEventRouter):
                     priority="high",
                     additional_context={
                         "story_id": event_dict.get("story_id"),
-                        "content": content
+                        "content": content,
+                        "execution_mode": "background",
                     }
                 )
 
@@ -805,7 +806,8 @@ class StoryEventRouter(BaseEventRouter):
                         "trigger_type": "status_review",
                         "story_ids": [str(story_id)],
                         "auto_generated": True,
-                        "content": f"Auto-generate integration tests for story '{story_title}'"
+                        "content": f"Auto-generate integration tests for story '{story_title}'",
+                        "execution_mode": "background",
                     }
                 )
 
@@ -893,7 +895,8 @@ class StoryEventRouter(BaseEventRouter):
                     additional_context={
                         "story_id": story_id,
                         "content": f"Resume paused story",
-                        "resume": True
+                        "resume": True,
+                        "execution_mode": "background",
                     }
                 )
                 self.logger.info(f"Resumed story task: {story_id}")

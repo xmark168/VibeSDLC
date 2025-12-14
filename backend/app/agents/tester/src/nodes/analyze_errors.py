@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
@@ -363,11 +364,16 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {}
 
 
+
+
+
 class FixStep(BaseModel):
     """Single fix step."""
     file_path: str = Field(description="Path to file to fix")
-    changes: str = Field(description="Specific changes to make")
-    reason: str = Field(description="Why this change is needed")
+    description: str = Field(default="Fix error", description="Description of the fix")
+    action: str = Field(default="modify", description="Action: create/modify/delete")
+    find_code: str = Field(default="", description="Code to find and replace")
+    replace_with: str = Field(default="", description="Replacement code")
 
 
 class ErrorAnalysisOutput(BaseModel):
@@ -594,8 +600,9 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
         logger.info(f"[analyze_errors] Added component source context ({len(component_source_context)} chars)")
     
     try:
-        # Call LLM to analyze errors
-        response = await _llm.ainvoke(
+        # Call LLM with structured output
+        structured_llm = _llm.with_structured_output(ErrorAnalysisOutput)
+        result = await structured_llm.ainvoke(
             [
                 SystemMessage(content=get_system_prompt("analyze_error")),
                 HumanMessage(content=get_user_prompt(
@@ -611,9 +618,9 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
             config=_cfg(state, f"analyze_errors_{debug_count + 1}"),
         )
         
-        result = _parse_json(response.content)
-        root_cause = result.get("root_cause", "Unknown error")
-        fix_steps = result.get("fix_steps", [])
+        root_cause = result.root_cause
+        error_code = result.error_code
+        fix_steps = [step.model_dump() for step in result.fix_steps]
         
         # Build new test_plan from fix_steps with sanitized file paths
         new_test_plan = []

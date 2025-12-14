@@ -590,15 +590,6 @@ class BusinessAnalyst(BaseAgent):
         document_is_comprehensive = False
         document_type = ""  # "complete_requirements" | "partial_requirements" | "not_requirements"
         
-        # Debug: Log task context
-        logger.info(f"[{self.name}] === TASK CONTEXT DEBUG ===")
-        logger.info(f"[{self.name}] task.context keys: {list(task.context.keys()) if task.context else 'None'}")
-        logger.info(f"[{self.name}] attachments count: {len(attachments)}")
-        if attachments:
-            for i, att in enumerate(attachments):
-                logger.info(f"[{self.name}] Attachment[{i}]: type={att.get('type')}, filename={att.get('filename')}, has_text={bool(att.get('extracted_text'))}, text_len={len(att.get('extracted_text', ''))}")
-        logger.info(f"[{self.name}] === END TASK CONTEXT DEBUG ===")
-        
         if attachments:
             logger.info(f"[{self.name}] Found {len(attachments)} attachment(s) in task")
             doc_texts = []

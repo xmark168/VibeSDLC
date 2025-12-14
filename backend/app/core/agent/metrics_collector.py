@@ -1,12 +1,5 @@
-"""Real-time metrics collection and streaming for agent system.
-
-Provides centralized metrics collection with buffering, batch persistence,
-and SSE broadcasting for real-time monitoring dashboards.
-
-Metrics types:
-- Execution metrics (duration, tokens, success/failure)
-- Pool metrics (utilization, agent counts)
-- SLA metrics (latency percentiles, violations)
+"""
+Real-time metrics collection and streaming.
 """
 
 import asyncio
@@ -88,12 +81,6 @@ class ExecutionMetrics:
 
 class MetricsCollector:
     """Real-time metrics collection with buffering and streaming.
-    
-    Features:
-    - Buffered metric collection to reduce DB writes
-    - Automatic flushing based on buffer size or time interval
-    - SSE broadcasting for real-time updates
-    - Aggregation support for histograms
     """
     
     def __init__(
