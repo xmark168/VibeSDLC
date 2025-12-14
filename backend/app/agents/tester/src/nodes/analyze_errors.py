@@ -1,4 +1,4 @@
-"""Analyze Errors node - Debug failing tests and create fix plan (aligned with Developer V2)."""
+"""Analyze Errors node - Debug failing tests and create fix plan."""
 
 import json
 import logging
@@ -8,10 +8,11 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.core_nodes import send_message, generate_user_message
+from app.agents.tester.src.nodes.core_nodes import send_message, generate_user_message
 from app.agents.tester.src.utils.token_utils import truncate_error_logs
 from app.agents.tester.src._llm import analyze_llm
 from app.agents.tester.src.config import MAX_DEBUG_ATTEMPTS
@@ -20,15 +21,8 @@ from app.agents.tester.src.nodes.plan_tests import _get_existing_routes
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# DEBUG SUMMARY (Developer V2 pattern)
-# =============================================================================
-
 def _build_debug_summary(state: Dict) -> str:
-    """Build summary of previous debug attempts (Developer V2 pattern).
-    
-    This helps LLM understand what was tried before and avoid repeating mistakes.
-    """
+    """Build summary of previous debug attempts to avoid repeating mistakes."""
     debug_count = state.get("debug_count", 0)
     review_count = state.get("review_count", 0)
     
@@ -72,10 +66,6 @@ def _build_debug_summary(state: Dict) -> str:
     
     return "\n".join(parts)
 
-
-# =============================================================================
-# COMPONENT SOURCE LOADING FOR UNIT TESTS
-# =============================================================================
 
 def _extract_component_imports(test_content: str) -> List[str]:
     """Extract component import paths from test file.
@@ -374,23 +364,23 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {}
 
 
-def _parse_json(content: str) -> dict:
-    """Parse JSON from LLM response."""
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError:
-        pass
-    
-    if "```json" in content:
-        content = content.split("```json")[1].split("```")[0]
-    elif "```" in content:
-        content = content.split("```")[1].split("```")[0]
-    
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError as e:
-        logger.warning(f"[_parse_json] Failed: {content[:300]}...")
-        raise e
+
+
+
+class FixStep(BaseModel):
+    """Single fix step."""
+    file_path: str = Field(description="Path to file to fix")
+    description: str = Field(default="Fix error", description="Description of the fix")
+    action: str = Field(default="modify", description="Action: create/modify/delete")
+    find_code: str = Field(default="", description="Code to find and replace")
+    replace_with: str = Field(default="", description="Replacement code")
+
+
+class ErrorAnalysisOutput(BaseModel):
+    """Structured output for error analysis."""
+    root_cause: str = Field(description="Root cause of the error")
+    error_code: str = Field(default="UNKNOWN", description="Error classification code")
+    fix_steps: List[FixStep] = Field(description="List of fix steps")
 
 
 def _is_test_file(file_path: str) -> bool:
@@ -610,8 +600,9 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
         logger.info(f"[analyze_errors] Added component source context ({len(component_source_context)} chars)")
     
     try:
-        # Call LLM to analyze errors
-        response = await _llm.ainvoke(
+        # Call LLM with structured output
+        structured_llm = _llm.with_structured_output(ErrorAnalysisOutput)
+        result = await structured_llm.ainvoke(
             [
                 SystemMessage(content=get_system_prompt("analyze_error")),
                 HumanMessage(content=get_user_prompt(
@@ -627,16 +618,13 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
             config=_cfg(state, f"analyze_errors_{debug_count + 1}"),
         )
         
-        result = _parse_json(response.content)
-        root_cause = result.get("root_cause", "Unknown error")
-        fix_steps = result.get("fix_steps", [])
+        root_cause = result.root_cause
+        error_code = result.error_code
+        fix_steps = [step.model_dump() for step in result.fix_steps]
         
         # Build new test_plan from fix_steps with sanitized file paths
         new_test_plan = []
         skipped_source_files = []
-        
-        # Extract error_code for better fix context
-        error_code = result.get("error_code", "UNKNOWN")
         
         for i, step in enumerate(fix_steps):
             raw_file_path = step.get("file_path", "")

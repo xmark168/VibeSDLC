@@ -2,9 +2,11 @@
 
 import logging
 from functools import partial
-from typing import Literal
+from typing import Literal, Optional
 
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from .state import BAState
 from .nodes import (
@@ -27,6 +29,50 @@ from .nodes import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Global PostgresSaver instance (shared across all BA agents)
+_postgres_checkpointer: Optional[AsyncPostgresSaver] = None
+_connection_pool = None
+
+
+async def get_postgres_checkpointer() -> AsyncPostgresSaver:
+    """Get or create a PostgresSaver checkpointer for persistent state."""
+    global _postgres_checkpointer, _connection_pool
+    
+    if _postgres_checkpointer is None:
+        try:
+            from app.core.config import settings
+            import psycopg_pool
+            
+            # Build connection string from settings
+            db_url = str(settings.DATABASE_URL)
+            if db_url.startswith("postgresql+psycopg"):
+                db_url = db_url.replace("postgresql+psycopg", "postgresql")
+            
+            logger.info(f"[BA Graph] Creating PostgresSaver with connection pool...")
+            
+            # Create connection pool
+            _connection_pool = psycopg_pool.AsyncConnectionPool(
+                conninfo=db_url,
+                max_size=5,
+                min_size=1,
+                open=False,
+            )
+            await _connection_pool.open()
+            
+            # Create checkpointer
+            _postgres_checkpointer = AsyncPostgresSaver(_connection_pool)
+            
+            # Setup tables if needed
+            await _postgres_checkpointer.setup()
+            
+            logger.info("[BA Graph] PostgresSaver initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"[BA Graph] Failed to create PostgresSaver: {e}, falling back to MemorySaver")
+            return None
+    
+    return _postgres_checkpointer
 
 
 def route_by_intent(state: BAState) -> Literal["conversational", "interview", "prd_create", "prd_update", "extract_stories", "stories_update", "story_edit_single", "stories_approve"]:
@@ -150,6 +196,32 @@ def batch_after_ask(state: BAState) -> Literal["wait", "generate_prd"]:
         return "generate_prd"
 
 
+def should_save_or_end(state: BAState) -> Literal["save", "end"]:
+    """Router: After update_stories, check if we should save or end.
+    
+    Logic:
+    - If found_existing_story=True → end (waiting for user decision)
+    - If needs_clarification=True → end (waiting for user clarification)
+    - Otherwise → save artifacts
+    """
+    found_existing = state.get("found_existing_story", False)
+    needs_clarification = state.get("needs_clarification", False)
+    awaiting_user = state.get("awaiting_user_decision", False)
+    
+    # DEBUG logging
+    logger.info(f"[BA Graph] should_save_or_end check: found_existing={found_existing}, needs_clarification={needs_clarification}, awaiting_user={awaiting_user}")
+    
+    if found_existing or awaiting_user:
+        logger.info("[BA Graph] Found existing story - ending flow (waiting for user)")
+        return "end"
+    elif needs_clarification:
+        logger.info("[BA Graph] Needs clarification - ending flow (waiting for user)")
+        return "end"
+    else:
+        logger.info("[BA Graph] Proceeding to save artifacts")
+        return "save"
+
+
 def should_research_or_generate(state: BAState) -> Literal["research", "generate"]:
     """Router: After processing answers, decide if we need more research or can generate PRD.
     
@@ -190,6 +262,8 @@ class BusinessAnalystGraph:
             agent: BusinessAnalyst agent instance (for Langfuse callback access)
         """
         self.agent = agent
+        self.checkpointer = None  # Will be set by setup()
+        self._setup_complete = False
         
         graph = StateGraph(BAState)
         
@@ -296,8 +370,15 @@ class BusinessAnalystGraph:
         # Story extraction -> save (called when user approves PRD)
         graph.add_edge("extract_stories", "save_artifacts")
         
-        # Story update -> save
-        graph.add_edge("update_stories", "save_artifacts")
+        # Story update -> conditional: check if we should save or end early
+        graph.add_conditional_edges(
+            "update_stories",
+            should_save_or_end,
+            {
+                "save": "save_artifacts",
+                "end": END  # End early if found duplicate or needs clarification
+            }
+        )
         
         # Single story edit -> save (fast targeted edit)
         graph.add_edge("edit_single_story", "save_artifacts")
@@ -305,8 +386,15 @@ class BusinessAnalystGraph:
         # Story approve -> save
         graph.add_edge("approve_stories", "save_artifacts")
         
-        # PRD update -> save (no story extraction needed)
-        graph.add_edge("update_prd", "save_artifacts")
+        # PRD update -> conditional: check if we should save or end early (for clarification)
+        graph.add_conditional_edges(
+            "update_prd",
+            should_save_or_end,
+            {
+                "save": "save_artifacts",
+                "end": END  # End early if needs clarification for new feature
+            }
+        )
         
         # Note: analyze_domain now loops back to ask_batch_questions (defined above)
         # Removed: graph.add_edge("analyze_domain", "save_artifacts")
@@ -314,16 +402,57 @@ class BusinessAnalystGraph:
         # Save -> END
         graph.add_edge("save_artifacts", END)
         
-        self.graph = graph.compile()
+        # Store uncompiled graph - will compile with checkpointer in setup()
+        self._graph_builder = graph
+        self.graph = None
         
-        logger.info("[BA Graph] Graph compiled and ready")
+        logger.info("[BA Graph] Graph builder ready, call setup() before execute()")
     
-    async def execute(self, initial_state: dict) -> dict:
-        """Execute graph with initial state."""
+    async def setup(self):
+        """Setup graph with PostgresSaver checkpointer for persistent state."""
+        if self._setup_complete:
+            return
+        
+        try:
+            # Try to get PostgresSaver
+            self.checkpointer = await get_postgres_checkpointer()
+            
+            if self.checkpointer:
+                # Compile with PostgresSaver for persistent checkpoints
+                self.graph = self._graph_builder.compile(checkpointer=self.checkpointer)
+                logger.info("[BA Graph] Compiled with PostgresSaver checkpointer")
+            else:
+                # Fallback to MemorySaver
+                self.checkpointer = MemorySaver()
+                self.graph = self._graph_builder.compile(checkpointer=self.checkpointer)
+                logger.warning("[BA Graph] Compiled with MemorySaver (no persistence)")
+            
+            self._setup_complete = True
+            
+        except Exception as e:
+            logger.error(f"[BA Graph] Setup failed: {e}, using MemorySaver")
+            self.checkpointer = MemorySaver()
+            self.graph = self._graph_builder.compile(checkpointer=self.checkpointer)
+            self._setup_complete = True
+    
+    async def execute(self, initial_state: dict, config: dict = None) -> dict:
+        """Execute graph with initial state.
+        
+        Args:
+            initial_state: Initial state dict
+            config: Optional config with thread_id for checkpointing
+        """
+        # Ensure setup is complete
+        if not self._setup_complete:
+            await self.setup()
+        
         logger.info(f"[BA Graph] Starting execution...")
         
         try:
-            result = await self.graph.ainvoke(initial_state)
+            if config:
+                result = await self.graph.ainvoke(initial_state, config)
+            else:
+                result = await self.graph.ainvoke(initial_state)
             
             logger.info(
                 f"[BA Graph] Execution complete: "
@@ -335,4 +464,32 @@ class BusinessAnalystGraph:
             
         except Exception as e:
             logger.error(f"[BA Graph] Execution failed: {e}", exc_info=True)
+            raise
+    
+    async def resume(self, config: dict) -> dict:
+        """Resume graph from checkpoint using Command(resume=True).
+        
+        Args:
+            config: Config with thread_id to identify checkpoint
+        """
+        if not self._setup_complete:
+            await self.setup()
+        
+        from langgraph.types import Command
+        
+        logger.info(f"[BA Graph] Resuming from checkpoint...")
+        
+        try:
+            result = await self.graph.ainvoke(Command(resume=True), config)
+            
+            logger.info(
+                f"[BA Graph] Resume complete: "
+                f"intent={result.get('intent')}, "
+                f"complete={result.get('is_complete', False)}"
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"[BA Graph] Resume failed: {e}", exc_info=True)
             raise

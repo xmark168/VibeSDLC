@@ -132,7 +132,7 @@ tasks:
       - Integration: `{feature}.test.ts` (e.g., `featured-books.test.ts`, `categories.test.ts`)
       - Unit: `{feature}.test.tsx` (e.g., `homepage.test.tsx`, `search.test.tsx`)
       
-      Output JSON (EXACTLY 2 items per story - 1 integration + 1 unit, MAX 3-4 scenarios each):
+      EXACTLY 2 items per story - 1 integration + 1 unit, MAX 3-4 scenarios each:
       {{
         "test_plan": [
           {{
@@ -203,13 +203,7 @@ tasks:
       <source_code>
       {source_code}
       </source_code>
-      
-      Output JSON:
-      {{
-        "file_path": "{file_path}",
-        "content": "// Complete test code",
-        "summary": "Brief description"
-      }}
+
 
   # ---------------------------------------------------------------------------
   # REVIEW - LGTM/LBTM code review
@@ -250,13 +244,6 @@ tasks:
       <scenarios>
       {scenarios}
       </scenarios>
-      
-      Output JSON:
-      {{
-        "decision": "LGTM" | "LBTM",
-        "feedback": "Brief explanation",
-        "issues": []
-      }}
 
   # ---------------------------------------------------------------------------
   # ANALYZE_ERROR - Debug failing tests
@@ -345,7 +332,7 @@ tasks:
       {debug_history}
       </previous_fixes>
       
-      Output JSON with SPECIFIC fix instructions:
+      SPECIFIC fix instructions:
       {{
         "root_cause": "brief description",
         "error_code": "CODE from tables above",
@@ -371,12 +358,6 @@ tasks:
 
     user_prompt: |
       User: "{user_message}"
-      
-      Output JSON:
-      {{
-        "action": "PLAN_TESTS" | "TEST_STATUS" | "CONVERSATION",
-        "reason": "brief"
-      }}
 
   # ---------------------------------------------------------------------------
   # CONVERSATION & TEST_STATUS

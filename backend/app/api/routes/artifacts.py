@@ -1,7 +1,5 @@
 """
 Artifact API endpoints.
-
-Provides REST API for managing agent-produced artifacts.
 """
 
 import logging

@@ -6,7 +6,6 @@ import type {
   FetchBacklogItemsParams,
   WIPLimit,
   UpdateWIPLimitParams,
-  FlowMetrics,
 } from '@/types'
 
 // Re-export types for convenience
@@ -16,7 +15,6 @@ export type {
   FetchBacklogItemsParams,
   WIPLimit,
   UpdateWIPLimitParams,
-  FlowMetrics,
 }
 
 export const backlogItemsApi = {
@@ -84,18 +82,7 @@ export const backlogItemsApi = {
   },
 
   /**
-   * Get flow metrics for a project
-   */
-  getFlowMetrics: async (projectId: string, days: number = 30): Promise<FlowMetrics> => {
-    return __request<FlowMetrics>(OpenAPI, {
-      method: 'GET',
-      url: `/api/v1/projects/${projectId}/flow-metrics`,
-      query: { days },
-    })
-  },
-
-  /**
-   * Validate if a story can be moved to target status (WIP + Policy check)
+   * Validate if a story can be moved to target status (WIP check)
    */
   validateStoryMove: async (
     projectId: string,
@@ -109,23 +96,5 @@ export const backlogItemsApi = {
     })
   },
 
-  /**
-   * Validate if a story move meets workflow policy criteria
-   */
-  validatePolicyMove: async (
-    projectId: string,
-    storyId: string,
-    fromStatus: string,
-    toStatus: string
-  ): Promise<{ allowed: boolean; violations: string[] }> => {
-    return __request<{ allowed: boolean; violations: string[] }>(OpenAPI, {
-      method: 'POST',
-      url: `/api/v1/projects/${projectId}/stories/${storyId}/validate-policy`,
-      query: {
-        from_status: fromStatus,
-        to_status: toStatus
-      },
-    })
-  },
 }
 

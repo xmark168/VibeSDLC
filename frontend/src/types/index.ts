@@ -53,7 +53,10 @@ export type {
   AutoScalingRuleCreate,
   AgentTemplate,
   AgentTemplateCreate,
-  AgentTemplateFromAgent
+  AgentTemplateFromAgent,
+  AgentTokenStats,
+  PoolTokenStats,
+  SystemTokenSummary
 } from './agent'
 
 // Backlog types
@@ -63,7 +66,6 @@ export type {
   FetchBacklogItemsParams,
   WIPLimit,
   UpdateWIPLimitParams,
-  FlowMetrics,
 } from './backlog'
 
 // Story types

@@ -1,6 +1,6 @@
 import type React from "react"
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
-import { Settings, Activity, TrendingUp, Search, Filter, X, Plus, BarChart3 } from "lucide-react"
+import { Search, Filter, X, Plus } from "lucide-react"
 import {
   DndContext,
   DragOverlay,
@@ -22,25 +22,13 @@ import {
   useSortable,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TaskDetailModal } from "./task-detail-modal"
-import { FlowMetricsDashboard } from "./flow-metrics-dashboard"
-import { PolicyValidationDialog, type PolicyViolation } from "./policy-validation-dialog"
-import { PolicySettingsDialog } from "./policy-settings-dialog"
-import { AgingItemsAlert } from "./aging-items-alert"
-import { BottleneckAlert } from "./bottleneck-alert"
-import { CumulativeFlowDiagram } from "./cumulative-flow-diagram"
 import { KanbanCard, type KanbanCardData } from "./kanban-card"
 import { CreateStoryDialog, type StoryFormData, type StoryEditData } from "./create-story-dialog"
 import { useKanbanBoard } from "@/queries/backlog-items"
-import { backlogItemsApi } from "@/apis/backlog-items"
 import { storiesApi } from "@/apis/stories"
 import { toast } from "@/lib/toast"
 import { useQueryClient } from "@tanstack/react-query"
@@ -87,7 +75,7 @@ function SortableCard({
   onCardEdit?: (card: KanbanCardData) => void
 }) {
   // Only allow drag when agent_state is null, finished, or canceled
-  const canDrag = !card.agent_state || card.agent_state === 'finished' || card.agent_state === 'canceled'
+  const canDrag = !card.agent_state || card.agent_state === 'FINISHED' || card.agent_state === 'CANCELED'
   
   const {
     attributes,
@@ -220,14 +208,11 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   const activeCardRef = useRef<KanbanCardData | null>(null) // Store active card on drag start to avoid recalc
   // Store target position for cross-container moves
   const crossContainerTarget = useRef<{ targetColumn: string; targetIndex: number; overId: string } | null>(null)
+  // Track last updated container to prevent redundant updates
+  const lastOverContainerRef = useRef<string | null>(null)
   const [selectedCard, setSelectedCard] = useState<KanbanCardData | null>(null)
-  const [showFlowMetrics, setShowFlowMetrics] = useState(false)
-  const [showPolicySettings, setShowPolicySettings] = useState(false)
-  const [showCFD, setShowCFD] = useState(false)
   const [showCreateStoryDialog, setShowCreateStoryDialog] = useState(false)
   const [editingStory, setEditingStory] = useState<StoryEditData | null>(null)
-  const [policyViolation, setPolicyViolation] = useState<PolicyViolation | null>(null)
-  const [flowMetrics, setFlowMetrics] = useState<any>(null)
   const [wipLimits, setWipLimits] = useState<Record<string, any>>({})
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
@@ -247,25 +232,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
-
-  // Load flow metrics - disabled auto-load, only load when user opens metrics dashboard
-  // useEffect(() => {
-  //   if (projectId) {
-  //     loadFlowMetrics()
-  //     const interval = setInterval(loadFlowMetrics, 5 * 60 * 1000)
-  //     return () => clearInterval(interval)
-  //   }
-  // }, [projectId])
-
-  const loadFlowMetrics = async () => {
-    if (!projectId) return
-    try {
-      const metrics = await backlogItemsApi.getFlowMetrics(projectId, 30)
-      setFlowMetrics(metrics)
-    } catch (error) {
-      console.error('Failed to load flow metrics:', error)
-    }
-  }
 
   // Load data from database
   useEffect(() => {
@@ -344,8 +310,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   // Listen for story state changes from WebSocket
   useEffect(() => {
     const handleStoryStateChanged = (event: CustomEvent) => {
-      const { story_id, agent_state, running_port, running_pid } = event.detail
-      console.log('[KanbanBoard] Story state changed event:', { story_id, agent_state, running_port, running_pid })
+      const { story_id, agent_state, sub_status, running_port, running_pid, pr_state, merge_status } = event.detail
+      console.log('[KanbanBoard] Story state changed event:', { story_id, agent_state, sub_status, running_port, running_pid, pr_state, merge_status })
       
       setCards(prev => {
         const updatedCards = prev.map(card => {
@@ -353,8 +319,14 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
           // Merge updates - only update fields that are explicitly provided
           const updated = { ...card }
           if (agent_state !== undefined) updated.agent_state = agent_state
+          // Update sub_status for PENDING state (queued/cleaning/starting)
+          if (sub_status !== undefined) updated.agent_sub_status = sub_status
+          // Clear sub_status when moving away from PENDING
+          if (agent_state && agent_state !== 'PENDING') updated.agent_sub_status = null
           if (running_port !== undefined) updated.running_port = running_port
           if (running_pid !== undefined) updated.running_pid = running_pid
+          if (pr_state !== undefined) updated.pr_state = pr_state
+          if (merge_status !== undefined) updated.merge_status = merge_status
           console.log('[KanbanBoard] Card updated:', { before: card, after: updated })
           return updated
         })
@@ -365,6 +337,32 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
     window.addEventListener('story-state-changed', handleStoryStateChanged as EventListener)
     return () => {
       window.removeEventListener('story-state-changed', handleStoryStateChanged as EventListener)
+    }
+  }, [])
+
+  // Listen for story status changes (e.g., moved to Done after merge)
+  useEffect(() => {
+    const handleStoryStatusChanged = (event: CustomEvent) => {
+      const { story_id, status, merge_status, pr_state } = event.detail
+      console.log('[KanbanBoard] Story status changed event:', { story_id, status, merge_status, pr_state })
+      
+      setCards(prev => {
+        const updatedCards = prev.map(card => {
+          if (card.id !== story_id) return card
+          const updated = { ...card }
+          if (status) updated.columnId = status.toLowerCase()
+          if (merge_status !== undefined) updated.merge_status = merge_status
+          if (pr_state !== undefined) updated.pr_state = pr_state
+          console.log('[KanbanBoard] Card status updated:', { before: card, after: updated })
+          return updated
+        })
+        return updatedCards
+      })
+    }
+    
+    window.addEventListener('story-status-changed', handleStoryStatusChanged as EventListener)
+    return () => {
+      window.removeEventListener('story-status-changed', handleStoryStatusChanged as EventListener)
     }
   }, [])
 
@@ -430,15 +428,16 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   }, [searchQuery, selectedFilters])
 
   // Find container for an item (official dnd-kit pattern)
+  // FIX: Use cardsRef instead of cards dependency to prevent infinite loop
   const findContainer = useCallback((id: string): string | undefined => {
     // Check if id is a column
     if (COLUMNS.some(col => col.id === id)) {
       return id
     }
-    // Find the column containing this card
-    const card = cards.find(c => c.id === id)
+    // Find the column containing this card using ref (avoids dependency on cards state)
+    const card = cardsRef.current.find(c => c.id === id)
     return card?.columnId
-  }, [cards])
+  }, [])
 
   // DnD Handlers (following official dnd-kit pattern)
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -448,6 +447,7 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
     clonedCardsRef.current = cards // Also save to ref for callbacks
     activeCardRef.current = cards.find(c => c.id === dragId) || null // Store active card to avoid recalc
     crossContainerTarget.current = null // Clear any stale target
+    lastOverContainerRef.current = null // Reset last container tracking
   }, [cards])
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
@@ -466,11 +466,24 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
     if (!isCrossContainerMove) {
       crossContainerTarget.current = null
+      lastOverContainerRef.current = null
       return
     }
 
     // Skip update if hovering over self (active card)
     if (overId === active.id) {
+      return
+    }
+
+    // FIX INFINITE LOOP: Skip update if we're still hovering over the same container
+    // This prevents redundant setCards calls when dragging within same target container
+    if (lastOverContainerRef.current === overContainer) {
+      // Just update target info without triggering state update
+      crossContainerTarget.current = {
+        targetColumn: overContainer,
+        targetIndex: 0,
+        overId: overId
+      }
       return
     }
 
@@ -481,10 +494,13 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       overId: overId
     }
 
-    // Update columnId to show placeholder in target column
-    // SortableContext will handle visual positioning automatically
+    // Mark this container as last updated
+    lastOverContainerRef.current = overContainer
+
+    // Only update state when container actually changes (not on every pixel movement)
     setCards(prevCards => {
       const card = prevCards.find(c => c.id === active.id)
+      // Skip update if card already in target container or not found
       if (!card || card.columnId === overContainer) return prevCards
 
       const newCards = prevCards.map(c => 
@@ -499,27 +515,28 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
-    // IMPORTANT: Use clonedCards to get original column, not current cards state
-    const originalColumnId = clonedCards?.find(c => c.id === active.id)?.columnId
+    // IMPORTANT: Use clonedCardsRef to get original column (avoid clonedCards state dependency)
+    const originalColumnId = clonedCardsRef.current?.find(c => c.id === active.id)?.columnId
     
     // Debug log
-    const draggedCard = clonedCards?.find(c => c.id === active.id)
+    const draggedCard = clonedCardsRef.current?.find(c => c.id === active.id)
     console.log('[Kanban] DragEnd:', {
       activeId: active.id,
       overId: over?.id,
       originalColumnId,
       draggedCardTitle: draggedCard?.content,
       draggedCardDeps: draggedCard?.dependencies,
-      clonedCardsExists: !!clonedCards,
+      clonedCardsExists: !!clonedCardsRef.current,
     })
-    // Save clonedCards for potential revert before resetting
-    const savedClonedCards = clonedCards
+    // Save clonedCards snapshot for potential revert before resetting refs
+    const savedClonedCards = clonedCardsRef.current
 
     // Always reset active state
     setActiveId(null)
     setClonedCards(null)
     clonedCardsRef.current = null
     activeCardRef.current = null
+    lastOverContainerRef.current = null
 
     if (!over) return
 
@@ -564,7 +581,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
     // Same container - handle reordering with arrayMove (official pattern)
     if (activeContainer === overContainer) {
-      const containerCards = cards
+      // Use cardsRef.current to get latest cards without triggering re-render
+      const containerCards = cardsRef.current
         .filter(c => c.columnId === activeContainer)
         .sort((a, b) => (a.rank || 999) - (b.rank || 999))
 
@@ -593,7 +611,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
             await storiesApi.bulkUpdateRanks(rankUpdates)
             toast.success("Order updated")
           } catch (error) {
-            console.error("Failed to update rank:", error)
             toast.error("Failed to update order")
           }
         }
@@ -603,7 +620,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       if (!originalColumnId) return
 
       // Get other cards in target container (excluding the moved card)
-      const otherCardsInTarget = cards
+      // Use cardsRef.current to avoid dependency on cards state
+      const otherCardsInTarget = cardsRef.current
         .filter(c => c.columnId === overContainer && c.id !== active.id)
         .sort((a, b) => (a.rank || 999) - (b.rank || 999))
 
@@ -623,8 +641,8 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
       // Build final ordered list: insert active card at newIndex
       const finalOrder = [...otherCardsInTarget]
-      // Use original card from clonedCards to get correct dependencies data
-      const activeCard = savedClonedCards?.find(c => c.id === active.id) || cards.find(c => c.id === active.id)
+      // Use original card from savedClonedCards to get correct dependencies data
+      const activeCard = savedClonedCards?.find(c => c.id === active.id) || cardsRef.current.find(c => c.id === active.id)
       if (activeCard) {
         finalOrder.splice(newIndex, 0, activeCard)
       }
@@ -715,19 +733,21 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
         }
       }
     }
-  }, [cards, clonedCards, findContainer, projectId, checkDependenciesCompleted])
+  }, [findContainer, projectId, checkDependenciesCompleted])
 
   // Handle drag cancel - restore original state
   const handleDragCancel = useCallback(() => {
-    if (clonedCards) {
-      setCards(clonedCards)
+    // Use ref instead of state to avoid dependency
+    if (clonedCardsRef.current) {
+      setCards(clonedCardsRef.current)
     }
     setActiveId(null)
     setClonedCards(null)
     clonedCardsRef.current = null
     activeCardRef.current = null
     crossContainerTarget.current = null
-  }, [clonedCards])
+    lastOverContainerRef.current = null
+  }, [])
 
   // Card handlers
   const handleDownloadResult = useCallback((card: KanbanCardData) => {
@@ -786,7 +806,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       }])
       toast.success("Story created successfully!")
     } catch (error) {
-      console.error("Error creating story:", error)
       toast.error("Failed to create story")
     } finally {
       toast.dismiss(toastId)
@@ -838,7 +857,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
         queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
       }
     } catch (error) {
-      console.error("Error updating story:", error)
       toast.error("Failed to update story")
     } finally {
       toast.dismiss(toastId)
@@ -851,7 +869,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       await storiesApi.delete(cardId)
       toast.success("Story deleted")
     } catch (error) {
-      console.error("Failed to delete story:", error)
       toast.error("Failed to delete story")
       if (projectId) {
         queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
@@ -920,7 +937,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       }
       await storiesApi.updateStatus(cardId, statusMap[targetColumnId] || 'Todo')
     } catch (error) {
-      console.error("Failed to move card:", error)
       setCards(prev => prev.map(c =>
         c.id === cardId ? { ...c, columnId: card.columnId } : c
       ))
@@ -965,25 +981,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
                   <Plus className="w-4 h-4" />
                   <span className="font-medium">Create Story</span>
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="gap-2 h-9 px-3.5 rounded-lg">
-                      <BarChart3 className="w-4 h-4" />
-                      <span className="font-medium">Analytics</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setShowCFD(true)}>
-                      <TrendingUp className="w-4 h-4 mr-2" /> CFD
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setShowFlowMetrics(true)}>
-                      <Activity className="w-4 h-4 mr-2" /> Metrics
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setShowPolicySettings(true)}>
-                      <Settings className="w-4 h-4 mr-2" /> WIP Limits
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
               </div>
             )}
           </div>
@@ -1053,20 +1050,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
         {/* Kanban Board with DnD */}
         <div ref={scrollContainerRef} className="flex-1 overflow-x-auto overflow-y-auto" style={{ scrollBehavior: "smooth" }}>
-          {projectId && flowMetrics && (
-            <div className="px-8 pt-4 space-y-3">
-              <AgingItemsAlert
-                projectId={projectId}
-                agingItems={flowMetrics.aging_items || []}
-                onCardClick={(itemId) => {
-                  const card = cards.find(c => c.taskId === itemId || c.id === itemId)
-                  if (card) setSelectedCard(card)
-                }}
-              />
-              <BottleneckAlert bottlenecks={flowMetrics.bottlenecks || {}} threshold={48} />
-            </div>
-          )}
-
           <DndContext
             sensors={sensors}
             collisionDetection={closestCorners}
@@ -1121,11 +1104,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
         allStories={cards}
         onViewFiles={onViewFiles}
       />
-
-      <FlowMetricsDashboard projectId={projectId} open={showFlowMetrics} onOpenChange={setShowFlowMetrics} />
-      <PolicyValidationDialog violation={policyViolation} cardTitle={activeCard?.content} open={!!policyViolation} onOpenChange={(open) => !open && setPolicyViolation(null)} />
-      <PolicySettingsDialog projectId={projectId} open={showPolicySettings} onOpenChange={setShowPolicySettings} />
-      <CumulativeFlowDiagram projectId={projectId} open={showCFD} onOpenChange={setShowCFD} />
 
       <CreateStoryDialog
         open={showCreateStoryDialog}

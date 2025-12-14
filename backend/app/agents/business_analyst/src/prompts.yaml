@@ -27,43 +27,94 @@ tasks:
       
       <role>Intent classifier for BA workflow</role>
       
+      <decision_framework>
+      CRITICAL: To classify intent correctly, you MUST analyze the existing context first:
+      
+      1. Check if user's request relates to EXISTING features/epics:
+         - If topic EXISTS in PRD/epics → this is REFINEMENT (prd_update or stories_update)
+         - If topic is COMPLETELY NEW → this is NEW REQUIREMENT (interview or prd_create)
+      
+      2. Determine scope level:
+         - HIGH-LEVEL (objectives, user types, major features) → prd_update
+         - IMPLEMENTATION (UI elements, sub-features, flow details) → stories_update
+         - SINGLE STORY (mentions specific story title/ID) → story_edit_single
+      
+      Example decision process:
+      - Existing context has "Homepage" epic → User: "thêm menu ở homepage"
+        → Topic EXISTS (homepage), Scope is IMPLEMENTATION (menu = UI element)
+        → Intent: stories_update
+      
+      - Existing context has NO "Chat" feature → User: "thêm chat realtime"
+        → Topic is NEW (chat not in PRD/epics), Major feature
+        → Intent: prd_update (if has PRD) or interview (if no PRD)
+      
+      - User: "sửa story EPIC-001-US-003 bỏ requirement animation"
+        → Mentions SPECIFIC story ID, SPECIFIC change
+        → Intent: story_edit_single
+      </decision_framework>
+      
       <intents>
       | Intent | When to use |
       |--------|-------------|
       | conversational | Greetings, thanks, casual chat NOT about product |
-      | interview | Vague request, missing details, need clarification |
+      | interview | Vague request, missing details, need clarification, NO existing PRD |
       | prd_create | User provides comprehensive requirements for NEW PRD |
-      | prd_update | User wants to modify EXISTING PRD |
+      | prd_update | Add MAJOR NEW FEATURE not in PRD, change objectives/users |
       | extract_stories | User wants stories from PRD (e.g., "tạo stories", "phê duyệt PRD") |
-      | story_edit_single | User wants to edit ONE SPECIFIC story (mentions story title/ID + specific change) |
-      | stories_update | User wants to modify MULTIPLE stories or add new stories |
+      | story_edit_single | Edit ONE SPECIFIC story (user mentions story title/ID + specific change) |
+      | stories_update | Refine/add details to EXISTING feature (UI elements, sub-features, flows) |
       | stories_approve | User approves stories for backlog |
       | domain_analysis | User wants business/domain analysis |
       </intents>
+      
+      <prd_update_vs_stories_update>
+      PRD_UPDATE (high-level changes):
+      - Add completely NEW major feature category NOT covered by existing PRD
+      - Change target users, business objectives, core metrics
+      - Example: "thêm tích hợp payment gateway" (if payment not in PRD at all)
+      
+      STORIES_UPDATE (implementation refinement):
+      - Add/modify UI elements to EXISTING pages (menu, button, section, filter, etc.)
+      - Add sub-features to EXISTING feature (e.g., add "sort by price" to existing "product list")
+      - Change flow/behavior of EXISTING feature
+      - Example: "thêm menu ở homepage" (homepage already exists, just refining it)
+      - Example: "thêm filter theo giá cho product page" (product page exists, adding filter)
+      </prd_update_vs_stories_update>
       
       <story_edit_single_detection>
       Use story_edit_single when user:
       - Mentions a SPECIFIC story by title (e.g., "sửa story 'As an administrator, I want to print...'")
       - Mentions a SPECIFIC story by ID (e.g., "sửa EPIC-007-US-004")
-      - Requests a SPECIFIC change (add/remove/change one item in requirements/acceptance_criteria)
+      - Requests a SPECIFIC change to ONE story (add/remove/change one item in requirements/acceptance_criteria)
       
       Examples:
       - "sửa story 'print delivery slips' bỏ requirement batch printing" → story_edit_single
       - "thêm acceptance criteria cho story EPIC-001-US-002" → story_edit_single
-      - "sửa tất cả stories về authentication" → stories_update (multiple)
-      - "thêm epic mới cho reports" → stories_update (adding new)
+      - "sửa tất cả stories về authentication" → stories_update (multiple stories)
+      - "thêm epic mới cho reports" → stories_update (adding new epic)
       </story_edit_single_detection>
       
       <rules>
-      - No collected_info yet → prefer "interview"
+      - No collected_info yet AND no PRD → prefer "interview"
       - Document uploaded + has PRD → default "prd_update" (unless user says "tạo mới")
       - Document uploaded + no PRD → "prd_create" or "interview"
       - "phê duyệt PRD", "PRD ok" → extract_stories
+      - ALWAYS check existing features/epics context before deciding between prd_update vs stories_update
       </rules>
 
     user_prompt: |
-      User: "{user_message}"
-      Context: PRD={has_prd}, Info={has_info}
+      User message: "{user_message}"
+      
+      Current context:
+      - Has PRD: {has_prd}
+      - Has collected info: {has_info}
+      
+      {existing_features_context}
+      
+      {existing_epics_context}
+      
+      Analyze the user message in the context of existing features/epics above.
+      Use the decision framework to determine the correct intent.
       
       Return JSON: {"intent": "...", "reasoning": "..."}
 
@@ -288,45 +339,59 @@ tasks:
       </scope_rules>
 
       <invest_critical>
-      MOST IMPORTANT: Stories must be SMALL (S in INVEST), BUT still Valuable.
-      - Each story = 1-5 story points.
-      - 1–3 points is preferred for most stories.
-      - If a story would require 8 or 13 points → SPLIT it into 2-3 smaller, focused stories.
-      - One story = ONE user capability or behavior, NOT a single UI element.
+      Balance SMALL with COHESIVE - avoid over-splitting!
+      - Each story = 2-5 story points (preferred range).
+      - 3-5 points is ideal for most stories - meaningful work that delivers real value.
+      - Only split if story would require 13+ points OR has completely separate user flows.
+      - One story = ONE cohesive user experience or page, NOT individual UI components.
+      - PREFER fewer, more complete stories over many micro-stories.
       </invest_critical>
 
       <story_size_guide>
-      1 POINT (2-4 hours):
-        - Very small but still valuable behavior, e.g. display a simple section with real data,
-          basic click behavior that navigates somewhere useful, or a minimal view with an existing API.
-        - NOT just: changing colors, adding a label, or pure cosmetic tweaks.
       2 POINTS (4-8 hours):
-        - Simple form, basic list view, single API-backed display, simple filter, or basic interaction.
+        - Simple page or component with basic functionality.
       3 POINTS (1-2 days):
-        - Form with validation, filtered list, simple CRUD for a single entity, or an enriched view.
-      5 POINTS (2-3 days, MAX):
-        - More complex user flow, e.g. search with filters, a small multi-step flow, or advanced validation.
-      TOO BIG - MUST SPLIT:
-        - "Display featured books AND categories AND banners" → split into 3 stories.
-        - "Complete checkout flow" → split into: Cart summary, Payment form, Order confirmation.
-        - "User authentication" → split into: Login, Register, Password reset.
+        - Complete page with multiple sections (e.g., Homepage with hero + products + categories).
+        - Form with validation, filtered list, or enriched view.
+      5 POINTS (2-3 days):
+        - Complex page or multi-step flow (e.g., checkout process, user registration with verification).
+      8 POINTS (3-5 days) - OK if cohesive:
+        - Large feature that forms ONE complete user journey. Only split if it has distinct sub-flows.
+      ONLY SPLIT when:
+        - Story has 13+ points (epic-level).
+        - Story covers DISTINCT user journeys that could be released separately.
+        - Different user roles with different needs (customer view vs admin manage).
+      DO NOT SPLIT:
+        - A single page into separate stories for each section (header, content, footer).
+        - Navigation into separate stories for desktop vs mobile.
+        - UI variations that are part of the same feature.
       </story_size_guide>
 
-      <splitting_examples>
-      BAD (too big):
-        "As a customer, I want to see featured books and categories on homepage"
-      GOOD (split into):
-        - "As a customer, I want to see a hero banner so that I notice current promotions"
-        - "As a customer, I want to see featured books so that I discover popular items"
-        - "As a customer, I want to see category navigation so that I browse by type"
-
-      BAD (too big):
-        "As a customer, I want to use the navigation menu"
-      GOOD (split into):
-        - "As a customer, I want to see the main navigation bar so that I access key sections"
-        - "As a customer, I want to see my cart icon with count so that I know items in cart"
-        - "As a customer, I want a mobile hamburger menu so that I navigate on small screens"
-      </splitting_examples>
+      <cohesive_story_examples>
+      GOOD - One cohesive story:
+        "As a customer, I want to view the homepage so that I can discover products and navigate the site"
+        → Includes: hero banner, featured products, categories, navigation, footer
+        → 5 points, released together, tested together
+      
+      GOOD - One cohesive story:
+        "As a customer, I want to use the navigation menu so that I can access all sections of the site"
+        → Includes: desktop nav, mobile hamburger, cart icon, responsive behavior
+        → 3 points, all navigation tested together
+      
+      BAD - Over-split (avoid this):
+        - "Story 1: Display hero banner"
+        - "Story 2: Display featured products"
+        - "Story 3: Display navigation bar"
+        - "Story 4: Display categories"
+        - "Story 5: Display footer"
+        → These are NOT independent stories - they're parts of ONE homepage!
+      
+      WHEN TO SPLIT:
+        "Complete checkout flow" → Split because distinct user journeys:
+        - "Add items to cart and view cart" (can release first)
+        - "Enter shipping and payment info" (requires cart)
+        - "Order confirmation and email" (requires payment)
+      </cohesive_story_examples>
 
       <demo_rule>
       - Each story should represent a thin vertical slice (from UI down to data) that can be demonstrated.
@@ -348,18 +413,18 @@ tasks:
       </story_structure>
 
       <rules>
-      1. Create 2-6 SMALL, INVEST-compliant stories per epic, depending on the actual PRD scope.
-      2. Each story = ONE focused user capability that delivers visible value.
-      3. If you think "this needs 8+ points or many ACs" → SPLIT it into 2-3 smaller stories.
-      4. Requirements MUST fit on a "sticky note": 3-5 concise bullet points.
-      5. Acceptance criteria MUST be testable, clear Given/When/Then scenarios (2-4 each).
-      6. A developer should be able to finish each story in 1-2 days maximum.
-      7. Do NOT generate micro-stories such as:
-        - "change button color",
-        - "add a single label",
-        - "adjust padding".
-        These are tasks, not user stories.
+      1. Create 1-4 COHESIVE stories per epic - fewer is better if they deliver complete value.
+      2. Each story = ONE complete user experience (page, feature, or flow), NOT individual components.
+      3. Only split if story has 13+ points OR covers distinct, independently releasable user journeys.
+      4. Requirements: 3-6 items describing complete functionality (can be more for larger stories).
+      5. Acceptance criteria: 3-6 Given/When/Then scenarios covering the full experience.
+      6. A developer should be able to finish each story in 1-5 days (3-8 points).
+      7. Do NOT generate micro-stories for:
+        - Individual page sections (hero, footer, sidebar)
+        - UI variations (desktop vs mobile)
+        - Single UI elements (one button, one link)
       8. Do NOT invent unrelated features just to reach a target number of stories.
+      9. PREFER one 5-point story over five 1-point stories - cohesion matters!
       </rules>
 
     user_prompt: |
@@ -372,10 +437,12 @@ tasks:
       PRD Features:
       {prd_features}
 
-      Generate 2-6 SMALL, INVEST-compliant user stories for this epic.
-      - Only use features that are clearly supported by the Epic and PRD Features.
-      - Prefer several small, focused stories over one large story.
-      - Do NOT invent unrelated features or cosmetic-only stories.
+      Generate 1-4 COHESIVE user stories for this epic.
+      - Each story = ONE complete page or feature (not individual sections).
+      - PREFER fewer stories with complete functionality over many micro-stories.
+      - Example: Homepage should be 1-2 stories, NOT 5 separate stories for hero/products/nav/footer.
+      - Only split when user journeys are truly independent and can be released separately.
+      - Do NOT invent unrelated features or split pages into separate section stories.
 
 
   # ---------------------------------------------------------------------------
@@ -417,11 +484,50 @@ tasks:
       
       <role>Story editor - modify existing epics/stories based on feedback</role>
       
+      <duplicate_detection>
+      CRITICAL: Before creating a NEW story, CHECK if an EXISTING story already covers the same functionality.
+      
+      A story is DUPLICATE if it has:
+      1. SAME user role (visitor, customer, admin, etc.)
+      2. SAME core goal/action (navigate, view menu, search, filter, etc.)
+      3. SAME UI component type (navigation bar, menu, search box, filter panel, etc.)
+      4. SAME page/location (homepage, product page, cart, etc.)
+      
+      Examples of DUPLICATES (DO NOT create new story):
+      - Existing: "As a visitor, I want to see navigation bar with links..."
+      - User asks: "add menu to homepage"
+      - Analysis: navigation bar = menu, both provide links, same page
+      - Action: UPDATE existing story (add new menu items to requirements), NOT create new story
+      
+      - Existing: "As a customer, I want to search by title..."
+      - User asks: "add search by author"
+      - Analysis: same search box, same page, just add search capability
+      - Action: UPDATE existing story (add "search by author" to requirements), NOT create new story
+      
+      Examples of NOT DUPLICATE (can create new story):
+      - Existing: "main navigation bar at top"
+      - User asks: "add footer links"
+      - Analysis: different location (top vs footer), different component
+      - Action: CREATE new story for footer
+      
+      - Existing: "visitor view menu"
+      - User asks: "admin manage menu items"
+      - Analysis: different user role, different action (view vs manage)
+      - Action: CREATE new story for admin
+      
+      When UPDATE vs CREATE:
+      - If functionality EXISTS in a story → UPDATE that story (add to requirements/AC)
+      - If functionality is NEW and different → CREATE new story
+      - When in doubt, prefer UPDATE to avoid duplicate stories
+      </duplicate_detection>
+      
       <rules>
-      1. Preserve existing IDs when possible
-      2. Add new stories with sequential IDs
-      3. Update dependencies when relationships change
-      4. Keep INVEST compliance
+      1. CHECK FOR DUPLICATES before creating new stories (see above)
+      2. Preserve existing IDs when possible
+      3. Add new stories with sequential IDs (only if truly NEW functionality)
+      4. Update dependencies when relationships change
+      5. Keep INVEST compliance
+      6. If updating existing story, keep its ID and merge new requirements
       </rules>
 
     user_prompt: |
@@ -429,6 +535,9 @@ tasks:
       
       Current epics:
       {epics}
+      
+      IMPORTANT: Before creating any new story, check if an existing story already covers this functionality.
+      If yes, UPDATE that story instead of creating a duplicate.
       
       Return: epics, change_summary, message_template, approval_template
 
@@ -687,3 +796,51 @@ tasks:
       4. Cân nhắc kỹ thuật
       5. Rủi ro và giải pháp
       6. Khuyến nghị
+
+  # ---------------------------------------------------------------------------
+  # CHECK FEATURE CLARITY - Determine if request is new feature or relates to existing
+  # ---------------------------------------------------------------------------
+  check_feature_clarity:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      <role>Feature clarity analyzer - determine if user request relates to existing features or is completely new</role>
+      
+      <decision_logic>
+      QUAN TRỌNG: Phân tích yêu cầu của user theo 3 trường hợp:
+      
+      CASE 1: is_new_feature = TRUE
+      - Yêu cầu là tính năng MỚI HOÀN TOÀN không liên quan đến bất kỳ feature/epic nào đã có
+      - Ví dụ: "thêm tính năng chat" + KHÔNG có feature/epic nào về chat
+      → Cần hỏi clarification về tính năng mới
+      
+      CASE 2: is_new_feature = FALSE, has_specific_change = TRUE
+      - Yêu cầu liên quan đến feature ĐÃ CÓ VÀ user chỉ rõ muốn thay đổi gì
+      - Ví dụ: "thêm filter giá cho trang sản phẩm" (có epic Product, chỉ rõ thêm filter giá)
+      - Ví dụ: "thêm nút sort theo ngày" (có trang, chỉ rõ thêm sort)
+      → Có thể tiếp tục xử lý
+      
+      CASE 3: is_new_feature = FALSE, has_specific_change = FALSE
+      - Yêu cầu liên quan đến feature ĐÃ CÓ NHƯNG không chỉ rõ muốn thay đổi gì
+      - Ví dụ: "thêm trang about" + ĐÃ CÓ epic/feature "Trang About"
+      - Ví dụ: "thêm homepage" + ĐÃ CÓ epic "Homepage"
+      → Cần hỏi user muốn bổ sung/thay đổi gì cụ thể
+      </decision_logic>
+      
+      <clarification_questions>
+      Tạo 2-4 câu hỏi clarification bằng tiếng Việt khi:
+      - is_new_feature = TRUE: hỏi về tính năng mới (dành cho ai, làm gì, chức năng gì)
+      - is_new_feature = FALSE và has_specific_change = FALSE: hỏi user muốn bổ sung/thay đổi gì cụ thể cho feature đã có
+      </clarification_questions>
+
+    user_prompt: |
+      User request: "{user_message}"
+      
+      Existing PRD features: {existing_features}
+      
+      Existing Epics: {existing_epics}
+      
+      Phân tích yêu cầu này:
+      1. Có phải tính năng mới hoàn toàn? (is_new_feature)
+      2. Nếu liên quan feature đã có, user có chỉ rõ muốn thay đổi gì không? (has_specific_change)
+      3. Tạo câu hỏi clarification nếu cần.

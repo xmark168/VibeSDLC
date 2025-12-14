@@ -27,7 +27,7 @@ class RoutingDecision(BaseModel):
     )
     is_update_request: bool = Field(
         default=False,
-        description="True if user explicitly wants to UPDATE/EDIT/MODIFY existing stories/PRD (e.g., 'sửa story X', 'thêm feature Y', 'bỏ requirement Z'). False for vague/new project requests."
+        description="True if user wants to work on EXISTING project (UPDATE/ADD/EDIT/REMOVE - e.g., 'sửa story X', 'thêm feature Y', 'thêm trang about', 'thêm tính năng X', 'bổ sung Y', 'cần thêm Z', 'bỏ requirement W'). False ONLY for completely NEW project request when NO project exists or DIFFERENT domain (e.g., 'tôi muốn làm website bán hàng' as first request, or switching from 'website bán sách' to 'app quản lý công việc')."
     )
 
 
@@ -40,3 +40,14 @@ class ExtractedPreferences(BaseModel):
     tech_stack: Optional[List[str]] = None
     communication_style: Optional[Literal["formal", "casual"]] = None
     additional: Optional[Dict[str, Any]] = Field(default=None, description="Other detected preferences")
+
+
+class ConfirmationAction(BaseModel):
+    """User's choice for project confirmation."""
+    action: Literal["view", "update", "replace", "keep"] = Field(
+        description="view=xem PRD hiện tại, update=thêm feature, replace=thay thế project cũ, keep=giữ nguyên"
+    )
+    confidence: float = Field(
+        default=0.8,
+        description="Confidence level 0.0-1.0"
+    )

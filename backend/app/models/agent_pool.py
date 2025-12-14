@@ -20,6 +20,7 @@ class AgentPool(BaseModel, table=True):
     role_type: str | None = Field(default=None, index=True)
     
     pool_type: PoolType = Field(default=PoolType.FREE, index=True)
+    priority: int = Field(default=0, index=True)  # Lower number = higher priority
     
     max_agents: int = Field(default=100)
     health_check_interval: int = Field(default=60)

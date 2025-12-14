@@ -1,209 +1,226 @@
-"""
-WebSocket Connection Manager
+"""WebSocket Connection Manager for real-time project communication.
 
-Manages WebSocket connections for real-time communication.
-Messages are saved to DB, so frontend can query missed messages on reconnect.
+Manages WebSocket connections per project room, handling:
+- Connection lifecycle (connect/disconnect)
+- Message broadcasting to project rooms
+- Database status synchronization
+- Graceful cleanup of stale connections
 """
 
-from typing import Dict, List, Set
-from uuid import UUID
-from fastapi import WebSocket
-from datetime import datetime, timezone
+import asyncio
 import logging
+from datetime import datetime, timezone
+from typing import Any
+from uuid import UUID
 
+from fastapi import WebSocket
+from starlette.websockets import WebSocketState
 
 logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
-    """Manages WebSocket connections for projects."""
+    """Thread-safe WebSocket connection manager for project rooms.
+    
+    Each project has its own "room" where multiple clients can connect.
+    Messages are broadcast to all clients in the same project room.
+    """
+
+    __slots__ = ('_connections', '_socket_to_project')
 
     def __init__(self):
-        # project_id -> set of WebSocket connections
-        self.active_connections: Dict[UUID, Set[WebSocket]] = {}
-        # websocket -> project_id mapping for cleanup
-        self.websocket_to_project: Dict[WebSocket, UUID] = {}
+        self._connections: dict[UUID, set[WebSocket]] = {}
+        self._socket_to_project: dict[WebSocket, UUID] = {}
 
-    async def connect(self, websocket: WebSocket, project_id: UUID):
-        """
-        Connect a WebSocket to a project room.
+    # =========================================================================
+    # Connection Lifecycle
+    # =========================================================================
+
+    async def connect(self, websocket: WebSocket, project_id: UUID) -> None:
+        """Register a WebSocket connection to a project room."""
+        if project_id not in self._connections:
+            self._connections[project_id] = set()
+
+        self._connections[project_id].add(websocket)
+        self._socket_to_project[websocket] = project_id
+
+        asyncio.create_task(self._update_project_status(project_id, connected=True))
         
-        Frontend should query DB for missed messages on reconnect.
-        """
-        if project_id not in self.active_connections:
-            self.active_connections[project_id] = set()
+        logger.info(
+            f"WebSocket connected to project {project_id} "
+            f"(total: {len(self._connections[project_id])})"
+        )
 
-        self.active_connections[project_id].add(websocket)
-        self.websocket_to_project[websocket] = project_id
-
-        # Update database: Mark project as having active WebSocket
-        await self._update_websocket_status(project_id, connected=True)
-
-        logger.info(f"WebSocket connected to project {project_id}.")
-
-    def disconnect(self, websocket: WebSocket):
-        """Disconnect a WebSocket"""
-        if websocket not in self.websocket_to_project:
+    def disconnect(self, websocket: WebSocket) -> None:
+        """Remove a WebSocket connection and cleanup if room is empty."""
+        project_id = self._socket_to_project.pop(websocket, None)
+        if project_id is None:
             return
 
-        project_id = self.websocket_to_project[websocket]
-
-        if project_id in self.active_connections:
-            self.active_connections[project_id].discard(websocket)
-
-            if not self.active_connections[project_id]:
-                del self.active_connections[project_id]
-                logger.info(f"Project {project_id} room closed (no active connections)")
-                
-                # Update database: Mark project as disconnected (async task)
-                import asyncio
-                try:
-                    loop = asyncio.get_event_loop()
-                    loop.create_task(self._update_websocket_status(project_id, connected=False))
-                    # Clear conversation context immediately on disconnect
-                    loop.create_task(self._clear_conversation_context(project_id))
-                except RuntimeError:
-                    # If no event loop, skip DB update (will timeout naturally)
-                    logger.debug("No event loop available for DB update on disconnect")
-
-        # Remove from mapping
-        del self.websocket_to_project[websocket]
-
-        logger.info(f"WebSocket disconnected from project {project_id}.")
-
-    async def send_personal_message(self, message: dict, websocket: WebSocket):
-        """Send a message to a specific WebSocket"""
-        try:
-            # Check if WebSocket is still open before sending
-            if websocket.client_state.name != "CONNECTED":
-                logger.debug(f"WebSocket not connected (state: {websocket.client_state.name}), skipping send")
-                self.disconnect(websocket)
-                return
+        connections = self._connections.get(project_id)
+        if connections:
+            connections.discard(websocket)
             
-            await websocket.send_json(message)
-        except Exception as e:
-            logger.warning(f"Error sending personal message (will cleanup): {e}")
+            if not connections:
+                del self._connections[project_id]
+                logger.info(f"Project {project_id} room closed (no connections)")
+                self._schedule_disconnect_tasks(project_id)
+            else:
+                logger.debug(
+                    f"WebSocket disconnected from project {project_id} "
+                    f"(remaining: {len(connections)})"
+                )
+
+    def _schedule_disconnect_tasks(self, project_id: UUID) -> None:
+        """Schedule background tasks for disconnect cleanup."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._update_project_status(project_id, connected=False))
+            loop.create_task(self._clear_active_agent(project_id))
+        except RuntimeError:
+            logger.debug("No event loop for disconnect cleanup")
+
+    # =========================================================================
+    # Message Sending
+    # =========================================================================
+
+    async def send_personal_message(self, message: dict[str, Any], websocket: WebSocket) -> bool:
+        """Send a message to a specific WebSocket."""
+        if not self._is_connected(websocket):
             self.disconnect(websocket)
+            return False
 
-    async def broadcast_to_project(self, message: dict, project_id: UUID):
-        """
-        Broadcast a message to all active connections in a project.
-        
-        If no active connections, message is skipped (saved in DB already).
-        Frontend will query DB for missed messages on reconnect.
-        """
-        # Skip if no active connections - message already in DB
-        if project_id not in self.active_connections or not self.active_connections[project_id]:
-            logger.debug(
-                f"No active connections for project {project_id}, "
-                f"skipping broadcast (message in DB)"
-            )
-            return
+        try:
+            await websocket.send_json(message)
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to send personal message: {e}")
+            self.disconnect(websocket)
+            return False
 
-        # Create snapshot of connections to avoid modification during iteration
-        connections_snapshot = list(self.active_connections[project_id])
-        
-        # Broadcast to all active connections
-        disconnected = []
+    async def broadcast_to_project(
+        self,
+        message: dict[str, Any],
+        project_id: UUID
+    ) -> int:
+        """
+        Broadcast a message to all connections in a project room.
+        """
+        connections = self._connections.get(project_id)
+        if not connections:
+            logger.debug(f"No connections for project {project_id}, skipping broadcast")
+            return 0
+
+        snapshot = list(connections)
         success_count = 0
+        failed: list[WebSocket] = []
         
-        for connection in connections_snapshot:
-            try:
-                # Check if WebSocket is still open before sending
-                if connection.client_state.name != "CONNECTED":
-                    logger.debug(
-                        f"WebSocket not connected (state: {connection.client_state.name}), "
-                        f"marking for cleanup"
-                    )
-                    disconnected.append(connection)
-                    continue
-                
-                await connection.send_json(message)
+        for ws in snapshot:
+            if await self._send_safe(ws, message):
                 success_count += 1
-                
-            except RuntimeError as e:
-                # Specific handling for "close message already sent" error
-                if "close message" in str(e).lower():
-                    logger.debug(f"WebSocket already closing, marking for cleanup: {e}")
-                else:
-                    logger.warning(f"Runtime error broadcasting to WebSocket: {e}")
-                disconnected.append(connection)
-                
-            except Exception as e:
-                logger.warning(f"Error broadcasting to WebSocket: {e}")
-                disconnected.append(connection)
+            else:
+                failed.append(ws)
 
-
-        # Cleanup disconnected websockets
-        if disconnected:
-            logger.info(
-                f"Cleaning up {len(disconnected)} disconnected WebSocket(s) "
-                f"for project {project_id} (broadcast success: {success_count})"
+        for ws in failed:
+            self.disconnect(ws)
+        
+        if failed:
+            logger.debug(
+                f"Broadcast to {project_id}: {success_count} success, "
+                f"{len(failed)} failed/cleaned"
             )
-            for connection in disconnected:
-                self.disconnect(connection)
+        
+        return success_count
+
+    async def _send_safe(self, websocket: WebSocket, message: dict[str, Any]) -> bool:
+        """Safely send a message, handling connection errors."""
+        if not self._is_connected(websocket):
+            return False
+
+        try:
+            await websocket.send_json(message)
+            return True
+        except RuntimeError as e:
+            if "close message" in str(e).lower():
+                logger.debug("WebSocket already closing")
+            else:
+                logger.warning(f"Runtime error sending: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"Error sending to WebSocket: {e}")
+            return False
+
+    @staticmethod
+    def _is_connected(websocket: WebSocket) -> bool:
+        """Check if a WebSocket is still connected."""
+        try:
+            return websocket.client_state == WebSocketState.CONNECTED
+        except Exception:
+            return False
+
+    # =========================================================================
+    # Stats & Queries
+    # =========================================================================
 
     def get_project_connection_count(self, project_id: UUID) -> int:
-        """Get the number of active connections for a project"""
-        return len(self.active_connections.get(project_id, set()))
+        """Get number of active connections for a project."""
+        return len(self._connections.get(project_id, set()))
 
     def get_total_connections(self) -> int:
-        """Get the total number of active connections across all projects"""
-        return sum(len(conns) for conns in self.active_connections.values())
+        """Get total number of connections across all projects."""
+        return sum(len(conns) for conns in self._connections.values())
 
-    def get_active_projects(self) -> List[UUID]:
-        """Get list of projects with active connections"""
-        return list(self.active_connections.keys())
+    def get_active_projects(self) -> list[UUID]:
+        """Get list of projects with active connections."""
+        return list(self._connections.keys())
 
-    async def _update_websocket_status(self, project_id: UUID, connected: bool):
-        """Update WebSocket connection status in database."""
-        try:
-            from sqlmodel import Session
-            from app.core.db import engine
+    def has_connections(self, project_id: UUID) -> bool:
+        """Check if a project has any active connections."""
+        return bool(self._connections.get(project_id))
+
+    # =========================================================================
+    # Database Operations (run in thread pool)
+    # =========================================================================
+
+    async def _update_project_status(self, project_id: UUID, connected: bool) -> None:
+        """Update project's WebSocket status in database."""
+        def _update(session):
             from app.models import Project
-            
-            with Session(engine) as session:
-                project = session.get(Project, project_id)
-                if project:
-                    project.websocket_connected = connected
-                    project.websocket_last_seen = datetime.now(timezone.utc)
-                    session.add(project)
-                    session.commit()
-                    
-                    logger.debug(
-                        f"Updated WebSocket status for project {project_id}: "
-                        f"connected={connected}"
-                    )
-        except Exception as e:
-            logger.error(f"Failed to update WebSocket status: {e}", exc_info=True)
+            project = session.get(Project, project_id)
+            if project:
+                project.websocket_connected = connected
+                project.websocket_last_seen = datetime.now(timezone.utc)
+                session.add(project)
+                session.commit()
 
-    async def _clear_conversation_context(self, project_id: UUID):
-        """Clear conversation context immediately on disconnect.
-        
-        Clears active_agent context to ensure fresh routing when user returns.
-        
-        Args:
-            project_id: Project ID
-        """
         try:
-            from sqlmodel import Session
-            from app.core.db import engine
-            from app.models import Project
-            
-            with Session(engine) as session:
-                project = session.get(Project, project_id)
-                if project and project.active_agent_id:
-                    old_agent_id = project.active_agent_id
-                    project.active_agent_id = None
-                    project.active_agent_updated_at = None
-                    session.add(project)
-                    session.commit()
-                    
-                    logger.info(
-                        f"Cleared conversation context for disconnected project {project_id} "
-                        f"(was: agent {old_agent_id})"
-                    )
+            from app.core.async_db import AsyncDB
+            await AsyncDB.execute(_update)
+            logger.debug(f"Updated WebSocket status: project={project_id}, connected={connected}")
         except Exception as e:
-            logger.error(f"Failed to clear context on disconnect: {e}", exc_info=True)
+            logger.error(f"Failed to update WebSocket status: {e}")
+
+    async def _clear_active_agent(self, project_id: UUID) -> None:
+        """Clear active agent context when project disconnects."""
+        def _clear(session):
+            from app.models import Project
+            project = session.get(Project, project_id)
+            if project and project.active_agent_id:
+                old_agent = project.active_agent_id
+                project.active_agent_id = None
+                project.active_agent_updated_at = None
+                session.add(project)
+                session.commit()
+                return old_agent
+            return None
+
+        try:
+            from app.core.async_db import AsyncDB
+            old_agent = await AsyncDB.execute(_clear)
+            if old_agent:
+                logger.info(f"Cleared active agent for project {project_id} (was: {old_agent})")
+        except Exception as e:
+            logger.error(f"Failed to clear active agent: {e}")
+
 
 connection_manager = ConnectionManager()

@@ -14,8 +14,10 @@ export type AgentState =
 export type AgentStatus = "idle" | "busy" | "stopped" | "error"
 
 export interface PoolResponse {
+  id: string
   pool_name: string
   role_type: string
+  priority: number
   total_agents: number
   active_agents: number
   busy_agents: number
@@ -158,6 +160,7 @@ export interface AgentPoolDB {
   pool_name: string
   role_type: string | null
   pool_type: PoolType
+  priority: number
   max_agents: number
   health_check_interval: number
   llm_model_config: Record<string, string> | null
@@ -364,4 +367,44 @@ export interface AgentTemplateFromAgent {
   template_name: string
   description?: string
   tags?: string[]
+}
+
+// ===== Token Usage Statistics Types =====
+
+export interface AgentTokenStats {
+  agent_id: string
+  agent_name: string
+  role_type: string
+  pool_name: string | null
+  tokens_used_total: number
+  tokens_used_today: number
+  llm_calls_total: number
+  status: string
+  created_at: string | null
+}
+
+export interface PoolTokenStats {
+  pool_id: string
+  pool_name: string
+  role_type: string | null
+  total_tokens_used: number
+  total_llm_calls: number
+  total_agents: number
+  agents_stats: AgentTokenStats[]
+}
+
+export interface SystemTokenSummary {
+  total_tokens_all_time: number
+  total_tokens_today: number
+  total_llm_calls: number
+  total_agents: number
+  total_pools: number
+  by_role_type: Record<string, {
+    total_tokens: number
+    tokens_today: number
+    llm_calls: number
+    agent_count: number
+  }>
+  by_pool: PoolTokenStats[]
+  estimated_cost_usd: number
 }

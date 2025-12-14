@@ -1,7 +1,5 @@
-"""Kafka consumer base class and utilities.
-
-This module provides a base consumer class with automatic message deserialization,
-error handling, and offset management.
+"""
+Kafka consumer base class and utilities.
 """
 
 import asyncio

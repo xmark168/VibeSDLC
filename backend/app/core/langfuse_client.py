@@ -1,12 +1,4 @@
-"""Langfuse utilities for backward compatibility."""
-
-import logging
-
-logger = logging.getLogger(__name__)
-
-
 def get_langfuse_client():
-    """Get Langfuse client instance."""
     try:
         from langfuse import get_client
         return get_client()
@@ -15,7 +7,6 @@ def get_langfuse_client():
 
 
 def get_langfuse_handler():
-    """Get Langfuse CallbackHandler for LangChain."""
     try:
         from langfuse.langchain import CallbackHandler
         return CallbackHandler()
@@ -24,7 +15,6 @@ def get_langfuse_handler():
 
 
 def flush_langfuse():
-    """Flush pending events."""
     try:
         from langfuse import get_client
         get_client().flush()
@@ -33,7 +23,6 @@ def flush_langfuse():
 
 
 def shutdown_langfuse():
-    """Shutdown Langfuse."""
     try:
         from langfuse import get_client
         get_client().shutdown()
@@ -41,7 +30,6 @@ def shutdown_langfuse():
         pass
 
 
-# Stubs for backward compatibility
 def get_langfuse_context():
     return None
 

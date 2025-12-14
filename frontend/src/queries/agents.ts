@@ -47,14 +47,13 @@ export function useProjectAgents(projectId: string, options?: { enabled?: boolea
   return useQuery({
     queryKey: agentQueryKeys.project(projectId),
     queryFn: async () => {
-      console.log('[useProjectAgents] Fetching agents for project:', projectId)
       const response = await AgentsService.getProjectAgents({ projectId })
       return response || []
     },
     enabled: (options?.enabled ?? true) && !!projectId && projectId.length > 0,
-    staleTime: 0, // Always consider stale - fetch fresh data on navigate
-    refetchOnWindowFocus: false, // Agent status updated via WebSocket
-    refetchOnMount: 'always', // Force refetch even if data exists in cache
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnMount: 'always',
   })
 }
 
@@ -443,6 +442,24 @@ export function useUpdatePoolConfig() {
 }
 
 /**
+ * Bulk update pool priorities (for drag-drop reordering)
+ */
+export function useUpdatePoolPriorities() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (poolPriorities: Array<{ pool_id: string; priority: number }>) =>
+      agentsApi.updatePoolPriorities(poolPriorities),
+    onSuccess: () => {
+      // Invalidate pools list
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pools() })
+      // Invalidate dashboard
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
+    },
+  })
+}
+
+/**
  * Scale pool to target agent count
  * Automatically spawns or terminates agents
  */
@@ -695,6 +712,60 @@ export function useTriggerScalingRule() {
     mutationFn: agentsApi.triggerScalingRule,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
+    },
+  })
+}
+
+// ===== Token Usage Statistics =====
+
+export const tokenStatsQueryKeys = {
+  all: ["token-stats"] as const,
+  agents: (params?: { role_type?: string; pool_name?: string }) =>
+    [...tokenStatsQueryKeys.all, "agents", params] as const,
+  pools: () => [...tokenStatsQueryKeys.all, "pools"] as const,
+  summary: () => [...tokenStatsQueryKeys.all, "summary"] as const,
+}
+
+export function useAgentsTokenStats(
+  params?: { role_type?: string; pool_name?: string; limit?: number },
+  options?: { enabled?: boolean; refetchInterval?: number }
+) {
+  return useQuery({
+    queryKey: tokenStatsQueryKeys.agents(params),
+    queryFn: () => agentsApi.getAgentsTokenStats(params),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 60000,
+    staleTime: 30000,
+  })
+}
+
+export function usePoolsTokenStats(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: tokenStatsQueryKeys.pools(),
+    queryFn: () => agentsApi.getPoolsTokenStats(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 60000,
+    staleTime: 30000,
+  })
+}
+
+export function useSystemTokenSummary(options?: { enabled?: boolean; refetchInterval?: number }) {
+  return useQuery({
+    queryKey: tokenStatsQueryKeys.summary(),
+    queryFn: () => agentsApi.getSystemTokenSummary(),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval ?? 60000,
+    staleTime: 30000,
+  })
+}
+
+export function useResetDailyTokenStats() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: () => agentsApi.resetDailyTokenStats(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: tokenStatsQueryKeys.all })
     },
   })
 }

@@ -150,23 +150,9 @@ export function ChatPanelWS({
     : [];
   const totalMessageCount = messagesData?.pages?.[0]?.totalCount || 0;
 
-  // Ref for scroll position preservation when loading older messages
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
   const isLoadingMoreRef = useRef(false);
 
-  // Debug log for API messages
-  useEffect(() => {
-    if (messagesData && messagesData.pages?.length > 0) {
-      console.log('[ChatPanel] 📊 Messages loaded:', {
-        total: totalMessageCount,
-        loaded: apiMessages.length,
-        pages: messagesData.pages?.length,
-        hasOlder: hasNextPage,
-      })
-    }
-  }, [messagesData, totalMessageCount, apiMessages.length, hasNextPage])
-
-  // Intersection Observer for infinite scroll - load more when scrolling to top
   useEffect(() => {
     const trigger = loadMoreTriggerRef.current;
     const container = messagesContainerRef.current;
@@ -175,22 +161,18 @@ export function ChatPanelWS({
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && hasNextPage && !isFetchingNextPage && !isLoadingMoreRef.current) {
-          console.log('[ChatPanel] 🔄 Loading more messages...');
           isLoadingMoreRef.current = true;
           
-          // Save scroll position before loading
           const scrollHeightBefore = container.scrollHeight;
           const scrollTopBefore = container.scrollTop;
           
           fetchNextPage().then(() => {
-            // Restore scroll position after loading (to prevent jump)
             requestAnimationFrame(() => {
               const scrollHeightAfter = container.scrollHeight;
               const heightDiff = scrollHeightAfter - scrollHeightBefore;
               container.scrollTop = scrollTopBefore + heightDiff;
               isLoadingMoreRef.current = false;
-              console.log('[ChatPanel] ✅ Scroll position restored');
-            });
+              });
           });
         }
       },
@@ -223,15 +205,13 @@ export function ChatPanelWS({
   // Refetch messages when messages_updated event received (file uploads, etc.)
   useEffect(() => {
     if (refetchTrigger > 0) {
-      console.log('[ChatPanel] Refetching messages due to messages_updated event')
-      queryClient.invalidateQueries({ queryKey: ['messages-infinite', projectId] })
+       queryClient.invalidateQueries({ queryKey: ['messages-infinite', projectId] })
     }
   }, [refetchTrigger, queryClient, projectId])
 
   // Notify parent when agent statuses change
   useEffect(() => {
     if (onAgentStatusesChange && wsAgentStatuses.size > 0) {
-      console.log('[ChatPanel] Agent statuses changed:', Object.fromEntries(wsAgentStatuses));
       onAgentStatusesChange(wsAgentStatuses);
     }
   }, [wsAgentStatuses, onAgentStatusesChange]);
@@ -394,7 +374,6 @@ export function ChatPanelWS({
     
     // Only refresh if it's a NEW approval message we haven't processed yet
     if (latestApproved && latestApproved.id !== lastApprovedMsgIdRef.current && projectId) {
-      console.log('[ChatPanel] Stories approved, refreshing Kanban board...', latestApproved.id)
       lastApprovedMsgIdRef.current = latestApproved.id
       // Use refetchQueries for immediate refetch instead of invalidateQueries
       queryClient.refetchQueries({ queryKey: ['kanban-board', projectId], type: 'active' })
@@ -414,8 +393,7 @@ export function ChatPanelWS({
       : null
     
     if (latestReset && latestReset.id !== lastResetMsgIdRef.current && projectId) {
-      console.log('[ChatPanel] Project reset, refreshing Kanban board...', latestReset.id)
-      lastResetMsgIdRef.current = latestReset.id
+     lastResetMsgIdRef.current = latestReset.id
       // Refresh Kanban board to clear deleted stories
       queryClient.refetchQueries({ queryKey: ['kanban-board', projectId], type: 'active' })
     }
@@ -554,7 +532,6 @@ export function ChatPanelWS({
     e?.preventDefault(); // Prevent form submission from navigating
     if (!message.trim() && !selectedFile) return;
     if (!isConnected && !selectedFile) {
-      console.error("WebSocket not connected");
       return;
     }
 
@@ -588,7 +565,6 @@ export function ChatPanelWS({
         // Force scroll to bottom after sending
         forceScrollRef.current = true;
       } catch (error) {
-        console.error("Failed to upload file:", error);
         alert("Failed to upload file. Please try again.");
       }
       return;
@@ -640,14 +616,12 @@ export function ChatPanelWS({
   const copyToClipboard = async (content: string | undefined, messageId: string) => {
     try {
       if (!content) {
-        console.warn("No content to copy");
         return;
       }
       await navigator.clipboard.writeText(content);
       setCopiedMessageId(messageId);
       setTimeout(() => setCopiedMessageId(null), 2000);
     } catch (err) {
-      console.error("Failed to copy:", err);
     }
   };
 
@@ -658,7 +632,6 @@ export function ChatPanelWS({
       return format(date, 'h:mm a \'on\' MMM dd');
       // Output example: "10:30 AM on Nov 25"
     } catch (error) {
-      console.error('Error formatting timestamp:', error);
       return dateStr;
     }
   };
@@ -757,7 +730,6 @@ export function ChatPanelWS({
 
   // Notify parent about connection status
   useEffect(() => {
-    console.log("ChatPanelWS: connection changed to", isConnected);
     if (onConnectionChange) {
       onConnectionChange(isConnected);
     }
@@ -1160,7 +1132,6 @@ export function ChatPanelWS({
                       initialActionTaken={msg.structured_data.action_taken}
                       onApplied={async (updatedStory) => {
                         if (projectId) {
-                          console.log('[ChatPanel] onApplied called with updated story:', updatedStory)
                           // Update cache directly with new story data for immediate UI update
                           if (updatedStory) {
                             queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
@@ -1174,7 +1145,6 @@ export function ChatPanelWS({
                                     : story
                                 )
                               }
-                              console.log('[ChatPanel] Updated kanban cache with new story data')
                               return { ...oldData, board: newBoard }
                             })
                           }
@@ -1193,7 +1163,6 @@ export function ChatPanelWS({
                       }}
                       onRemove={async (removedStoryId) => {
                         if (projectId) {
-                          console.log('[ChatPanel] onRemove called for story:', removedStoryId)
                           // Remove story from cache directly for immediate UI update
                           if (removedStoryId) {
                             queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
@@ -1202,8 +1171,7 @@ export function ChatPanelWS({
                               for (const column of Object.keys(newBoard)) {
                                 newBoard[column] = newBoard[column].filter((story: any) => story.id !== removedStoryId)
                               }
-                              console.log('[ChatPanel] Removed story from kanban cache')
-                              return { ...oldData, board: newBoard }
+                               return { ...oldData, board: newBoard }
                             })
                           }
                           // Also refetch to ensure consistency

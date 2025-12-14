@@ -9,7 +9,8 @@ from pathlib import Path
 from uuid import UUID
 
 from app.agents.tester.src.state import TesterState
-from app.agents.tester.src.core_nodes import send_message, generate_user_message
+from app.agents.tester.src.nodes.core_nodes import send_message, generate_user_message
+from app.agents.developer.src.utils.story_logger import StoryLogger
 
 logger = logging.getLogger(__name__)
 
@@ -49,17 +50,7 @@ def _detect_package_manager(project_path: Path) -> tuple[str, str]:
 
 
 def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dict]:
-    """Detect test commands based on test files.
-    
-    Returns SINGLE command with ALL test files - Jest handles parallelism internally.
-    This is faster than running separate commands for integration/unit tests.
-    
-    Args:
-        project_path: Path to workspace
-        test_files: List of test file paths to run
-    
-    Returns list with single {type, command, files} dict.
-    """
+    """Detect test commands based on test files. Returns single command for all files."""
     # Filter valid test files that exist
     valid_files = []
     
@@ -95,22 +86,38 @@ def _detect_test_commands(project_path: Path, test_files: list[str]) -> list[dic
 def _parse_test_output(stdout: str, stderr: str, test_type: str) -> dict:
     """Parse test output to extract results (Jest only - no e2e)."""
     combined = stdout + stderr
+    combined_lower = combined.lower()
     result = {
         "passed": 0,
         "failed": 0,
         "failed_tests": [],
         "error_messages": [],
+        "setup_error": None,
     }
     
+    # Check for setup/command errors FIRST
+    setup_error_patterns = [
+        ("command not found", "Jest command not found - run 'pnpm install'"),
+        ("cannot find module 'jest'", "Jest not installed"),
+        ("no tests found", "No tests found in file"),
+        ("enoent", "File or directory not found"),
+        ("permission denied", "Permission denied"),
+        ("spawn error", "Failed to spawn process"),
+    ]
+    
+    for pattern, error_msg in setup_error_patterns:
+        if pattern in combined_lower:
+            result["setup_error"] = error_msg
+            logger.warning(f"[_parse_test_output] Setup error: {error_msg}")
+            return result
+    
     # Jest output parsing
-    # Pattern: "Tests: X failed, Y passed, Z total"
     match = re.search(r"Tests:\s*(?:(\d+)\s*failed,\s*)?(\d+)\s*passed", combined)
     if match:
         result["failed"] = int(match.group(1) or 0)
         result["passed"] = int(match.group(2) or 0)
     
     # Failed test names
-    # Pattern: "✕ test name (123ms)"
     failed_matches = re.findall(r"[✕✖]\s+(.+?)\s*\(\d+\s*ms\)", combined)
     result["failed_tests"] = failed_matches[:10]
     
@@ -206,26 +213,32 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     from langgraph.types import interrupt
     from app.agents.tester.src.graph import check_interrupt_signal
     
-    print("[NODE] run_tests")
+    # Ensure story_id is set for StoryLogger
+    stories = state.get("stories", [])
+    if stories and not state.get("story_id"):
+        state["story_id"] = stories[0].get("id")
+    
+    story_logger = StoryLogger.from_state(state, agent).with_node("run_tests")
     
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")
     if story_id:
         signal = check_interrupt_signal(story_id)
         if signal:
-            logger.info(f"[run_tests] Interrupt signal received: {signal}")
+            await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "run_tests"})
     
     # Use workspace_path (worktree) where files are written, not project_path from DB
     project_path = _get_workspace_path(state)
     if not project_path:
+        await story_logger.error("Workspace path not configured")
         return {
             "run_status": "ERROR",
             "error": "Workspace path not configured",
             "message": "Lỗi: Không tìm thấy workspace path.",
         }
     
-    logger.info(f"[run_tests] Using workspace: {project_path}")
+    await story_logger.info(f"Using workspace: {project_path}")
     
     # Collect ALL test files from multiple sources:
     # 1. files_created - tracks all files created during this session
@@ -250,17 +263,17 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     all_test_files = list(test_files_set)
     
     if not all_test_files:
-        logger.info("[run_tests] No test files to run")
+        await story_logger.info("No test files to run")
         return {
             "run_status": "PASS",
             "run_result": {"message": "No tests to run"},
             "message": "Không có tests để chạy.",
         }
     
-    logger.info(f"[run_tests] Found {len(all_test_files)} test files: {all_test_files}")
+    await story_logger.info(f"Found {len(all_test_files)} test files")
     
     # Step 1: Run TypeCheck first
-    logger.info("[run_tests] Running TypeScript check...")
+    await story_logger.task("🔍 Running TypeScript check...")
     typecheck_result = _run_typecheck(project_path, all_test_files)
     
     if typecheck_result:
@@ -275,7 +288,7 @@ async def run_tests(state: TesterState, agent=None) -> dict:
         
         await send_message(state, agent, msg, "error")
         
-        logger.info(f"[run_tests] TypeCheck FAILED: {len(typecheck_result['errors'])} errors")
+        await story_logger.error(f"TypeCheck FAILED: {len(typecheck_result['errors'])} errors")
         
         return {
             "run_status": "FAIL",
@@ -290,7 +303,7 @@ async def run_tests(state: TesterState, agent=None) -> dict:
             "action": "ANALYZE",
         }
     
-    logger.info("[run_tests] TypeCheck passed")
+    await story_logger.info("TypeCheck passed ✓")
     
     # Step 2: Detect test commands using all collected test files
     test_commands = _detect_test_commands(project_path, all_test_files)
@@ -322,7 +335,7 @@ async def run_tests(state: TesterState, agent=None) -> dict:
         command = cmd_info["command"]
         files = cmd_info["files"]
         
-        logger.info(f"[run_tests] Running {test_type}: {command}")
+        await story_logger.task(f"🧪 Running {test_type} tests...")
         
         try:
             result = subprocess.run(
@@ -347,7 +360,14 @@ async def run_tests(state: TesterState, agent=None) -> dict:
             parsed = _parse_test_output(stdout, stderr, test_type)
             parsed["type"] = test_type
             parsed["command"] = command
-            parsed["success"] = result.returncode == 0
+            
+            # Check for setup errors (Jest not found, etc.)
+            if parsed.get("setup_error"):
+                parsed["success"] = False
+                parsed["error"] = parsed["setup_error"]
+                await story_logger.error(f"Setup error: {parsed['setup_error']}")
+            else:
+                parsed["success"] = result.returncode == 0
             
             all_results.append(parsed)
             overall_passed += parsed["passed"]
@@ -368,9 +388,16 @@ async def run_tests(state: TesterState, agent=None) -> dict:
                 "error": str(e),
             })
     
-    # Determine overall status
+    # Determine overall status - distinguish ERROR (setup issue) vs FAIL (test failures)
+    has_setup_error = any(r.get("setup_error") for r in all_results)
     has_failures = overall_failed > 0 or any(not r.get("success", True) for r in all_results)
-    run_status = "FAIL" if has_failures else "PASS"
+    
+    if has_setup_error:
+        run_status = "ERROR"
+    elif has_failures:
+        run_status = "FAIL"
+    else:
+        run_status = "PASS"
     
     # Build result message (persona-driven)
     if run_status == "PASS":
@@ -380,8 +407,14 @@ async def run_tests(state: TesterState, agent=None) -> dict:
             agent,
             "all green"
         )
+    elif run_status == "ERROR":
+        # Setup error - show specific error message
+        setup_errors = [r.get("setup_error") or r.get("error") for r in all_results if r.get("setup_error") or r.get("error")]
+        error_detail = setup_errors[0] if setup_errors else "Unknown setup error"
+        msg = f"⚠️ Setup Error: {error_detail}\n\nTests could not run. Please check:\n- Jest is installed (`pnpm install`)\n- Working directory is correct\n- Test files exist"
+        await story_logger.error(f"Setup error: {error_detail}")
     else:
-        # For failures, use persona intro + technical details
+        # Test failures
         intro = await generate_user_message(
             "tests_failed",
             f"{overall_passed} passed, {overall_failed} failed",
@@ -389,7 +422,7 @@ async def run_tests(state: TesterState, agent=None) -> dict:
         )
         msg = intro
         
-        # Add failed test names (keep technical details)
+        # Add failed test names
         for res in all_results:
             if res.get("failed_tests"):
                 msg += f"\n\nFailed in {res['type']}:"
@@ -400,7 +433,7 @@ async def run_tests(state: TesterState, agent=None) -> dict:
     message_type = "test_result" if run_status == "PASS" else "error"
     await send_message(state, agent, msg, message_type)
     
-    logger.info(f"[run_tests] Status: {run_status}, Passed: {overall_passed}, Failed: {overall_failed}")
+    await story_logger.info(f"Status: {run_status}, Passed: {overall_passed}, Failed: {overall_failed}")
     
     return {
         "run_status": run_status,

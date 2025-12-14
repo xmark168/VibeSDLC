@@ -3,7 +3,6 @@ import logging
 import os
 import sys
 
-# On Windows, use SelectorEventLoop for psycopg async compatibility
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -34,10 +33,72 @@ def custom_generate_unique_id(route: APIRoute) -> str:
     return route.name
 
 
+async def cleanup_stale_story_states():
+    """Reset stale story states on backend restart.
+    
+    When backend restarts, any stories in PENDING/PROCESSING state
+    are stale (no agent is actually processing them). Reset to null
+    and clear checkpoints.
+    """
+    from sqlmodel import Session
+    from sqlalchemy import text
+
+    
+    try:
+        with Session(engine) as session:
+            # Find stories with stale states (any non-finished state)
+            stale_stories = session.exec(
+                text("""
+                    SELECT id, checkpoint_thread_id 
+                    FROM stories 
+                    WHERE agent_state IN ('PENDING', 'PROCESSING', 'PAUSED', 'CANCEL_REQUESTED')
+                """)
+            ).all()
+            
+            if not stale_stories:
+                logger.info("✓ No stale story states to cleanup")
+                return
+            
+            story_ids = [str(s[0]) for s in stale_stories]
+            checkpoint_ids = [s[1] for s in stale_stories if s[1]]
+            
+            logger.info(f"🧹 Cleaning up {len(stale_stories)} stale stories: {story_ids}")
+            
+            # Reset agent_state to null and clear assigned_agent_id
+            session.exec(
+                text("""
+                    UPDATE stories 
+                    SET agent_state = NULL,
+                        checkpoint_thread_id = NULL,
+                        assigned_agent_id = NULL
+                    WHERE agent_state IN ('PENDING', 'PROCESSING', 'PAUSED', 'CANCEL_REQUESTED')
+                """)
+            )
+            
+            # Clear checkpoint data for these stories
+            if checkpoint_ids:
+                for tid in checkpoint_ids:
+                    try:
+                        session.exec(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), {"tid": tid})
+                        session.exec(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), {"tid": tid})
+                        session.exec(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": tid})
+                    except Exception as e:
+                        logger.warning(f"Failed to delete checkpoint {tid}: {e}")
+            
+            session.commit()
+            logger.info(f"✓ Reset {len(stale_stories)} stale story states and cleared {len(checkpoint_ids)} checkpoints")
+            
+    except Exception as e:
+        logger.error(f"Failed to cleanup stale story states: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     with Session(engine) as session:
         init_db(session)
+
+    # Cleanup stale story states from previous run
+    await cleanup_stale_story_states()
 
     from app.kafka import ensure_kafka_topics
     try:
@@ -47,7 +108,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to ensure Kafka topics: {e}")
 
-    from app.agents.core.router import start_router_service, stop_router_service
+    from app.core.agent.router import start_router_service, stop_router_service
     try:
         await start_router_service()
     except Exception as e:
@@ -65,7 +126,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Failed to initialize agent pools: {e}")
 
-    from app.agents.core import get_agent_monitor
+    from app.core.agent import get_agent_monitor
     try:
         monitor = get_agent_monitor()
         await monitor.start(monitor_interval=30)
@@ -152,5 +213,4 @@ app.add_middleware(
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-# Mount static files for uploads
 app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")

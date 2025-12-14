@@ -1,154 +1,109 @@
-"""Tester State Schema (aligned with Developer V2).
-
-Updated with checkpoint/interrupt support for pause/resume functionality.
-"""
+"""Tester State Schema with checkpoint/interrupt support for pause/resume."""
 
 from typing import TypedDict, Any, Literal, Dict, Optional, List
 
 Action = Literal["PLAN_TESTS", "TEST_STATUS", "CONVERSATION"]
 
-# Note: E2E tests removed - only integration tests supported
-
 
 class TesterState(TypedDict, total=False):
-    """State for Tester LangGraph (MetaGPT-style).
+    """State for Tester LangGraph with checkpoint/interrupt support."""
     
-    Aligned with Developer V2 for checkpoint/interrupt support.
-    """
-    
-    # ==========================================================================
     # Input
-    # ==========================================================================
     user_message: str
     user_id: str
     project_id: str
     task_id: str
     story_id: str  # Primary story ID for checkpoint (aligned with dev_v2)
     story_code: str  # Story code for branch naming
-    task_type: str  # AgentTaskType value
+    task_type: str
     story_ids: List[str]
-    is_auto: bool  # Auto-triggered (no user message)
-    # NOTE: langfuse_handler removed from state - not serializable for checkpointing
-    
-    # Router output
+    is_auto: bool
     action: Action
     
-    # ==========================================================================
-    # Checkpoint/Interrupt support (aligned with Developer V2)
-    # ==========================================================================
-    checkpoint_thread_id: str  # Thread ID for PostgresSaver checkpoint
-    is_resume: bool  # True if resuming from checkpoint
-    base_branch: str  # Base branch for git operations (default: main)
+    # Checkpoint/Interrupt
+    checkpoint_thread_id: str
+    is_resume: bool
+    base_branch: str
     
-    # ==========================================================================
-    # Workspace context (aligned with Developer V2)
-    # ==========================================================================
-    workspace_path: str          # Path to git worktree for this task
-    branch_name: str             # Git branch name (e.g., "test_abc123")
-    main_workspace: str          # Path to main git repository
-    workspace_ready: bool        # Whether workspace is set up
-    merged: bool                 # Whether changes have been merged
-    
-    # Context (from setup)
+    # Workspace
+    workspace_path: str
+    branch_name: str
+    main_workspace: str
+    workspace_ready: bool
+    merged: bool
     project_path: str
     tech_stack: str
     timestamp: str
     
-    # ==========================================================================
-    # Project context (aligned with Developer V2)
-    # ==========================================================================
-    project_context: str         # Project structure, config info
-    agents_md: str               # AGENTS.md content (coding guidelines)
-    
     # Project context
-    related_code: Dict           # {story_id: "related code markdown"}
-    test_examples: str           # Existing test examples from project
-    testing_context: Dict        # Auth library, ORM, existing mocks, ESM warnings
+    project_context: str
+    agents_md: str
+    related_code: Dict
+    test_examples: str
+    testing_context: Dict
     
-    # ==========================================================================
-    # Pre-loaded dependencies (MetaGPT-style - reduces tool calls)
-    # ==========================================================================
-    dependencies_content: Dict[str, str]  # {file_path: content}
-    component_context: str  # Analyzed components for unit tests (props, exports, data-attrs)
+    # Pre-loaded dependencies
+    dependencies_content: Dict[str, str]
+    component_context: str
     
-    # ==========================================================================
-    # Skills system (aligned with Developer V2)
-    # ==========================================================================
-    skill_registry: Any          # SkillRegistry instance
-    available_skills: List[str]  # List of available skill IDs
+    # Skills
+    skill_registry: Any
+    available_skills: List[str]
     
     # Processing
     stories: List[Dict]
     test_scenarios: List[Dict]
     
-    # ==========================================================================
-    # Plan phase
-    # ==========================================================================
-    test_plan: List[Dict]  # [{type, story_id, file_path, scenarios, ...}]
+    # Plan
+    test_plan: List[Dict]
     total_steps: int
     current_step: int
     
-    # ==========================================================================
-    # Implement phase
-    # ==========================================================================
+    # Implement
     files_created: List[str]
     files_modified: List[str]
     
-    # ==========================================================================
-    # Review (MetaGPT-style LGTM/LBTM) - Supports PARALLEL review
-    # ==========================================================================
-    review_result: Optional[str]      # Overall: "LGTM" or "LBTM"
-    review_feedback: Optional[str]    # Combined feedback if LBTM
-    review_details: Optional[str]     # Full review details
-    review_count: int                 # Count of review cycles (for parallel)
-    total_lbtm_count: int             # Track total LBTM across all files
-    step_lbtm_counts: Dict[str, int]  # Per-step LBTM tracking {"0": 2, "1": 1}
-    review_results: List[Dict]        # Individual results [{file_path, decision, feedback}]
-    failed_files: List[str]           # Files that got LBTM (for re-implementation)
-    file_lbtm_counts: Dict[str, int]  # Per-file LBTM tracking {"path/file.test.ts": 2}
-    implementation_results: List[Dict]  # Results from parallel implement
+    # Review
+    review_result: Optional[str]
+    review_feedback: Optional[str]
+    review_details: Optional[str]
+    review_count: int
+    total_lbtm_count: int
+    step_lbtm_counts: Dict[str, int]
+    review_results: List[Dict]
+    failed_files: List[str]
+    file_lbtm_counts: Dict[str, int]
+    implementation_results: List[Dict]
     
-    # ==========================================================================
-    # Summarize (MetaGPT-style IS_PASS gate)
-    # ==========================================================================
-    summary: Optional[str]            # Summary of tests
-    todos: Optional[Dict[str, str]]   # {file: issue} if any
-    is_pass: Optional[str]            # "YES" or "NO"
-    summarize_feedback: Optional[str] # Feedback if NO
-    summarize_count: int              # Count of summarize retries
-    files_reviewed: Optional[str]     # List of files reviewed
+    # Summarize
+    summary: Optional[str]
+    todos: Optional[Dict[str, str]]
+    is_pass: Optional[str]
+    summarize_feedback: Optional[str]
+    summarize_count: int
+    files_reviewed: Optional[str]
     
-    # ==========================================================================
-    # Run phase
-    # ==========================================================================
-    run_status: str  # "PASS" | "FAIL" | "ERROR"
+    # Run
+    run_status: str
     run_result: Dict
     run_stdout: str
     run_stderr: str
     
-    # ==========================================================================
-    # Debug loop
-    # ==========================================================================
+    # Debug
     debug_count: int
-    max_debug: int  # default 3
+    max_debug: int
     error_analysis: str
     debug_history: List[str]
     
-    # ==========================================================================
-    # Legacy (kept for compatibility)
-    # ==========================================================================
-    test_cases: Dict  # {"integration_tests": [...]}
-    result: Dict  # {"integration": {...}}
+    # Legacy
+    test_cases: Dict
+    result: Dict
     test_execution: Dict
     
-    # ==========================================================================
     # Output
-    # ==========================================================================
     message: str
     error: Optional[str]
     
-    # ==========================================================================
-    # Git operations (aligned with Developer V2)
-    # ==========================================================================
-    git_committed: bool  # Whether changes have been committed
-    git_commit_hash: str  # Last commit hash
+    # Git
+    git_committed: bool
+    git_commit_hash: str

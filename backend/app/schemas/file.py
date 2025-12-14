@@ -33,8 +33,9 @@ class FileContentResponse(BaseModel):
 class GitStatusResponse(BaseModel):
     project_id: UUID
     is_git_repo: bool = True
-    branch: str = ""
-    files: dict[str, str] = {}
-    modified: list[str] = []
-    untracked: list[str] = []
-    staged: list[str] = []
+    current_branch: Optional[str] = None
+    modified_files: list[str] = []
+    staged_files: list[str] = []
+    untracked_files: list[str] = []
+    ahead: int = 0
+    behind: int = 0

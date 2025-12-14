@@ -61,6 +61,14 @@ class BAState(TypedDict, total=False):
     created_stories: list[dict]  # Stories created in DB after approval
     approval_message: str  # Message after approval
     
+    # Story update workflow - Duplicate detection & Clarification
+    found_existing_story: bool  # True if found existing story that covers functionality
+    existing_story_id: str  # ID of the existing story found
+    existing_story_title: str  # Title of the existing story
+    awaiting_user_decision: bool  # True if waiting for user to decide on duplicate
+    needs_clarification: bool  # True if request is vague and needs clarification
+    clarification_message: str  # Message asking for clarification
+    
     # LLM-generated messages (from templates filled with actual counts)
     prd_message: str  # Message when PRD is created/updated
     stories_message: str  # Message when stories are created/updated (filled from template)

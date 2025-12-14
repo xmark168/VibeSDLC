@@ -38,8 +38,18 @@ const userFormSchema = z.object({
   full_name: z.string().max(50).optional().nullable(),
   email: z.string().email("Invalid email address"),
   password: z.string().optional().or(z.literal("")),
+  confirm_password: z.string().optional().or(z.literal("")),
   role: z.enum(["admin", "user"]),
   is_active: z.boolean(),
+}).refine((data) => {
+  // Only validate password match when creating new user
+  if (data.password && data.password.length > 0) {
+    return data.password === data.confirm_password
+  }
+  return true
+}, {
+  message: "Passwords do not match",
+  path: ["confirm_password"],
 })
 
 type UserFormValues = z.infer<typeof userFormSchema>
@@ -63,6 +73,7 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
       full_name: "",
       email: "",
       password: "",
+      confirm_password: "",
       role: "user",
       is_active: true,
     },
@@ -75,6 +86,7 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
         full_name: user.full_name || "",
         email: user.email,
         password: "",
+        confirm_password: "",
         role: user.role,
         is_active: user.is_active,
       })
@@ -84,6 +96,7 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
         full_name: "",
         email: "",
         password: "",
+        confirm_password: "",
         role: "user",
         is_active: true,
       })
@@ -99,22 +112,16 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
       }
 
       if (isEditing && user) {
+        // Update user - email and password are not editable
         const updateData: Record<string, unknown> = {
           username: data.username || null,
           full_name: data.full_name || null,
-          email: data.email,
           role: data.role,
           is_active: data.is_active,
         }
-        if (data.password && data.password.length > 0) {
-          if (data.password.length < 6) {
-            form.setError("password", { message: "Password must be at least 6 characters" })
-            return
-          }
-          updateData.password = data.password
-        }
         await updateUser.mutateAsync({ userId: user.id, data: updateData })
       } else {
+        // Create new user
         const createData: UserAdminCreate = {
           username: data.username || null,
           full_name: data.full_name || null,
@@ -129,11 +136,16 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
       form.reset()
       onSuccess?.()
     } catch (error) {
-      console.error("Form submission error:", error)
     }
   }
 
   const isLoading = createUser.isPending || updateUser.isPending
+  
+  // Watch password fields to check if they match
+  const password = form.watch("password")
+  const confirmPassword = form.watch("confirm_password")
+  const passwordsMatch = !isEditing && password && confirmPassword && password === confirmPassword
+  const isSubmitDisabled = isLoading || (!isEditing && (!password || !confirmPassword || password !== confirmPassword))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -200,35 +212,58 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
                       {...field}
                       type="email"
                       placeholder="john@example.com"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{isEditing ? "New Password" : "Password *"}</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      type="password"
-                      placeholder={isEditing ? "Leave empty to keep current" : "Enter password"}
+                      disabled={isEditing}
+                      className={isEditing ? "bg-muted cursor-not-allowed" : ""}
                     />
                   </FormControl>
                   {isEditing && (
-                    <FormDescription>
-                      Leave empty to keep the current password
+                    <FormDescription className="text-xs text-muted-foreground">
+                      Email cannot be changed
                     </FormDescription>
                   )}
                   <FormMessage />
                 </FormItem>
               )}
             />
+
+            {!isEditing && (
+              <>
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password *</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="password"
+                          placeholder="Enter password"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="confirm_password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Confirm Password *</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="password"
+                          placeholder="Confirm password"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <FormField
@@ -281,7 +316,7 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isLoading}>
+              <Button type="submit" disabled={isSubmitDisabled}>
                 {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 {isEditing ? "Update User" : "Create User"}
               </Button>

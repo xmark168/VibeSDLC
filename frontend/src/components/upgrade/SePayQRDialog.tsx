@@ -60,13 +60,11 @@ export function SePayQRDialog({
       if (result.status === "paid") {
         setIsPolling(false)
         toast.success("Payment successful!")
-        // Don't auto-close, let user click "Close" manually
       } else if (result.status === "expired") {
         setIsPolling(false)
         toast.error("Order has expired")
       }
     } catch (error) {
-      console.error("Error checking payment status:", error)
     }
   }, [qrData, onSuccess])
 
@@ -114,7 +112,6 @@ export function SePayQRDialog({
       try {
         await sepayApi.cancelPayment(qrData.order_id)
       } catch (error) {
-        console.error("Error cancelling payment:", error)
       }
     }
     onCancel()

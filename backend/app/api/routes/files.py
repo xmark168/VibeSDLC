@@ -1,20 +1,16 @@
-"""File management endpoints for project files."""
-
+"""Project files API."""
 import logging
 import os
 from pathlib import Path
 from typing import Any, Optional, Dict
 from uuid import UUID
-
 from fastapi import APIRouter, HTTPException, Query, status
-
 from app.api.deps import CurrentUser, SessionDep
 from app.services import ProjectService
 from app.models import Role
 from app.schemas import FileNode, FileTreeResponse, FileContentResponse, GitStatusResponse
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/projects/{project_id}/files", tags=["files"])
 
 
@@ -23,7 +19,7 @@ def list_project_files(
     project_id: UUID,
     session: SessionDep,
     current_user: CurrentUser,
-    depth: int = Query(default=3, ge=1, le=10, description="Maximum depth to traverse"),
+    depth: int = Query(default=15, ge=1, le=20, description="Maximum depth to traverse"),
     worktree: str = Query(default=None, description="Worktree path to view (optional)"),
 ) -> FileTreeResponse:
     """
@@ -94,6 +90,96 @@ def list_project_files(
         project_path=project_path,
         root=root_node,
     )
+
+
+@router.get("/children")
+def get_folder_children(
+    project_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+    path: str = Query(..., description="Relative path to the folder"),
+    worktree: str = Query(default=None, description="Worktree path to view (optional)"),
+    depth: int = Query(default=1, ge=1, le=5, description="Depth to load children"),
+) -> Dict[str, Any]:
+    """
+    Lazy load children of a folder.
+    
+    Args:
+        project_id: UUID of the project
+        path: Relative path to the folder
+        worktree: Optional worktree path
+        depth: How deep to load (default 1 = immediate children only)
+    
+    Returns:
+        Dict with children array
+    """
+    # Get project and verify access
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
+
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    if current_user.role != Role.ADMIN and project.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't have access to this project")
+
+    # Determine base folder
+    if worktree:
+        base_folder = Path(worktree)
+    else:
+        base_folder = Path(project.project_path or f"projects/{project_id}")
+
+    # Build full path
+    target_folder = base_folder / path if path else base_folder
+    
+    # Security check
+    try:
+        target_folder = target_folder.resolve()
+        base_resolved = base_folder.resolve()
+        if not str(target_folder).startswith(str(base_resolved)):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid path")
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid path")
+
+    if not target_folder.exists() or not target_folder.is_dir():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+
+    # Build children
+    children = []
+    try:
+        items = sorted(target_folder.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
+        for item in items:
+            item_relative_path = f"{path}/{item.name}" if path else item.name
+            
+            if item.is_dir():
+                if item.name.startswith(".") or item.name in ["node_modules", "__pycache__", ".git", ".venv", "venv"]:
+                    continue
+                if depth > 1:
+                    child_node = _build_file_tree(item, item_relative_path, depth - 1)
+                else:
+                    # Just return folder info without children (lazy)
+                    child_node = FileNode(
+                        name=item.name,
+                        type="folder",
+                        path=item_relative_path,
+                        children=None,  # Will be loaded on demand
+                    )
+                children.append(child_node)
+            else:
+                if item.name.startswith("."):
+                    continue
+                stat = item.stat()
+                children.append(FileNode(
+                    name=item.name,
+                    type="file",
+                    path=item_relative_path,
+                    size=stat.st_size,
+                    modified=str(stat.st_mtime),
+                ))
+    except PermissionError:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+
+    return {"path": path, "children": [c.model_dump() for c in children]}
 
 
 @router.get("/content", response_model=FileContentResponse)
@@ -321,6 +407,7 @@ def get_git_status(
     project_id: UUID,
     session: SessionDep,
     current_user: CurrentUser,
+    worktree: str | None = None,
 ) -> GitStatusResponse:
     """
     Get git status for project files (modified, added, deleted, untracked).
@@ -331,6 +418,7 @@ def get_git_status(
         project_id: UUID of the project
         session: Database session
         current_user: Current authenticated user
+        worktree: Optional worktree path to get status for
 
     Returns:
         GitStatusResponse: Dictionary of files with their change types
@@ -353,15 +441,19 @@ def get_git_status(
             detail="You don't have access to this project",
         )
 
-    # Get project path
+    # Get project path - use worktree if provided
     project_path = project.project_path or f"projects/{project_id}"
-    project_folder = Path(project_path)
+    if worktree:
+        project_folder = Path(worktree)
+    else:
+        project_folder = Path(project_path)
+
+    logger.info(f"Git status for: {project_folder}, worktree param: {worktree}")
 
     if not project_folder.exists():
         return GitStatusResponse(
             project_id=project_id,
             is_git_repo=False,
-            files={},
         )
 
     # Try to open as git repository
@@ -371,42 +463,114 @@ def get_git_status(
         return GitStatusResponse(
             project_id=project_id,
             is_git_repo=False,
-            branch="",
-            files={},
-            modified=[],
-            untracked=[],
-            staged=[],
+            current_branch=None,
+            modified_files=[],
+            staged_files=[],
+            untracked_files=[],
+            ahead=0,
+            behind=0,
         )
 
-    # Get file changes (MetaGPT approach)
-    files: Dict[str, str] = {}
+    # Get current branch - for worktrees, read from HEAD file directly
+    try:
+        current_branch = repo.active_branch.name
+    except TypeError:
+        # Detached HEAD - try to read from HEAD file
+        current_branch = repo.head.commit.hexsha[:7]
+    
+    # For worktrees, the HEAD might point to a different branch
+    # Check if this is a worktree and get the correct branch
+    if worktree:
+        head_file = project_folder / ".git"
+        if head_file.is_file():
+            # This is a worktree - .git is a file pointing to main repo
+            try:
+                # Read the actual HEAD reference
+                import subprocess
+                result = subprocess.run(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                    cwd=str(project_folder),
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    current_branch = result.stdout.strip()
+            except Exception as e:
+                logger.debug(f"Error getting worktree branch: {e}")
+
+    logger.info(f"Current branch: {current_branch}, is_worktree: {worktree is not None}")
+
+    modified_files = []
+    staged_files = []
+    untracked_files = []
 
     # 1. Get untracked files
     for filepath in repo.untracked_files:
-        files[filepath] = "U"  # Untracked
+        untracked_files.append(filepath)
 
-    # 2. Get changed files (comparing index with working directory)
+    # 2. Get uncommitted changes (comparing index with working directory)
     try:
         for diff in repo.index.diff(None):
-            # diff.a_path is the file path
-            # diff.change_type is A/D/M/R/T
-            files[diff.a_path] = diff.change_type
+            if diff.a_path not in modified_files:
+                modified_files.append(diff.a_path)
     except Exception as e:
         logger.warning(f"Error getting git diff: {e}")
 
     # 3. Get staged files (comparing HEAD with index)
     try:
         for diff in repo.head.commit.diff():
-            if diff.a_path not in files:
-                files[diff.a_path] = f"S:{diff.change_type}"  # Staged
+            if diff.a_path not in staged_files:
+                staged_files.append(diff.a_path)
     except Exception as e:
-        # Might fail if no commits yet
         logger.debug(f"Error getting staged files: {e}")
+
+    # 4. Get files changed compared to main/master branch (for feature branches)
+    try:
+        # Find default branch - check remote first
+        default_branch = None
+        for branch_name in ['origin/main', 'origin/master', 'main', 'master']:
+            try:
+                repo.commit(branch_name)
+                default_branch = branch_name
+                break
+            except:
+                pass
+        
+        logger.info(f"Default branch: {default_branch}")
+        
+        if default_branch:
+            # Get diff between default branch and current HEAD
+            # This shows all changes in the current branch compared to main
+            for diff in repo.commit(default_branch).diff('HEAD'):
+                path = diff.b_path or diff.a_path
+                if path and path not in modified_files:
+                    modified_files.append(path)
+                    
+            logger.info(f"Modified files vs {default_branch}: {modified_files}")
+    except Exception as e:
+        logger.warning(f"Error comparing with default branch: {e}")
+
+    # Get ahead/behind counts
+    ahead = 0
+    behind = 0
+    try:
+        tracking = repo.active_branch.tracking_branch()
+        if tracking:
+            ahead = len(list(repo.iter_commits(f'{tracking.name}..HEAD')))
+            behind = len(list(repo.iter_commits(f'HEAD..{tracking.name}')))
+    except Exception:
+        pass
 
     return GitStatusResponse(
         project_id=project_id,
         is_git_repo=True,
-        files=files,
+        current_branch=current_branch,
+        modified_files=modified_files,
+        staged_files=staged_files,
+        untracked_files=untracked_files,
+        ahead=ahead,
+        behind=behind,
     )
 
 
@@ -490,6 +654,92 @@ def get_branches(
         "branches": branches,
         "worktrees": worktrees
     }
+
+
+@router.get("/file-diff")
+def get_file_diff(
+    project_id: UUID,
+    file_path: str,
+    session: SessionDep,
+    current_user: CurrentUser,
+    worktree: str | None = None,
+) -> dict:
+    """
+    Get git diff for a specific file compared to main/master branch.
+    
+    Args:
+        project_id: UUID of the project
+        file_path: Path to file relative to project/worktree root
+        worktree: Optional worktree path
+    """
+    import subprocess
+    
+    project_service = ProjectService(session)
+    project = project_service.get_by_id(project_id)
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if current_user.role != Role.ADMIN and project.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Use worktree path if provided, otherwise project path
+    project_path = project.project_path or f"projects/{project_id}"
+    if worktree:
+        base_path = worktree
+    else:
+        base_path = project_path
+    
+    if not Path(base_path).exists():
+        return {"file_path": file_path, "diff": "", "has_changes": False, "error": "Path not found"}
+    
+    # Detect default branch
+    def get_default_branch(cwd: str) -> str:
+        for branch in ['main', 'master']:
+            result = subprocess.run(
+                ["git", "rev-parse", "--verify", branch],
+                cwd=cwd, capture_output=True, timeout=5
+            )
+            if result.returncode == 0:
+                return branch
+        return 'main'
+    
+    try:
+        base_branch = get_default_branch(base_path)
+        
+        # Get diff compared to base branch
+        result = subprocess.run(
+            ["git", "diff", base_branch, "--", file_path],
+            cwd=base_path,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        diff_content = result.stdout
+        
+        # If no diff with base branch, try uncommitted changes
+        if not diff_content:
+            result = subprocess.run(
+                ["git", "diff", "--", file_path],
+                cwd=base_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            diff_content = result.stdout
+        
+        return {
+            "file_path": file_path,
+            "diff": diff_content,
+            "has_changes": bool(diff_content),
+            "base_branch": base_branch,
+        }
+    except subprocess.TimeoutExpired:
+        return {"file_path": file_path, "diff": "", "has_changes": False, "error": "Git command timed out"}
+    except Exception as e:
+        logger.error(f"Error getting file diff: {e}")
+        return {"file_path": file_path, "diff": "", "has_changes": False, "error": str(e)}
 
 
 # ============= Helper Functions =============

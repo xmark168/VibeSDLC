@@ -246,15 +246,23 @@ function StacksAdminPage() {
                       <TableCell className="font-medium">{stack.name}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {Object.entries(stack.stack_config || {}).slice(0, 3).map(([key, value]) => (
-                            <Badge key={key} variant="secondary" className="text-xs">
-                              {key}: {value}
-                            </Badge>
-                          ))}
-                          {Object.keys(stack.stack_config || {}).length > 3 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{Object.keys(stack.stack_config).length - 3} more
-                            </Badge>
+                          {Object.keys(stack.stack_config || {}).length === 0 ? (
+                            <span className="text-muted-foreground text-xs">No config</span>
+                          ) : (
+                            <>
+                              {Object.entries(stack.stack_config || {})
+                                .slice(0, 4)
+                                .map(([key, value]) => (
+                                  <Badge key={key} variant="secondary" className="text-xs">
+                                    {key}: {String(value)}
+                                  </Badge>
+                                ))}
+                              {Object.keys(stack.stack_config || {}).length > 4 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{Object.keys(stack.stack_config || {}).length - 4} more
+                                </Badge>
+                              )}
+                            </>
                           )}
                         </div>
                       </TableCell>

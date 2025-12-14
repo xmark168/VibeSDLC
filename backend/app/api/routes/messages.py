@@ -1,26 +1,18 @@
+"""Messages API."""
 import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID
-
 from fastapi import APIRouter, HTTPException, Query, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlmodel import select, func, delete
-
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Message as MessageModel, Project, Agent as AgentModel, AuthorType, MessageVisibility
-from app.schemas import (
-    ChatMessageCreate,
-    ChatMessageUpdate,
-    ChatMessagePublic,
-    ChatMessagesPublic,
-    Message,
-)
+from app.schemas import ChatMessageCreate, ChatMessageUpdate, ChatMessagePublic, ChatMessagesPublic, Message
 from app.core.config import DOCUMENT_UPLOAD_LIMITS
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/messages", tags=["messages"])
 
 
@@ -199,15 +191,6 @@ async def create_message_with_file(
     if file:
         # Validate file size (read file first)
         file_bytes = await file.read()
-        
-        # Debug: verify bytes immediately after reading
-        logger.info(f"=== FILE UPLOAD DEBUG ===")
-        logger.info(f"  - Filename: {file.filename}")
-        logger.info(f"  - Content-Type: {file.content_type}")
-        logger.info(f"  - Size: {len(file_bytes)} bytes")
-        logger.info(f"  - First 20 bytes (hex): {file_bytes[:20].hex() if len(file_bytes) >= 20 else file_bytes.hex()}")
-        logger.info(f"  - Is valid ZIP/DOCX (starts with PK): {file_bytes[:2] == b'PK'}")
-        logger.info(f"=== END FILE UPLOAD DEBUG ===")
         
         if len(file_bytes) > DOCUMENT_UPLOAD_LIMITS["max_file_size"]:
             max_mb = DOCUMENT_UPLOAD_LIMITS["max_file_size"] // 1024 // 1024

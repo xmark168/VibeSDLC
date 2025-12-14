@@ -1,5 +1,3 @@
-"""Application configuration management"""
-
 import os
 import warnings
 from pathlib import Path
@@ -41,7 +39,7 @@ def load_env_file():
 
     for env_file in env_files:
         if env_file.is_file():
-            load_dotenv(dotenv_path=env_file)
+            load_dotenv(dotenv_path=env_file, override=True)
             print(f"Loaded environment from {env_file}")
             return str(env_file)
 
@@ -70,8 +68,10 @@ class Settings(BaseSettings):
 
     # SECURITY SETTINGS
     SECRET_KEY: str = Field(
-        default="your-fixed-secret-key-min-32-chars-change-this-in-production"
+        default=...,  # Required - must be set in environment
+        description="Secret key for JWT encoding. Must be at least 32 characters."
     )
+    ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7  # 7 days
 
@@ -91,7 +91,6 @@ class Settings(BaseSettings):
     @computed_field
     @property
     def oauth_callback_url(self) -> str:
-        """Build OAuth callback URL"""
         return f"{self.BACKEND_HOST.rstrip('/')}{self.API_V1_STR}/oauth-callback"
 
     @computed_field
@@ -140,17 +139,9 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: EmailStr
     FIRST_SUPERUSER_PASSWORD: str
 
-    LLM_API_KEY: str = ""
-    LLM_MODEL: str = "gpt-4.1"
-    DEFAULT_LLM_TEMPERATURE: float = 0.2
-    MAX_TOKENS: int = 2000
-    MAX_LLM_CALL_RETRIES: int = 3
-
-    # LLM Model Settings
-    STRONG_MODEL: str = "openai/gpt-4.1"  # For creative agents (BA, Designer)
-    LIGHT_MODEL: str = "openai/gpt-4.1"  # For validators/coordinators
-
-    OPENAI_API_KEY: str = ""
+    # Anthropic API Settings (all agents use this)
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_API_BASE: str = "https://api.anthropic.com"
 
     SENTRY_DSN: HttpUrl | None = None
 
@@ -198,6 +189,15 @@ class Settings(BaseSettings):
         "business_analyst": {"max_agents": 20, "priority": 1},
     })
 
+    # AGENT HEALTH CHECK SETTINGS
+    AGENT_HEALTH_MAX_CONSECUTIVE_FAILURES: int = 20     # Terminate after 20 consecutive failures
+    AGENT_HEALTH_STALE_BUSY_TIMEOUT_SECONDS: int = 1800 # 30 min busy without activity = stale
+    AGENT_HEALTH_WARNING_THRESHOLD: int = 15            # Log warning after 15 failures
+
+    # METRICS SETTINGS
+    METRICS_FLUSH_INTERVAL: int = 10
+    METRICS_BUFFER_SIZE: int = 100
+
     # PAYOS PAYMENT GATEWAY SETTINGS
     PAYOS_CLIENT_ID: str = ""
     PAYOS_API_KEY: str = ""
@@ -214,12 +214,6 @@ class Settings(BaseSettings):
     def _set_default_emails_from(self) -> Self:
         if not self.EMAILS_FROM_NAME:
             self.EMAILS_FROM_NAME = self.PROJECT_NAME
-        return self
-
-    @model_validator(mode="after")
-    def _sync_openai_api_key(self) -> Self:
-        if not self.OPENAI_API_KEY and self.LLM_API_KEY:
-            self.OPENAI_API_KEY = self.LLM_API_KEY
         return self
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:

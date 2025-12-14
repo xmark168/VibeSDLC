@@ -1,7 +1,7 @@
-"""Lean Kanban schemas."""
+"""Kanban schemas for WIP limits."""
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 from uuid import UUID
 
 from sqlmodel import Field, SQLModel
@@ -32,62 +32,6 @@ class WIPLimitPublic(SQLModel):
 class WIPLimitsPublic(SQLModel):
     data: list[WIPLimitPublic]
     count: int
-
-
-class WorkflowPolicyCreate(SQLModel):
-    project_id: UUID
-    from_status: str
-    to_status: str
-    criteria: Optional[dict[str, Any]] = None
-    is_active: bool = Field(default=True)
-
-
-class WorkflowPolicyUpdate(SQLModel):
-    criteria: Optional[dict[str, Any]] = None
-    is_active: Optional[bool] = None
-    definition_of_ready: Optional[list[str]] = None
-    definition_of_done: Optional[list[str]] = None
-
-
-class WorkflowPolicyPublic(SQLModel):
-    id: UUID
-    project_id: UUID
-    from_status: str
-    to_status: str
-    criteria: Optional[dict[str, Any]] = None
-    is_active: bool
-    definition_of_ready: Optional[list[str]] = None
-    definition_of_done: Optional[list[str]] = None
-    created_at: datetime
-    updated_at: datetime
-
-
-class WorkflowPoliciesPublic(SQLModel):
-    data: list[WorkflowPolicyPublic]
-    count: int
-
-
-class StoryFlowMetrics(SQLModel):
-    id: UUID
-    title: str
-    status: str
-    created_at: datetime
-    cycle_time_hours: Optional[float] = None
-    lead_time_hours: Optional[float] = None
-    age_in_current_status_hours: float
-    age_in_current_status_days: float
-    blocked: bool = False
-    blocker_count: int = 0
-
-
-class ProjectFlowMetrics(SQLModel):
-    avg_cycle_time_hours: Optional[float] = None
-    avg_lead_time_hours: Optional[float] = None
-    throughput_per_week: float
-    total_completed: int
-    work_in_progress: int
-    aging_items: list[dict[str, Any]]
-    bottlenecks: dict[str, Any]
 
 
 class WIPViolation(SQLModel):

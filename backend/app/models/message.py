@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
-from sqlalchemy import JSON, Text, Enum as SQLEnum, ForeignKey
+from sqlalchemy import JSON, Text, Enum as SQLEnum, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlmodel import Field, Relationship, Column
 
@@ -48,6 +48,12 @@ class Message(BaseModel, table=True):
     attachments: list[dict] | None = Field(default=None, sa_column=Column(JSON))
 
     agent: Optional["Agent"] = Relationship(back_populates="messages")
+    
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        Index('ix_messages_project_created', 'project_id', 'created_at'),  # Timeline queries
+        Index('ix_messages_agent_created', 'agent_id', 'created_at'),  # Agent activity queries
+    )
 
 
 class AgentConversation(BaseModel, table=True):

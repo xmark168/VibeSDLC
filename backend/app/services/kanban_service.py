@@ -1,19 +1,19 @@
-"""Kanban Service - Business logic for Lean Kanban (WIP limits, flow metrics, policies)."""
+"""Kanban Service - Business logic for WIP limits."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
 from sqlmodel import Session, select, func, and_
 
-from app.models import Project, Story, StoryStatus, WorkflowPolicy, Agent, AgentStatus
+from app.models import Project, Story, StoryStatus, Agent, AgentStatus
 
 logger = logging.getLogger(__name__)
 
 
 class KanbanService:
-    """Service for Lean Kanban management."""
+    """Service for Kanban WIP limits management."""
 
     def __init__(self, session: Session):
         self.session = session
@@ -240,115 +240,4 @@ class KanbanService:
             "updated_at": project.updated_at
         }
 
-    def get_workflow_policies(self, project_id: UUID) -> list[WorkflowPolicy]:
-        """Get all active workflow policies for a project."""
-        statement = (
-            select(WorkflowPolicy)
-            .where(WorkflowPolicy.project_id == project_id)
-            .where(WorkflowPolicy.is_active == True)
-        )
-        return list(self.session.exec(statement).all())
 
-    def create_workflow_policy(
-        self,
-        project_id: UUID,
-        from_status: str,
-        to_status: str,
-        criteria: Optional[dict] = None,
-        is_active: bool = True
-    ) -> WorkflowPolicy:
-        """Create a new workflow policy."""
-        policy = WorkflowPolicy(
-            project_id=project_id,
-            from_status=from_status,
-            to_status=to_status,
-            criteria=criteria,
-            is_active=is_active
-        )
-        
-        self.session.add(policy)
-        self.session.commit()
-        self.session.refresh(policy)
-        
-        logger.info(f"Created workflow policy: {from_status} → {to_status} for project {project_id}")
-        return policy
-
-    def update_workflow_policy(
-        self,
-        policy_id: UUID,
-        criteria: Optional[dict] = None,
-        is_active: Optional[bool] = None
-    ) -> Optional[WorkflowPolicy]:
-        """Update existing workflow policy."""
-        policy = self.session.get(WorkflowPolicy, policy_id)
-        if not policy:
-            return None
-        
-        if criteria is not None:
-            policy.criteria = criteria
-        if is_active is not None:
-            policy.is_active = is_active
-        
-        policy.updated_at = datetime.now(timezone.utc)
-        self.session.add(policy)
-        self.session.commit()
-        self.session.refresh(policy)
-        
-        logger.info(f"Updated workflow policy {policy_id}")
-        return policy
-
-    def delete_workflow_policy(self, policy_id: UUID) -> bool:
-        """Delete workflow policy."""
-        policy = self.session.get(WorkflowPolicy, policy_id)
-        if not policy:
-            return False
-        
-        self.session.delete(policy)
-        self.session.commit()
-        
-        logger.info(f"Deleted workflow policy {policy_id}")
-        return True
-
-    def get_project_flow_metrics(self, project_id: UUID) -> dict:
-        """Calculate flow metrics (cycle/lead time, throughput, WIP)."""
-        completed_stories = self.session.exec(
-            select(Story)
-            .where(Story.project_id == project_id)
-            .where(Story.status == StoryStatus.DONE)
-            .where(Story.completed_at.isnot(None))
-        ).all()
-        
-        cycle_times = [
-            (s.completed_at - s.started_at).total_seconds() / 3600
-            for s in completed_stories
-            if s.started_at and s.completed_at
-        ]
-        
-        lead_times = [
-            (s.completed_at - s.created_at).total_seconds() / 3600
-            for s in completed_stories
-            if s.completed_at
-        ]
-        
-        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        recent_completed = sum(
-            1 for s in completed_stories 
-            if s.completed_at and s.completed_at >= seven_days_ago
-        )
-        
-        wip_count = self.session.exec(
-            select(func.count())
-            .select_from(Story)
-            .where(Story.project_id == project_id)
-            .where(Story.status.in_([StoryStatus.IN_PROGRESS, StoryStatus.REVIEW]))
-        ).one()
-        
-        return {
-            "avg_cycle_time_hours": sum(cycle_times) / len(cycle_times) if cycle_times else None,
-            "avg_lead_time_hours": sum(lead_times) / len(lead_times) if lead_times else None,
-            "throughput_per_week": recent_completed,
-            "total_completed": len(completed_stories),
-            "work_in_progress": wip_count,
-            "aging_items": [],
-            "bottlenecks": {}
-        }

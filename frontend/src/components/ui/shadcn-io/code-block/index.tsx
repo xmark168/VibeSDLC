@@ -599,7 +599,6 @@ export const CodeBlockContent = ({
         setHighlightedCode(html);
         setIsLoading(false);
       } catch (error) {
-        console.error(`Failed to highlight code for language "${language}":`, error);
         setIsLoading(false);
       }
     };

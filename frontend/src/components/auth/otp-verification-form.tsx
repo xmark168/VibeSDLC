@@ -142,9 +142,6 @@ export function OTPVerificationForm() {
         },
       )
     } catch (err) {
-      // Error is already handled by handleError in mutation onError
-      // Just ensure loading state is reset
-      console.error("OTP verification error:", err)
     } finally {
       setIsLoading(false)
     }
@@ -179,11 +176,9 @@ export function OTPVerificationForm() {
         },
       )
     } catch (error) {
-      console.error("Resend error:", error)
     }
 
-    console.log("OTP resent")
-  }
+   }
 
   return (
     <motion.div

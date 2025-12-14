@@ -1,6 +1,23 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { requireRole } from "@/utils/auth"
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import {
   useAgentDashboard,
   useAgentPools,
@@ -22,6 +39,7 @@ import {
   useEmergencyStop,
   useEnterMaintenanceMode,
   useRestartPool,
+  useUpdatePoolPriorities,
 } from "@/queries/agents"
 import {
   type PoolResponse,
@@ -93,11 +111,14 @@ import {
   ShieldAlert,
   Ban,
   Settings,
+  GripVertical,
 } from "lucide-react"
 import { toast } from "@/lib/toast"
 import { formatDistanceToNow } from "date-fns"
 import { MetricCard } from "@/components/admin"
-import { PersonasTab, ActivityTab, AgentConfigDialog, BulkActionsToolbar, SpawnAgentDialog } from "@/components/admin/agents"
+import { ActivityTab, AgentConfigDialog, BulkActionsToolbar, SpawnAgentDialog } from "@/components/admin/agents"
+import { useSystemTokenSummary, usePoolsTokenStats, useAgentsTokenStats } from "@/queries/agents"
+import { Coins } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AdminLayout } from "@/components/admin/AdminLayout"
 
@@ -145,7 +166,7 @@ function AgentAdminPage() {
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="pools">
             <Server className="w-4 h-4 mr-2" />
             Pools
@@ -153,10 +174,6 @@ function AgentAdminPage() {
           <TabsTrigger value="agents">
             <Users className="w-4 h-4 mr-2" />
             Agents
-          </TabsTrigger>
-          <TabsTrigger value="personas">
-            <Users className="w-4 h-4 mr-2" />
-            Personas
           </TabsTrigger>
           <TabsTrigger value="activity">
             <Activity className="w-4 h-4 mr-2" />
@@ -178,10 +195,6 @@ function AgentAdminPage() {
 
         <TabsContent value="agents" className="mt-6">
           <AgentsTab healthData={healthData} pools={pools || []} isLoading={healthLoading} />
-        </TabsContent>
-
-        <TabsContent value="personas" className="mt-6">
-          <PersonasTab />
         </TabsContent>
 
         <TabsContent value="activity" className="mt-6">
@@ -267,8 +280,8 @@ function SystemStatsCards({
   const successTrend = executionData?.data.map((d: any) => ({ value: d.success_rate || 0 })) || []
   const successChange = calculateTrend(executionData?.data || [], "success_rate")
 
-  const tokenTrend = tokenData?.data.map((d) => ({ value: d.total_tokens })) || []
-  const tokenChange = tokenData?.data.length > 1
+  const tokenTrend = tokenData?.data?.map((d) => ({ value: d.total_tokens })) || []
+  const tokenChange = tokenData?.data && tokenData.data.length > 1
     ? ((tokenData.data[tokenData.data.length - 1].total_tokens - tokenData.data[0].total_tokens) / (tokenData.data[0].total_tokens || 1)) * 100
     : 0
 
@@ -444,6 +457,174 @@ function SystemControls() {
   )
 }
 
+// ===== Sortable Pool Card =====
+function SortablePoolCard({
+  pool,
+  poolTokenData,
+  healthData,
+  isExpanded,
+  onToggle,
+}: {
+  pool: PoolResponse
+  poolTokenData?: { total_tokens_used: number; total_llm_calls: number }
+  healthData?: AgentHealth[]
+  isExpanded: boolean
+  onToggle: () => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: pool.id || pool.pool_name })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <Card ref={setNodeRef} style={style} className={isDragging ? "shadow-lg" : ""}>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              {...attributes}
+              {...listeners}
+              className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded"
+            >
+              <GripVertical className="w-4 h-4 text-muted-foreground" />
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="p-0 h-auto"
+              onClick={onToggle}
+            >
+              {isExpanded ? (
+                <ChevronDown className="w-4 h-4" />
+              ) : (
+                <ChevronRight className="w-4 h-4" />
+              )}
+            </Button>
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                {pool.pool_name}
+                <Badge variant="outline" className="text-xs">
+                  #{pool.priority ?? 0}
+                </Badge>
+              </CardTitle>
+              <CardDescription>{pool.role_type}</CardDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-right">
+              <div className="font-medium">
+                {pool.idle_agents} idle / {pool.busy_agents} busy
+              </div>
+              <div className="text-muted-foreground">
+                Load: {(pool.load * 100).toFixed(0)}%
+              </div>
+            </div>
+            {poolTokenData && (
+              <div className="text-sm text-right border-l pl-4">
+                <div className="font-medium flex items-center gap-1">
+                  <Coins className="w-3 h-3" />
+                  {(poolTokenData.total_tokens_used / 1000).toFixed(1)}K tokens
+                </div>
+                <div className="text-muted-foreground">
+                  {poolTokenData.total_llm_calls} LLM calls
+                </div>
+              </div>
+            )}
+            <PoolActions pool={pool} />
+          </div>
+        </div>
+      </CardHeader>
+
+      {isExpanded && (
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4 text-sm">
+            <div>
+              <span className="text-muted-foreground">Total Agents:</span>
+              <span className="ml-2 font-medium">{pool.total_agents}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Executions:</span>
+              <span className="ml-2 font-medium">{pool.total_executions}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Success Rate:</span>
+              <span className="ml-2 font-medium">
+                {(pool.success_rate * 100).toFixed(1)}%
+              </span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Total Tokens:</span>
+              <span className="ml-2 font-medium">
+                {poolTokenData ? poolTokenData.total_tokens_used.toLocaleString() : "0"}
+              </span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Created:</span>
+              <span className="ml-2 font-medium">
+                {pool.created_at
+                  ? formatDistanceToNow(new Date(pool.created_at), { addSuffix: true })
+                  : "N/A"}
+              </span>
+            </div>
+          </div>
+
+          {healthData && healthData.length > 0 && (
+            <div className="border rounded-lg">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Agent</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Uptime</TableHead>
+                    <TableHead>Executions</TableHead>
+                    <TableHead className="w-[100px]">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {healthData.map((agent) => (
+                    <TableRow key={agent.agent_id}>
+                      <TableCell className="font-medium">
+                        {generateAgentDisplayName(agent.agent_id, agent.role_name)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={getStateVariant(agent.state)}>
+                          {getStateLabel(agent.state)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{formatUptime(agent.uptime_seconds)}</TableCell>
+                      <TableCell>
+                        <span className="text-green-600">{agent.successful_executions}</span>
+                        {" / "}
+                        <span className="text-red-600">{agent.failed_executions}</span>
+                      </TableCell>
+                      <TableCell>
+                        <AgentActions
+                          agent={agent}
+                          poolName={pool.pool_name}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  )
+}
+
 // ===== Pools Tab =====
 function PoolsTab({
   pools,
@@ -455,6 +636,20 @@ function PoolsTab({
   isLoading: boolean
 }) {
   const [expandedPools, setExpandedPools] = useState<Set<string>>(new Set())
+  const { data: poolsTokenStats } = usePoolsTokenStats()
+  const updatePriorities = useUpdatePoolPriorities()
+
+  // Sort pools by priority
+  const sortedPools = useMemo(() => {
+    return [...pools].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
+  }, [pools])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
 
   const togglePool = (poolName: string) => {
     setExpandedPools((prev) => {
@@ -466,6 +661,33 @@ function PoolsTab({
       }
       return newSet
     })
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = sortedPools.findIndex((p) => (p.id || p.pool_name) === active.id)
+    const newIndex = sortedPools.findIndex((p) => (p.id || p.pool_name) === over.id)
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const reordered = arrayMove(sortedPools, oldIndex, newIndex)
+      
+      // Update priorities based on new order
+      const newPriorities = reordered.map((pool, index) => ({
+        pool_id: pool.id,
+        priority: index,
+      }))
+
+      updatePriorities.mutate(newPriorities, {
+        onSuccess: () => {
+          toast.success("Pool priorities updated")
+        },
+        onError: () => {
+          toast.error("Failed to update priorities")
+        },
+      })
+    }
   }
 
   if (isLoading) {
@@ -483,128 +705,50 @@ function PoolsTab({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Agent Pools</h2>
+        <div>
+          <h2 className="text-lg font-semibold">Agent Pools</h2>
+          <p className="text-sm text-muted-foreground">
+            Drag to reorder priority (lower = higher priority)
+          </p>
+        </div>
         <CreatePoolDialog />
       </div>
 
-      {pools.length === 0 ? (
+      {sortedPools.length === 0 ? (
         <Card>
           <CardContent className="p-6 text-center text-muted-foreground">
             No pools available. Create a pool to get started.
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {pools.map((pool) => (
-            <Card key={pool.pool_name}>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="p-0 h-auto"
-                      onClick={() => togglePool(pool.pool_name)}
-                    >
-                      {expandedPools.has(pool.pool_name) ? (
-                        <ChevronDown className="w-4 h-4" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4" />
-                      )}
-                    </Button>
-                    <div>
-                      <CardTitle className="text-base">{pool.pool_name}</CardTitle>
-                      <CardDescription>{pool.role_type}</CardDescription>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-sm text-right">
-                      <div className="font-medium">
-                        {pool.idle_agents} idle / {pool.busy_agents} busy
-                      </div>
-                      <div className="text-muted-foreground">
-                        Load: {(pool.load * 100).toFixed(0)}%
-                      </div>
-                    </div>
-                    <PoolActions pool={pool} />
-                  </div>
-                </div>
-              </CardHeader>
-
-              {expandedPools.has(pool.pool_name) && (
-                <CardContent className="pt-0">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Total Agents:</span>
-                      <span className="ml-2 font-medium">{pool.total_agents}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Executions:</span>
-                      <span className="ml-2 font-medium">{pool.total_executions}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Success Rate:</span>
-                      <span className="ml-2 font-medium">
-                        {(pool.success_rate * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Created:</span>
-                      <span className="ml-2 font-medium">
-                        {pool.created_at
-                          ? formatDistanceToNow(new Date(pool.created_at), { addSuffix: true })
-                          : "N/A"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Agents in pool */}
-                  {healthData?.[pool.pool_name] && healthData[pool.pool_name].length > 0 && (
-                    <div className="border rounded-lg">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Agent</TableHead>
-                            <TableHead>State</TableHead>
-                            <TableHead>Uptime</TableHead>
-                            <TableHead>Executions</TableHead>
-                            <TableHead className="w-[100px]">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {healthData[pool.pool_name].map((agent) => (
-                            <TableRow key={agent.agent_id}>
-                              <TableCell className="font-medium">
-                                {generateAgentDisplayName(agent.agent_id, agent.role_name)}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={getStateVariant(agent.state)}>
-                                  {getStateLabel(agent.state)}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>{formatUptime(agent.uptime_seconds)}</TableCell>
-                              <TableCell>
-                                <span className="text-green-600">{agent.successful_executions}</span>
-                                {" / "}
-                                <span className="text-red-600">{agent.failed_executions}</span>
-                              </TableCell>
-                              <TableCell>
-                                <AgentActions
-                                  agent={agent}
-                                  poolName={pool.pool_name}
-                                />
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                </CardContent>
-              )}
-            </Card>
-          ))}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={sortedPools.map((p) => p.id || p.pool_name)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-4">
+              {sortedPools.map((pool) => {
+                const poolTokenData = poolsTokenStats?.find(
+                  (p) => p.pool_name === pool.pool_name
+                )
+                return (
+                  <SortablePoolCard
+                    key={pool.id || pool.pool_name}
+                    pool={pool}
+                    poolTokenData={poolTokenData}
+                    healthData={healthData?.[pool.pool_name]}
+                    isExpanded={expandedPools.has(pool.pool_name)}
+                    onToggle={() => togglePool(pool.pool_name)}
+                  />
+                )
+              })}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
     </div>
   )
@@ -821,6 +965,7 @@ function AgentsTab({
   isLoading: boolean
 }) {
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set())
+  const { data: agentsTokenStats } = useAgentsTokenStats()
 
   // Flatten all agents with their pool names
   const allAgents: Array<{ agent: AgentHealth; poolName: string }> = []
@@ -911,11 +1056,15 @@ function AgentsTab({
                   <TableHead>Health</TableHead>
                   <TableHead>Uptime</TableHead>
                   <TableHead>Success Rate</TableHead>
+                  <TableHead>Tokens</TableHead>
+                  <TableHead>LLM Calls</TableHead>
                   <TableHead className="w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {allAgents.map(({ agent, poolName }) => (
+                {allAgents.map(({ agent, poolName }) => {
+                  const tokenStats = agentsTokenStats?.find(a => a.agent_id === agent.agent_id)
+                  return (
                   <TableRow
                     key={agent.agent_id}
                     className={selectedAgents.has(agent.agent_id) ? "bg-muted/50" : ""}
@@ -951,10 +1100,19 @@ function AgentsTab({
                         : "N/A"}
                     </TableCell>
                     <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Coins className="w-3 h-3 text-muted-foreground" />
+                        {tokenStats ? (tokenStats.tokens_used_total / 1000).toFixed(1) + "K" : "0"}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {tokenStats?.llm_calls_total || 0}
+                    </TableCell>
+                    <TableCell>
                       <AgentActions agent={agent} poolName={poolName} />
                     </TableCell>
                   </TableRow>
-                ))}
+                )})}
               </TableBody>
             </Table>
           )}

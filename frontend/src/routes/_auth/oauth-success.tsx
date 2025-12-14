@@ -18,13 +18,17 @@ function OAuthSuccess() {
         const handleOAuthSuccess = async () => {
             try {
                 const params = new URLSearchParams(window.location.search)
+                const error = params.get('error')
+                
+                // Check for errors first before processing tokens
+                if (error) {
+                    console.error(`OAuth error: ${error}`)
+                    navigate({ to: `/login?error=${error}` })
+                    return
+                }
+
                 const accessToken = params.get('access_token')
                 const refreshToken = params.get('refresh_token')
-                const error = params.get('error')
-
-                if (error) {
-                    throw new Error(`OAuth failed: ${error}`)
-                }
 
                 if (!accessToken || !refreshToken) {
                     throw new Error('Missing tokens in OAuth callback')
@@ -43,7 +47,7 @@ function OAuthSuccess() {
                 navigate({ to: redirectPath })
 
             } catch (err) {
-                console.error("OAuth success handler error:", err)
+                console.error('OAuth callback error:', err)
                 navigate({ to: "/login?error=oauth_failed" })
             }
         }

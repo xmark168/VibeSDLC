@@ -1,6 +1,9 @@
 // Backlog and Kanban-related types
 
-export type StoryAgentState = 'pending' | 'processing' | 'paused' | 'canceled' | 'finished'
+export type StoryAgentState = 'PENDING' | 'PROCESSING' | 'PAUSED' | 'CANCEL_REQUESTED' | 'CANCELED' | 'FINISHED'
+
+// Sub-status for PENDING state to show progress during restart
+export type PendingSubStatus = 'queued' | 'cleaning' | 'starting' | null
 
 export interface BacklogItem {
   id: string
@@ -21,6 +24,7 @@ export interface BacklogItem {
   children?: BacklogItem[]
   // Agent tracking
   agent_state?: StoryAgentState | null
+  agent_sub_status?: PendingSubStatus  // Sub-status for PENDING state
   assigned_agent_id?: string | null
   branch_name?: string | null
   worktree_path?: string | null
@@ -74,24 +78,6 @@ export interface WIPLimit {
 export interface UpdateWIPLimitParams {
   wip_limit: number
   limit_type: 'hard' | 'soft'
-}
-
-export interface FlowMetrics {
-  avg_cycle_time_hours: number | null
-  avg_lead_time_hours: number | null
-  throughput_per_week: number
-  total_completed: number
-  work_in_progress: number
-  aging_items: Array<{
-    id: string
-    title: string
-    status: string
-    age_hours: number
-  }>
-  bottlenecks: Record<string, {
-    avg_age_hours: number
-    count: number
-  }>
 }
 
 export interface StoryFormData {

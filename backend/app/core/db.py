@@ -14,27 +14,14 @@ engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
 
 
 def get_worker_engine(pool_size: int = 5, max_overflow: int = 10):
-    """Get database engine for background tasks and workers.
-
-    Creates a fresh engine instance with custom pool settings for
-    background tasks like metrics collection.
-
-    Args:
-        pool_size: Connection pool size
-        max_overflow: Max overflow connections
-
-    Returns:
-        SQLModel engine instance
-    """
-    worker_engine = create_engine(
+    return create_engine(
         str(settings.SQLALCHEMY_DATABASE_URI),
         pool_size=pool_size,
         max_overflow=max_overflow,
-        pool_pre_ping=True,  # Verify connections before using
-        pool_recycle=3600,   # Recycle connections after 1 hour
+        pool_pre_ping=True,
+        pool_recycle=3600,
     )
 
-    return worker_engine
 
 def init_db(session: Session) -> None:
     # 1. Seed superuser if not exists

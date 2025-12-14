@@ -1,15 +1,4 @@
-"""Implement Tests node - Generate tests using structured output (aligned with Developer V2).
-
-Optimized version:
-- NO tool calling iterations
-- Skills preloaded into system prompt
-- Dependencies preloaded from plan phase
-- Single LLM call with structured output + retry
-- Direct file write (no tools)
-- Component source preloaded with MANDATORY verification checklist
-- Adaptive LLM selection based on test type
-- Refresh dependencies after implementation
-"""
+"""Implement Tests node - Generate tests using structured output with skills and preloaded dependencies."""
 
 import asyncio
 import logging
@@ -23,11 +12,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.skills import SkillRegistry
 from app.agents.tester.src.state import TesterState
-from app.agents.tester.src.core_nodes import send_message, generate_user_message
+from app.agents.tester.src.nodes.core_nodes import send_message, generate_user_message
 from app.agents.tester.src.utils.token_utils import truncate_to_tokens
 from app.agents.tester.src._llm import (
-    implement_llm, 
-    get_llm_for_skills,
+    implement_llm,
+    get_llm,
     invoke_structured_with_retry,
 )
 from app.agents.tester.src.config import (
@@ -41,21 +30,8 @@ logger = logging.getLogger(__name__)
 _llm = implement_llm
 
 
-# =============================================================================
-# Git Helper Functions (aligned with Developer V2)
-# =============================================================================
-
 def git_commit_tests(workspace_path: str, description: str, files: List[str] = None) -> bool:
-    """Commit test files after successful implementation (aligned with Developer V2).
-    
-    Args:
-        workspace_path: Path to git repository
-        description: Brief description of changes
-        files: Specific files to commit, or None for all changes
-    
-    Returns:
-        True if commit succeeded, False otherwise
-    """
+    """Commit test files after successful implementation."""
     import subprocess
     
     try:
@@ -556,8 +532,8 @@ Scan the source code above and list what you found:
         
         logger.info(f"[implement_tests] Step {step_index + 1}: {description[:50]}... (skills: {step_skills})")
         
-        # Adaptive LLM selection based on skills (Developer V2 pattern)
-        step_llm = get_llm_for_skills(step_skills)
+        # Get implement LLM
+        step_llm = get_llm("implement")
         structured_llm = step_llm.with_structured_output(TestFileOutput)
         result = await _invoke_with_retry(
             structured_llm,

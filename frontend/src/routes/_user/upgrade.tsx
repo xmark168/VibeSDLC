@@ -73,6 +73,9 @@ function RouteComponent() {
     if (billingTab === 'history') {
       setCurrentPage(1)
     }
+    // Reset QR data when switching tabs to prevent stale data
+    setSepayQRData(null)
+    setSepayDialogOpen(false)
   }, [billingTab])
 
   useEffect(() => {
@@ -178,6 +181,9 @@ function RouteComponent() {
     setIsProcessingPayment(true)
 
     try {
+      // Reset old QR data before creating new payment
+      setSepayQRData(null)
+      
       let qrData: SePayQRResponse
 
       if (isPurchasingCredit) {
@@ -195,6 +201,7 @@ function RouteComponent() {
       }
 
       setInvoiceDialogOpen(false)
+      // Set new QR data
       setSepayQRData(qrData)
       setSepayDialogOpen(true)
     } catch (error: any) {
@@ -206,14 +213,16 @@ function RouteComponent() {
 
   const handleSepaySuccess = () => {
     setSepayDialogOpen(false)
-    setSepayQRData(null)
+    // Reset QR data immediately to prevent stale data
+    setTimeout(() => setSepayQRData(null), 300)
     queryClient.invalidateQueries({ queryKey: ['subscription', 'current'] })
     queryClient.invalidateQueries({ queryKey: ['payments', 'history'] })
   }
 
   const handleSepayCancel = () => {
     setSepayDialogOpen(false)
-    setSepayQRData(null)
+    // Reset QR data immediately to prevent stale data
+    setTimeout(() => setSepayQRData(null), 300)
   }
 
   const handleHistoryClick = (orderId: string) => {
@@ -574,8 +583,7 @@ function RouteComponent() {
                       step="10"
                       value={creditAmount}
                       onChange={(e) => {
-                        const val = parseInt(e.target.value) || 10
-                        setCreditAmount(Math.max(10, val))
+                        setCreditAmount(Number(e.target.value));
                       }}
                       className="flex-1 h-14 rounded-xl border border-border bg-background px-4 text-xl font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                     />
@@ -588,7 +596,7 @@ function RouteComponent() {
                     max="1000"
                     step="10"
                     value={creditAmount}
-                    onChange={(e) => setCreditAmount(parseInt(e.target.value))}
+                    onChange={(e) => setCreditAmount(Number(e.target.value))}
                     className="w-full h-2 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
                   />
 

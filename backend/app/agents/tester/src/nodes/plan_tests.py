@@ -1,24 +1,20 @@
-"""Plan Tests node - Analyze stories and create test plan (aligned with Developer V2).
-
-Uses FileRepository for zero-shot planning (Developer V2 pattern):
-- Pre-computes workspace context (file tree, components, API routes)
-- Single LLM call with full context
-- No tool calls needed for planning
-"""
+"""Plan Tests node - Analyze stories and create test plan using FileRepository for zero-shot planning."""
 
 import json
 import logging
 import os
 import re
 import unicodedata
+from typing import List
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.core_nodes import detect_testing_context, send_message, generate_user_message
+from app.agents.tester.src.nodes.core_nodes import detect_testing_context, send_message, generate_user_message
 from app.agents.tester.src._llm import plan_llm
 from app.agents.tester.src.config import MAX_SCENARIOS_UNIT, MAX_SCENARIOS_INTEGRATION
 from app.agents.tester.src.utils.file_repository import FileRepository
@@ -36,24 +32,21 @@ def _cfg(state: dict, name: str) -> dict:
     return {"callbacks": [h], "run_name": name} if h else {}
 
 
-def _parse_json(content: str) -> dict:
-    """Parse JSON from LLM response."""
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError:
-        pass
-    
-    # Extract from markdown
-    if "```json" in content:
-        content = content.split("```json")[1].split("```")[0]
-    elif "```" in content:
-        content = content.split("```")[1].split("```")[0]
-    
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError as e:
-        logger.warning(f"[_parse_json] Failed: {content[:300]}...")
-        raise e
+class TestPlanStep(BaseModel):
+    """Single test plan step."""
+    order: int
+    type: str  # "integration" or "unit"
+    story_id: str
+    story_title: str
+    file_path: str
+    description: str
+    scenarios: List[str]
+    dependencies: List[str] = []
+
+
+class TestPlanOutput(BaseModel):
+    """Test plan output from LLM."""
+    test_plan: List[TestPlanStep]
 
 
 def _slugify(text: str) -> str:
@@ -65,15 +58,7 @@ def _slugify(text: str) -> str:
 
 
 def _extract_feature_name(story_title: str) -> str:
-    """Extract feature name from story title for test file naming.
-    
-    Examples:
-    - "As a user, I want to see featured books" -> "featured-books"
-    - "Homepage with categories and search" -> "homepage"
-    - "User can add items to cart" -> "cart"
-    
-    This creates cleaner, feature-based test file names instead of long slugs.
-    """
+    """Extract feature name from story title for test file naming."""
     title_lower = story_title.lower()
     
     # Common feature keywords to extract (priority order)
@@ -114,16 +99,9 @@ def _extract_feature_name(story_title: str) -> str:
     if words:
         # Take first 2 meaningful words
         return '-'.join(words[:2])
-    
-    # Final fallback
     return _slugify(story_title)[:20] or "feature"
 
 
-# =============================================================================
-# VALIDATION
-# =============================================================================
-
-# Invalid patterns that should not be used as story titles/test names
 INVALID_STORY_PATTERNS = [
     "jest-config",
     "config-removal", 
@@ -138,13 +116,7 @@ INVALID_STORY_PATTERNS = [
 
 
 def _is_valid_story_for_testing(story: dict) -> bool:
-    """Check if a story is valid for test generation.
-    
-    Rejects stories that:
-    - Have invalid/placeholder titles
-    - Are about config/setup tasks (not user features)
-    - Have empty or missing required fields
-    """
+    """Check if story is valid for test generation (rejects config/setup tasks)."""
     title = story.get("title", "") or ""
     slug = _slugify(title)
     
@@ -265,17 +237,7 @@ def _find_source_files_for_story(workspace_path: str, keywords: list[str]) -> li
 
 
 def _analyze_component(file_path: str, content: str) -> dict:
-    """Extract component info for better test generation.
-    
-    Analyzes component source to extract:
-    - Component name
-    - Props interface  
-    - Data attributes (data-testid, data-slot, etc.)
-    - Whether it has skeleton/loading state
-    
-    Returns:
-        Dict with component analysis info
-    """
+    """Extract component info: name, props, data attributes, skeleton state."""
     info = {
         "name": "",
         "props": [],
@@ -325,18 +287,7 @@ def _analyze_component(file_path: str, content: str) -> dict:
 
 
 def _find_components_for_unit_test(workspace_path: str, keywords: list[str]) -> list[dict]:
-    """Find components specifically for unit testing with detailed analysis.
-    
-    Unlike _find_source_files_for_story which finds any matching file,
-    this function:
-    1. Focuses on component files (.tsx)
-    2. Excludes UI primitives (button, input, etc.)
-    3. Scores by keyword relevance
-    4. Analyzes each component for props, exports, data attributes
-    
-    Returns:
-        List of component info dicts with path, name, props, exports, data_attributes
-    """
+    """Find components for unit testing with keyword scoring and analysis."""
     from pathlib import Path
     
     path = Path(workspace_path)
@@ -432,104 +383,9 @@ def _format_component_context(components: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _get_existing_routes(workspace_path: str) -> list[str]:
-    """Scan project for existing API routes.
-    
-    This ensures we only generate tests for code that actually exists,
-    preventing LLM from hallucinating imports for non-existent routes.
-    
-    Returns:
-        List of existing route paths (e.g., ["app/api/books/featured/route.ts"])
-    """
-    from pathlib import Path
-    
-    routes = []
-    path = Path(workspace_path)
-    
-    if not path.exists():
-        return routes
-    
-    # Check common API directories
-    api_dirs = [
-        path / "src" / "app" / "api",  # Next.js 13+ with src
-        path / "app" / "api",           # Next.js 13+ without src
-        path / "pages" / "api",         # Next.js pages router
-    ]
-    
-    for api_dir in api_dirs:
-        if api_dir.exists():
-            for route_file in api_dir.rglob("route.ts"):
-                if "node_modules" not in str(route_file):
-                    relative = route_file.relative_to(path)
-                    routes.append(str(relative).replace("\\", "/"))
-            
-            # Also check for pages API (older Next.js pattern)
-            for api_file in api_dir.rglob("*.ts"):
-                if "node_modules" not in str(api_file) and api_file.name != "route.ts":
-                    relative = api_file.relative_to(path)
-                    routes.append(str(relative).replace("\\", "/"))
-    
-    logger.info(f"[_get_existing_routes] Found {len(routes)} existing API routes")
-    return routes
-
-
-def _load_api_source_code(workspace_path: str, routes: list[str]) -> str:
-    """Load actual API source code for LLM to analyze.
-    
-    This helps LLM understand WHAT each API actually does:
-    - What query params are supported
-    - What the response structure looks like
-    - What database operations are performed
-    
-    Returns:
-        Formatted string with API source code
-    """
-    from pathlib import Path
-    
-    if not workspace_path or not routes:
-        return "No API source code available."
-    
-    path = Path(workspace_path)
-    api_sources = []
-    
-    for route in routes[:10]:  # Limit to 10 routes to avoid token overflow
-        route_path = path / route
-        if route_path.exists():
-            try:
-                content = route_path.read_text(encoding="utf-8")
-                # Truncate long files
-                if len(content) > 2000:
-                    content = content[:2000] + "\n// ... (truncated)"
-                
-                # Extract route URL from path
-                # e.g., "src/app/api/categories/route.ts" -> "/api/categories"
-                route_url = route.replace("src/app", "").replace("app", "")
-                route_url = route_url.replace("/route.ts", "").replace("/route.tsx", "")
-                route_url = route_url.replace("\\", "/")
-                if not route_url.startswith("/"):
-                    route_url = "/" + route_url
-                
-                api_sources.append(f"### {route_url}\nFile: {route}\n```typescript\n{content}\n```")
-            except Exception as e:
-                logger.warning(f"[_load_api_source_code] Failed to load {route}: {e}")
-    
-    if not api_sources:
-        return "No API source code available."
-    
-    return "\n\n".join(api_sources)
-
 
 def _preload_test_dependencies(workspace_path: str, test_plan: list, stories: list = None) -> dict:
-    """Pre-load source files that tests will need as context (MetaGPT-style).
-    
-    This function:
-    1. Extracts keywords from stories
-    2. Finds actual source files related to those keywords
-    3. Reads their content so LLM knows actual exports, types, functions
-    
-    Returns:
-        Dict mapping file_path -> content
-    """
+    """Pre-load source files that tests will need as context."""
     from pathlib import Path
     
     dependencies_content = {}
@@ -603,20 +459,7 @@ def _preload_test_dependencies(workspace_path: str, test_plan: list, stories: li
 
 
 def _detect_test_structure(project_path: str) -> dict:
-    """Get standardized test folder structure for Next.js projects.
-    
-    FIXED STRUCTURE (Best Practice for Next.js):
-    - Integration tests: src/__tests__/integration/
-    - Unit tests: src/__tests__/unit/
-    
-    This ensures consistent folder structure across all projects.
-    
-    Returns:
-        dict with:
-        - integration_folder: Fixed path for integration tests
-        - unit_folder: Fixed path for unit tests
-        - existing_tests: List of existing test files (for reference)
-    """
+    """Get standardized test folder structure (src/__tests__/integration/, src/__tests__/unit/)."""
     from pathlib import Path
     
     # FIXED STRUCTURE - DO NOT CHANGE based on existing files
@@ -670,22 +513,7 @@ def _detect_test_structure(project_path: str) -> dict:
 
 
 async def plan_tests(state: TesterState, agent=None) -> dict:
-    """Analyze stories and create test plan.
-    
-    This node:
-    1. Detects testing context (auth, ORM, mocks, ESM warnings)
-    2. Analyzes stories to identify testable scenarios
-    3. Decides test scenarios for each story
-    4. Creates a step-by-step test plan
-    
-    Includes interrupt signal check for pause/cancel support.
-    
-    Output:
-    - test_plan: List of test steps
-    - testing_context: Auth patterns, ORM, existing mocks
-    - total_steps: Number of steps
-    - current_step: 0 (starting)
-    """
+    """Analyze stories and create test plan with interrupt support."""
     from langgraph.types import interrupt
     from app.agents.tester.src.graph import check_interrupt_signal
     
@@ -797,8 +625,9 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
     logger.info(f"[plan_tests] Analyzed {len(unit_test_components)} components for unit tests")
     
     try:
-        # Call LLM to create test plan
-        response = await _llm.ainvoke(
+        # Call LLM to create test plan using structured output
+        structured_llm = _llm.with_structured_output(TestPlanOutput)
+        result = await structured_llm.ainvoke(
             [
                 SystemMessage(content=get_system_prompt("plan_tests")),
                 HumanMessage(content=get_user_prompt(
@@ -814,9 +643,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             ],
             config=_cfg(state, "plan_tests"),
         )
-        
-        result = _parse_json(response.content)
-        test_plan = result.get("test_plan", [])
+        test_plan = result.test_plan
         
         # FIXED folder paths - always use standard structure
         integration_folder = "src/__tests__/integration"
@@ -1003,3 +830,14 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             "error": str(e),
             "message": error_msg,
         }
+
+
+def _get_existing_routes(workspace_path: str) -> List[str]:
+    """Get existing API routes from workspace using FileRepository."""
+    if not workspace_path:
+        return []
+    try:
+        file_repo = FileRepository(workspace_path)
+        return file_repo.api_routes
+    except Exception:
+        return []

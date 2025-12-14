@@ -46,13 +46,15 @@ export type KanbanCardData = {
   updated_at?: string
   age_hours?: number  // Age in current status (hours)
   // Agent state
-  agent_state?: 'pending' | 'processing' | 'canceled' | 'finished' | null
+  agent_state?: 'PENDING' | 'PROCESSING' | 'PAUSED' | 'CANCEL_REQUESTED' | 'CANCELED' | 'FINISHED' | null
+  agent_sub_status?: 'queued' | 'cleaning' | 'starting' | null  // Sub-status for PENDING state
   running_port?: number | null
   running_pid?: number | null
   worktree_path?: string | null
   worktree_path_display?: string | null
   branch_name?: string | null
   pr_url?: string | null
+  pr_state?: string | null  // "merging", "merged", "error"
   merge_status?: string | null  // "not_merged", "merged", "conflict"
   started_at?: string | null
   // TraDS ============= Kanban Hierarchy: Parent/children relationships
@@ -91,11 +93,10 @@ function KanbanCardComponent({
   const [showQuickActions, setShowQuickActions] = useState(false)
   
   // Check if card can be dragged based on agent_state
-  const canDrag = !card.agent_state || card.agent_state === 'finished' || card.agent_state === 'canceled'
-  const isAgentRunning = card.agent_state === 'pending' || card.agent_state === 'processing'
+  const canDrag = !card.agent_state || card.agent_state === 'FINISHED' || card.agent_state === 'CANCELED'
+  const isAgentRunning = card.agent_state === 'PENDING' || card.agent_state === 'PROCESSING'
 
-  // Get type badge color - Modern & Minimal: More subtle colors
-  // Lean Kanban: Only UserStory and EnablerStory on board
+  // Get type badge color - Only UserStory and EnablerStory on board
   const getTypeBadgeColor = (type?: string) => {
     const normalizedType = type?.toUpperCase()
     switch (normalizedType) {
@@ -269,19 +270,37 @@ function KanbanCardComponent({
               </Badge>
             )}
             {/* Agent State Badge - Show when pending or processing */}
-            {card.agent_state === 'pending' && (
-              <Badge variant="outline" className="text-xs font-medium gap-1 bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700 animate-pulse">
-                <Clock className="w-3 h-3" />
-                Pending
+            {card.agent_state === 'PENDING' && (
+              <Badge 
+                variant="outline" 
+                className="text-xs font-medium gap-1 bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700 animate-pulse transition-all duration-300"
+                title={card.agent_sub_status ? `Status: ${card.agent_sub_status}` : 'Queued for processing'}
+              >
+                {card.agent_sub_status === 'cleaning' ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Cleaning...
+                  </>
+                ) : card.agent_sub_status === 'starting' ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <Clock className="w-3 h-3" />
+                    Queued
+                  </>
+                )}
               </Badge>
             )}
-            {card.agent_state === 'processing' && (
+            {card.agent_state === 'PROCESSING' && (
               <Badge variant="outline" className="text-xs font-medium gap-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Processing
               </Badge>
             )}
-            {card.agent_state === 'finished' && (
+            {card.agent_state === 'FINISHED' && (
               <Badge variant="outline" className="text-xs font-medium gap-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700">
                 <CheckCircle2 className="w-3 h-3" />
                 Finished
@@ -385,6 +404,8 @@ export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
   if (prevProps.card.blockedByCount !== nextProps.card.blockedByCount) return false
   // Check agent_state - important for drag-and-drop
   if (prevProps.card.agent_state !== nextProps.card.agent_state) return false
+  // Check agent_sub_status - important for showing cleaning/starting progress
+  if (prevProps.card.agent_sub_status !== nextProps.card.agent_sub_status) return false
   // Check arrays - important for edit form data sync
   if (JSON.stringify(prevProps.card.dependencies) !== JSON.stringify(nextProps.card.dependencies)) return false
   if (JSON.stringify(prevProps.card.acceptance_criteria) !== JSON.stringify(nextProps.card.acceptance_criteria)) return false

@@ -73,7 +73,6 @@ export function DeleteProjectDialog({
                 setPreview(data);
             }
         } catch (error) {
-            console.error("Failed to fetch deletion preview:", error);
         } finally {
             setLoading(false);
         }

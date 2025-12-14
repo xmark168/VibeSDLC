@@ -1,13 +1,13 @@
 """Business Analyst Agent - LangGraph-based Implementation."""
 
+import asyncio
 import logging
 from pathlib import Path
+from typing import Dict, Set
 from uuid import UUID
-
 from sqlmodel import Session, select
-
-from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
-from app.agents.core.project_context import ProjectContext
+from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
+from app.core.agent.project_context import ProjectContext
 from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
@@ -25,20 +25,24 @@ from app.agents.business_analyst.src.nodes import (
 logger = logging.getLogger(__name__)
 
 
+class TaskStoppedException(Exception):
+    """Raised when task processing should stop (pause/cancel)."""
+    def __init__(self, task_id: str, reason: str, message: str = ""):
+        self.task_id = task_id
+        self.reason = reason  # "pause" or "cancel"
+        self.message = message or f"Task {task_id} stopped: {reason}"
+        super().__init__(self.message)
+
+
 class BusinessAnalyst(BaseAgent):
-    """Business Analyst using LangGraph for workflow management.
-    
-    Langfuse tracing is handled by BaseAgent.get_langfuse_callback().
+    """
+    Business Analyst using LangGraph for workflow management.
     """
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
         logger.info(f"[{self.name}] Initializing Business Analyst LangGraph")
-        
-        # Shared project context (memory + preferences) - same as Team Leader
         self.context = ProjectContext.get(self.project_id)
-        
-        # Initialize project files
         self.project_files = None
         if self.project_id:
             with Session(engine) as session:
@@ -56,7 +60,114 @@ class BusinessAnalyst(BaseAgent):
         # Pass self to graph for Langfuse callback access
         self.graph_engine = BusinessAnalystGraph(agent=self)
         
+        # Pause/Resume/Cancel tracking (Dev V2 pattern)
+        self._running_tasks: Dict[str, asyncio.Task] = {}
+        self._paused_tasks: Set[str] = set()
+        self._cancelled_tasks: Set[str] = set()
+        
         logger.info(f"[{self.name}] LangGraph initialized successfully")
+    
+    # =========================================================================
+    # PAUSE/RESUME/CANCEL METHODS (Dev V2 pattern)
+    # =========================================================================
+    
+    def check_should_stop(self, task_id: str) -> None:
+        """Check if task should stop. Raises TaskStoppedException if cancelled/paused."""
+        signal = self.check_signal(task_id)
+        if signal == "cancel":
+            self._cancelled_tasks.add(task_id)
+            raise TaskStoppedException(task_id, "cancel", "Cancel requested")
+        elif signal == "pause":
+            self._paused_tasks.add(task_id)
+            raise TaskStoppedException(task_id, "pause", "Paused")
+    
+    def is_task_paused(self, task_id: str) -> bool:
+        """Check if task is paused."""
+        return task_id in self._paused_tasks
+    
+    def is_task_cancelled(self, task_id: str) -> bool:
+        """Check if task is cancelled."""
+        return task_id in self._cancelled_tasks
+    
+    async def pause_task(self, task_id: str) -> bool:
+        """Pause a running task."""
+        self._paused_tasks.add(task_id)
+        task = self._running_tasks.get(task_id)
+        if task and not task.done():
+            task.cancel()
+            logger.info(f"[{self.name}] Paused task {task_id}")
+            return True
+        return False
+    
+    async def cancel_task(self, task_id: str) -> bool:
+        """Cancel a running task."""
+        self._cancelled_tasks.add(task_id)
+        task = self._running_tasks.get(task_id)
+        if task and not task.done():
+            task.cancel()
+            await self._cleanup_task(task_id)
+            logger.info(f"[{self.name}] Cancelled task {task_id}")
+            return True
+        return False
+    
+    async def resume_task(self, task_id: str) -> bool:
+        """Check if task can be resumed from checkpoint."""
+        try:
+            # Check if we have a checkpoint for this task
+            if self.graph_engine.checkpointer:
+                config = {"configurable": {"thread_id": f"{self.agent_id}_{task_id}"}}
+                checkpoint = await self.graph_engine.checkpointer.aget(config)
+                if checkpoint:
+                    self._paused_tasks.discard(task_id)
+                    logger.info(f"[{self.name}] Task {task_id} can be resumed from checkpoint")
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"[{self.name}] Error checking resume for {task_id}: {e}")
+            return False
+    
+    async def _cleanup_task(self, task_id: str):
+        """Cleanup resources for a cancelled/finished task."""
+        self._running_tasks.pop(task_id, None)
+        self._cancelled_tasks.discard(task_id)
+        self._paused_tasks.discard(task_id)
+        self.clear_signal(task_id)
+    
+    def clear_task_cache(self, task_id: str) -> None:
+        """Clear task from caches for restart."""
+        self._cancelled_tasks.discard(task_id)
+        self._paused_tasks.discard(task_id)
+        self._running_tasks.pop(task_id, None)
+        self.clear_signal(task_id)
+    
+    async def _run_graph_with_signal_check(self, initial_state: dict, config: dict, task_id: str) -> dict:
+        """Run graph with signal checking between nodes."""
+        final_state = None
+        node_count = 0
+        
+        # Check signal before start
+        signal = self.check_signal(task_id)
+        if signal == "cancel":
+            raise TaskStoppedException(task_id, "cancel", "Cancel before start")
+        
+        # Ensure graph is setup
+        await self.graph_engine.setup()
+        
+        async for event in self.graph_engine.graph.astream(initial_state, config, stream_mode="values"):
+            node_count += 1
+            final_state = event
+            
+            # Check signal after each node
+            signal = self.check_signal(task_id)
+            if signal == "cancel":
+                self._cancelled_tasks.add(task_id)
+                raise TaskStoppedException(task_id, "cancel", "Cancel signal")
+            elif signal == "pause":
+                self._paused_tasks.add(task_id)
+                raise TaskStoppedException(task_id, "pause", "Pause signal")
+        
+        logger.info(f"[{self.name}] Graph completed after {node_count} nodes")
+        return final_state
     
     def _build_base_state(self, task: TaskContext) -> dict:
         """Build base state dict with common fields for all task types."""
@@ -115,7 +226,12 @@ class BusinessAnalyst(BaseAgent):
         """Handle task using LangGraph.
         
         Note: Langfuse tracing is automatically handled by BaseAgent.
+        Token tracking is handled via callback in BaseAgent._process_task().
         """
+        return await self._handle_task_internal(task)
+    
+    async def _handle_task_internal(self, task: TaskContext) -> TaskResult:
+        """Internal task handling logic."""
         # Check if this is a resume task (user answered a question)
         is_resume = task.task_type == AgentTaskType.RESUME_WITH_ANSWER
         
@@ -172,7 +288,13 @@ class BusinessAnalyst(BaseAgent):
             return await self._handle_sequential_resume(task, answer)
     
     async def _handle_batch_resume(self, task: TaskContext, batch_answers: list) -> TaskResult:
-        """Handle batch mode resume - all answers at once."""
+        """Handle batch mode resume - all answers at once.
+        
+        Supports different flows based on original_intent:
+        - interview: Create new PRD (default)
+        - prd_update: Update existing PRD
+        - stories_update: Update existing stories
+        """
         if not batch_answers:
             logger.error(f"[{self.name}] No batch answers in RESUME task")
             return TaskResult(
@@ -188,6 +310,21 @@ class BusinessAnalyst(BaseAgent):
             logger.warning(f"[{self.name}] No interview state found for batch, treating as new task")
             return await self._handle_new_task(task)
         
+        # Check original_intent to determine which flow to continue
+        original_intent = interview_state.get("original_intent", "interview")
+        logger.info(f"[{self.name}] RESUME batch with original_intent: {original_intent}")
+        
+        # Route to appropriate handler based on original_intent
+        if original_intent == "prd_update":
+            return await self._handle_prd_update_resume(task, batch_answers, interview_state)
+        elif original_intent == "stories_update":
+            return await self._handle_stories_update_resume(task, batch_answers, interview_state)
+        else:
+            # Default: interview flow (create new PRD)
+            return await self._handle_interview_resume(task, batch_answers, interview_state)
+    
+    async def _handle_interview_resume(self, task: TaskContext, batch_answers: list, interview_state: dict) -> TaskResult:
+        """Handle interview flow resume - create new PRD."""
         # Load existing PRD from database
         existing_prd = self._load_existing_prd()
         
@@ -208,7 +345,7 @@ class BusinessAnalyst(BaseAgent):
         }
         
         # Process all batch answers
-        logger.info(f"[{self.name}] Processing {len(batch_answers)} batch answers")
+        logger.info(f"[{self.name}] Processing {len(batch_answers)} batch answers for interview")
         state = {**state, **(await process_batch_answers(state, agent=self))}
         
         # Check clarity - do we have enough info or need more research?
@@ -257,6 +394,90 @@ class BusinessAnalyst(BaseAgent):
         state = {**state, **(await generate_prd(state, agent=self))}
         
         # Save PRD and wait for user approval before extracting stories
+        state = {**state, **(await save_artifacts(state, agent=self))}
+        
+        return TaskResult(
+            success=True,
+            output=str(state.get("result", {})),
+            structured_data=state.get("result", {})
+        )
+    
+    async def _handle_prd_update_resume(self, task: TaskContext, batch_answers: list, interview_state: dict) -> TaskResult:
+        """Handle PRD update flow resume - update existing PRD with user's clarified requirements."""
+        logger.info(f"[{self.name}] Resuming prd_update flow after clarification")
+        
+        # Build combined message from original request + answers
+        original_message = interview_state.get("user_message", "")
+        questions = interview_state.get("questions", [])
+        
+        # Combine answers into context
+        clarification_context = []
+        for i, ans in enumerate(batch_answers):
+            q_text = questions[i].get("question_text", f"Câu hỏi {i+1}") if i < len(questions) else f"Câu hỏi {i+1}"
+            a_text = ans.get("answer", "") or ", ".join(ans.get("selected_options", []))
+            clarification_context.append(f"Q: {q_text}\nA: {a_text}")
+        
+        combined_message = f"{original_message}\n\nChi tiết bổ sung:\n" + "\n".join(clarification_context)
+        
+        # Build state and call update_prd
+        state = {
+            **self._build_base_state(task),
+            "user_message": combined_message,
+            "existing_prd": interview_state.get("existing_prd") or self._load_existing_prd(),
+            "epics": interview_state.get("epics", []),
+            "intent": "prd_update",
+            "skip_clarity_check": True,  # IMPORTANT: Skip clarity check since we already got clarification
+        }
+        
+        # Now call update_prd (skip clarity check because we have detailed answers)
+        state = {**state, **(await update_prd(state, agent=self))}
+        
+        # Save artifacts
+        state = {**state, **(await save_artifacts(state, agent=self))}
+        
+        return TaskResult(
+            success=True,
+            output=str(state.get("result", {})),
+            structured_data=state.get("result", {})
+        )
+    
+    async def _handle_stories_update_resume(self, task: TaskContext, batch_answers: list, interview_state: dict) -> TaskResult:
+        """Handle stories update flow resume - update existing stories with user's clarified requirements."""
+        logger.info(f"[{self.name}] Resuming stories_update flow after clarification")
+        
+        # Build combined message from original request + answers
+        original_message = interview_state.get("user_message", "")
+        questions = interview_state.get("questions", [])
+        
+        # Combine answers into context
+        clarification_context = []
+        for i, ans in enumerate(batch_answers):
+            q_text = questions[i].get("question_text", f"Câu hỏi {i+1}") if i < len(questions) else f"Câu hỏi {i+1}"
+            a_text = ans.get("answer", "") or ", ".join(ans.get("selected_options", []))
+            clarification_context.append(f"Q: {q_text}\nA: {a_text}")
+        
+        combined_message = f"{original_message}\n\nChi tiết bổ sung:\n" + "\n".join(clarification_context)
+        
+        # Load epics from state or database
+        epics = interview_state.get("epics", [])
+        if not epics:
+            epics, _, _ = self._load_existing_epics()
+        
+        # Build state and call update_stories
+        state = {
+            **self._build_base_state(task),
+            "user_message": combined_message,
+            "existing_prd": interview_state.get("existing_prd") or self._load_existing_prd(),
+            "epics": epics,
+            "intent": "stories_update",
+            "skip_clarity_check": True,  # IMPORTANT: Skip clarity check since we already got clarification
+        }
+        
+        # Now call update_stories (skip clarity check because we have detailed answers)
+        from app.agents.business_analyst.src.nodes import update_stories
+        state = {**state, **(await update_stories(state, agent=self))}
+        
+        # Save artifacts
         state = {**state, **(await save_artifacts(state, agent=self))}
         
         return TaskResult(
@@ -368,15 +589,6 @@ class BusinessAnalyst(BaseAgent):
         pre_collected_info = {}  # Pre-populated from document analysis
         document_is_comprehensive = False
         document_type = ""  # "complete_requirements" | "partial_requirements" | "not_requirements"
-        
-        # Debug: Log task context
-        logger.info(f"[{self.name}] === TASK CONTEXT DEBUG ===")
-        logger.info(f"[{self.name}] task.context keys: {list(task.context.keys()) if task.context else 'None'}")
-        logger.info(f"[{self.name}] attachments count: {len(attachments)}")
-        if attachments:
-            for i, att in enumerate(attachments):
-                logger.info(f"[{self.name}] Attachment[{i}]: type={att.get('type')}, filename={att.get('filename')}, has_text={bool(att.get('extracted_text'))}, text_len={len(att.get('extracted_text', ''))}")
-        logger.info(f"[{self.name}] === END TASK CONTEXT DEBUG ===")
         
         if attachments:
             logger.info(f"[{self.name}] Found {len(attachments)} attachment(s) in task")
@@ -543,48 +755,112 @@ class BusinessAnalyst(BaseAgent):
             "langfuse_handler": langfuse_handler,
         }
         
-        logger.info(f"[{self.name}] Invoking LangGraph...")
-        final_state = await self.graph_engine.execute(initial_state)
+        # Setup graph with checkpointer
+        await self.graph_engine.setup()
         
-        # Close Langfuse span
-        if langfuse_span and langfuse_ctx:
-            try:
-                langfuse_span.update_trace(output={
-                    "intent": final_state.get("intent"),
-                    "waiting_for_answer": final_state.get("waiting_for_answer"),
-                })
-                langfuse_ctx.__exit__(None, None, None)
-            except Exception:
-                pass
+        # Generate thread_id for checkpointing (enables pause/resume)
+        task_id = str(task.task_id)
+        thread_id = f"{self.agent_id}_{task_id}"
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": [langfuse_handler] if langfuse_handler else []
+        }
         
-        # If waiting for answer, save state for resume
-        if final_state.get("waiting_for_answer"):
-            await self._save_interview_state(task, final_state)
+        # Track current task for cancel/pause
+        current_task = asyncio.current_task()
+        if current_task:
+            self._running_tasks[task_id] = current_task
+        
+        # Clear any leftover signals
+        self.clear_signal(task_id)
+        
+        try:
+            logger.info(f"[{self.name}] Invoking LangGraph with signal checking...")
+            final_state = await self._run_graph_with_signal_check(initial_state, config, task_id)
+            
+            # Remove from running tasks
+            self._running_tasks.pop(task_id, None)
+            
+            # Close Langfuse span
+            if langfuse_span and langfuse_ctx:
+                try:
+                    langfuse_span.update_trace(output={
+                        "intent": final_state.get("intent"),
+                        "waiting_for_answer": final_state.get("waiting_for_answer"),
+                    })
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
+            
+            # If waiting for answer, save state for resume
+            if final_state.get("waiting_for_answer"):
+                await self._save_interview_state(task, final_state)
+                return TaskResult(
+                    success=True,
+                    output="Question asked, waiting for answer",
+                    structured_data={"waiting_for_answer": True}
+                )
+            
+            # Extract result
+            result_data = final_state.get("result", {})
+            action = final_state.get("intent", "completed")
+            
+            logger.info(f"[{self.name}] Graph completed: action={action}")
+            
+            # Add response to shared memory (for conversation context)
+            response_summary = result_data.get("summary", "") if isinstance(result_data, dict) else str(result_data)[:200]
+            if response_summary:
+                self.context.add_message("assistant", response_summary)
+            
+            # Check if we should create a conversation summary
+            await self.context.maybe_summarize()
+            
             return TaskResult(
                 success=True,
-                output="Question asked, waiting for answer",
-                structured_data={"waiting_for_answer": True}
+                output=str(result_data),
+                structured_data=result_data
             )
         
-        # Extract result
-        result_data = final_state.get("result", {})
-        action = final_state.get("intent", "completed")
+        except asyncio.CancelledError:
+            # Task was cancelled (user clicked Cancel or Pause)
+            logger.info(f"[{self.name}] Task {task_id} was cancelled/paused (CancelledError)")
+            self._running_tasks.pop(task_id, None)
+            
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
+            
+            return TaskResult(
+                success=False,
+                output="",
+                error_message="Task was cancelled or paused"
+            )
         
-        logger.info(f"[{self.name}] Graph completed: action={action}")
-        
-        # Add response to shared memory (for conversation context)
-        response_summary = result_data.get("summary", "") if isinstance(result_data, dict) else str(result_data)[:200]
-        if response_summary:
-            self.context.add_message("assistant", response_summary)
-        
-        # Check if we should create a conversation summary
-        await self.context.maybe_summarize()
-        
-        return TaskResult(
-            success=True,
-            output=str(result_data),
-            structured_data=result_data
-        )
+        except TaskStoppedException as e:
+            # Task was stopped via signal
+            logger.info(f"[{self.name}] Task {task_id} stopped: {e.message}")
+            self._running_tasks.pop(task_id, None)
+            self.consume_signal(task_id)
+            
+            # Notify user
+            if e.reason == "pause":
+                await self.message_user("response", "⏸️ Đã tạm dừng. Bạn có thể tiếp tục bất cứ lúc nào.")
+            elif e.reason == "cancel":
+                await self.message_user("response", "🛑 Đã hủy tác vụ.")
+            
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
+            
+            return TaskResult(
+                success=False,
+                output="",
+                error_message=f"Task {e.reason}ed"
+            )
     
     async def _load_interview_state(self, task: TaskContext) -> dict | None:
         """Load interview state from database (via question context).

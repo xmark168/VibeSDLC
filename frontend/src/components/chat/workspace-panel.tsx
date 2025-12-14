@@ -9,6 +9,7 @@ import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, P
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
+import { DiffViewer } from "../shared/diff-viewer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
 import { AgentPopup } from "../agents/agent-popup"
@@ -156,42 +157,29 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
 
   // Debug: Log projectId changes
   useEffect(() => {
-    console.log('[WorkspacePanel] projectId changed:', projectId, 'Query enabled:', !!projectId)
-  }, [projectId])
+   }, [projectId])
 
-  // Fetch project agents from database
   const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
     enabled: !!projectId,
   })
 
-  // State for agent detail sheet
   const [selectedAgent, setSelectedAgent] = useState<AgentPublic | null>(null)
   const [agentDetailOpen, setAgentDetailOpen] = useState(false)
 
-  // Transform agents for AnimatedTooltip component
   const agentItems = useMemo(() => {
-    console.log('[WorkspacePanel] Project agents data:', projectAgents)
-    console.log('[WorkspacePanel] Agents loading:', agentsLoading)
-    console.log('[WorkspacePanel] WebSocket agent statuses:', agentStatuses)
-
-    // Handle both { data: [...] } and direct array response
+  
     const agentsList: AgentPublic[] = Array.isArray(projectAgents) 
       ? projectAgents 
       : (projectAgents?.data || [])
 
     if (!agentsList.length) {
-      console.log('[WorkspacePanel] No agents to display')
-      return []
+       return []
     }
 
     const items = agentsList.map((agent: AgentPublic) => {
-      // Lấy status từ WebSocket (real-time), fallback về database nếu chưa có
       const wsStatus = agentStatuses?.get(agent.human_name)
       const displayStatus = wsStatus?.status || agent.status || 'idle'
 
-      console.log(`[WorkspacePanel] Agent ${agent.human_name}: WS status=${wsStatus?.status}, DB status=${agent.status}, Display=${displayStatus}`)
-
-      // Use persona_avatar if available, otherwise generate from role type
       const avatarUrl = agent.persona_avatar || generateAvatarUrl(agent.human_name, agent.role_type)
 
       return {
@@ -208,7 +196,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       }
     })
 
-    console.log('[WorkspacePanel] Agent items for AnimatedTooltip:', items)
     return items
   }, [projectAgents, agentsLoading, agentStatuses]) // Include agentStatuses in dependencies
 
@@ -231,7 +218,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       }
       const targetTabId = tabMap[wsActiveTab]
       if (targetTabId) {
-        console.log('[WorkspacePanel] Auto-switching to tab:', wsActiveTab, targetTabId)
         setActiveTabId(targetTabId)
       }
     }
@@ -247,6 +233,29 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   const [selectedLogAgent, setSelectedLogAgent] = useState<string>("all")
   const [selectedLogType, setSelectedLogType] = useState<string>("all")
   const [autoScroll, setAutoScroll] = useState(true)
+  const [projectLogs, setProjectLogs] = useState<any[]>([])
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
+  const logsContainerRef = useRef<HTMLDivElement>(null)
+
+  // Fetch project logs
+  useEffect(() => {
+    if (!projectId) return
+    const fetchLogs = async () => {
+      setIsLoadingLogs(true)
+      try {
+        const { projectsApi } = await import('@/apis/projects')
+        const result = await projectsApi.getLogs(projectId, { limit: 200 })
+        setProjectLogs(result.logs)
+      } catch (err) {
+        console.error('Failed to fetch logs:', err)
+      } finally {
+        setIsLoadingLogs(false)
+      }
+    }
+    fetchLogs()
+    const interval = setInterval(fetchLogs, 10000)
+    return () => clearInterval(interval)
+  }, [projectId])
 
   // Update selectedFile when initialSelectedFile changes from parent
   useEffect(() => {
@@ -264,6 +273,9 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   // Artifact state
   const [selectedArtifact, setSelectedArtifact] = useState<any | null>(null)
   const [isLoadingArtifact, setIsLoadingArtifact] = useState(false)
+  
+  // Diff viewer state
+  const [diffFilePath, setDiffFilePath] = useState<string | null>(null)
 
   // Fetch artifact when selectedArtifactId changes
   useEffect(() => {
@@ -283,9 +295,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       const { artifactsApi } = await import('@/apis/artifacts')
       const artifact = await artifactsApi.getArtifact(artifactId)
       setSelectedArtifact(artifact)
-      console.log('[WorkspacePanel] Loaded artifact:', artifact)
     } catch (err: any) {
-      console.error('Failed to fetch artifact:', err)
       setSelectedArtifact(null)
     } finally {
       setIsLoadingArtifact(false)
@@ -315,7 +325,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       setFileContent(response.content)
       setIsFileBinary(response.is_binary || false)
     } catch (err: any) {
-      console.error("Failed to fetch file content:", err)
       setFileError(err.message || "Failed to load file")
       setFileContent("")
     } finally {
@@ -358,7 +367,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
     } catch (err) {
-      console.error('Download failed:', err)
       alert('Failed to download file. Please try again.')
     }
   }
@@ -407,7 +415,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     switch (activeView) {
       case "app-preview":
         return (
-          <AppViewer />
+          <AppViewer projectId={projectId} />
         )
       case "kanban":
         // KanbanBoard is rendered separately to keep it always mounted
@@ -421,13 +429,28 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
                 onFileSelect={(path, worktree) => {
                   setSelectedFile(path)
                   setSelectedWorktree(worktree)
+                  setDiffFilePath(null) // Close diff viewer when selecting new file
+                }}
+                onViewDiff={(path) => {
+                  setDiffFilePath(path)
+                }}
+                onWorktreeChange={(worktree) => {
+                  setSelectedWorktree(worktree || undefined)
                 }}
                 selectedFile={selectedFile}
                 initialWorktree={selectedWorktree}
               />
             </div>
             <div className="flex-1">
-              {selectedArtifact ? (
+              {/* Show DiffViewer if diffFilePath is set */}
+              {diffFilePath && projectId ? (
+                <DiffViewer
+                  projectId={projectId}
+                  filePath={diffFilePath}
+                  worktree={selectedWorktree || undefined}
+                  onClose={() => setDiffFilePath(null)}
+                />
+              ) : selectedArtifact ? (
                 isLoadingArtifact ? (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <Loader2 className="w-6 h-6 animate-spin mr-2" />
@@ -480,90 +503,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           </div>
         )
       case "loggings":
-        // Mock logging data - will be replaced with real data from API/WebSocket
-        const mockLogs = [
-          {
-            id: "1",
-            timestamp: "2024-01-15 10:30:45",
-            agent: "Mike",
-            agentRole: "Team Leader",
-            type: "success",
-            action: "Task Created",
-            message: "Created new task: Implement user authentication system",
-            details: "Priority: High, Assigned to: Sarah"
-          },
-          {
-            id: "2",
-            timestamp: "2024-01-15 10:31:12",
-            agent: "Sarah",
-            agentRole: "Developer",
-            type: "info",
-            action: "Code Generated",
-            message: "Generated authentication middleware component",
-            details: "Files: auth.middleware.ts, 156 lines"
-          },
-          {
-            id: "3",
-            timestamp: "2024-01-15 10:32:05",
-            agent: "Tom",
-            agentRole: "Tester",
-            type: "warning",
-            action: "Test Failed",
-            message: "Unit test failed: Authentication token validation",
-            details: "Expected: valid token, Received: undefined"
-          },
-          {
-            id: "4",
-            timestamp: "2024-01-15 10:33:20",
-            agent: "Sarah",
-            agentRole: "Developer",
-            type: "success",
-            action: "Bug Fixed",
-            message: "Fixed token validation issue in authentication middleware",
-            details: "Updated auth.middleware.ts line 45"
-          },
-          {
-            id: "5",
-            timestamp: "2024-01-15 10:34:01",
-            agent: "Tom",
-            agentRole: "Tester",
-            type: "success",
-            action: "Test Passed",
-            message: "All authentication tests passed successfully",
-            details: "18/18 tests passed, Coverage: 98%"
-          },
-          {
-            id: "6",
-            timestamp: "2024-01-15 10:35:15",
-            agent: "Alex",
-            agentRole: "Business Analyst",
-            type: "info",
-            action: "Requirement Updated",
-            message: "Updated authentication requirements based on security review",
-            details: "Added 2FA requirement, Session timeout: 30 minutes"
-          },
-          {
-            id: "7",
-            timestamp: "2024-01-15 10:36:40",
-            agent: "Mike",
-            agentRole: "Team Leader",
-            type: "error",
-            action: "Deployment Failed",
-            message: "Production deployment failed due to missing environment variables",
-            details: "Missing: JWT_SECRET, DATABASE_URL"
-          },
-          {
-            id: "8",
-            timestamp: "2024-01-15 10:37:25",
-            agent: "Sarah",
-            agentRole: "Developer",
-            type: "info",
-            action: "Environment Configured",
-            message: "Added missing environment variables to deployment config",
-            details: "Updated .env.production"
-          },
-        ]
-
         const getLogIcon = (type: string) => {
           switch (type) {
             case "success":
@@ -572,7 +511,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
               return <XCircle className="w-4 h-4 text-red-400" />
             case "warning":
               return <AlertCircle className="w-4 h-4 text-amber-400" />
-            case "info":
             default:
               return <Info className="w-4 h-4 text-blue-400" />
           }
@@ -583,26 +521,23 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
             case "success":
               return "bg-white border-l-4 border-l-green-400 border-y border-r border-gray-200 dark:border-green-800"
             case "error":
-              return "bg-white  border-l-4 border-l-red-400 border-y border-r border-gray-200 dark:border-red-800"
+              return "bg-white border-l-4 border-l-red-400 border-y border-r border-gray-200 dark:border-red-800"
             case "warning":
-              return "bg-white  border-l-4 border-l-amber-400 border-y border-r border-gray-200 dark:border-yellow-800"
-            case "info":
+              return "bg-white border-l-4 border-l-amber-400 border-y border-r border-gray-200 dark:border-yellow-800"
             default:
-              return "bg-white  border-l-4 border-l-blue-400 border-y border-r border-gray-200 dark:border-blue-800"
+              return "bg-white border-l-4 border-l-blue-400 border-y border-r border-gray-200 dark:border-blue-800"
           }
         }
 
-        // Filter logs based on search query, agent, and type
-        const filteredLogs = mockLogs.filter(log => {
-          const matchesSearch = log.message.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
-            log.action.toLowerCase().includes(logSearchQuery.toLowerCase())
+        const filteredLogs = projectLogs.filter(log => {
+          const matchesSearch = log.message?.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
+            log.action?.toLowerCase().includes(logSearchQuery.toLowerCase())
           const matchesAgent = selectedLogAgent === "all" || log.agent === selectedLogAgent
           const matchesType = selectedLogType === "all" || log.type === selectedLogType
           return matchesSearch && matchesAgent && matchesType
         })
 
-        // Get unique agents for filter
-        const uniqueAgents = Array.from(new Set(mockLogs.map(log => log.agent)))
+        const uniqueAgents = Array.from(new Set(projectLogs.map(log => log.agent)))
 
         return (
           <div className="flex flex-col h-full bg-gray-50 dark:bg-background">
@@ -665,8 +600,13 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
             </div>
 
             {/* Logs list */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-background">
-              {filteredLogs.length === 0 ? (
+            <div ref={logsContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-background">
+              {isLoadingLogs && projectLogs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-muted-foreground">
+                  <Loader2 className="w-8 h-8 animate-spin mb-3" />
+                  <p className="font-medium">Loading logs...</p>
+                </div>
+              ) : filteredLogs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-muted-foreground">
                   <Activity className="w-12 h-12 mb-3 opacity-40" />
                   <p className="font-medium">No logs found</p>

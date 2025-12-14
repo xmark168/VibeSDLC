@@ -1,0 +1,229 @@
+"""Developer V2 LangGraph - Story Implementation Workflow."""
+
+from functools import partial
+from typing import Literal, Optional, Any
+from langgraph.graph import StateGraph
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+from app.agents.developer.src.state import DeveloperState
+from app.agents.developer.src.nodes import (
+    setup_workspace, plan, implement, implement_parallel,
+    run_code, analyze_error, review, story_chat, respond,
+)
+
+
+def route_by_task_type(state: DeveloperState) -> Literal["story_chat", "respond", "setup_workspace"]:
+    """Route based on graph_task_type - no LLM needed.
+    
+    Routes:
+    - story_message → story_chat node (reply in story chat)
+    - message → respond node (reply to @Developer in main chat)
+    - implement_story (default) → setup_workspace (start story implementation)
+    """
+    task_type = state.get("graph_task_type", "implement_story")
+    if task_type == "story_message":
+        return "story_chat"
+    elif task_type == "message":
+        return "respond"
+    return "setup_workspace"
+
+
+def route_after_implement(state: DeveloperState) -> Literal["review", "implement", "run_code"]:
+    """Route after implement. Skip review for low complexity."""
+    complexity = state.get("complexity", "medium")
+    if complexity == "low":
+        current_step = state.get("current_step", 0)
+        total_steps = state.get("total_steps", 0)
+        return "implement" if current_step < total_steps else "run_code"
+    
+    if state.get("use_code_review", True):
+        return "review"
+    current_step = state.get("current_step", 0)
+    total_steps = state.get("total_steps", 0)
+    return "implement" if current_step < total_steps else "run_code"
+
+
+def route_review_result(state: DeveloperState) -> Literal["implement", "run_code"]:
+    """Route based on review result (LGTM/LBTM)."""
+    if state.get("review_result", "LGTM") == "LBTM":
+        return "implement"
+    current_step = state.get("current_step", 0)
+    total_steps = state.get("total_steps", 0)
+    return "implement" if current_step < total_steps else "run_code"
+
+
+def route_after_test(state: DeveloperState) -> Literal["analyze_error", "__end__"]:
+    run_result = state.get("run_result", {})
+    if run_result.get("status", "PASS") == "PASS":
+        return "__end__"
+    return "analyze_error" if state.get("debug_count", 0) < 5 else "__end__"
+
+
+def route_after_setup(state: DeveloperState) -> Literal["plan", "__end__"]:
+    """Route after setup - stop if setup failed."""
+    if state.get("error") or not state.get("workspace_ready"):
+        import logging
+        logging.getLogger(__name__).error(
+            f"[graph] Setup failed, stopping graph. Error: {state.get('error', 'workspace not ready')}"
+        )
+        return "__end__"
+    return "plan"
+
+
+def route_after_parallel(state: DeveloperState) -> Literal["run_code", "implement", "pause_checkpoint"]:
+    """Route after parallel implement - fallback to sequential if errors."""
+    
+    # Handle pause - route to checkpoint node
+    if state.get("action") == "PAUSED":
+        return "pause_checkpoint"
+    
+    parallel_errors = state.get("parallel_errors")
+    
+    # If parallel had errors, fallback to sequential implement
+    if parallel_errors and len(parallel_errors) > 0:
+        # Check if we haven't already tried sequential fallback
+        if not state.get("_tried_sequential_fallback"):
+            import logging
+            logging.getLogger(__name__).warning(
+                f"[graph] Parallel implement had {len(parallel_errors)} errors, falling back to sequential"
+            )
+            return "implement"
+    
+    return "run_code"
+
+
+def route_after_analyze_error(state: DeveloperState) -> Literal["implement", "run_code", "__end__"]:
+    """Route after analyze_error - handle IMPLEMENT, VALIDATE, or end."""
+    action = state.get("action")
+    if action == "IMPLEMENT":
+        return "implement"
+    elif action == "VALIDATE":
+        return "run_code"  # Re-run build/test after auto-fix
+    return "__end__"
+
+
+async def pause_checkpoint(state: DeveloperState, agent=None) -> DeveloperState:
+    """Checkpoint node for pause - calls interrupt() and resumes to implement_parallel."""
+    from langgraph.types import interrupt
+    interrupt({"reason": "pause", "node": "pause_checkpoint", "current_layer": state.get("current_layer", 0)})
+    # After resume, clear PAUSED action to continue
+    return {**state, "action": "IMPLEMENT"}
+
+
+_postgres_checkpointer: Optional[AsyncPostgresSaver] = None
+_connection_pool = None
+
+
+async def get_postgres_checkpointer() -> AsyncPostgresSaver:
+    """Get or create a PostgresSaver checkpointer for persistent state."""
+    global _postgres_checkpointer, _connection_pool
+    
+    if _postgres_checkpointer is None:
+        from app.core.config import settings
+        from psycopg_pool import AsyncConnectionPool
+        
+        # Convert SQLAlchemy URI to standard PostgreSQL connection string
+        db_uri = str(settings.SQLALCHEMY_DATABASE_URI)
+        if "+psycopg" in db_uri:
+            db_uri = db_uri.replace("+psycopg", "")
+        
+        # Create async connection pool (required for proper checkpoint saving)
+        _connection_pool = AsyncConnectionPool(
+            conninfo=db_uri,
+            min_size=1,
+            max_size=3,
+            open=False,
+            kwargs={"autocommit": True},
+        )
+        await _connection_pool.open(wait=True)
+        
+        _postgres_checkpointer = AsyncPostgresSaver(_connection_pool)
+        # Create tables if they don't exist
+        await _postgres_checkpointer.setup()
+    
+    return _postgres_checkpointer
+
+
+class DeveloperGraph:
+    """LangGraph state machine for story-driven code generation.
+    Parallel: setup -> plan -> implement_parallel -> run_code -> END
+    Sequential: setup -> plan -> implement <-> review -> run_code -> END
+    
+    Supports checkpointing for pause/resume functionality.
+    Uses PostgresSaver for persistent checkpoints across restarts.
+    """
+    
+    def __init__(self, agent=None, parallel=True, checkpointer: Optional[Any] = None):
+        self.agent = agent
+        self.parallel = parallel
+        self.checkpointer = checkpointer  # Will be set async if None
+        self._graph_compiled = False
+        g = StateGraph(DeveloperState)
+        
+        # Chat/Response nodes
+        g.add_node("story_chat", partial(story_chat, agent=agent))
+        g.add_node("respond", partial(respond, agent=agent))
+        
+        # Story implementation nodes
+        g.add_node("setup_workspace", partial(setup_workspace, agent=agent))
+        g.add_node("plan", partial(plan, agent=agent))
+        g.add_node("implement", partial(implement, agent=agent))
+        g.add_node("implement_parallel", partial(implement_parallel, agent=agent))
+        g.add_node("pause_checkpoint", partial(pause_checkpoint, agent=agent))
+        g.add_node("review", partial(review, agent=agent))
+        g.add_node("run_code", partial(run_code, agent=agent))
+        g.add_node("analyze_error", partial(analyze_error, agent=agent))
+        
+        # Router is entry point - routes by task type
+        g.set_conditional_entry_point(route_by_task_type)
+        
+        # Chat nodes go directly to END
+        g.add_edge("story_chat", "__end__")
+        g.add_edge("respond", "__end__")
+        
+        # Story implementation flow
+        g.add_conditional_edges("setup_workspace", route_after_setup)
+        
+        if parallel:
+            g.add_edge("plan", "implement_parallel")
+            # Parallel → run_code, but fallback to sequential if errors, or pause_checkpoint
+            g.add_conditional_edges("implement_parallel", route_after_parallel)
+            g.add_edge("pause_checkpoint", "implement_parallel")  # Resume from pause
+            g.add_edge("implement", "run_code")  # Sequential fallback path
+        else:
+            g.add_edge("plan", "implement")
+            g.add_conditional_edges("implement", route_after_implement)
+            g.add_conditional_edges("review", route_review_result)
+        
+        g.add_conditional_edges("run_code", route_after_test)
+        g.add_conditional_edges("analyze_error", route_after_analyze_error)
+        
+        self._state_graph = g
+        self.graph = None  # Will be compiled with checkpointer
+    
+    async def setup(self) -> None:
+        """Setup the graph with PostgresSaver checkpointer."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if self.graph is not None:
+            return  # Already setup
+        
+        if self.checkpointer is None:
+            try:
+                self.checkpointer = await get_postgres_checkpointer()
+                logger.info(f"PostgresSaver setup OK: {type(self.checkpointer).__name__}")
+            except Exception as e:
+                logger.warning(f"Failed to setup PostgresSaver, using MemorySaver: {e}", exc_info=True)
+                self.checkpointer = MemorySaver()
+        
+        self.graph = self._state_graph.compile(checkpointer=self.checkpointer)
+        logger.info(f"Graph compiled with checkpointer: {type(self.checkpointer).__name__}")
+    
+    def setup_sync(self) -> None:
+        """Setup the graph with MemorySaver (sync fallback)."""
+        if self.graph is not None:
+            return
+        self.checkpointer = self.checkpointer or MemorySaver()
+        self.graph = self._state_graph.compile(checkpointer=self.checkpointer)

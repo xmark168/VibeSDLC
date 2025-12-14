@@ -279,7 +279,6 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
           setExistingStories(result.data || [])
         })
         .catch(err => {
-          console.error("Failed to load stories:", err)
           setExistingStories([])
         })
         .finally(() => setLoadingStories(false))
@@ -295,7 +294,6 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
           })))
         })
         .catch(err => {
-          console.error("Failed to load epics:", err)
           setAvailableEpics([])
         })
         .finally(() => setLoadingEpics(false))
