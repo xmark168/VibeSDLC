@@ -307,19 +307,18 @@ def get_current_user_subscription(
     """
     Get current user's active subscription with plan details and credit wallet
     """
-    # Query active subscription for current user
+    # Query active subscription for current user (including FREE plan with no end_at)
     now = datetime.now(timezone.utc)
     subscription_statement = (
         select(Subscription)
         .where(Subscription.user_id == current_user.id)
         .where(Subscription.status == "active")
-        .where(Subscription.end_at > now)
+        .where(or_(Subscription.end_at > now, Subscription.end_at == None))
     )
     subscription = session.exec(subscription_statement).first()
 
     if not subscription:
-        # No active subscription - user is on FREE plan
-        # Get FREE plan from database
+        # No active subscription - auto-assign FREE plan for old users
         free_plan_statement = select(Plan).where(Plan.code == "FREE")
         free_plan = session.exec(free_plan_statement).first()
 
@@ -330,52 +329,31 @@ def get_current_user_subscription(
                 credit_wallet=None
             )
 
-        # Return FREE plan with its monthly credits as available credits
-        from app.schemas.plan import PlanPublic
-        plan_public = PlanPublic(
-            id=free_plan.id,
-            name=free_plan.name,
-            code=free_plan.code,
-            description=free_plan.description,
-            monthly_price=free_plan.monthly_price,
-            yearly_price=free_plan.yearly_price,
-            currency=free_plan.currency,
-            monthly_credits=free_plan.monthly_credits,
-            available_project=free_plan.available_project,
-            additional_credit_price=free_plan.additional_credit_price,
-            is_active=free_plan.is_active,
-            is_featured=free_plan.is_featured,
-            is_custom_price=free_plan.is_custom_price,
-            yearly_discount_percentage=free_plan.yearly_discount_percentage,
-            sort_index=free_plan.sort_index,
-            created_at=free_plan.created_at,
-            updated_at=free_plan.updated_at
-        )
-
-        # Create a fake subscription for FREE plan (for UI consistency)
-        subscription_public = SubscriptionPublic(
-            id=UUID("00000000-0000-0000-0000-000000000000"),  # Dummy ID
+        # Auto-create subscription and wallet for existing users without one
+        subscription = Subscription(
+            user_id=current_user.id,
+            plan_id=free_plan.id,
             status="active",
-            start_at=None,
+            start_at=datetime.now(timezone.utc),
             end_at=None,
             auto_renew=False,
-            plan=plan_public
         )
-
-        # Create credit wallet showing FREE plan's monthly credits
-        wallet_public = CreditWalletPublic(
-            id=UUID("00000000-0000-0000-0000-000000000000"),  # Dummy ID
-            total_credits=free_plan.monthly_credits,
+        session.add(subscription)
+        session.flush()
+        
+        wallet = CreditWallet(
+            user_id=current_user.id,
+            wallet_type="subscription",
+            subscription_id=subscription.id,
+            period_start=datetime.now(timezone.utc),
+            period_end=None,
+            total_credits=free_plan.monthly_credits or 100,
             used_credits=0,
-            remaining_credits=free_plan.monthly_credits,
-            period_start=None,
-            period_end=None
         )
-
-        return UserSubscriptionResponse(
-            subscription=subscription_public,
-            credit_wallet=wallet_public
-        )
+        session.add(wallet)
+        session.commit()
+        session.refresh(subscription)
+        session.refresh(wallet)
 
     # Get plan details
     plan = session.get(Plan, subscription.plan_id)
