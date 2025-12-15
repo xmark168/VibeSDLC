@@ -131,23 +131,7 @@ def _run_prisma_db_push(workspace_path: str) -> bool:
         return False
 
 
-def _run_prisma_seed(workspace_path: str) -> bool:
-    """Run prisma db seed (60s timeout)."""
-    seed_file = os.path.join(workspace_path, "prisma", "seed.ts")
-    if not os.path.exists(seed_file):
-        return True
-    try:
-        result = subprocess.run("pnpm exec ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts", cwd=workspace_path, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60, shell=True)
-        if result.returncode == 0:
-            return True
-        logger.warning(f"[setup_workspace] seed FAILED: {result.stderr[:200] if result.stderr else ''}")
-        return False
-    except subprocess.TimeoutExpired:
-        logger.warning("[setup_workspace] seed TIMEOUT")
-        return False
-    except Exception as e:
-        logger.warning(f"[setup_workspace] seed ERROR: {e}")
-        return False
+
 
 
 async def _setup_prisma(workspace_path: str, database_ready: bool, story_logger) -> bool:
@@ -177,14 +161,8 @@ async def _setup_prisma(workspace_path: str, database_ready: bool, story_logger)
             await story_logger.warning("prisma db push failed, tables may not be created")
             return False
         
-        # Seed database
-        seed_file = os.path.join(workspace_path, "prisma", "seed.ts")
-        if os.path.exists(seed_file):
-            await story_logger.info("🌱 Seeding database...")
-            seed_success = await loop.run_in_executor(_executor, _run_prisma_seed, workspace_path)
-            if not seed_success:
-                await story_logger.warning("prisma db seed failed, will retry in build step")
-                return False
+        # Skip seeding in setup - will be done in build step
+        # This avoids duplicate seed and early failures
     
     return True
 

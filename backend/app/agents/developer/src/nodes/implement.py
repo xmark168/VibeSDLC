@@ -8,10 +8,9 @@ import hashlib
 from pathlib import Path
 from typing import List, Dict, Optional
 from langchain_core.messages import SystemMessage, HumanMessage
-
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.schemas import ImplementOutput
-from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg
+from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, track_node
 from app.agents.developer.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
 from app.utils.token_utils import truncate_to_tokens
 from app.agents.developer.src.nodes._llm import implement_llm
@@ -207,6 +206,7 @@ def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundl
     return "\n\n---\n\n".join(parts)
 
 
+@track_node("implement")
 async def implement(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute implementation step with preloaded skills."""
     from langgraph.types import interrupt
@@ -303,7 +303,10 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         
         # Use structured output
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
-        output = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "implement_code"))
+        output = await structured_llm.ainvoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
+            config=_cfg(state, "implement_code")
+        )
         file_content = output.content if output else None
         
         # Check for interrupt after LLM call (can be long-running)
@@ -327,7 +330,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                 subprocess.run("pnpm exec prisma db push --accept-data-loss", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
                 seed_file = Path(workspace_path) / "prisma" / "seed.ts"
                 if seed_file.exists():
-                    subprocess.run("pnpm exec ts-node prisma/seed.ts", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
+                    subprocess.run("pnpm prisma db seed", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
             except:
                 pass
         
@@ -401,7 +404,10 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
         
         # Use structured output
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
-        output = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, f"impl_{file_path}"))
+        output = await structured_llm.ainvoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
+            config=_cfg(state, f"impl_{file_path}")
+        )
         file_content = output.content if output else None
         
         if file_content and file_path:
@@ -415,6 +421,7 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
         return {"file_path": file_path, "success": False, "error": str(e)}
 
 
+@track_node("implement_parallel")
 async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperState:
     """Execute steps in parallel by layer."""
     from langgraph.types import interrupt
@@ -490,7 +497,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                         }
             
             layer_steps = layers[layer_num]
-            is_parallel = len(layer_steps) > 1 and layer_num >= 5
+            is_parallel = len(layer_steps) > 1 and layer_num >= 4  # CHANGED: từ 5 → 4
             
             # Log layer progress
             files_list = ", ".join([s.get("file_path", "").split("/")[-1] for s in layer_steps[:3]])
@@ -518,21 +525,15 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                             deps_content["prisma/schema.prisma"] = f.read()
                 except:
                     pass
-            elif layer_num == 2 and any("seed.ts" in str(r.get("file_path", "")) for r in results):
-                seed = os.path.join(workspace_path, "prisma/seed.ts")
-                if os.path.exists(seed):
-                    try:
-                        result = subprocess.run("pnpm exec ts-node prisma/seed.ts", cwd=workspace_path, shell=True, capture_output=True, text=True, timeout=60)
-                        if result.returncode == 0:
-                            Path(workspace_path, ".seed_cache").write_text(hashlib.md5(Path(seed).read_bytes()).hexdigest())
-                    except:
-                        pass
-            elif layer_num == 3:
+            elif layer_num == 2:
+                # Layer 2: Types (was layer 3)
                 tp = os.path.join(workspace_path, "src/types/index.ts")
                 if os.path.exists(tp):
                     with open(tp, 'r', encoding='utf-8') as f:
                         deps_content["src/types/index.ts"] = f.read()
-            elif layer_num >= 5:
+            elif layer_num >= 4:
+                # Layer 4+: API/Components (was layer 5+)
+                # Seed.ts is now in layer 4 and runs in parallel with API routes
                 for r in results:
                     fp = r.get("file_path", "")
                     if fp and fp.endswith(".tsx"):

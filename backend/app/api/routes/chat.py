@@ -36,13 +36,7 @@ async def websocket_endpoint(
     project_id: UUID = Query(...),
     token: str = Query(...),
 ):
-    """
-    WebSocket endpoint for real-time chat
-
-    Query Parameters:
-    - project_id: UUID of the project
-    - token: JWT access token for authentication
-    """
+    """WebSocket endpoint for real-time chat"""
     logger.info(f"🔵 WebSocket connection attempt - project: {project_id}, token: {token[:20]}...")
     
     try:

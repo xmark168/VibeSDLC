@@ -5,7 +5,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.nodes._llm import get_llm
 from app.agents.developer.src.schemas import SimpleReviewOutput
-from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
+from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
 from app.agents.developer.src.utils.prompt_utils import (
     format_input_template as _format_input_template,
     build_system_prompt as _build_system_prompt,
@@ -35,6 +35,7 @@ def _smart_truncate(content: str, max_tokens: int = MAX_REVIEW_TOKENS) -> tuple[
     return smart_truncate_tokens(content, max_tokens, head_ratio=0.7)
 
 
+@track_node("review")
 async def review(state: DeveloperState, agent=None) -> DeveloperState:
     """Review implemented code with LGTM/LBTM decision."""
     from langgraph.types import interrupt

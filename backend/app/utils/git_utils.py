@@ -91,13 +91,67 @@ def git_worktree_prune(cwd: Path, timeout: int = 10) -> bool:
         return False
 
 
+def _remove_worktree_locks(worktree_path: Path) -> None:
+    """Remove git locks in worktree before removal.
+    
+    Cleans up:
+    - .git/index.lock
+    - .git/worktrees/<name>/*.lock
+    - Any other .lock files in git directory
+    
+    Args:
+        worktree_path: Path to worktree
+    """
+    try:
+        # Check if worktree exists
+        if not worktree_path.exists():
+            return
+        
+        # Remove index.lock in worktree's .git
+        git_dir = worktree_path / ".git"
+        
+        if git_dir.is_file():
+            # Worktree has gitdir pointer file (normal case)
+            try:
+                with open(git_dir, 'r') as f:
+                    content = f.read().strip()
+                    # Format: "gitdir: /path/to/.git/worktrees/<name>"
+                    if content.startswith("gitdir: "):
+                        gitdir_path = content.replace("gitdir: ", "").strip()
+                        gitdir = Path(gitdir_path)
+                        
+                        # Remove all lock files in worktree's gitdir
+                        if gitdir.exists() and gitdir.is_dir():
+                            for lock_file in gitdir.glob("*.lock"):
+                                try:
+                                    lock_file.unlink()
+                                    logger.debug(f"Removed lock: {lock_file}")
+                                except Exception as e:
+                                    logger.debug(f"Could not remove {lock_file}: {e}")
+            except Exception as e:
+                logger.debug(f"Could not parse gitdir: {e}")
+        
+        elif git_dir.is_dir():
+            # Direct .git directory (rare case)
+            index_lock = git_dir / "index.lock"
+            if index_lock.exists():
+                try:
+                    index_lock.unlink()
+                    logger.debug(f"Removed index.lock: {index_lock}")
+                except Exception as e:
+                    logger.debug(f"Could not remove index.lock: {e}")
+                    
+    except Exception as e:
+        logger.debug(f"Lock cleanup failed for {worktree_path}: {e}")
+
+
 def git_worktree_remove(
     worktree_path: Path,
     cwd: Path,
     force: bool = True,
     timeout: int = 30
 ) -> bool:
-    """Remove git worktree.
+    """Remove git worktree with lock cleanup.
     
     Args:
         worktree_path: Path to worktree to remove
@@ -109,6 +163,9 @@ def git_worktree_remove(
         True if successful, False otherwise
     """
     try:
+        # Pre-cleanup: remove locks before git command
+        _remove_worktree_locks(worktree_path)
+        
         args = ["worktree", "remove", str(worktree_path)]
         if force:
             args.append("--force")

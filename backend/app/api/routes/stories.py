@@ -995,6 +995,11 @@ async def restart_story_task(
             if hasattr(agent, 'clear_story_cache'):
                 agent.clear_story_cache(str(story_id))
                 logger.info(f"[restart] Cleared agent cache for story {story_id}")
+            
+            # Clear any pending signals (cancel/pause) from previous runs
+            if hasattr(agent, 'clear_signal'):
+                agent.clear_signal(str(story_id))
+                logger.info(f"[restart] Cleared signal for story {story_id} from agent {agent.name}")
     
     # Get main workspace from Project
     from app.models import Project
@@ -1030,15 +1035,37 @@ async def restart_story_task(
     session.commit()
     
     # Clear old logs for fresh start
-    from app.models.story_log import StoryLog
+    from app.models.story_log import StoryLog, LogLevel
     session.exec(
         delete(StoryLog).where(StoryLog.story_id == story_id)
     )
     session.commit()
     logger.info(f"[restart] Cleared logs for story {story_id}")
     
+    # Add restart log entry
+    from datetime import datetime, timezone
+    restart_log = StoryLog(
+        story_id=story_id,
+        content="🔄 Story restarted by user",
+        level=LogLevel.INFO,
+        node="restart",
+        created_at=datetime.now(timezone.utc)
+    )
+    session.add(restart_log)
+    session.commit()
+    
     # Broadcast "pending" state to UI immediately with sub_status "queued"
     from app.websocket.connection_manager import connection_manager
+    
+    # Broadcast restart log to UI
+    await connection_manager.broadcast_to_project({
+        "type": "story_log",
+        "story_id": str(story_id),
+        "content": "🔄 Story restarted by user",
+        "level": "info",
+        "node": "restart",
+        "timestamp": restart_log.created_at.isoformat()
+    }, project_id)
     await connection_manager.broadcast_to_project({
         "type": "story_state_changed",
         "story_id": str(story_id),

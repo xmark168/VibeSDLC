@@ -13,7 +13,11 @@ class DeveloperState(TypedDict, total=False):
 
     # Input
     story_id: str
-    story_code: str 
+    story_code: str
+    
+    # Langfuse - LangChain callback handler for detailed tracing
+    langfuse_handler: Any
+    
     epic: str
     story_title: str
     story_content: str

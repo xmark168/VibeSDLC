@@ -268,7 +268,6 @@ class Developer(BaseAgent, PausableAgentMixin):
             task: Task context
             is_resume: If True, resume from checkpoint instead of starting fresh
         """
-        langfuse_handler = None
         langfuse_ctx = None
         langfuse_span = None
         
@@ -280,38 +279,58 @@ class Developer(BaseAgent, PausableAgentMixin):
             self.clear_signal(story_id)
             logger.info(f"[{self.name}] Cleared signals for story {story_id}")
             
-            langfuse_handler = None
+            from app.core.config import settings
+            
+            logger.info(f"[{self.name}] Checking Langfuse: LANGFUSE_ENABLED={settings.LANGFUSE_ENABLED}")
+            logger.info(f"[{self.name}] Langfuse keys: SECRET={bool(settings.LANGFUSE_SECRET_KEY)}, PUBLIC={bool(settings.LANGFUSE_PUBLIC_KEY)}")
+            
+            # Create Langfuse span for single unified trace (Team Leader pattern)
+            # Wrap entire graph execution in start_as_current_observation
             langfuse_span = None
             langfuse_ctx = None
-            
-            from app.core.config import settings
             if settings.LANGFUSE_ENABLED:
                 try:
                     from langfuse import get_client
                     langfuse = get_client()
+                    
+                    # Create observation context - ALL operations inside will be in single trace!
                     langfuse_ctx = langfuse.start_as_current_observation(
                         as_type="span",
-                        name="developer_graph"
+                        name="developer_story_execution"
                     )
                     langfuse_span = langfuse_ctx.__enter__()
+                    
+                    # Create LangChain CallbackHandler for detailed tracing
+                    from langfuse.langchain import CallbackHandler
+                    langfuse_handler = CallbackHandler()
+                    
+                    # Set trace-level metadata
                     langfuse_span.update_trace(
                         user_id=str(task.user_id) if task.user_id else None,
-                        session_id=str(self.project_id),
-                        input={
-                            "story_id": story_data.get("story_id", "unknown"),
-                            "title": story_data.get("title", "")[:200],
-                            "content": story_data.get("content", "")[:300]
-                        },
-                        tags=["developer", self.role_type],
-                        metadata={"agent": self.name, "task_id": str(task.task_id)}
+                        session_id=story_id,  # Group by session for filtering
+                        input={"story": story_data.get("content", "")[:500]},
+                        tags=["developer", self.role_type, f"story:{story_data.get('story_code', '')}"],
+                        metadata={
+                            "agent": self.name,
+                            "story_code": story_data.get("story_code", ""),
+                            "story_title": story_data.get("title", "")[:200],
+                            "project_id": str(self.project_id)
+                        }
                     )
-
+                    
+                    logger.info(f"[{self.name}] ✓ Langfuse span started - trace={langfuse_span.trace_id}")
+                    
                 except Exception as e:
-                    logger.debug(f"[{self.name}] Langfuse setup: {e}")
+                    logger.error(f"[{self.name}] ❌ Langfuse span creation failed: {e}", exc_info=True)
+                    langfuse_span = None
+                    langfuse_ctx = None
+                    langfuse_handler = None
+            else:
+                logger.warning(f"[{self.name}] Langfuse DISABLED")
+                langfuse_handler = None
             
             # Initial state - workspace will be set up by setup_workspace node if needed
-            # NOTE: Do NOT store non-serializable objects (langfuse_handler, skill_registry) 
-            # in state - they will cause checkpoint serialization errors
+            # NOTE: Store handler directly - LangGraph can serialize CallbackHandler
             story_code = story_data.get("story_code", f"STORY-{story_id[:8]}")
             initial_state = {
                 # Graph routing - implement_story routes to setup_workspace
@@ -325,7 +344,9 @@ class Developer(BaseAgent, PausableAgentMixin):
                 "project_id": str(self.project_id),
                 "task_id": str(task.task_id),
                 "user_id": str(task.user_id) if task.user_id else "",
-                # langfuse_handler removed - not serializable, causes checkpoint errors
+                
+                # Langfuse - LangChain callback handler for detailed tracing
+                "langfuse_handler": langfuse_handler,
                 
                 # Workspace context - will be populated by setup_workspace node
                 "workspace_path": "",
@@ -383,6 +404,22 @@ class Developer(BaseAgent, PausableAgentMixin):
                 "tech_stack": "nextjs",
             }
             
+            logger.info(f"✓ LANGFUSE: Observation context active: {langfuse_span is not None}, Handler created: {langfuse_handler is not None}")
+            
+            # Validate story state before checking signal
+            # If story was canceled/restarted while we were setting up, clear stale signal
+            from app.models import Story
+            from app.api.deps import get_db
+            try:
+                db = next(get_db())
+                story = db.get(Story, story_id)
+                if story and story.agent_state != StoryAgentState.PROCESSING:
+                    # Stale signal - story state changed externally (restart/cancel)
+                    self.clear_signal(story_id)
+                    logger.warning(f"[{self.name}] Cleared stale signal - story state is {story.agent_state}, not PROCESSING")
+            except Exception as e:
+                logger.debug(f"[{self.name}] Could not validate story state: {e}")
+            
             # Check signal before starting graph (in case cancel came during setup)
             signal = self.check_signal(story_id)
             if signal == "cancel":
@@ -406,7 +443,6 @@ class Developer(BaseAgent, PausableAgentMixin):
 
             config = {
                 "configurable": {"thread_id": thread_id},
-                "callbacks": [langfuse_handler] if langfuse_handler else []
             }
 
             # Check if resuming from pause

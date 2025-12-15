@@ -3,9 +3,8 @@ import os
 import logging
 from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
-
 from app.agents.developer.src.state import DeveloperState
-from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
+from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
 from app.agents.developer.src.nodes._llm import  fast_llm
 from app.agents.developer.src.schemas import SimplePlanOutput
 from app.agents.developer.src.skills.registry import SkillRegistry
@@ -167,6 +166,7 @@ def _auto_fix_dependencies(steps: list) -> list:
     return steps
 
 
+@track_node("plan")
 async def plan(state: DeveloperState, agent=None) -> DeveloperState:
     """Zero-shot planning with FileRepository."""
     from langgraph.types import interrupt
@@ -191,7 +191,8 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
         repo = FileRepository(workspace_path)
         context = repo.to_context()
         
-        plan_prompts = get_plan_prompts(tech_stack)
+        skills_dir = Path(__file__).parent.parent / "skills"
+        plan_prompts = get_plan_prompts(tech_stack, skills_dir)
         system_prompt = plan_prompts.get('zero_shot_system', plan_prompts.get('system_prompt', ''))
         
         req_text = chr(10).join(f"- {r}" for r in state.get("story_requirements", []))
@@ -210,7 +211,14 @@ Create implementation plan."""
 
         await story_logger.info("Generating implementation plan...")
         structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
-        result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "plan_zero_shot"))
+        
+        config = _cfg(state, "plan_zero_shot")
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"✓ LANGFUSE: Config for LLM call: callbacks={config.get('callbacks', [])}")
+        
+        result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=config)
         flush_langfuse(state)
         
         if story_id:
@@ -252,12 +260,12 @@ Create implementation plan."""
         can_parallel = should_use_parallel(steps)
         
         if steps:
-            await story_logger.message(f"Plan: {len(steps)} files, {len(layers)} layers")
+            await story_logger.message(f"📋 Kế hoạch: {len(steps)} files, {len(layers)} layers")
         
         return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
     except Exception as e:
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise
-        logger.error(f"[plan] Error: something wrong. Please restart this story!")
+        logger.error(f"[plan] Error: {e}", exc_info=True)
         return {**state, "error": str(e), "action": "RESPOND"}
