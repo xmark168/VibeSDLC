@@ -106,6 +106,15 @@ async def _invoke_structured(
             result = await structured_llm.ainvoke(messages, config=config)
         else:
             result = await structured_llm.ainvoke(messages)
+        
+        # Check if result is None (LLM failed to return structured output)
+        if result is None:
+            logger.warning("[BA] LLM returned None instead of structured output")
+            if fallback_data:
+                logger.info("[BA] Using fallback data")
+                return fallback_data
+            raise ValueError("LLM returned None")
+        
         return result.model_dump()
     except Exception as e:
         logger.warning(f"[BA] Structured output failed: {e}")

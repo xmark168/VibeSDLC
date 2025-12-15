@@ -165,7 +165,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   const [agentDetailOpen, setAgentDetailOpen] = useState(false)
 
   const agentItems = useMemo(() => {
-  
     const agentsList: AgentPublic[] = Array.isArray(projectAgents) 
       ? projectAgents 
       : (projectAgents?.data || [])
