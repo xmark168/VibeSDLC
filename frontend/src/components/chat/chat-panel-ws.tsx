@@ -49,6 +49,14 @@ import { useProjectAgents } from "@/queries/agents";
 import { PromptInput, PromptInputButton, PromptInputSubmit, PromptInputTextarea, PromptInputToolbar, PromptInputTools } from "../ui/shadcn-io/ai/prompt-input";
 import { MentionDropdown, type Agent } from "../ui/mention-dropdown";
 
+// Default avatars by role type (for fallback when persona_avatar is not available)
+const DEFAULT_AVATARS: Record<string, string> = {
+  team_leader: "https://api.dicebear.com/7.x/avataaars/svg?seed=TeamLeader&backgroundColor=6366f1",
+  business_analyst: "https://api.dicebear.com/7.x/avataaars/svg?seed=BusinessAnalyst&backgroundColor=3b82f6",
+  developer: "https://api.dicebear.com/7.x/avataaars/svg?seed=Developer&backgroundColor=22c55e",
+  tester: "https://api.dicebear.com/7.x/avataaars/svg?seed=Tester&backgroundColor=f59e0b",
+};
+
 interface ChatPanelProps {
   onCollapse: () => void;
   projectId?: string;
@@ -135,6 +143,7 @@ export function ChatPanelWS({
       role: roleInfo.role,
       icon: roleInfo.icon,
       color: roleInfo.color,
+      persona_avatar: agent.persona_avatar || DEFAULT_AVATARS[agent.role_type] || null, // Use persona avatar or fallback
     };
   });
 
@@ -680,14 +689,6 @@ export function ChatPanelWS({
     } catch (error) {
       return dateStr;
     }
-  };
-
-  // Default avatars by role type
-  const DEFAULT_AVATARS: Record<string, string> = {
-    team_leader: "https://api.dicebear.com/7.x/avataaars/svg?seed=TeamLeader&backgroundColor=6366f1",
-    business_analyst: "https://api.dicebear.com/7.x/avataaars/svg?seed=BusinessAnalyst&backgroundColor=3b82f6",
-    developer: "https://api.dicebear.com/7.x/avataaars/svg?seed=Developer&backgroundColor=22c55e",
-    tester: "https://api.dicebear.com/7.x/avataaars/svg?seed=Tester&backgroundColor=f59e0b",
   };
 
   // Helper to get avatar URL by agent name (for typing indicator)
@@ -1384,13 +1385,15 @@ export function ChatPanelWS({
           </div>
         )}
 
-        <div className={`p-2 ${pendingQuestion || activeBatchQuestion ? 'pt-3' : ''}`}>
+        <div className={`p-2 ${pendingQuestion || activeBatchQuestion ? 'pt-3' : ''} relative`}>
         {showMentions && (
-          <MentionDropdown
-            agents={filteredAgents}
-            onSelect={insertMention}
-            onClose={() => setShowMentions(false)}
-          />
+          <div className="absolute bottom-full left-0 w-full mb-2 z-[9999]" style={{ backgroundColor: 'rgba(255,0,0,0.1)' }}>
+            <MentionDropdown
+              agents={filteredAgents}
+              onSelect={insertMention}
+              onClose={() => setShowMentions(false)}
+            />
+          </div>
         )}
 
         {/* Hidden file input */}
