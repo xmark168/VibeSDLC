@@ -718,12 +718,17 @@ def _cleanup_story_resources_sync(
     branch_name: str | None = None,
     main_workspace: str | None = None,
     checkpoint_thread_id: str | None = None,
+    skip_node_modules: bool = False,
 ) -> dict:
-    """Cleanup story resources. Order: checkpoint → kill → prune → remove → delete dir → prune → branch."""
+    """Cleanup story resources. Order: checkpoint → kill → prune → remove → delete dir → prune → branch.
+    
+    Args:
+        skip_node_modules: If True, skip deleting node_modules for faster restart (10x speedup)
+    """
     from pathlib import Path
     import subprocess, shutil, platform, tempfile, time
     
-    results = {"checkpoint": False, "worktree": False, "branch": False}
+    results = {"checkpoint": False, "worktree": False, "branch": False, "skip_node_modules": skip_node_modules}
     
     # Delete checkpoint
     if checkpoint_thread_id:
@@ -743,6 +748,22 @@ def _cleanup_story_resources_sync(
     if worktree_path:
         _kill_processes_in_worktree(worktree_path)
     
+    # Delete node_modules FIRST if not skipped (faster restart when skipped)
+    if worktree_path and not skip_node_modules:
+        worktree = Path(worktree_path)
+        node_modules = worktree / "node_modules"
+        if node_modules.exists():
+            _logger.info(f"Deleting node_modules before worktree cleanup...")
+            try:
+                _kill_processes_in_worktree(str(node_modules))
+                time.sleep(0.5)
+                shutil.rmtree(node_modules, ignore_errors=True)
+                _logger.info(f"node_modules deleted")
+            except Exception as e:
+                _logger.warning(f"Failed to delete node_modules: {e}")
+    elif skip_node_modules:
+        _logger.debug(f"Skipping node_modules delete for faster restart")
+    
     # Prune first
     if main_workspace and Path(main_workspace).exists():
         from app.utils.git_utils import git_worktree_prune
@@ -753,7 +774,7 @@ def _cleanup_story_resources_sync(
         worktree = Path(worktree_path)
         if worktree.exists() and main_workspace and Path(main_workspace).exists():
             from app.utils.git_utils import git_worktree_remove
-            git_worktree_remove(worktree, Path(main_workspace), force=True, timeout=30)
+            git_worktree_remove(worktree, Path(main_workspace), force=True, timeout=10)  # Reduced from 30s
         
         if worktree.exists():
             for attempt in range(3):
@@ -794,10 +815,14 @@ async def cleanup_story_resources(
     branch_name: str | None = None,
     main_workspace: str | None = None,
     checkpoint_thread_id: str | None = None,
+    skip_node_modules: bool = False,
 ) -> dict:
     """
     Async wrapper for cleanup_story_resources_sync.
     Runs blocking cleanup in thread pool executor.
+    
+    Args:
+        skip_node_modules: If True, skip deleting node_modules for 10x faster restart
     """
     import asyncio
     from functools import partial
@@ -811,6 +836,7 @@ async def cleanup_story_resources(
             branch_name=branch_name,
             main_workspace=main_workspace,
             checkpoint_thread_id=checkpoint_thread_id,
+            skip_node_modules=skip_node_modules,
         )
     )
 

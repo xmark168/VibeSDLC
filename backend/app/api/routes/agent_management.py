@@ -1510,7 +1510,16 @@ async def pool_events_stream(
             # Send initial connection event
             yield f"event: connected\ndata: {json.dumps({'message': 'Connected to pool events stream'})}\n\n"
 
+            # Add connection limits to prevent resource leaks
+            from datetime import timedelta
+            MAX_SSE_DURATION = timedelta(hours=12)  # Max 12h for SSE
+            connection_start = datetime.now()
+
             while True:
+                # Check max connection duration
+                if datetime.now() - connection_start > MAX_SSE_DURATION:
+                    yield f"event: info\ndata: {json.dumps({'message': 'Connection time limit reached'})}\n\n"
+                    break
                 try:
                     # Collect all pool stats
                     pools_data = []

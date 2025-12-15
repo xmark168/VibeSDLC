@@ -30,7 +30,7 @@ def reset_modified_files():
     _modified_files.clear()
 
 
-def git_revert_uncommitted(workspace_path: str) -> bool:
+async def git_revert_uncommitted(workspace_path: str) -> bool:
     """Revert uncommitted changes (used on pause)."""
     # Validate workspace_path
     if not workspace_path:
@@ -47,17 +47,16 @@ def git_revert_uncommitted(workspace_path: str) -> bool:
     
     try:
         # Discard unstaged changes with retry
-        git_with_retry(["git", "checkout", "."], cwd=workspace_path)
+        await git_with_retry(["git", "checkout", "."], cwd=workspace_path)
         # Remove untracked files
-        git_with_retry(["git", "clean", "-fd"], cwd=workspace_path)
-        logger.info(f"[git] Reverted uncommitted changes")
+        await git_with_retry(["git", "clean", "-fd"], cwd=workspace_path)
         return True
     except Exception as e:
         logger.warning(f"[git] Revert error: {e}")
         return False
 
 
-def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
+async def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
     """Reset all changes to base branch (used on cancel)."""
     # Validate workspace_path
     if not workspace_path:
@@ -80,20 +79,18 @@ def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
         )
         if result.returncode == 0:
             base_commit = result.stdout.decode().strip()
-            git_with_retry(["git", "reset", "--hard", base_commit], cwd=workspace_path)
-            logger.info(f"[git] Reset to {base_commit[:8]}")
+            await git_with_retry(["git", "reset", "--hard", base_commit], cwd=workspace_path)
             return True
         else:
             # Fallback: just reset to origin/base_branch
-            git_with_retry(["git", "reset", "--hard", f"origin/{base_branch}"], cwd=workspace_path)
-            logger.info(f"[git] Reset to origin/{base_branch}")
+            await git_with_retry(["git", "reset", "--hard", f"origin/{base_branch}"], cwd=workspace_path)
             return True
     except Exception as e:
         logger.warning(f"[git] Reset error: {e}")
         return False
 
 
-def git_squash_wip_commits(workspace_path: str, base_branch: str = "main", final_message: str = None) -> bool:
+async def git_squash_wip_commits(workspace_path: str, base_branch: str = "main", final_message: str = None) -> bool:
     """Squash all WIP commits into a single commit."""
     # Validate workspace_path
     if not workspace_path:
@@ -120,12 +117,11 @@ def git_squash_wip_commits(workspace_path: str, base_branch: str = "main", final
         base_commit = result.stdout.decode().strip()
         
         # Soft reset to base with retry
-        git_with_retry(["git", "reset", "--soft", base_commit], cwd=workspace_path)
+        await git_with_retry(["git", "reset", "--soft", base_commit], cwd=workspace_path)
         
         # Commit with final message
         msg = final_message or "feat: implement story"
-        git_with_retry(["git", "commit", "-m", msg, "--no-verify"], cwd=workspace_path)
-        logger.info(f"[git] Squashed commits: {msg}")
+        await git_with_retry(["git", "commit", "-m", msg, "--no-verify"], cwd=workspace_path)
         return True
     except Exception as e:
         logger.warning(f"[git] Squash error: {e}")
@@ -314,15 +310,8 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
             _modified_files.add(file_path)
         
         new_modified = get_modified_files()
-        if any(f.replace("\\", "/").endswith("schema.prisma") for f in new_modified):
-            try:
-                subprocess.run("pnpm exec prisma generate", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-                subprocess.run("pnpm exec prisma db push --accept-data-loss", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-                seed_file = Path(workspace_path) / "prisma" / "seed.ts"
-                if seed_file.exists():
-                    subprocess.run("pnpm prisma db seed", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-            except:
-                pass
+        # NOTE: Prisma generate/push/seed are now handled in run_code.py
+        # Removed duplicate operations here to avoid 2-3 min waste per implement step
         
         all_modified = list(set(state.get("files_modified", []) + new_modified))
         deps = state.get("dependencies_content", {})
@@ -500,15 +489,12 @@ async def implement_parallel(state: DeveloperState, config: dict = None, agent=N
                     all_errors.append(f"{r.get('file_path')}: {r.get('error')}")
             
             if layer_num == 1 and any("schema.prisma" in str(r.get("file_path", "")) for r in results):
-                try:
-                    subprocess.run("pnpm exec prisma generate", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-                    subprocess.run("pnpm exec prisma db push --accept-data-loss", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-                    sp = os.path.join(workspace_path, "prisma/schema.prisma")
-                    if os.path.exists(sp):
-                        with open(sp, 'r', encoding='utf-8') as f:
-                            deps_content["prisma/schema.prisma"] = f.read()
-                except:
-                    pass
+                # NOTE: Prisma generate/push are now handled in run_code.py
+                # Just update deps_content for next steps
+                sp = os.path.join(workspace_path, "prisma/schema.prisma")
+                if os.path.exists(sp):
+                    with open(sp, 'r', encoding='utf-8') as f:
+                        deps_content["prisma/schema.prisma"] = f.read()
             elif layer_num == 2:
                 # Layer 2: Types (was layer 3)
                 tp = os.path.join(workspace_path, "src/types/index.ts")

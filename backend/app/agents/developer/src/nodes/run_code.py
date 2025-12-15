@@ -73,7 +73,8 @@ def _has_script(workspace_path: str, script_name: str) -> bool:
     return False
 
 # Thread pool for parallel shell commands
-_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+# Increased from 4 to 10 to support more concurrent stories
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=10, thread_name_prefix="runcode_worker")
 
 
 def _should_skip_seed(workspace_path: str) -> bool:

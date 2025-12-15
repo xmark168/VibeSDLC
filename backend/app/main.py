@@ -49,7 +49,7 @@ async def cleanup_stale_story_states():
             # Find stories with stale states (any non-finished state)
             stale_stories = session.exec(
                 text("""
-                    SELECT id, checkpoint_thread_id 
+                    SELECT id, checkpoint_thread_id, worktree_path, branch_name, project_id, status
                     FROM stories 
                     WHERE agent_state IN ('PENDING', 'PROCESSING', 'PAUSED', 'CANCEL_REQUESTED')
                 """)
@@ -60,22 +60,64 @@ async def cleanup_stale_story_states():
                 return
             
             story_ids = [str(s[0]) for s in stale_stories]
-            checkpoint_ids = [s[1] for s in stale_stories if s[1]]
+            
+            # Count stories by status for logging
+            status_counts = {}
+            for story in stale_stories:
+                status = story[5]  # status is 6th field
+                status_counts[status] = status_counts.get(status, 0) + 1
             
             logger.info(f"🧹 Cleaning up {len(stale_stories)} stale stories: {story_ids}")
+            logger.info(f"   Status breakdown: {status_counts}")
             
-            # Reset agent_state to null and clear assigned_agent_id
+            # Step 1: Cleanup workspaces (worktree + branch)
+            from app.utils.workspace_utils import cleanup_workspace
+            from app.models import Project
+            from pathlib import Path
+            
+            cleanup_count = 0
+            for story in stale_stories:
+                story_id, _, worktree_path, branch_name, project_id = story
+                
+                # Check if worktree exists
+                if worktree_path and Path(worktree_path).exists():
+                    try:
+                        # Get project repo path
+                        project = session.get(Project, project_id)
+                        if project and project.repo_path:
+                            # Cleanup worktree + branch
+                            cleanup_workspace(
+                                repo_path=project.repo_path,
+                                worktree_path=worktree_path,
+                                branch_name=branch_name
+                            )
+                            cleanup_count += 1
+                            logger.debug(f"Cleaned workspace for story {story_id}")
+                    except Exception as e:
+                        # Non-critical - continue cleanup
+                        logger.warning(f"Failed to cleanup workspace for story {story_id}: {e}")
+            
+            if cleanup_count > 0:
+                logger.info(f"✓ Cleaned {cleanup_count} workspaces")
+            
+            # Step 2: Prepare checkpoint IDs for clearing
+            checkpoint_ids = [s[1] for s in stale_stories if s[1]]
+            
+            # Step 3: Move incomplete stories to Todo and reset agent_state
             session.exec(
                 text("""
                     UPDATE stories 
-                    SET agent_state = NULL,
+                    SET status = 'Todo',
+                        agent_state = NULL,
                         checkpoint_thread_id = NULL,
-                        assigned_agent_id = NULL
+                        assigned_agent_id = NULL,
+                        worktree_path = NULL,
+                        branch_name = NULL
                     WHERE agent_state IN ('PENDING', 'PROCESSING', 'PAUSED', 'CANCEL_REQUESTED')
                 """)
             )
             
-            # Clear checkpoint data for these stories
+            # Step 4: Clear checkpoint data
             if checkpoint_ids:
                 for tid in checkpoint_ids:
                     try:
@@ -86,7 +128,10 @@ async def cleanup_stale_story_states():
                         logger.warning(f"Failed to delete checkpoint {tid}: {e}")
             
             session.commit()
-            logger.info(f"✓ Reset {len(stale_stories)} stale story states and cleared {len(checkpoint_ids)} checkpoints")
+            logger.info(
+                f"✓ Moved {len(stale_stories)} incomplete stories to Todo, "
+                f"cleared {len(checkpoint_ids)} checkpoints"
+            )
             
     except Exception as e:
         logger.error(f"Failed to cleanup stale story states: {e}")

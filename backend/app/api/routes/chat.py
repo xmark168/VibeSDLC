@@ -1,6 +1,8 @@
 """WebSocket Chat API."""
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from starlette.websockets import WebSocketState
 from uuid import UUID
+import asyncio
 import logging
 import json
 from datetime import datetime, timezone
@@ -80,11 +82,33 @@ async def websocket_endpoint(
 
         logger.info(f"User {user.id} connected to project {project_id} via WebSocket")
 
+        # Add connection limits to prevent resource leaks
+        from datetime import timedelta
+        MAX_CONNECTION_DURATION = timedelta(hours=24)
+        HEARTBEAT_TIMEOUT = 120  # 2 minutes without message = dead connection
+        connection_start = datetime.now()
+
         try:
             # Keep connection alive and handle ping/pong
             while True:
-                # Receive messages from client
-                data = await websocket.receive_text()
+                # Check max connection duration (prevent infinite connections)
+                if datetime.now() - connection_start > MAX_CONNECTION_DURATION:
+                    logger.info(f"User {user.id} connection reached 24h limit, closing")
+                    await websocket.send_json({
+                        "type": "info",
+                        "message": "Connection time limit reached, please reconnect"
+                    })
+                    break
+                
+                # Receive messages with timeout (detect dead connections)
+                try:
+                    data = await asyncio.wait_for(
+                        websocket.receive_text(),
+                        timeout=HEARTBEAT_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"User {user.id} heartbeat timeout, closing connection")
+                    break
 
                 try:
                     message = json.loads(data)
@@ -417,14 +441,17 @@ async def websocket_endpoint(
         except Exception as e:
             logger.error(f"WebSocket error for user {user.id}: {e}")
             connection_manager.disconnect(websocket)
-            await websocket.close(code=1011, reason="Internal server error")
+            # Only close if still connected
+            try:
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    await websocket.close(code=1011, reason="Internal server error")
+            except:
+                pass  # Already closed or closing
 
     except Exception as e:
         logger.error(f"WebSocket connection error: {e}")
-        try:
-            await websocket.close(code=1011, reason=str(e))
-        except:
-            pass
+        # Don't try to close again - cleanup only
+        connection_manager.disconnect(websocket)
 
 
 @router.get("/health")

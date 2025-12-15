@@ -32,7 +32,8 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # Thread pool for running blocking operations in parallel
-_executor = ThreadPoolExecutor(max_workers=4)
+# Increased from 4 to 10 to support more concurrent stories
+_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="setup_worker")
 
 # Note: Caching helper functions (_should_skip_pnpm_install, etc.) 
 # are now imported from app.utils.workspace_utils
@@ -253,31 +254,45 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         tech_stack = state.get("tech_stack", "nextjs")
         skill_registry = SkillRegistry.load(tech_stack)
         
-        # Run postgres + pnpm install in PARALLEL
+        # Run pnpm install FIRST, then DB + Prisma in parallel
         database_ready = False
         pnpm_success = True
         
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if workspace_path and pkg_json and os.path.exists(pkg_json):
-            # Run DB + Prisma generate + pnpm in PARALLEL (3 tasks)
-            await story_logger.info("⚡ Starting parallel setup: DB + Prisma + pnpm...")
             loop = asyncio.get_event_loop()
             from functools import partial
             
-            # Launch all 3 in parallel
+            # STEP 1: Install dependencies FIRST (MUST complete before prisma)
+            await story_logger.info("📦 Installing dependencies...")
+            pnpm_success = await loop.run_in_executor(_executor, _run_pnpm_install, workspace_path)
+            
+            if not pnpm_success:
+                await story_logger.error("❌ Dependencies installation failed - cannot proceed")
+                return {
+                    **state,
+                    "workspace_path": workspace_path,
+                    "branch_name": branch_name,
+                    "main_workspace": workspace_info.get("main_workspace", workspace_path),
+                    "workspace_ready": False,
+                    "run_status": "error",
+                    "error": "Failed to install dependencies in worktree",
+                    "project_context": project_context,
+                    "agents_md": agents_md,
+                    "skill_registry": skill_registry,
+                }
+            
+            # STEP 2: Run DB + Prisma in PARALLEL (both depend on pnpm install)
+            await story_logger.info("⚡ Starting parallel setup: DB + Prisma...")
             db_future = loop.run_in_executor(_executor, partial(_start_database, workspace_path, story_id))
             prisma_future = loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
-            pnpm_future = loop.run_in_executor(_executor, _run_pnpm_install, workspace_path)
             
-            # Wait for all 3 to complete
-            db_result, gen_success, pnpm_success = await asyncio.gather(db_future, prisma_future, pnpm_future)
+            db_result, gen_success = await asyncio.gather(db_future, prisma_future)
             
             database_ready = db_result.get("ready", False)
             
             if not gen_success:
-                await story_logger.warning("prisma generate failed")
-            if not pnpm_success:
-                await story_logger.warning("pnpm install failed, continuing...")
+                await story_logger.warning("⚠️ Prisma generate failed (non-critical)")
         
         # Build project config with tech stack
         project_config = _build_project_config(tech_stack)

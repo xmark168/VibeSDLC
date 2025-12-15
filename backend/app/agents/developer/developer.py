@@ -513,12 +513,12 @@ class Developer(BaseAgent, PausableAgentMixin):
                     from app.agents.developer.src.nodes.implement import git_revert_uncommitted, git_reset_all
                     if reason == "pause":
                         # Revert uncommitted changes (keep commits)
-                        git_revert_uncommitted(workspace_path)
+                        await git_revert_uncommitted(workspace_path)
                         logger.info(f"[{self.name}] Reverted uncommitted changes on pause")
                     elif reason == "cancel":
                         # Reset all changes to base branch
                         base_branch = final_state.get("base_branch", "main")
-                        git_reset_all(workspace_path, base_branch)
+                        await git_reset_all(workspace_path, base_branch)
                         logger.info(f"[{self.name}] Reset all changes on cancel")
                 
                 # Cleanup langfuse
@@ -571,7 +571,7 @@ class Developer(BaseAgent, PausableAgentMixin):
                         from app.agents.developer.src.nodes.implement import git_squash_wip_commits
                         story_title = initial_state.get("title", "implement story")
                         base_branch = final_state.get("base_branch", "main")
-                        git_squash_wip_commits(workspace_path, base_branch, f"feat: {story_title}")
+                        await git_squash_wip_commits(workspace_path, base_branch, f"feat: {story_title}")
                         logger.info(f"[{self.name}] Squashed WIP commits")
                     except Exception as squash_err:
                         # Git squash is non-critical, don't fail the whole story

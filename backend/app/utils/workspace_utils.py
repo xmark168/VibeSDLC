@@ -27,25 +27,172 @@ logger = logging.getLogger(__name__)
 # Git worktree management
 # =============================================================================
 
+def _find_handle_exe() -> str | None:
+    """Find handle.exe in common locations."""
+    import os
+    import shutil
+    
+    # Check common install locations
+    locations = [
+        r"C:\Program Files\Sysinternals\handle.exe",
+        r"C:\Windows\System32\handle.exe",
+        r"C:\Sysinternals\handle.exe",
+    ]
+    
+    for path in locations:
+        if os.path.exists(path):
+            return path
+    
+    # Check if it's in PATH
+    if shutil.which("handle.exe"):
+        return "handle.exe"
+    
+    return None
+
+
+def _kill_with_handle_exe(directory: Path, agent_name: str = "Agent") -> bool:
+    """Kill processes using handle.exe (most accurate). Returns True if successful."""
+    handle_exe = _find_handle_exe()
+    if not handle_exe:
+        logger.debug(f"[{agent_name}] handle.exe not found, trying psutil")
+        return False
+    
+    try:
+        # Run handle.exe to find processes with handles to this directory
+        result = subprocess.run(
+            [handle_exe, "-accepteula", "-nobanner", str(directory)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            encoding='utf-8',
+            errors='replace'
+        )
+        
+        if result.returncode != 0:
+            logger.debug(f"[{agent_name}] handle.exe failed: {result.stderr[:200]}")
+            return False
+        
+        # Parse output to extract PIDs
+        # Format: "process.exe    pid: 1234   type: File   C:\path\to\file"
+        import re
+        pids = set()
+        process_names = {}
+        
+        for line in result.stdout.splitlines():
+            # Look for "pid: XXXX" pattern
+            pid_match = re.search(r'pid:\s*(\d+)', line)
+            if pid_match:
+                pid = int(pid_match.group(1))
+                pids.add(pid)
+                
+                # Extract process name (first word on line)
+                name_match = re.match(r'^(\S+)', line.strip())
+                if name_match:
+                    process_names[pid] = name_match.group(1)
+        
+        if not pids:
+            logger.debug(f"[{agent_name}] No processes found by handle.exe")
+            return True  # Success - nothing to kill
+        
+        # Kill each process
+        killed_count = 0
+        for pid in pids:
+            proc_name = process_names.get(pid, "unknown")
+            try:
+                kill_result = subprocess.run(
+                    ["taskkill", "/F", "/PID", str(pid)],
+                    capture_output=True,
+                    timeout=3
+                )
+                if kill_result.returncode == 0:
+                    logger.debug(f"[{agent_name}] Killed {proc_name} (PID {pid})")
+                    killed_count += 1
+            except Exception as e:
+                logger.debug(f"[{agent_name}] Failed to kill PID {pid}: {e}")
+        
+        logger.info(f"[{agent_name}] Killed {killed_count}/{len(pids)} processes (via handle.exe)")
+        return True
+    
+    except subprocess.TimeoutExpired:
+        logger.warning(f"[{agent_name}] handle.exe timed out")
+        return False
+    except Exception as e:
+        logger.warning(f"[{agent_name}] handle.exe error: {e}")
+        return False
+
+
+def _kill_with_psutil(directory: Path, agent_name: str = "Agent") -> bool:
+    """Kill processes using psutil (fallback). Returns True if successful."""
+    try:
+        import psutil
+        
+        directory_str = str(directory).lower()
+        killed_pids = set()
+        
+        # Find processes with open files in this directory
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                for open_file in proc.open_files():
+                    if directory_str in open_file.path.lower():
+                        pid = proc.info['pid']
+                        proc_name = proc.info['name']
+                        
+                        if pid not in killed_pids:
+                            logger.debug(f"[{agent_name}] Killing {proc_name} (PID {pid}) - has file open: {open_file.path}")
+                            proc.kill()
+                            killed_pids.add(pid)
+                        break
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+            except Exception as e:
+                logger.debug(f"[{agent_name}] Error checking process {proc.info.get('pid', '?')}: {e}")
+                continue
+        
+        if killed_pids:
+            logger.info(f"[{agent_name}] Killed {len(killed_pids)} processes (via psutil)")
+        else:
+            logger.debug(f"[{agent_name}] No processes found by psutil")
+        
+        return True
+    
+    except ImportError:
+        logger.warning(f"[{agent_name}] psutil not available")
+        return False
+    except Exception as e:
+        logger.warning(f"[{agent_name}] psutil error: {e}")
+        return False
+
+
 def _kill_processes_in_directory(directory: Path, agent_name: str = "Agent") -> None:
-    """Kill node processes that might be locking files (Windows only)."""
+    """Kill processes that are locking files in the specified directory (Windows only)."""
     import platform
     if platform.system() != "Windows":
         return
-    try:
-        subprocess.run(["taskkill", "/F", "/IM", "node.exe"], capture_output=True, timeout=3)  # Reduced from 10s to 3s
-    except Exception:
-        pass
+    
+    # Try handle.exe first (most accurate)
+    if _kill_with_handle_exe(directory, agent_name):
+        return
+    
+    # Fallback to psutil
+    if _kill_with_psutil(directory, agent_name):
+        return
+    
+    # Neither worked
+    logger.warning(f"[{agent_name}] No process killing method available")
 
 
 def cleanup_old_worktree(
     main_workspace: Path,
     branch_name: str,
     worktree_path: Path,
-    agent_name: str = "Agent"
+    agent_name: str = "Agent",
+    skip_node_modules: bool = False
 ) -> None:
     """
     Clean up worktree and branch
+    
+    Args:
+        skip_node_modules: If True, skip deleting node_modules (faster for restart)
     """
     import platform
     
@@ -53,38 +200,58 @@ def cleanup_old_worktree(
     if worktree_path.exists():
         _kill_processes_in_directory(worktree_path, agent_name)
         
+        # STEP 1: Delete node_modules FIRST (conditional)
+        if not skip_node_modules:
+            node_modules_path = worktree_path / "node_modules"
+            if node_modules_path.exists():
+                logger.info(f"[{agent_name}] Deleting node_modules before worktree cleanup...")
+                try:
+                    # Kill processes locking node_modules files
+                    _kill_processes_in_directory(node_modules_path, agent_name)
+                    time.sleep(0.5)  # Wait for processes to die
+                    
+                    # Delete node_modules directory
+                    shutil.rmtree(node_modules_path, ignore_errors=True)
+                    
+                    if not node_modules_path.exists():
+                        logger.info(f"[{agent_name}] node_modules deleted successfully")
+                    else:
+                        logger.warning(f"[{agent_name}] node_modules partially deleted")
+                except Exception as e:
+                    logger.warning(f"[{agent_name}] Failed to pre-delete node_modules: {e}")
+                    # Continue anyway - git worktree remove will try
+        else:
+            logger.debug(f"[{agent_name}] Skipping node_modules delete (will be removed with worktree)")
+        
+        # STEP 2: Remove worktree (now fast without node_modules)
         try:
             subprocess.run(
                 ["git", "worktree", "remove", str(worktree_path), "--force"],
                 cwd=str(main_workspace),
                 capture_output=True,
-                timeout=30
+                timeout=10  # Reduced from 30s - should be fast now
             )
         except Exception:
             pass
         
         if worktree_path.exists():
+            # Aggressive kill + exponential backoff strategy (no robocopy)
             for attempt in range(3):
+                # Kill processes BEFORE attempt (not after failure)
+                if attempt == 0 or attempt == 2:
+                    _kill_processes_in_directory(worktree_path, agent_name)
+                    time.sleep(0.3)  # Wait for process cleanup
+                
                 try:
                     shutil.rmtree(worktree_path)
                     break
                 except Exception as e:
                     if attempt < 2:
-                        time.sleep(0.5 * (attempt + 1))
-                        _kill_processes_in_directory(worktree_path, agent_name)
-                    elif platform.system() == "Windows":
-                        try:
-                            empty_dir = tempfile.mkdtemp()
-                            subprocess.run(
-                                ["robocopy", empty_dir, str(worktree_path), "/mir", "/r:0", "/w:0",
-                                 "/njh", "/njs", "/nc", "/ns", "/np", "/nfl", "/ndl"],
-                                capture_output=True,
-                                timeout=15  # Reduced from 30s to 15s
-                            )
-                            shutil.rmtree(empty_dir, ignore_errors=True)
-                            shutil.rmtree(worktree_path, ignore_errors=True)
-                        except Exception:
-                            logger.error(f"[{agent_name}] Failed to remove directory: {e}")
+                        # Exponential backoff: 0.2s, 0.4s
+                        time.sleep(0.2 * (2 ** attempt))
+                    else:
+                        # Last attempt failed - log but continue
+                        logger.warning(f"[{agent_name}] Failed to remove worktree after 3 attempts: {e}")
     
     # Prune worktree list (only once after removal)
     try:

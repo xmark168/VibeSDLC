@@ -150,29 +150,23 @@ def force_remove_directory(
             pass
     
     for attempt in range(max_retries):
+        # Aggressive kill processes BEFORE each attempt (not after failure)
+        if attempt == 0 or attempt == max_retries - 1:
+            # Kill on first attempt and last attempt for maximum effectiveness
+            kill_node_processes_in_directory(path)
+            time.sleep(0.3)  # Wait for processes to release file handles
+        
         try:
             shutil.rmtree(path, onerror=remove_readonly)
             if not path.exists():
                 return True
         except Exception as e:
             if attempt < max_retries - 1:
-                time.sleep(retry_delay * (attempt + 1))
-                kill_node_processes_in_directory(path)
-            elif IS_WINDOWS:
-                # Last resort: use robocopy to mirror an empty dir
-                try:
-                    empty_dir = tempfile.mkdtemp()
-                    subprocess.run(
-                        ["robocopy", empty_dir, str(path), "/mir", "/r:0", "/w:0",
-                         "/njh", "/njs", "/nc", "/ns", "/np", "/nfl", "/ndl"],
-                        capture_output=True, timeout=15  # Reduced from 60s to 15s
-                    )
-                    shutil.rmtree(empty_dir, ignore_errors=True)
-                    shutil.rmtree(path, ignore_errors=True)
-                    if not path.exists():
-                        return True
-                except Exception:
-                    pass
+                # Exponential backoff: 0.2s, 0.4s, 0.8s (faster than linear)
+                time.sleep(retry_delay * (2 ** attempt))
+                continue
+            
+            # All retries exhausted - log but don't block
             logger.warning(f"Failed to remove directory {path} after {max_retries} attempts: {e}")
     
     return not path.exists()
