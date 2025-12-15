@@ -58,15 +58,7 @@ def _safe_format(template: str, **kwargs) -> str:
 
 
 def get_prompt(task_name: str, prompt_type: str = "user_prompt", **kwargs) -> str:
-    """Get a prompt for a specific task.
-    
-    Args:
-        task_name: Name of the task (e.g., 'analyze_stories', 'generate_test_cases')
-        prompt_type: 'system_prompt' or 'user_prompt'
-        **kwargs: Variables to format into the prompt
-        
-    Returns:
-        Formatted prompt string
+    """Get a prompt for a specific task
     """
     if "tasks" not in PROMPTS:
         raise ValueError("No 'tasks' section in prompts.yaml")
@@ -96,16 +88,6 @@ def get_user_prompt(task_name: str, **kwargs) -> str:
 
 
 def build_system_prompt_with_persona(task_name: str, agent: Optional[Any] = None) -> str:
-    """Build system prompt with agent personality (Team Leader pattern).
-    
-    This function extracts personality from agent model and injects it into
-    the system prompt template, enabling persona-driven responses.
-    
-    Args:
-        task_name: Name of the task (e.g., 'response_generation')
-        agent: Optional agent instance with personality data
-        
-    Returns:
-        Formatted system prompt with persona
+    """Build system prompt with agent personality
     """
     return _core_build_system_prompt(PROMPTS, task_name, agent, _DEFAULTS)

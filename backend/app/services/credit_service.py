@@ -15,8 +15,16 @@ class CreditService:
         self.session = session
 
     def get_user_wallet(self, user_id: UUID) -> CreditWallet | None:
-        """Get user's active credit wallet"""
-        # First get active subscription
+        """Get user's active subscription wallet (for backward compatibility)"""
+        wallets = self.get_user_wallets(user_id)
+        return wallets.get("subscription")
+
+    def get_user_wallets(self, user_id: UUID) -> dict[str, CreditWallet | None]:
+        """
+        Get all user's wallets (subscription and purchased)
+        Returns: {"subscription": CreditWallet | None, "purchased": CreditWallet | None}
+        """
+        # Get subscription wallet
         sub_statement = (
             select(Subscription)
             .where(Subscription.user_id == user_id)
@@ -25,24 +33,40 @@ class CreditService:
         )
         subscription = self.session.exec(sub_statement).first()
 
-        if not subscription:
-            return None
+        subscription_wallet = None
+        if subscription:
+            wallet_statement = (
+                select(CreditWallet)
+                .where(CreditWallet.user_id == user_id)
+                .where(CreditWallet.subscription_id == subscription.id)
+                .where(CreditWallet.wallet_type == "subscription")
+            )
+            subscription_wallet = self.session.exec(wallet_statement).first()
 
-        # Get wallet for this subscription
-        wallet_statement = (
+        # Get purchased wallet
+        purchased_statement = (
             select(CreditWallet)
             .where(CreditWallet.user_id == user_id)
-            .where(CreditWallet.subscription_id == subscription.id)
-            .where(CreditWallet.wallet_type == "subscription")
+            .where(CreditWallet.wallet_type == "purchased")
         )
-        return self.session.exec(wallet_statement).first()
+        purchased_wallet = self.session.exec(purchased_statement).first()
+
+        return {
+            "subscription": subscription_wallet,
+            "purchased": purchased_wallet
+        }
 
     def get_remaining_credits(self, user_id: UUID) -> int:
-        """Get remaining credits for user"""
-        wallet = self.get_user_wallet(user_id)
-        if not wallet:
-            return 0
-        return (wallet.total_credits or 0) - (wallet.used_credits or 0)
+        """Get total remaining credits from all wallets"""
+        wallets = self.get_user_wallets(user_id)
+        total = 0
+        
+        for wallet in wallets.values():
+            if wallet:
+                remaining = (wallet.total_credits or 0) - (wallet.used_credits or 0)
+                total += remaining
+        
+        return total
 
     def deduct_credit(
         self,
@@ -52,7 +76,9 @@ class CreditService:
         agent_id: UUID | None = None
     ) -> bool:
         """
-        Deduct credits from user's wallet.
+        Deduct credits from user's wallets with priority:
+        1. Subscription wallet first (expires with subscription)
+        2. Purchased wallet second (permanent credits)
         
         Args:
             user_id: User ID
@@ -63,35 +89,71 @@ class CreditService:
         Returns:
             True if deduction successful, False if insufficient credits or no wallet
         """
-        wallet = self.get_user_wallet(user_id)
+        wallets = self.get_user_wallets(user_id)
         
-        if not wallet:
-            logger.warning(f"No wallet found for user {user_id}")
+        # Check total remaining credits
+        total_remaining = 0
+        for wallet in wallets.values():
+            if wallet:
+                remaining = (wallet.total_credits or 0) - (wallet.used_credits or 0)
+                total_remaining += remaining
+        
+        if total_remaining < amount:
+            logger.warning(f"Insufficient credits for user {user_id}: {total_remaining} < {amount}")
             return False
 
-        remaining = (wallet.total_credits or 0) - (wallet.used_credits or 0)
+        # Deduct from subscription wallet first (use expiring credits first)
+        remaining_to_deduct = amount
+        subscription_wallet = wallets.get("subscription")
         
-        if remaining < amount:
-            logger.warning(f"Insufficient credits for user {user_id}: {remaining} < {amount}")
-            return False
+        if subscription_wallet and remaining_to_deduct > 0:
+            sub_remaining = (subscription_wallet.total_credits or 0) - (subscription_wallet.used_credits or 0)
+            if sub_remaining > 0:
+                deduct_from_sub = min(sub_remaining, remaining_to_deduct)
+                subscription_wallet.used_credits = (subscription_wallet.used_credits or 0) + deduct_from_sub
+                self.session.add(subscription_wallet)
+                
+                # Log activity
+                activity = CreditActivity(
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    wallet_id=subscription_wallet.id,
+                    amount=-deduct_from_sub,
+                    reason=reason,
+                    activity_type="deduct"
+                )
+                self.session.add(activity)
+                
+                remaining_to_deduct -= deduct_from_sub
+                logger.info(f"Deducted {deduct_from_sub} credit(s) from subscription wallet")
 
-        # Deduct credits
-        wallet.used_credits = (wallet.used_credits or 0) + amount
-        self.session.add(wallet)
-
-        # Log activity
-        activity = CreditActivity(
-            user_id=user_id,
-            agent_id=agent_id,
-            wallet_id=wallet.id,
-            amount=-amount,
-            reason=reason,
-            activity_type="deduct"
-        )
-        self.session.add(activity)
+        # Deduct remaining from purchased wallet if needed
+        purchased_wallet = wallets.get("purchased")
+        
+        if purchased_wallet and remaining_to_deduct > 0:
+            purchased_remaining = (purchased_wallet.total_credits or 0) - (purchased_wallet.used_credits or 0)
+            if purchased_remaining > 0:
+                deduct_from_purchased = min(purchased_remaining, remaining_to_deduct)
+                purchased_wallet.used_credits = (purchased_wallet.used_credits or 0) + deduct_from_purchased
+                self.session.add(purchased_wallet)
+                
+                # Log activity
+                activity = CreditActivity(
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    wallet_id=purchased_wallet.id,
+                    amount=-deduct_from_purchased,
+                    reason=reason,
+                    activity_type="deduct"
+                )
+                self.session.add(activity)
+                
+                remaining_to_deduct -= deduct_from_purchased
+                logger.info(f"Deducted {deduct_from_purchased} credit(s) from purchased wallet")
 
         self.session.commit()
-        self.session.refresh(wallet)
 
-        logger.info(f"Deducted {amount} credit(s) from user {user_id}. Remaining: {(wallet.total_credits or 0) - (wallet.used_credits or 0)}")
+        # Calculate final remaining
+        final_remaining = self.get_remaining_credits(user_id)
+        logger.info(f"Deducted total {amount} credit(s) from user {user_id}. Remaining: {final_remaining}")
         return True

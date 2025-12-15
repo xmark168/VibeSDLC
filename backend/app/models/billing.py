@@ -73,7 +73,7 @@ class CreditWallet(BaseModel, table=True):
     user_id: UUID | None = Field(default=None, foreign_key="users.id", ondelete="SET NULL")
     wallet_type: str | None = Field(default=None, sa_column=Column(Text))
 
-    subscription_id: UUID | None = Field(default=None, foreign_key="subscriptions.id", ondelete="CASCADE")
+    subscription_id: UUID | None = Field(default=None, foreign_key="subscriptions.id", ondelete="SET NULL")
     period_start: datetime | None = Field(default=None)
     period_end: datetime | None = Field(default=None)
 

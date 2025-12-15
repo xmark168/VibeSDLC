@@ -95,15 +95,6 @@ tasks:
       - Use natural Vietnamese when appropriate
       - Keep it professional but friendly
 
-      Respond with JSON:
-      {{
-          "action": "DELEGATE" or "RESPOND",
-          "target_role": "business_analyst" | "developer" | "tester" (if DELEGATE),
-          "message": "Your response to user (in Vietnamese if appropriate, warm and explanatory)",
-          "reason": "Internal routing reason",
-          "is_update_request": true/false
-      }}
-      
       **is_update_request field:**
       - Set to TRUE when user wants to UPDATE/EDIT/ADD TO existing project:
         - "thêm feature X", "thêm tính năng X", "thêm chức năng X" (add feature)
@@ -254,8 +245,6 @@ tasks:
       - Communication style (formal/casual)
       - Technical level (beginner/intermediate/expert)
       - Project type hints
-      
-      Return JSON with detected preferences.
 
     user_prompt: |
       Analyze: "{user_message}"

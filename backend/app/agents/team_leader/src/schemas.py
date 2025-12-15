@@ -40,3 +40,14 @@ class ExtractedPreferences(BaseModel):
     tech_stack: Optional[List[str]] = None
     communication_style: Optional[Literal["formal", "casual"]] = None
     additional: Optional[Dict[str, Any]] = Field(default=None, description="Other detected preferences")
+
+
+class ConfirmationAction(BaseModel):
+    """User's choice for project confirmation."""
+    action: Literal["view", "update", "replace", "keep"] = Field(
+        description="view=xem PRD hiện tại, update=thêm feature, replace=thay thế project cũ, keep=giữ nguyên"
+    )
+    confidence: float = Field(
+        default=0.8,
+        description="Confidence level 0.0-1.0"
+    )

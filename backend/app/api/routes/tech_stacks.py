@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tech-stacks", tags=["tech-stacks"])
 
 # Skills base path
-SKILLS_BASE_PATH = Path(__file__).parent.parent.parent / "agents" / "developer_v2" / "src" / "skills"
+SKILLS_BASE_PATH = Path(__file__).parent.parent.parent / "agents" / "developer" / "src" / "skills"
 # Boilerplate base path
 BOILERPLATE_BASE_PATH = Path(__file__).parent.parent.parent / "agents" / "templates" / "boilerplate"
 EXCLUDED_FOLDERS = {"general", "__pycache__", ".next", "node_modules", ".git"}

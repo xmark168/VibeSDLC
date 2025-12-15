@@ -10,7 +10,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-from app.agents.tester.src.core_nodes import (
+from app.agents.tester.src.nodes.core_nodes import (
     conversation,
     router,
     send_response,

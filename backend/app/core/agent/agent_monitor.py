@@ -1,12 +1,5 @@
-"""Agent monitoring system.
-
-Lightweight monitoring coordinator that aggregates stats from AgentPoolManager
-instances and provides system-wide monitoring interface.
-
-Features:
-- System-wide statistics aggregation
-- Auto-scaling based on pool load thresholds
-- Periodic logging of key metrics
+"""
+Agent monitoring system.
 """
 
 import asyncio
@@ -20,16 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 class AgentMonitor:
-    """Lightweight monitoring coordinator for agent system.
-    
-    Aggregates statistics from AgentPoolManager instances and provides
-    unified monitoring interface. Does NOT perform health checks (those
-    are handled by individual AgentPoolManager instances).
-    
-    Features:
-    - System-wide statistics aggregation
-    - Periodic logging of key metrics
-    - Optional component (system continues if monitor fails)
+    """
+    Monitoring coordinator for agent system.
     """
 
     def __init__(
@@ -37,12 +22,6 @@ class AgentMonitor:
         manager_registry: Dict[str, Any],  # Dict[str, AgentPoolManager]
         monitor_interval: int = 30,
     ):
-        """Initialize agent monitor.
-        
-        Args:
-            manager_registry: Dictionary of pool managers {pool_name: AgentPoolManager}
-            monitor_interval: Seconds between stat logging (default 30)
-        """
         self.manager_registry = manager_registry
         self.monitor_interval = monitor_interval
         self.running = False
@@ -52,16 +31,10 @@ class AgentMonitor:
         logger.info(f"AgentMonitor initialized with {len(manager_registry)} pools")
 
     async def start(self, monitor_interval: Optional[int] = None) -> bool:
-        """Start the monitoring system.
-        
-        Args:
-            monitor_interval: Override default monitoring interval
-            
-        Returns:
-            True if started successfully
+        """
+        Start the monitoring system.
         """
         if self.running:
-            logger.warning("Monitor is already running")
             return False
         
         if monitor_interval:
@@ -70,7 +43,7 @@ class AgentMonitor:
         try:
             self.running = True
             self._task = asyncio.create_task(self._monitoring_loop())
-            logger.info(f"✓ AgentMonitor started (interval: {self.monitor_interval}s)")
+            logger.info(f"Set up monitor for agent (interval: {self.monitor_interval}s)")
             return True
             
         except Exception as e:
@@ -80,9 +53,6 @@ class AgentMonitor:
 
     async def stop(self) -> bool:
         """Stop the monitoring system.
-        
-        Returns:
-            True if stopped successfully
         """
         if not self.running:
             return True

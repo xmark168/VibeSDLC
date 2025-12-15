@@ -6,6 +6,7 @@ import {
   type PlanFilters,
 } from "@/apis/plans"
 import { toast } from "@/lib/toast"
+import { parseApiError } from "@/lib/api-error"
 
 // ===== Query Keys =====
 export const planQueryKeys = {
@@ -95,8 +96,7 @@ export function useCreatePlan() {
       toast.success("Plan created successfully")
     },
     onError: (error: any) => {
-      const message = error?.body?.detail || error?.message || "Failed to create plan"
-      toast.error(message)
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -119,8 +119,7 @@ export function useUpdatePlan() {
       toast.success("Plan updated successfully")
     },
     onError: (error: any) => {
-      const message = error?.body?.detail || error?.message || "Failed to update plan"
-      toast.error(message)
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -139,8 +138,7 @@ export function useDeletePlan() {
       toast.success("Plan deleted successfully")
     },
     onError: (error: any) => {
-      const message = error?.body?.detail || error?.message || "Failed to delete plan"
-      toast.error(message)
+      toast.error(parseApiError(error))
     },
   })
 }

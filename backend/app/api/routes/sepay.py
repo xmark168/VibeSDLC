@@ -1,12 +1,17 @@
 """SePay Payment API Routes"""
 
-from fastapi import APIRouter, Depends, HTTPException
-from uuid import UUID, uuid4
-from datetime import datetime, timedelta
-import httpx
 import logging
+from datetime import datetime, timedelta
+from uuid import UUID, uuid4
+
+import httpx
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import RedirectResponse
+from sqlmodel import select
 
 from app.api.deps import CurrentUser, SessionDep
+from app.core.config import settings
+from app.models import Order, OrderStatus, OrderType
 from app.schemas.sepay import (
     SePayCreateRequest,
     SePayCreditPurchaseRequest,
@@ -15,9 +20,6 @@ from app.schemas.sepay import (
 )
 from app.services.plan_service import PlanService
 from app.services.subscription_service import SubscriptionService
-from app.models import Order, OrderStatus, OrderType
-from app.core.config import settings
-from sqlmodel import select
 
 router = APIRouter(prefix="/sepay", tags=["sepay"])
 logger = logging.getLogger(__name__)
@@ -53,16 +55,16 @@ def create_sepay_payment(
     request: SePayCreateRequest
 ) -> SePayQRResponse:
     """Create SePay payment QR code for subscription"""
-    
+
     # Get plan
     plan_service = PlanService(session)
     plan = plan_service.get_by_id(request.plan_id)
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
-    
+
     if not plan.is_active:
         raise HTTPException(status_code=400, detail="Plan is not active")
-    
+
     # Get amount based on billing cycle
     if request.billing_cycle == "monthly":
         if not plan.monthly_price:
@@ -72,10 +74,10 @@ def create_sepay_payment(
         if not plan.yearly_price:
             raise HTTPException(status_code=400, detail="Yearly billing not available")
         amount = plan.yearly_price
-    
+
     # Generate transaction code
     transaction_code = generate_transaction_code()
-    
+
     # Create order
     order = Order(
         user_id=current_user.id,
@@ -90,13 +92,13 @@ def create_sepay_payment(
     session.add(order)
     session.commit()
     session.refresh(order)
-    
-    # Build QR URL
-    qr_url = build_qr_url(amount, transaction_code)
-    
+
+    # Build proxy QR URL instead of direct SePay URL
+    qr_url = f"/api/v1/sepay/qr-proxy/{transaction_code}"
+
     # Expires in 15 minutes
     expires_at = datetime.utcnow() + timedelta(minutes=15)
-    
+
     return SePayQRResponse(
         order_id=order.id,
         transaction_code=transaction_code,
@@ -115,30 +117,31 @@ def create_sepay_credit_purchase(
     request: SePayCreditPurchaseRequest
 ) -> SePayQRResponse:
     """Create SePay payment QR for credit purchase"""
-    
+
     # Get current subscription to get credit price
     subscription_service = SubscriptionService(session)
     subscription = subscription_service.get_active_subscription(current_user.id)
-    
+
     if not subscription:
         raise HTTPException(status_code=400, detail="No active subscription found")
-    
+
     plan_service = PlanService(session)
     plan = plan_service.get_by_id(subscription.plan_id)
-    
+
     if not plan or not plan.additional_credit_price:
         raise HTTPException(status_code=400, detail="Credit purchase not available")
-    
     # Calculate amount (price per 100 credits)
     credit_packs = request.credit_amount // 100
     if credit_packs < 1:
         raise HTTPException(status_code=400, detail="Minimum purchase is 100 credits")
-    
-    amount = credit_packs * plan.additional_credit_price
-    
+
+    credit_price = plan.additional_credit_price /100
+
+    amount = request.credit_amount * credit_price
+
     # Generate transaction code
     transaction_code = generate_transaction_code()
-    
+
     # Create order
     order = Order(
         user_id=current_user.id,
@@ -151,13 +154,13 @@ def create_sepay_credit_purchase(
     session.add(order)
     session.commit()
     session.refresh(order)
-    
-    # Build QR URL
-    qr_url = build_qr_url(amount, transaction_code)
-    
+
+    # Build proxy QR URL instead of direct SePay URL
+    qr_url = f"/api/v1/sepay/qr-proxy/{transaction_code}"
+
     # Expires in 15 minutes
     expires_at = datetime.utcnow() + timedelta(minutes=15)
-    
+
     return SePayQRResponse(
         order_id=order.id,
         transaction_code=transaction_code,
@@ -176,18 +179,18 @@ async def check_sepay_status(
     order_id: UUID
 ) -> SePayStatusResponse:
     """Check SePay payment status by polling SePay API"""
-    
+
     # Get order
     order = session.get(Order, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     if order.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
-    
+
     if not order.sepay_transaction_code:
         raise HTTPException(status_code=400, detail="Not a SePay order")
-    
+
     # If already paid, return immediately
     if order.status == OrderStatus.PAID:
         return SePayStatusResponse(
@@ -196,7 +199,7 @@ async def check_sepay_status(
             status="paid",
             paid_at=order.paid_at
         )
-    
+
     # Check if order expired (15 minutes)
     if order.created_at < datetime.utcnow() - timedelta(minutes=15):
         if order.status == OrderStatus.PENDING:
@@ -209,7 +212,7 @@ async def check_sepay_status(
             status="expired",
             paid_at=None
         )
-    
+
     # Poll SePay API to check transaction
     try:
         async with httpx.AsyncClient() as client:
@@ -224,7 +227,7 @@ async def check_sepay_status(
                 },
                 timeout=10.0
             )
-            
+
             if response.status_code != 200:
                 logger.error(f"SePay API error: {response.status_code}")
                 return SePayStatusResponse(
@@ -233,18 +236,18 @@ async def check_sepay_status(
                     status="pending",
                     paid_at=None
                 )
-            
+
             data = response.json()
             logger.info(f"SePay API response: {data}")
-            
+
             # Handle both formats: {"transactions": [...]} or direct list
             if isinstance(data, list):
                 transactions = data
             else:
                 transactions = data.get("transactions", [])
-            
+
             logger.info(f"Found {len(transactions)} transactions, looking for code: {order.sepay_transaction_code}")
-            
+
             # Check if transaction code exists in recent transactions
             for tx in transactions:
                 content = tx.get("transaction_content", "") or ""
@@ -259,17 +262,17 @@ async def check_sepay_status(
                         order.sepay_transaction_id = str(tx.get("id", ""))
                         session.add(order)
                         session.commit()
-                        
+
                         # Activate subscription or add credits
                         await _activate_order(session, order)
-                        
+
                         return SePayStatusResponse(
                             order_id=order.id,
                             transaction_code=order.sepay_transaction_code,
                             status="paid",
                             paid_at=order.paid_at
                         )
-            
+
             # Not found yet
             return SePayStatusResponse(
                 order_id=order.id,
@@ -277,7 +280,7 @@ async def check_sepay_status(
                 status="pending",
                 paid_at=None
             )
-            
+
     except Exception as e:
         logger.error(f"Error checking SePay status: {e}")
         return SePayStatusResponse(
@@ -294,7 +297,7 @@ async def _activate_order(session: SessionDep, order: Order):
         if order.order_type == OrderType.SUBSCRIPTION and order.plan_code:
             plan_service = PlanService(session)
             plan = plan_service.get_by_code(order.plan_code)
-            
+
             if plan:
                 subscription_service = SubscriptionService(session)
                 subscription, wallet, invoice = subscription_service.activate_subscription(
@@ -304,7 +307,7 @@ async def _activate_order(session: SessionDep, order: Order):
                     auto_renew=order.auto_renew
                 )
                 logger.info(f"Activated subscription {subscription.id} for order {order.id}")
-        
+
         elif order.order_type == OrderType.CREDIT and order.credit_amount:
             subscription_service = SubscriptionService(session)
             wallet, invoice = subscription_service.add_credits_to_wallet(
@@ -313,9 +316,45 @@ async def _activate_order(session: SessionDep, order: Order):
                 order=order
             )
             logger.info(f"Added {order.credit_amount} credits for order {order.id}")
-    
+
     except Exception as e:
         logger.error(f"Error activating order {order.id}: {e}")
+
+
+@router.get("/qr-proxy/{transaction_code}")
+async def proxy_qr_code(
+    transaction_code: str,
+    session: SessionDep,
+    current_user: CurrentUser
+):
+    """Proxy endpoint for QR code - không expose URL gốc"""
+    
+    # Kiểm tra order thuộc về user
+    statement = select(Order).where(
+        Order.sepay_transaction_code == transaction_code,
+        Order.user_id == current_user.id
+    )
+    order = session.exec(statement).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Kiểm tra thời gian hết hạn (15 phút)
+    if datetime.utcnow() > order.created_at + timedelta(minutes=15):
+        raise HTTPException(status_code=410, detail="QR code expired")
+    
+    # Kiểm tra order status
+    if order.status not in [OrderStatus.PENDING, OrderStatus.PAID]:
+        raise HTTPException(status_code=400, detail="Invalid order status")
+    
+    # Build URL thật (chỉ backend biết)
+    real_url = build_qr_url(order.amount, transaction_code)
+    
+    # Log access for security audit
+    logger.info(f"QR proxy accessed: transaction={transaction_code}, user={current_user.id}")
+    
+    # Chuyển hướng đến URL thật
+    return RedirectResponse(real_url, status_code=302)
 
 
 @router.post("/cancel/{order_id}")
@@ -329,15 +368,15 @@ def cancel_sepay_payment(
     order = session.get(Order, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
+
     if order.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
-    
+
     if order.status != OrderStatus.PENDING:
         raise HTTPException(status_code=400, detail="Can only cancel pending orders")
-    
+
     order.status = OrderStatus.CANCELED
     session.add(order)
     session.commit()
-    
+
     return {"message": "Payment cancelled"}

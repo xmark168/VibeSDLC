@@ -72,6 +72,7 @@ class AgentTaskType(str, Enum):
     # Abstraction task types (high-level)
     USER_STORY = "user_story"  # BA: Analyze requirements → create user stories
     MESSAGE = "message"  # Any agent: Handle/respond to user message
+    STORY_MESSAGE = "story_message"  # User message in story chat context
     
     # Clarification questions
     RESUME_WITH_ANSWER = "resume_with_answer"  # Resume task with clarification answer
@@ -326,6 +327,19 @@ class AgentTaskEvent(BaseKafkaEvent):
     # - completed: completed_at, duration_seconds, result, artifacts
     # - failed: failed_at, error_message, error_type, retry_count, can_retry
     # - cancelled: cancelled_by, cancelled_at, reason
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TaskRejectionEvent(BaseKafkaEvent):
+    """Event published when agent rejects a task due to queue overflow."""
+    
+    event_type: str = "agent.task.rejected"
+    task_id: UUID
+    agent_id: UUID
+    agent_name: str
+    reason: str  # "queue_full", "resource_unavailable", etc.
+    queue_size: int
+    max_queue_size: int
     details: Dict[str, Any] = Field(default_factory=dict)
 
 

@@ -31,6 +31,40 @@ export function SePayQRDialog({
   const [status, setStatus] = useState<SePayStatusResponse | null>(null)
   const [isPolling, setIsPolling] = useState(false)
   const [timeLeft, setTimeLeft] = useState<number>(0)
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null)
+
+  // Fetch QR image with authentication
+  useEffect(() => {
+    if (!qrData) return
+
+    const fetchQRImage = async () => {
+      try {
+        const token = localStorage.getItem("access_token")
+        const response = await fetch(`${import.meta.env.VITE_API_URL}${qrData.qr_url}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        })
+
+        if (response.ok) {
+          const blob = await response.blob()
+          const objectUrl = URL.createObjectURL(blob)
+          setQrImageUrl(objectUrl)
+        }
+      } catch (error) {
+        console.error("Failed to fetch QR image:", error)
+      }
+    }
+
+    fetchQRImage()
+
+    // Cleanup object URL
+    return () => {
+      if (qrImageUrl) {
+        URL.revokeObjectURL(qrImageUrl)
+      }
+    }
+  }, [qrData?.qr_url])
 
   // Reset state when qrData changes (new payment) or dialog closes
   useEffect(() => {
@@ -145,11 +179,17 @@ export function SePayQRDialog({
         <div className="flex flex-col items-center gap-4 py-4">
           {/* QR Code */}
           <div className="relative">
-            <img
-              src={qrData.qr_url}
-              alt="Payment QR Code"
-              className="w-64 h-64 border rounded-lg bg-white"
-            />
+            {qrImageUrl ? (
+              <img
+                src={qrImageUrl}
+                alt="Payment QR Code"
+                className="w-64 h-64 border rounded-lg bg-white"
+              />
+            ) : (
+              <div className="w-64 h-64 border rounded-lg bg-white flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              </div>
+            )}
             {status?.status === "paid" && (
               <div className="absolute inset-0 bg-green-500/90 flex items-center justify-center rounded-lg">
                 <CheckCircle className="w-16 h-16 text-white" />

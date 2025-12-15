@@ -16,16 +16,6 @@ logger = logging.getLogger(__name__)
 
 class AgentPoolManager:
     """In-memory agent pool manager.
-
-    Manages agents directly in single process using asyncio.
-    No multiprocessing, no Redis, no IPC complexity.
-
-    Features:
-    - Direct in-memory agent management
-    - Single health monitor loop
-    - Database as single source of truth
-    - Graceful shutdown
-    - Statistics tracking
     """
 
     def __init__(
@@ -36,12 +26,6 @@ class AgentPoolManager:
         pool_id: Optional[UUID] = None,
     ):
         """Initialize pool manager.
-
-        Args:
-            pool_name: Pool name (e.g., "universal_pool")
-            max_agents: Maximum agents allowed in pool
-            health_check_interval: Seconds between health checks
-            pool_id: Database pool ID (if already exists)
         """
         self.pool_name = pool_name
         self.max_agents = max_agents

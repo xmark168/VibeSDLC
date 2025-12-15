@@ -161,17 +161,11 @@ class TestImplementNode:
         unit_tests = list(unit_dir.rglob("*.test.tsx")) if unit_dir.exists() else []
         test_files = integration_tests + unit_tests
         
-        print(f"\n[DEBUG] files_modified: {files_modified}")
-        print(f"[DEBUG] integration tests found: {integration_tests}")
-        print(f"[DEBUG] unit tests found: {unit_tests}")
-        
         # Either files_modified or actual files should exist
         assert files_modified or test_files, "Should create at least one test file"
         
         if test_files:
             content = test_files[0].read_text()
-            print(f"[DEBUG] Content:\n{content[:500]}")
-            
             # Should have test structure
             assert "describe" in content or "test" in content
 
@@ -221,16 +215,11 @@ class TestUnitTestImplementation:
         unit_dir = workspace / "src" / "__tests__" / "unit"
         unit_tests = list(unit_dir.rglob("*.test.tsx")) if unit_dir.exists() else []
         
-        print(f"\n[DEBUG] files_modified: {files_modified}")
-        print(f"[DEBUG] unit tests found: {unit_tests}")
-        
         # Either files_modified or actual files should exist
         assert files_modified or unit_tests, "Should create at least one unit test file"
         
         if unit_tests:
             content = unit_tests[0].read_text()
-            print(f"[DEBUG] Content:\n{content[:500]}")
-            
             # Should have React Testing Library patterns
             assert "describe" in content or "test" in content
     

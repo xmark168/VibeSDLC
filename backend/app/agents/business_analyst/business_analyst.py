@@ -3,15 +3,12 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Set
+from typing import Dict, Set
 from uuid import UUID
-
 from sqlmodel import Session, select
-
 from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
 from app.core.agent.project_context import ProjectContext
 from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType
-from app.models.base import StoryAgentState
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
 from app.core.db import engine
@@ -38,19 +35,14 @@ class TaskStoppedException(Exception):
 
 
 class BusinessAnalyst(BaseAgent):
-    """Business Analyst using LangGraph for workflow management.
-    
-    Langfuse tracing is handled by BaseAgent.get_langfuse_callback().
+    """
+    Business Analyst using LangGraph for workflow management.
     """
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         super().__init__(agent_model, **kwargs)
         logger.info(f"[{self.name}] Initializing Business Analyst LangGraph")
-        
-        # Shared project context (memory + preferences) - same as Team Leader
         self.context = ProjectContext.get(self.project_id)
-        
-        # Initialize project files
         self.project_files = None
         if self.project_id:
             with Session(engine) as session:
@@ -597,15 +589,6 @@ class BusinessAnalyst(BaseAgent):
         pre_collected_info = {}  # Pre-populated from document analysis
         document_is_comprehensive = False
         document_type = ""  # "complete_requirements" | "partial_requirements" | "not_requirements"
-        
-        # Debug: Log task context
-        logger.info(f"[{self.name}] === TASK CONTEXT DEBUG ===")
-        logger.info(f"[{self.name}] task.context keys: {list(task.context.keys()) if task.context else 'None'}")
-        logger.info(f"[{self.name}] attachments count: {len(attachments)}")
-        if attachments:
-            for i, att in enumerate(attachments):
-                logger.info(f"[{self.name}] Attachment[{i}]: type={att.get('type')}, filename={att.get('filename')}, has_text={bool(att.get('extracted_text'))}, text_len={len(att.get('extracted_text', ''))}")
-        logger.info(f"[{self.name}] === END TASK CONTEXT DEBUG ===")
         
         if attachments:
             logger.info(f"[{self.name}] Found {len(attachments)} attachment(s) in task")
