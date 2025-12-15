@@ -60,6 +60,13 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account has been deactivated"
         )
+    
+    # Check if user account is locked
+    if user.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail="Account has been locked"
+        )
 
     return user
 

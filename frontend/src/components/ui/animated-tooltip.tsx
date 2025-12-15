@@ -42,10 +42,9 @@ export const AnimatedTooltip = ({
     const getStatusColor = (status?: string) => {
         switch (status) {
             case 'idle':
-                return 'bg-green-500';
-            case 'busy':
+            case 'busy':  // Show green when agent is typing/processing (online)
             case 'running':
-                return 'bg-yellow-500';
+                return 'bg-green-500';
             case 'error':
             case 'terminated':
                 return 'bg-red-500';

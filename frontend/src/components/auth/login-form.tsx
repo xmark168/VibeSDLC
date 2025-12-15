@@ -21,6 +21,7 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [oauthLoading, setOauthLoading] = useState<OAuthLoadingProvider>(null)
+  const [oauthError, setOauthError] = useState<string | null>(null)
   const { loginMutation } = useAuth()
 
 
@@ -29,6 +30,22 @@ export function LoginForm() {
     if (rememberedEmail) {
       setEmail(rememberedEmail)
       setRememberMe(true)
+    }
+
+    // Check for OAuth error in URL
+    const params = new URLSearchParams(window.location.search)
+    const error = params.get('error')
+    if (error) {
+      // Map error codes to user-friendly messages
+      const errorMessages: Record<string, string> = {
+        'account_locked': 'Your account has been locked. Please contact support.',
+        'account_deactivated': 'Your account has been deactivated. Please contact support.',
+        'oauth_failed': 'OAuth authentication failed. Please try again.',
+      }
+      setOauthError(errorMessages[error] || 'An error occurred during login. Please try again.')
+      
+      // Clear error from URL without reloading
+      window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
 

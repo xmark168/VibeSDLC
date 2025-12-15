@@ -106,6 +106,15 @@ async def _invoke_structured(
             result = await structured_llm.ainvoke(messages, config=config)
         else:
             result = await structured_llm.ainvoke(messages)
+        
+        # Check if result is None (LLM failed to return structured output)
+        if result is None:
+            logger.warning("[BA] LLM returned None instead of structured output")
+            if fallback_data:
+                logger.info("[BA] Using fallback data")
+                return fallback_data
+            raise ValueError("LLM returned None")
+        
         return result.model_dump()
     except Exception as e:
         logger.warning(f"[BA] Structured output failed: {e}")
@@ -602,8 +611,8 @@ async def analyze_document_content(document_text: str, agent=None) -> dict:
 # Fallback messages for document analysis feedback
 _DOC_FALLBACK_MESSAGES = {
     "complete_requirements": "Tài liệu đầy đủ thông tin! Mình sẽ tạo PRD trực tiếp từ nội dung này.",
-    "partial_requirements": "📝 Đã trích xuất một số thông tin từ tài liệu. Mình cần hỏi thêm vài câu để làm rõ.",
-    "not_requirements": "📄 Đây không phải tài liệu yêu cầu dự án. Bạn muốn mình làm gì với nội dung này?",
+    "partial_requirements": "Đã trích xuất một số thông tin từ tài liệu. Mình cần hỏi thêm vài câu để làm rõ.",
+    "not_requirements": "Đây không phải tài liệu yêu cầu dự án. Bạn muốn mình làm gì với nội dung này?",
 }
 
 
@@ -1135,8 +1144,8 @@ async def update_prd(state: BAState, agent=None) -> dict:
         batch_questions = [
             {
                 "question_text": detail,
-                "question_type": "open",
-                "options": None,
+                "question_type": "multichoice",
+                "options": ["Có", "Không", "Khác (vui lòng mô tả)"],
                 "allow_multiple": False,
                 "context": context_msg if i == 0 else None,  # Only add context to first question
             }
@@ -1424,8 +1433,8 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             return await _extract_stories_single_call(state, agent, prd)
         
         # Use hardcoded messages (LLM-generated templates were unreliable - often mentioned "Phase 2" incorrectly)
-        message = f"🎉 Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé! 📋"
-        approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+        message = f"Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé!"
+        approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog!"
         
         logger.info(f"[BA] Stories message: {message[:50]}...")
         
@@ -1493,8 +1502,8 @@ async def _extract_stories_single_call(state: BAState, agent, prd: dict) -> dict
     logger.info(f"[BA] Single-call extraction: {total_epics} epics, {total_stories} stories")
     
     # Use hardcoded messages (LLM templates unreliable)
-    message = f"🎉 Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé! 📋"
-    approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+    message = f"Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé!"
+    approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog!"
     
     return {
         "epics": epics,
@@ -1610,8 +1619,8 @@ async def update_stories(state: BAState, agent=None) -> dict:
         batch_questions = [
             {
                 "question_text": detail,
-                "question_type": "open",
-                "options": None,
+                "question_type": "multichoice",
+                "options": ["Có", "Không", "Khác (vui lòng mô tả)"],
                 "allow_multiple": False,
                 "context": context_msg if i == 0 else None,
             }
@@ -1758,8 +1767,8 @@ async def update_stories(state: BAState, agent=None) -> dict:
     # No more validation needed here - STEP 2 already checked for existing functionality
     # If we reach here, user has confirmed they want to proceed
     # Use hardcoded messages (LLM templates unreliable)
-    message = f"✏️ Đã cập nhật xong! Hiện có {total_stories} Stories trong {total_epics} Epics. Bạn xem qua và bấm 'Phê duyệt Stories' nhé! 📋"
-    approval_message = f"Đã cập nhật và lưu {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+    message = f"Đã cập nhật xong! Hiện có {total_stories} Stories trong {total_epics} Epics. Bạn xem qua và bấm 'Phê duyệt Stories' nhé!"
+    approval_message = f"Đã cập nhật và lưu {total_epics} Epics, {total_stories} Stories vào backlog!"
     
     return {
         "epics": final_epics,
@@ -2522,7 +2531,7 @@ async def _save_prd_artifact(state: BAState, agent, project_files) -> dict:
         
         # Fallback message if LLM didn't generate one
         if not prd_message:
-            prd_message = f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝" if is_update else f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi!"
+            prd_message = f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé!" if is_update else f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi!"
         
         await agent.message_user(
             event_type="response",
@@ -2665,7 +2674,7 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         result["error"] = error_msg
         await agent.message_user(
             event_type="response",
-            content=f"Hmm, mình gặp chút vấn đề khi tạo stories nè 😅 Bạn thử kiểm tra lại PRD hoặc nhờ mình thử lại nhé!",
+            content=f"Hmm, mình gặp chút vấn đề khi tạo stories nè. Bạn thử kiểm tra lại PRD hoặc nhờ mình thử lại nhé!",
             details={
                 "message_type": "error",
                 "error": error_msg

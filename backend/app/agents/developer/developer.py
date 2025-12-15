@@ -1189,7 +1189,7 @@ Quy tắc:
                 "pr_state": "merged",
             }, UUID(project_id))
             
-            await log_to_story(story_id, project_id, f"📋 Story moved to Done", "success", "merge")
+            await log_to_story(story_id, project_id, f"Story moved to Done", "success", "merge")
             await log_to_story(story_id, project_id, f"Successfully merged {branch_name} into {base_branch}!", "success", "merge")
             
             return TaskResult(

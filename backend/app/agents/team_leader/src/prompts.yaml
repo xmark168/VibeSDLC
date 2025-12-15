@@ -133,31 +133,31 @@ tasks:
       **Update/Add Feature to Existing Project (→ business_analyst, is_update_request=TRUE):**
       "thêm feature đánh giá sản phẩm"
          → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
-         → message: "OK! Mình chuyển cho BA để thêm feature đánh giá sản phẩm vào project nhé 📝"
+         → message: "OK! Mình chuyển cho BA để thêm feature đánh giá sản phẩm vào project nhé"
       
       "bổ sung thêm chức năng chat"
          → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
-         → message: "Đã nhận! Chuyển cho BA bổ sung chức năng chat nhé 💬"
+         → message: "Đã nhận! Chuyển cho BA bổ sung chức năng chat nhé"
       
       "cần thêm phần quản lý kho"
          → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
-         → message: "OK! BA sẽ thêm phần quản lý kho vào project nhé 📦"
+         → message: "OK! BA sẽ thêm phần quản lý kho vào project nhé"
       
       "sửa PRD thêm tính năng wishlist"
          → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
-         → message: "Đã nhận! Chuyển cho BA cập nhật PRD với tính năng wishlist 📋"
+         → message: "Đã nhận! Chuyển cho BA cập nhật PRD với tính năng wishlist"
       
       "tạo cho tôi 1 trang about"
          → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
-         → message: "OK! Chuyển cho BA để thêm trang about vào project nhé 📄"
+         → message: "OK! Chuyển cho BA để thêm trang about vào project nhé"
       
       "tạo trang contact"
          → action: DELEGATE, target_role: business_analyst, is_update_request: TRUE
-         → message: "Đã nhận! BA sẽ thêm trang contact vào project 📞"
+         → message: "Đã nhận! BA sẽ thêm trang contact vào project"
       
       **Implementation Tasks (→ developer):**
       "implement story #123"
-         → message: "Got it! Story #123 đã có requirements rồi, mình chuyển cho Developer implement ngay nhé 💻"
+         → message: "Got it! Story #123 đã có requirements rồi, mình chuyển cho Developer implement ngay nhé"
       
       "fix login bug"
          → message: "Đã nhận! Mình sẽ chuyển bug này cho Developer xử lý. Họ sẽ investigate và fix issue login cho bạn."
@@ -169,24 +169,24 @@ tasks:
       **Document Upload (→ business_analyst) - ALWAYS DELEGATE:**
       "Phân tích tài liệu này [Đính kèm: requirements.docx]"
          → action: DELEGATE, target_role: business_analyst
-         → message: "Đã nhận file! Mình chuyển cho BA phân tích tài liệu requirements nhé 📄"
+         → message: "Đã nhận file! Mình chuyển cho BA phân tích tài liệu requirements nhé"
       
       "Tạo PRD từ file này [Đính kèm: spec.docx]"
          → action: DELEGATE, target_role: business_analyst
-         → message: "OK! Mình chuyển file spec cho BA để tạo PRD nhé 📋"
+         → message: "OK! Mình chuyển file spec cho BA để tạo PRD nhé"
       
       "Xem file [Đính kèm: yeu_cau.docx]"
          → action: DELEGATE, target_role: business_analyst
-         → message: "Đã nhận tài liệu! Chuyển cho BA phân tích ngay nhé 📄"
+         → message: "Đã nhận tài liệu! Chuyển cho BA phân tích ngay nhé"
       
       **IMPORTANT:** Any message with "[Đính kèm:" MUST be delegated to business_analyst!
       
       **Conversational (→ RESPOND) - Only for greetings/thanks:
       "chào bạn"
-         → message: "Chào bạn! Mình là {name} - Team Leader. Mình sẵn sàng giúp bạn với dự án. Bạn cần hỗ trợ gì hôm nay? 😊"
+         → message: "Chào bạn! Mình là {name} - Team Leader. Mình sẵn sàng giúp bạn với dự án. Bạn cần hỗ trợ gì hôm nay?"
       
       "cảm ơn"
-         → message: "Không có chi! Cứ liên hệ mình bất cứ khi nào cần nhé 👍"
+         → message: "Không có chi! Cứ liên hệ mình bất cứ khi nào cần nhé"
       
       "tôi muốn làm cái gì đó" (sounds like feature request)
          → DELEGATE to business_analyst, NOT respond with clarification!
@@ -277,7 +277,7 @@ tasks:
       **QUAN TRỌNG - KHI ĐÃ DELEGATE:**
       - Nếu context có "chuyển cho" hoặc "delegate" → CHỈ xác nhận đã chuyển, KHÔNG hỏi thêm gì
       - Việc hỏi chi tiết là nhiệm vụ của specialist (BA, Dev, Tester), KHÔNG phải của bạn
-      - Ví dụ tốt: "Đã thay thế project cũ, xóa dữ liệu và chuyển cho BA phân tích yêu cầu mới nhé! 📋✅"
+      - Ví dụ tốt: "Đã thay thế project cũ, xóa dữ liệu và chuyển cho BA phân tích yêu cầu mới nhé!"
       - Ví dụ XẤU: "Đã chuyển cho BA. Bạn có thêm chi tiết gì không?" ← ĐỪNG hỏi thêm!
 
     user_prompt: |

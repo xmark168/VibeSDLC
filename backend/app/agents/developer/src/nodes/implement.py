@@ -262,7 +262,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         step_skills = step.get("skills", [])
         
         # Task update (transient) - show file being processed
-        await story_logger.task(f"📝 {action.upper()} {file_path}", progress=(current_step + 1) / len(plan_steps))
+        await story_logger.task(f"{action.upper()} {file_path}", progress=(current_step + 1) / len(plan_steps))
         
         if "frontend-design" in step_skills and "frontend-component" not in step_skills:
             step_skills = step_skills + ["frontend-component"]

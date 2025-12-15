@@ -22,16 +22,16 @@ from app.agents.developer.src.utils.story_logger import StoryLogger
 logger = logging.getLogger(__name__)
 
 FALLBACK_MESSAGES = {
-    "plan_created": "📋 Đã tạo test plan! Bắt đầu implement nhé~",
-    "tests_running": "🧪 Đang chạy tests, đợi mình chút nhé...",
-    "tests_passed": "🎉 Tuyệt vời! All tests passed!",
+    "plan_created": "Đã tạo test plan! Bắt đầu implement nhé~",
+    "tests_running": "Đang chạy tests, đợi mình chút nhé...",
+    "tests_passed": "Tuyệt vời! All tests passed!",
     "tests_failed": "Có tests fail rồi, để mình xem...",
-    "analyzing": "🔍 Đang phân tích lỗi...",
-    "fixing": "🔧 Đang fix, đợi mình chút nhé!",
+    "analyzing": "Đang phân tích lỗi...",
+    "fixing": "Đang fix, đợi mình chút nhé!",
     "implement_done": "Đã implement xong tests!",
-    "max_retries": "⚠️ Đã thử nhiều lần nhưng vẫn fail. Cần review manual.",
+    "max_retries": "Đã thử nhiều lần nhưng vẫn fail. Cần review manual.",
     "typecheck_error": "Có lỗi TypeScript, để mình xem...",
-    "default": "Đã nhận! 👍",
+    "default": "Đã nhận!",
 }
 
 
@@ -172,9 +172,9 @@ ESM PACKAGES TO AVOID (break Jest):
 - chalk → Don't use in tests
 
 SAFE PACKAGES:
-- bcryptjs ✅
+- bcryptjs
 - date-fns (but mock if needed)
-- zod ✅
+- zod
 """
 
     return context
@@ -452,7 +452,7 @@ async def send_response(state: TesterState, agent=None) -> dict:
                     agent_name="tester",
                 )
                 if commit_result.get("success"):
-                    commit_msg = f"\n\n📝 {commit_result.get('message', 'Changes committed')}"
+                    commit_msg = f"\n\n{commit_result.get('message', 'Changes committed')}"
                     await story_logger.info(f"Committed changes: {commit_result.get('message')}")
             except Exception as e:
                 await story_logger.warning(f"Failed to commit: {e}")

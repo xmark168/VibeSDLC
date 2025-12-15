@@ -9,11 +9,10 @@ import {
   UserX,
   Shield,
   Edit,
-  Trash2,
   Lock,
   Unlock,
-  LogOut,
   RefreshCw,
+  Trash2,
 } from "lucide-react"
 import {
   useAdminUsers,
@@ -21,7 +20,6 @@ import {
   useDeleteUser,
   useLockUser,
   useUnlockUser,
-  useRevokeUserSessions,
   useBulkLockUsers,
   useBulkUnlockUsers,
   useBulkDeleteUsers,
@@ -113,10 +111,14 @@ function UsersAdminPage() {
   const deleteUser = useDeleteUser()
   const lockUser = useLockUser()
   const unlockUser = useUnlockUser()
-  const revokeUserSessions = useRevokeUserSessions()
   const bulkLock = useBulkLockUsers()
   const bulkUnlock = useBulkUnlockUsers()
   const bulkDelete = useBulkDeleteUsers()
+
+  const handleEdit = (user: UserAdmin) => {
+    setUserToEdit(user)
+    setEditDialogOpen(true)
+  }
 
   const handleDelete = async () => {
     if (!userToDelete) return
@@ -124,11 +126,6 @@ function UsersAdminPage() {
     setDeleteDialogOpen(false)
     setUserToDelete(null)
     refetch()
-  }
-
-  const handleEdit = (user: UserAdmin) => {
-    setUserToEdit(user)
-    setEditDialogOpen(true)
   }
 
   const handleLock = async (user: UserAdmin) => {
@@ -139,10 +136,6 @@ function UsersAdminPage() {
   const handleUnlock = async (user: UserAdmin) => {
     await unlockUser.mutateAsync(user.id)
     refetch()
-  }
-
-  const handleRevokeSessions = async (user: UserAdmin) => {
-    await revokeUserSessions.mutateAsync(user.id)
   }
 
   // Bulk actions
@@ -466,11 +459,6 @@ function UsersAdminPage() {
                             </DropdownMenuItem>
                           )}
 
-                          <DropdownMenuItem onClick={() => handleRevokeSessions(user)}>
-                            <LogOut className="w-4 h-4 mr-2" />
-                            Revoke Sessions
-                          </DropdownMenuItem>
-
                           <DropdownMenuSeparator />
 
                           <DropdownMenuItem
@@ -521,14 +509,26 @@ function UsersAdminPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete User</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{userToDelete?.email}"? This action cannot be undone.
-              All user data will be permanently removed.
+              Are you sure you want to delete <span className="font-semibold">{userToDelete?.email}</span>? 
+              <br />
+              <br />
+              <span className="text-destructive font-medium">⚠️ Warning:</span> This action cannot be undone. All user data including:
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>All projects owned by this user</li>
+                <li>All stories, epics, and agents</li>
+                <li>Subscription and billing information</li>
+                <li>Linked OAuth accounts</li>
+              </ul>
+              will be permanently removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete
+            <AlertDialogAction 
+              onClick={handleDelete} 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Permanently
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

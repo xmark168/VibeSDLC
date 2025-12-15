@@ -120,7 +120,7 @@ export function ApprovalCard({
           </div>
           <div className="flex-1 min-w-0">
             <h4 className={`text-sm font-medium ${config.colors.textColor}`}>
-              📋 {config.label} {!hasSubmitted && '- Awaiting approval'}
+              {config.label} {!hasSubmitted && '- Awaiting approval'}
             </h4>
             {title && <p className="text-xs text-muted-foreground">{title}</p>}
           </div>

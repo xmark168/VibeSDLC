@@ -418,7 +418,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         # =====================================================================
         # Step 2: Format + Lint (parallel for each service)
         # =====================================================================
-        await log("📝 Running code formatting and linting...")
+        await log("Running code formatting and linting...")
         
         for svc in services:
             svc_name = svc.get("name", "app")

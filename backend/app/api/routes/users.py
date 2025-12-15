@@ -368,6 +368,14 @@ def get_current_user_subscription(
     )
     wallet = session.exec(wallet_statement).first()
 
+    # Get purchased wallet (permanent credits)
+    purchased_wallet_statement = (
+        select(CreditWallet)
+        .where(CreditWallet.user_id == current_user.id)
+        .where(CreditWallet.wallet_type == "purchased")
+    )
+    purchased_wallet = session.exec(purchased_wallet_statement).first()
+
     # Build subscription response
     from app.schemas.plan import PlanPublic
     plan_public = PlanPublic(
@@ -412,9 +420,23 @@ def get_current_user_subscription(
             period_end=wallet.period_end
         )
 
+    # Build purchased wallet response if exists
+    purchased_wallet_public = None
+    if purchased_wallet:
+        purchased_remaining = purchased_wallet.total_credits - purchased_wallet.used_credits
+        purchased_wallet_public = CreditWalletPublic(
+            id=purchased_wallet.id,
+            total_credits=purchased_wallet.total_credits,
+            used_credits=purchased_wallet.used_credits,
+            remaining_credits=purchased_remaining,
+            period_start=purchased_wallet.period_start,
+            period_end=purchased_wallet.period_end
+        )
+
     return UserSubscriptionResponse(
         subscription=subscription_public,
-        credit_wallet=wallet_public
+        credit_wallet=wallet_public,
+        purchased_wallet=purchased_wallet_public
     )
 
 

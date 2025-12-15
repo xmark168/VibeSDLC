@@ -14,6 +14,8 @@ import {
 import {
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   ArrowUp,
   ArrowLeft,
   Copy,
@@ -37,7 +39,6 @@ import { useInfiniteMessages, useCreateMessageWithFile } from "@/queries/message
 import { messagesApi } from "@/apis/messages";
 import { AuthorType, type Message } from "@/types/message";
 import { MessageStatusIndicator } from "./message-status-indicator";
-import { AgentQuestionCard } from "./AgentQuestionCard";
 import { BatchQuestionsCard } from "./BatchQuestionsCard";
 import { ConversationOwnerBadge } from "./ConversationOwnerBadge";
 import { AgentHandoffNotification } from "./AgentHandoffNotification";
@@ -98,6 +99,12 @@ export function ChatPanelWS({
   const [activeBatchQuestion, setActiveBatchQuestion] = useState<Message | null>(null);
   const [batchQuestionInputs, setBatchQuestionInputs] = useState<Map<string, string>>(new Map());
   const [batchQuestionsAllAnswered, setBatchQuestionsAllAnswered] = useState(false);
+  const [batchCurrentQuestionAnswered, setBatchCurrentQuestionAnswered] = useState(false);
+  const [batchCurrentQuestionIndex, setBatchCurrentQuestionIndex] = useState(0);
+  const [batchTotalQuestions, setBatchTotalQuestions] = useState(0);
+  const batchSubmitFnRef = useRef<(() => Promise<void>) | null>(null);
+  const batchNextFnRef = useRef<(() => void) | null>(null);
+  const batchBackFnRef = useRef<(() => void) | null>(null);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -527,10 +534,10 @@ export function ChatPanelWS({
   }, [typingAgentsCount])
 
   // Determine if chat should be blocked
-  // Block chat when agent is typing, but ALLOW typing when batch question is active (for custom answers)
-  // Also block when there's a pending approval card (PRD/Stories awaiting approval)
+  // Block chat when agent is typing, but ALLOW typing when batch question or single question is active (for answers)
+  // Also block when there's a pending approval card (PRD/Stories awaiting approval) without active question
   const isAgentTyping = typingAgents.size > 0
-  const shouldBlockChat = (isAgentTyping && !activeBatchQuestion) || (!!pendingApprovalCard && !pendingQuestion)
+  const shouldBlockChat = (isAgentTyping && !activeBatchQuestion && !pendingQuestion) || (!!pendingApprovalCard && !pendingQuestion)
 
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
@@ -592,20 +599,7 @@ export function ChatPanelWS({
 
     let finalMessage = message.trim();
 
-    // Check if this is answering an open question
-    if (pendingQuestion && pendingQuestion.structured_data?.question_type === 'open') {
-      // Send as question answer instead of regular message
-      sendQuestionAnswer(
-        pendingQuestion.structured_data.question_id!,
-        finalMessage,
-        undefined
-      )
-      setMessage("");
-      setPendingQuestion(null); // Hide notification immediately
-      // Force scroll to bottom after sending
-      forceScrollRef.current = true;
-      return;
-    }
+    // BatchQuestionsCard handles question submission now, so no need to check here
 
     // Handle file upload via REST API
     if (selectedFile && projectId) {
@@ -978,9 +972,12 @@ export function ChatPanelWS({
             );
           }
 
-          // Agent Question Handling
+          // Agent Question Handling - show agent message here, interaction in chat wrapper
           if (msg.message_type === 'agent_question') {
+            const isActiveQuestion = pendingQuestion?.id === msg.id;
+            const isAnswered = msg.structured_data?.answered || false;
             const agentStatus = msg.agent_name ? getAgentStatus(msg.agent_name) : 'idle';
+
             return (
               <div key={msg.id} id={`question-${msg.id}`} className="flex items-start gap-3">
                 <div 
@@ -1000,25 +997,35 @@ export function ChatPanelWS({
                   <div className="text-xs font-medium text-muted-foreground mb-2">
                     {msg.agent_name || 'Agent'}
                   </div>
-                  <AgentQuestionCard
-                    question={msg.content}
-                    questionType={msg.structured_data?.question_type || 'open'}
-                    options={msg.structured_data?.options || []}
-                    allowMultiple={msg.structured_data?.allow_multiple || false}
-                    answered={msg.structured_data?.answered || false}
-                    processing={msg.structured_data?.processing || false}
-                    userAnswer={msg.structured_data?.user_answer}
-                    userSelectedOptions={msg.structured_data?.user_selected_options}
-                    agentName={msg.agent_name}
-                    onSubmit={(answer, selectedOptions) => {
-                      sendQuestionAnswer(
-                        msg.structured_data!.question_id!,
-                        answer,
-                        selectedOptions
-                      )
-                      setPendingQuestion(null) // Hide notification immediately
-                    }}
-                  />
+                  {/* Show message bubble indicating question or full card if answered */}
+                  {!isAnswered ? (
+                    <div className="rounded-lg px-3 py-2 bg-muted w-fit">
+                      <div className="text-sm leading-loose text-foreground">
+                        Đang hỏi 1 câu hỏi
+                      </div>
+                    </div>
+                  ) : (
+                    <BatchQuestionsCard
+                      batchId={msg.structured_data?.question_id || msg.id}
+                      questions={[{
+                        question_id: msg.structured_data?.question_id,
+                        question_text: msg.content,
+                        question_type: msg.structured_data?.question_type || 'open',
+                        options: msg.structured_data?.options,
+                        allow_multiple: msg.structured_data?.allow_multiple || false,
+                      }]}
+                      questionIds={[msg.structured_data?.question_id || msg.id]}
+                      agentName={msg.agent_name}
+                      answered={true}
+                      submittedAnswers={[{
+                        question_id: msg.structured_data?.question_id || msg.id,
+                        answer: msg.structured_data?.user_answer,
+                        selected_options: msg.structured_data?.user_selected_options,
+                      }]}
+                      chatInputValue=""
+                      onSubmit={() => {}}
+                    />
+                  )}
                 </div>
               </div>
             );
@@ -1303,22 +1310,18 @@ export function ChatPanelWS({
 
       {/* Chat Input Area - fixed at bottom */}
       <div className={`mx-4 mb-4 rounded-2xl flex-shrink-0 ${pendingQuestion || activeBatchQuestion || pendingApprovalCard ? 'border bg-blue-300/20 border-blue-500/20' : ''}`}>
-        {/* Pending Notification Banner - for questions or approval cards */}
-        {(pendingQuestion || pendingApprovalCard) && (() => {
-          const targetMsg = pendingQuestion || pendingApprovalCard
+        {/* Pending Notification Banner - only for approval cards (questions now show in card) */}
+        {(pendingApprovalCard && !pendingQuestion) && (() => {
+          const targetMsg = pendingApprovalCard
           if (!targetMsg) return null
           
-          const isPrdCard = !pendingQuestion && pendingApprovalCard?.structured_data?.message_type === 'prd_created'
-          const isStoriesCard = !pendingQuestion && pendingApprovalCard?.structured_data?.message_type === 'stories_created'
-          const elementId = pendingQuestion 
-            ? `question-${targetMsg.id}` 
-            : `message-${targetMsg.id}`
+          const isPrdCard = pendingApprovalCard?.structured_data?.message_type === 'prd_created'
+          const isStoriesCard = pendingApprovalCard?.structured_data?.message_type === 'stories_created'
+          const elementId = `message-${targetMsg.id}`
           
-          const description = pendingQuestion 
-            ? targetMsg.content
-            : isPrdCard
-              ? `Bạn đã có PRD '${pendingApprovalCard?.structured_data?.title || 'PRD'}' - Vui lòng Approve hoặc Edit`
-              : `Bạn đã có Stories - Vui lòng Approve hoặc Edit`
+          const description = isPrdCard
+            ? `Bạn đã có PRD '${pendingApprovalCard?.structured_data?.title || 'PRD'}' - Vui lòng Approve hoặc Edit`
+            : `Bạn đã có Stories - Vui lòng Approve hoặc Edit`
 
           const scrollToElement = () => {
             const container = messagesContainerRef.current
@@ -1352,13 +1355,70 @@ export function ChatPanelWS({
           )
         })()}
 
-        {/* Batch Question Display - shown above chat input */}
-        {activeBatchQuestion && (
+        {/* Team Leader Single Question Display - shown above chat input */}
+        {pendingQuestion && (
           <div className="">
             <BatchQuestionsCard
-              batchId={activeBatchQuestion.structured_data?.batch_id || ''}
-              questions={activeBatchQuestion.structured_data?.questions || []}
-              questionIds={activeBatchQuestion.structured_data?.question_ids || []}
+              batchId={pendingQuestion.structured_data?.question_id || pendingQuestion.id}
+              questions={[{
+                question_id: pendingQuestion.structured_data?.question_id,
+                question_text: pendingQuestion.content,
+                question_type: pendingQuestion.structured_data?.question_type || 'open',
+                options: pendingQuestion.structured_data?.options,
+                allow_multiple: pendingQuestion.structured_data?.allow_multiple || false,
+              }]}
+              questionIds={[pendingQuestion.structured_data?.question_id || pendingQuestion.id]}
+              agentName={pendingQuestion.agent_name}
+              answered={false}
+              chatInputValue={message}
+              onChatInputUsed={() => setMessage('')}
+              onQuestionChange={(questionId, savedInput) => {
+                setMessage(savedInput);
+              }}
+              onAllAnsweredChange={(allAnswered) => {
+                setBatchQuestionsAllAnswered(allAnswered);
+              }}
+              onCurrentAnsweredChange={(isAnswered) => {
+                setBatchCurrentQuestionAnswered(isAnswered);
+              }}
+              onSubmit={(answers) => {
+                const answer = answers[0];
+                sendQuestionAnswer(
+                  answer.question_id,
+                  answer.answer,
+                  answer.selected_options
+                )
+                setPendingQuestion(null) // Hide notification immediately
+                setBatchQuestionsAllAnswered(false);
+                batchSubmitFnRef.current = null;
+                batchNextFnRef.current = null;
+                batchBackFnRef.current = null;
+              }}
+              onSubmitReady={(submitFn) => {
+                batchSubmitFnRef.current = submitFn;
+              }}
+              onNextReady={(nextFn) => {
+                batchNextFnRef.current = nextFn;
+              }}
+              onBackReady={(backFn) => {
+                batchBackFnRef.current = backFn;
+              }}
+            />
+          </div>
+        )}
+
+        {/* Batch Question Display - shown above chat input */}
+        {activeBatchQuestion && (() => {
+          const totalQuestions = activeBatchQuestion.structured_data?.questions?.length || 0;
+          if (batchTotalQuestions !== totalQuestions) {
+            setBatchTotalQuestions(totalQuestions);
+          }
+          return (
+            <div className="">
+              <BatchQuestionsCard
+                batchId={activeBatchQuestion.structured_data?.batch_id || ''}
+                questions={activeBatchQuestion.structured_data?.questions || []}
+                questionIds={activeBatchQuestion.structured_data?.question_ids || []}
               agentName={activeBatchQuestion.agent_name}
               answered={activeBatchQuestion.structured_data?.answered || answeredBatchIds.has(activeBatchQuestion.structured_data?.batch_id || '')}
               submittedAnswers={activeBatchQuestion.structured_data?.answers || []}
@@ -1370,10 +1430,18 @@ export function ChatPanelWS({
               onAllAnsweredChange={(allAnswered) => {
                 setBatchQuestionsAllAnswered(allAnswered);
               }}
+              onCurrentAnsweredChange={(isAnswered) => {
+                setBatchCurrentQuestionAnswered(isAnswered);
+              }}
               onSubmit={(answers) => {
                 sendBatchAnswers(activeBatchQuestion.structured_data!.batch_id!, answers);
                 setActiveBatchQuestion(null);
                 setBatchQuestionsAllAnswered(false);
+                batchSubmitFnRef.current = null;
+                batchNextFnRef.current = null;
+                batchBackFnRef.current = null;
+                setBatchCurrentQuestionIndex(0);
+                setBatchTotalQuestions(0);
                 const batchId = activeBatchQuestion.structured_data?.batch_id || '';
                 const newInputs = new Map(batchQuestionInputs);
                 activeBatchQuestion.structured_data?.question_ids?.forEach((qId: string) => {
@@ -1381,9 +1449,27 @@ export function ChatPanelWS({
                 });
                 setBatchQuestionInputs(newInputs);
               }}
+              onSubmitReady={(submitFn) => {
+                batchSubmitFnRef.current = submitFn;
+              }}
+              onNextReady={(nextFn) => {
+                batchNextFnRef.current = nextFn;
+              }}
+              onBackReady={(backFn) => {
+                batchBackFnRef.current = backFn;
+              }}
+              currentQuestionIndex={batchCurrentQuestionIndex}
+              onNavigate={(direction) => {
+                if (direction === 'next') {
+                  setBatchCurrentQuestionIndex(prev => prev + 1);
+                } else {
+                  setBatchCurrentQuestionIndex(prev => prev - 1);
+                }
+              }}
             />
           </div>
-        )}
+        )
+        })()}
 
         <div className={`p-2 ${pendingQuestion || activeBatchQuestion ? 'pt-3' : ''} relative`}>
         {showMentions && (
@@ -1466,7 +1552,7 @@ export function ChatPanelWS({
             placeholder={
               selectedFile
                 ? "Add description for file..."
-                : activeBatchQuestion
+                : (pendingQuestion || activeBatchQuestion)
                   ? "Hoặc gõ câu trả lời khác tại đây..."
                   : pendingApprovalCard
                     ? "Vui lòng Approve hoặc Edit trước khi tiếp tục..."
@@ -1474,18 +1560,59 @@ export function ChatPanelWS({
             }
           />
           <PromptInputToolbar>
+            {/* Left side - Back button or Attach file */}
             <PromptInputTools>
-              <PromptInputButton
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-                className={selectedFile ? "text-blue-500" : ""}
-              >
-                <PaperclipIcon size={16} />
-              </PromptInputButton>
-
+              {(activeBatchQuestion || pendingQuestion) && batchTotalQuestions > 1 && batchCurrentQuestionIndex > 0 ? (
+                // Back button for multi-question batch (not first question)
+                <PromptInputButton
+                  onClick={() => {
+                    if (batchBackFnRef.current) {
+                      batchBackFnRef.current();
+                    }
+                  }}
+                >
+                  <ChevronLeft size={16} />
+                </PromptInputButton>
+              ) : !pendingQuestion && !activeBatchQuestion ? (
+                // Attach file button for normal chat
+                <PromptInputButton
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  className={selectedFile ? "text-blue-500" : ""}
+                >
+                  <PaperclipIcon size={16} />
+                </PromptInputButton>
+              ) : null}
             </PromptInputTools>
-            {!activeBatchQuestion && (
-              <PromptInputSubmit disabled={(!isConnected && !selectedFile) || shouldBlockChat || isUploading || (!message.trim() && !selectedFile)} />
+            
+            {/* Right side - Next button (for non-last question) or Submit button */}
+            {(activeBatchQuestion || pendingQuestion) && batchTotalQuestions > 1 && batchCurrentQuestionIndex < batchTotalQuestions - 1 ? (
+              // Next button for multi-question batch (not last question)
+              <PromptInputButton
+                onClick={() => {
+                  if (batchNextFnRef.current) {
+                    batchNextFnRef.current();
+                  }
+                }}
+                disabled={!batchCurrentQuestionAnswered}
+              >
+                <ChevronRight size={16} />
+              </PromptInputButton>
+            ) : (
+              // Submit button (for normal chat, single question, or last question)
+              <PromptInputSubmit 
+                disabled={
+                  (activeBatchQuestion || pendingQuestion)
+                    ? !batchQuestionsAllAnswered  // For questions: disabled until all answered
+                    : ((!isConnected && !selectedFile) || shouldBlockChat || isUploading || (!message.trim() && !selectedFile))  // For normal chat: original logic
+                }
+                onClick={(activeBatchQuestion || pendingQuestion) && batchSubmitFnRef.current ? async (e) => {
+                  e.preventDefault();
+                  if (batchSubmitFnRef.current) {
+                    await batchSubmitFnRef.current();
+                  }
+                } : undefined}
+              />
             )}
           </PromptInputToolbar>
         </PromptInput>
