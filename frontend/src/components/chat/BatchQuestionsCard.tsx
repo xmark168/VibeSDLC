@@ -523,7 +523,7 @@ export function BatchQuestionsCard({
                 <RadioGroup
                   value={currentAnswer ? Array.from(currentAnswer.selectedOptions)[0] || '' : ''}
                   onValueChange={(value) => toggleOption(currentQuestionId, value, false)}
-                  className="space-y-1.5"
+                  className="space-y-1.5 -gap-3 -grid"
                 >
                   {filteredOptions.map(option => (
                     <div 

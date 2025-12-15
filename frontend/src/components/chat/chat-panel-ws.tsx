@@ -371,6 +371,9 @@ export function ChatPanelWS({
     }
   }, [uniqueMessages])
 
+  // Track previous pending approval card ID to detect changes
+  const prevPendingApprovalCardIdRef = useRef<string | null>(null)
+
   // Detect pending PRD/Stories approval cards
   useEffect(() => {
     // Find unanswered PRD cards (not yet submitted by user)
@@ -392,6 +395,14 @@ export function ChatPanelWS({
     const latestPendingCard = allPendingCards.sort((a, b) =>
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )[0]
+
+    // If there's a new pending card (different from previous), reset isNearQuestion
+    if (latestPendingCard && latestPendingCard.id !== prevPendingApprovalCardIdRef.current) {
+      setIsNearQuestion(false)
+      prevPendingApprovalCardIdRef.current = latestPendingCard.id
+    } else if (!latestPendingCard) {
+      prevPendingApprovalCardIdRef.current = null
+    }
 
     setPendingApprovalCard(latestPendingCard || null)
   }, [uniqueMessages])
@@ -455,6 +466,8 @@ export function ChatPanelWS({
   const userScrolledUpRef = useRef(false)
   // Force scroll to bottom (bypasses userScrolledUp check)
   const forceScrollRef = useRef(false)
+  // Track if user is near the question/bottom area (to hide "View Question" button)
+  const [isNearQuestion, setIsNearQuestion] = useState(false)
   
   // Detect manual scroll
   useEffect(() => {
@@ -466,11 +479,17 @@ export function ChatPanelWS({
       if (forceScrollRef.current) return
       const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150
       userScrolledUpRef.current = !isNearBottom
+      
+      // Update isNearQuestion state for "View Question" button visibility
+      // Only update if there's a pending approval card (to avoid unnecessary re-renders)
+      if (pendingApprovalCard && !pendingQuestion) {
+        setIsNearQuestion(isNearBottom)
+      }
     }
 
     container.addEventListener('scroll', handleScroll)
     return () => container.removeEventListener('scroll', handleScroll)
-  }, [])
+  }, [pendingApprovalCard, pendingQuestion])
 
   // Helper to scroll to bottom
   const scrollToBottom = (behavior: 'auto' | 'smooth' = 'smooth') => {
@@ -486,6 +505,7 @@ export function ChatPanelWS({
       setTimeout(() => {
         forceScrollRef.current = false
         userScrolledUpRef.current = false
+        setIsNearQuestion(true) // User is now at bottom/near question
       }, 100)
     })
   }
@@ -859,7 +879,7 @@ export function ChatPanelWS({
 
       <div
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto px-6 py-6 space-y-4"
+        className="flex-1 overflow-y-auto px-6 py-6 space-y-4 scroll-smooth"
       >
         {/* Infinite scroll trigger - loads more messages when visible */}
         <div ref={loadMoreTriggerRef} className="h-1" />
@@ -1310,6 +1330,7 @@ export function ChatPanelWS({
       {/* Chat Input Area - fixed at bottom */}
       <div className={`mx-4 mb-4 rounded-2xl flex-shrink-0 ${pendingQuestion || activeBatchQuestion || pendingApprovalCard ? 'border bg-blue-300/20 border-blue-500/20' : ''}`}>
         {/* Pending Notification Banner - only for approval cards (questions now show in card) */}
+        {/* Only show "View Question" button when user scrolled up and NOT near the question */}
         {(pendingApprovalCard && !pendingQuestion) && (() => {
           const targetMsg = pendingApprovalCard
           if (!targetMsg) return null
@@ -1325,30 +1346,65 @@ export function ChatPanelWS({
           const scrollToElement = () => {
             const container = messagesContainerRef.current
             if (!container) return
-            container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+            
+            // Custom smooth scroll with easing
+            const targetScroll = container.scrollHeight
+            const startScroll = container.scrollTop
+            const distance = targetScroll - startScroll
+            const duration = 800 // 800ms for smooth animation
+            let startTime: number | null = null
+            
+            const easeInOutCubic = (t: number): number => {
+              return t < 0.5 
+                ? 4 * t * t * t 
+                : 1 - Math.pow(-2 * t + 2, 3) / 2
+            }
+            
+            const animateScroll = (currentTime: number) => {
+              if (startTime === null) startTime = currentTime
+              const timeElapsed = currentTime - startTime
+              const progress = Math.min(timeElapsed / duration, 1)
+              const easedProgress = easeInOutCubic(progress)
+              
+              container.scrollTop = startScroll + distance * easedProgress
+              
+              if (progress < 1) {
+                requestAnimationFrame(animateScroll)
+              }
+            }
+            
+            requestAnimationFrame(animateScroll)
           }
 
           return (
-            <div className="px-4 py-3 rounded-t-2xl">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                      {targetMsg.agent_name || 'Agent'} is waiting for your answer
+            <div 
+              className={`transition-all duration-500 ease-in-out overflow-hidden ${
+                isNearQuestion 
+                  ? 'max-h-0 opacity-0' 
+                  : 'max-h-24 opacity-100'
+              }`}
+            >
+              <div className="px-4 py-3 rounded-t-2xl">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                        {targetMsg.agent_name || 'Agent'} is waiting for your answer
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
+                      {description}
                     </p>
                   </div>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
-                    {description}
-                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={scrollToElement}
+                    className="text-xs text-blue-600 border-blue-300 hover:bg-blue-100 h-7 px-3"
+                  >
+                    View Question
+                  </Button>
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={scrollToElement}
-                  className="text-xs text-blue-600 border-blue-300 hover:bg-blue-100 h-7 px-3"
-                >
-                  View Question
-                </Button>
               </div>
             </div>
           )

@@ -28,7 +28,7 @@ export function TypingIndicator({ agentName, message, avatar }: TypingIndicatorP
           )}
         </div>
         {/* Online status indicator - green dot when typing */}
-        <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-white" />
+        <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full bg-yellow-500" />
       </div>
       
       {/* Typing Animation */}
