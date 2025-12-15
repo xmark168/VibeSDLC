@@ -496,9 +496,18 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
       // Skip update if card already in target container or not found
       if (!card || card.columnId === overContainer) return prevCards
 
+      // Map columnId to status
+      const statusMap: Record<string, string> = {
+        'todo': 'Todo',
+        'inprogress': 'InProgress',
+        'review': 'Review',
+        'done': 'Done',
+        'archived': 'Archived',
+      }
+
       const newCards = prevCards.map(c => 
         c.id === active.id 
-          ? { ...c, columnId: overContainer }
+          ? { ...c, columnId: overContainer, status: statusMap[overContainer] }
           : c
       )
       cardsRef.current = newCards
@@ -640,13 +649,22 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
         newRanks.set(card.id, index + 1)
       })
 
-      // Update local state with columnId and ranks
+      // Update local state with columnId, status, and ranks
       setCards(prev => {
-        // First pass: update columnId and ranks
+        // Map columnId to status
+        const statusMap: Record<string, string> = {
+          'todo': 'Todo',
+          'inprogress': 'InProgress',
+          'review': 'Review',
+          'done': 'Done',
+          'archived': 'Archived',
+        }
+
+        // First pass: update columnId, status, and ranks
         const updatedCards = prev.map(card => {
           if (card.id === active.id) {
             const newRank = newRanks.get(card.id)
-            return { ...card, columnId: overContainer, rank: newRank ?? card.rank }
+            return { ...card, columnId: overContainer, status: statusMap[overContainer], rank: newRank ?? card.rank }
           }
           const newRank = newRanks.get(card.id)
           if (newRank !== undefined) {
@@ -759,6 +777,7 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
         content: createdStory.title,
         description: createdStory.description || "",
         columnId: "todo",
+        status: "Todo",
         type: createdStory.type,
         story_code: createdStory.story_code ?? undefined,
         story_point: createdStory.story_point ?? undefined,
@@ -867,9 +886,18 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
     }
 
     setCards(prev => {
-      // First pass: update columnId
+      // Map columnId to status
+      const statusMap: Record<string, string> = {
+        'todo': 'Todo',
+        'inprogress': 'InProgress',
+        'review': 'Review',
+        'done': 'Done',
+        'archived': 'Archived',
+      }
+
+      // First pass: update columnId and status
       const updatedCards = prev.map(c =>
-        c.id === cardId ? { ...c, columnId: targetColumnId } : c
+        c.id === cardId ? { ...c, columnId: targetColumnId, status: statusMap[targetColumnId] } : c
       )
       // Second pass: recalculate isBlocked only for cards that depend on the moved card
       return updatedCards.map(c => {
@@ -910,12 +938,11 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   }, [cards, checkDependenciesCompleted])
 
   const handleEditCard = useCallback((card: KanbanCardData) => {
-    const storyType = card.type?.toLowerCase() === "enablerstory" ? "EnablerStory" : "UserStory"
     setEditingStory({
       id: card.id,
       title: card.content,
       description: card.description,
-      type: storyType,
+      type: "UserStory",
       story_point: card.story_point,
       priority: card.priority,
       rank: card.rank,
@@ -985,7 +1012,7 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
               <div className="space-y-2">
                 <label className="text-sm font-semibold">Type</label>
                 <div className="flex flex-wrap gap-2">
-                  {[{ value: "UserStory", label: "User Story" }, { value: "EnablerStory", label: "Enabler Story" }].map((type) => (
+                  {[{ value: "UserStory", label: "User Story" }].map((type) => (
                     <button
                       key={type.value}
                       onClick={() => setSelectedFilters(prev => ({

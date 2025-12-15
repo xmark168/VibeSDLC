@@ -4,7 +4,7 @@ from typing import TypedDict, Literal, Any, List, Optional, Dict
 
 Action = Literal["ANALYZE", "PLAN", "IMPLEMENT", "RESPOND", "END"]
 TaskType = Literal["feature", "bugfix", "refactor", "enhancement", "documentation", "bug_fix"]
-GraphTaskType = Literal["story_message", "message", "implement_story"]
+GraphTaskType = Literal["message", "implement_story"]
 Complexity = Literal["low", "medium", "high"]
 
 
@@ -13,7 +13,11 @@ class DeveloperState(TypedDict, total=False):
 
     # Input
     story_id: str
-    story_code: str 
+    story_code: str
+    
+    # Langfuse - LangChain callback handler for detailed tracing
+    langfuse_handler: Any
+    
     epic: str
     story_title: str
     story_content: str
@@ -43,7 +47,6 @@ class DeveloperState(TypedDict, total=False):
     main_workspace: str
     workspace_ready: bool
     branch_name: str
-    index_ready: bool
 
     # Output
     message: str

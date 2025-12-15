@@ -427,7 +427,7 @@ export type StoryPublic = {
 
 export type StoryStatus = 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived';
 
-export type StoryType = 'UserStory' | 'EnablerStory';
+export type StoryType = 'UserStory';
 
 export type StoryUpdate = {
     title?: (string | null);

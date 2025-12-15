@@ -10,15 +10,12 @@ from langgraph.graph import END, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-from app.agents.tester.src.nodes.core_nodes import (
-    conversation,
-    router,
-    send_response,
-    test_status,
-)
+from app.agents.tester.src.nodes.router import router
+from app.agents.tester.src.nodes.conversation import test_status, conversation
+from app.agents.tester.src.nodes.response import send_response
 from app.agents.tester.src.nodes.analyze_errors import analyze_errors
 from app.agents.tester.src.nodes.implement_tests import implement_tests
-from app.agents.tester.src.nodes.plan_tests import plan_tests
+from app.agents.tester.src.nodes.plan import plan_tests
 from app.agents.tester.src.nodes.review import review
 from app.agents.tester.src.nodes.run_tests import run_tests
 from app.agents.tester.src.nodes.setup_workspace import setup_workspace
@@ -58,18 +55,7 @@ async def get_postgres_checkpointer() -> AsyncPostgresSaver:
     return _postgres_checkpointer
 
 
-def check_interrupt_signal(story_id: str, agent=None) -> str | None:
-    """Check for interrupt signal ('pause', 'cancel', or None)."""
-    if not story_id:
-        return None
-    
-    if agent is not None and hasattr(agent, 'check_signal'):
-        signal = agent.check_signal(story_id)
-        if signal:
-            import logging
-            logging.getLogger(__name__).info(f"[Signal] {signal} found in agent for story {story_id[:8]}...")
-            return signal
-    return None
+
 
 
 def route_after_router(

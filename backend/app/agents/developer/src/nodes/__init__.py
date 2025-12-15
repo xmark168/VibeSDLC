@@ -7,7 +7,6 @@ from app.agents.developer.src.nodes.implement import implement, implement_parall
 from app.agents.developer.src.nodes.review import review, route_after_review
 from app.agents.developer.src.nodes.run_code import run_code
 from app.agents.developer.src.nodes.analyze_error import analyze_error
-from app.agents.developer.src.nodes.story_chat import story_chat
 from app.agents.developer.src.nodes.respond import respond
 
 __all__ = [
@@ -19,6 +18,5 @@ __all__ = [
     "route_after_review",
     "run_code",
     "analyze_error",
-    "story_chat",
     "respond",
 ]

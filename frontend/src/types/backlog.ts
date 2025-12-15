@@ -83,7 +83,7 @@ export interface UpdateWIPLimitParams {
 export interface StoryFormData {
   title: string
   description: string
-  type: "UserStory" | "EnablerStory"
+  type: "UserStory"
   story_point?: number
   priority?: "High" | "Medium" | "Low"
   acceptance_criteria: string[]

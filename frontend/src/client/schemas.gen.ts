@@ -1948,7 +1948,7 @@ export const StoryStatusSchema = {
 
 export const StoryTypeSchema = {
     type: 'string',
-    enum: ['UserStory', 'EnablerStory'],
+    enum: ['UserStory'],
     title: 'StoryType'
 } as const;
 

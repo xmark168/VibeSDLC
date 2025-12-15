@@ -39,7 +39,6 @@ class StoryAgentState(str, Enum):
 
 class StoryType(str, Enum):
     USER_STORY = "UserStory"
-    ENABLER_STORY = "EnablerStory"
 
 
 class AuthorType(str, Enum):

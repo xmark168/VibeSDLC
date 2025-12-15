@@ -5,19 +5,19 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import List, Literal
-from pydantic import BaseModel, Field
+from typing import List
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.utils.token_utils import smart_truncate_tokens
-from app.agents.tester.src._llm import review_llm
+from app.agents.tester.src.schemas import ReviewDecision
+from app.utils.token_utils import smart_truncate_tokens
+from app.core.agent.llm_factory import get_llm
 
 logger = logging.getLogger(__name__)
 
-_llm = review_llm
+_llm = get_llm("review")
 
 # Config
 MAX_REVIEW_TOKENS = 8000
@@ -30,15 +30,6 @@ def _cfg(state: dict, name: str) -> dict:
     """Get LLM config with Langfuse callback."""
     h = state.get("langfuse_handler")
     return {"callbacks": [h], "run_name": name} if h else {"run_name": name}
-
-
-
-
-class ReviewDecision(BaseModel):
-    """Structured review decision output."""
-    decision: Literal["LGTM", "LBTM"] = Field(description="LGTM (Looks Good To Me) or LBTM (Looks Bad To Me)")
-    feedback: str = Field(default="", description="Brief explanation of decision")
-    issues: List[str] = Field(default_factory=list, description="List of specific issues found")
 
 
 def _read_test_file(workspace_path: str, file_path: str) -> tuple[str, str]:
@@ -189,7 +180,7 @@ async def review(state: TesterState, agent=None) -> dict:
     - Better feedback: Each file gets specific feedback
     """
     from langgraph.types import interrupt
-    from app.agents.tester.src.graph import check_interrupt_signal
+    from app.agents.tester.src.utils.interrupt import check_interrupt_signal
     
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")

@@ -252,7 +252,7 @@ class StoryLogger:
                 logger.debug(f"[StoryLogger] task() skipped: no project_id")
                 return
             
-            # Broadcast directly via WebSocket - NOT through message_story (no DB save)
+            # Broadcast directly via WebSocket (no DB save)
             await connection_manager.broadcast_to_project({
                 "type": "story_task",
                 "story_id": str(self.story_id),
@@ -270,20 +270,12 @@ class StoryLogger:
             logger.debug(f"[StoryLogger] task() failed: {e}")
     
     async def message(self, message: str) -> None:
-        """Send milestone message to Chat tab - SAVED to DB.
+        """Send milestone message via WebSocket (NOT saved to DB).
         
         Use for: important updates, milestone completions, errors.
-        This appears in chat history and persists.
+        This broadcasts to frontend but does not persist.
         """
-        try:
-            await self.agent.message_story(
-                self.story_id,
-                message,
-                message_type="text",
-                details={"node": self.node_name}
-            )
-        except Exception as e:
-            logger.debug(f"[StoryLogger] message() failed: {e}")
+        await self.info(message)
     
     # Sync versions for non-async code (buffers and flushes later)
     def debug_sync(self, message: str, **details) -> None:
@@ -332,7 +324,7 @@ class NoOpLogger(StoryLogger):
         logger.info(formatted_msg)
     
     async def message(self, message: str) -> None:
-        # Just log to standard logger (no DB save)
+        # Just log to standard logger (no WebSocket)
         formatted_msg = f"[{self.node_name}] {message}" if self.node_name else message
         logger.info(formatted_msg)
     

@@ -101,6 +101,9 @@ class BaseAgent(ABC):
         self.role_type = agent_model.role_type
         self.agent_model = agent_model
         
+        # Load tech_stack from project
+        self.tech_stack = self._load_tech_stack()
+        
         # Name (short and display)
         self.name = agent_model.human_name  # "Sarah"
         self.display_name = agent_model.name  # "Sarah (Business Analyst)"
@@ -173,8 +176,24 @@ class BaseAgent(ABC):
 
         logger.info(
             f"Initialized {self.role_type} agent: {self.name} "
-            f"(style: {self.communication_style or 'N/A'}, traits: {', '.join(self.personality_traits[:2]) if self.personality_traits else 'N/A'})"
+            f"(tech_stack: {self.tech_stack}, style: {self.communication_style or 'N/A'}, traits: {', '.join(self.personality_traits[:2]) if self.personality_traits else 'N/A'})"
         )
+
+    def _load_tech_stack(self) -> str:
+        """Load tech stack from project (called once during init)."""
+        try:
+            from sqlmodel import Session
+            from app.core.db import engine
+            from app.models import Project
+            
+            with Session(engine) as session:
+                project = session.get(Project, self.project_id)
+                if project and project.tech_stack:
+                    return project.tech_stack
+        except Exception as e:
+            logger.warning(f"[BaseAgent] Failed to load tech_stack: {e}")
+        
+        return "nextjs"  # Default fallback
 
     @abstractmethod
     async def handle_task(self, task: TaskContext) -> TaskResult:
@@ -977,73 +996,6 @@ class BaseAgent(ABC):
             self.project_id
         )
 
-    async def message_story(
-        self,
-        story_id: UUID,
-        content: str,
-        message_type: str = "update",
-        details: Optional[Dict[str, Any]] = None,
-    ) -> UUID:
-        """Send message to story channel (visible in story detail view).
-        
-        Args:
-            story_id: UUID of the story to message
-            content: Message content
-            message_type: Type of message ("update", "test_result", "progress", "error")
-            details: Additional structured data
-            
-        Returns:
-            UUID of created StoryMessage
-        """
-        from sqlmodel import Session
-        from app.core.db import engine
-        from app.models import StoryMessage
-        from app.kafka.event_schemas import StoryMessageEvent, KafkaTopics
-        
-        logger.info(f"[{self.name}] message_story called: story_id={story_id}, type={message_type}")
-        
-        try:
-            # 1. Save to DB
-            with Session(engine) as session:
-                msg = StoryMessage(
-                    story_id=story_id,
-                    author_type="agent",
-                    author_name=self.name,
-                    agent_id=self.agent_id,
-                    content=content,
-                    message_type=message_type,
-                    structured_data=details,
-                )
-                session.add(msg)
-                session.commit()
-                session.refresh(msg)
-                message_id = msg.id
-                created_at = msg.created_at
-                logger.info(f"[{self.name}] Story message saved to DB: id={message_id}")
-            
-            # 2. Publish Kafka event (handler will broadcast WebSocket)
-            producer = await self._get_producer()
-            event = StoryMessageEvent(
-                project_id=str(self.project_id),
-                story_id=story_id,
-                message_id=message_id,
-                author_type="agent",
-                author_name=self.name,
-                agent_id=self.agent_id,
-                content=content,
-                message_type=message_type,
-                structured_data=details,
-                metadata={"timestamp": created_at.isoformat()}
-            )
-            await producer.publish(topic=KafkaTopics.STORY_EVENTS, event=event)
-            
-            logger.info(f"[{self.name}] Story message published: {content[:50]}...")
-            return message_id
-                
-        except Exception as e:
-            logger.error(f"[{self.name}] Failed to send story message: {e}")
-            raise
-
     async def update_story_agent_state(
         self,
         story_id: UUID,
@@ -1554,12 +1506,9 @@ class BaseAgent(ABC):
         from app.core.db import engine
         from app.kafka.event_schemas import AgentTaskType
         
-        # Don't use trigger_message_id for STORY_MESSAGE tasks
-        # (story messages are in story_messages table, not messages table)
         trigger_msg_id = None
         if hasattr(task, 'message_id') and task.message_id:
-            if not (hasattr(task, 'task_type') and task.task_type == AgentTaskType.STORY_MESSAGE):
-                trigger_msg_id = task.message_id
+            trigger_msg_id = task.message_id
         
         # Use ExecutionService for async-safe execution creation
         with Session(engine) as db:

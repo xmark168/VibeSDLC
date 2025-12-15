@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -21,16 +20,12 @@ import {
   Copy,
   Check,
   X,
-  Moon,
-  Sun,
-  AtSign,
   PanelLeftClose,
   Loader2,
   Crown,
   PaperclipIcon,
   FileText,
 } from "lucide-react";
-import { TechStackDialog } from "./tech-stack-dialog";
 import { useTheme } from "@/components/provider/theme-provider";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { TypingIndicator } from "./TypingIndicator";

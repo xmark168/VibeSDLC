@@ -14,6 +14,51 @@ def get_langfuse_handler():
         return None
 
 
+def observe_decorator(*args, **kwargs):
+    try:
+        from langfuse import observe
+        return observe(*args, **kwargs)
+    except Exception:
+        def noop_decorator(func):
+            return func
+        return noop_decorator(*args, **kwargs)
+
+
+def create_observation_span(name: str, as_type: str = "span", **kwargs):
+    try:
+        from langfuse import get_client
+        langfuse = get_client()
+        return langfuse.start_as_current_observation(as_type=as_type, name=name, **kwargs)
+    except Exception:
+        return None
+
+
+def create_event(name: str, **kwargs):
+    try:
+        from langfuse import get_client
+        langfuse = get_client()
+        return langfuse.create_event(name=name, **kwargs)
+    except Exception:
+        return None
+
+
+def propagate_attributes(*, user_id: str = None, session_id: str = None, 
+                        tags: list = None, metadata: dict = None, 
+                        version: str = None):
+    try:
+        from langfuse import get_client
+        langfuse = get_client()
+        return langfuse.propagate_attributes(
+            user_id=user_id,
+            session_id=session_id,
+            tags=tags,
+            metadata=metadata,
+            version=version
+        )
+    except Exception:
+        return None
+
+
 def flush_langfuse():
     try:
         from langfuse import get_client

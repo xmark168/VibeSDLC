@@ -487,182 +487,6 @@ def list_epics(
     }
 
 
-# ===== Story Messages =====
-@router.get("/{story_id}/messages")
-async def get_story_messages(
-    *,
-    session: SessionDep,
-    current_user: CurrentUser,
-    story_id: uuid.UUID,
-    limit: int = Query(default=50, le=100),
-    offset: int = Query(default=0, ge=0)
-) -> Any:
-    """Get messages in story channel."""
-    from app.models import StoryMessage
-    
-    # Verify story exists
-    story = session.get(Story, story_id)
-    if not story:
-        raise HTTPException(status_code=404, detail="Story not found")
-    
-    # Get messages ordered by created_at
-    statement = (
-        select(StoryMessage)
-        .where(StoryMessage.story_id == story_id)
-        .order_by(StoryMessage.created_at.asc())
-        .offset(offset)
-        .limit(limit)
-    )
-    messages = session.exec(statement).all()
-    
-    # Get total count
-    count_statement = (
-        select(func.count())
-        .select_from(StoryMessage)
-        .where(StoryMessage.story_id == story_id)
-    )
-    total = session.exec(count_statement).one()
-    
-    return {
-        "data": [
-            {
-                "id": str(msg.id),
-                "author_type": msg.author_type,
-                "author_name": msg.author_name,
-                "content": msg.content,
-                "message_type": msg.message_type,
-                "structured_data": msg.structured_data,
-                "created_at": msg.created_at.isoformat() if msg.created_at else None,
-            }
-            for msg in messages
-        ],
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-    }
-
-
-class SendMessageRequest(BaseModel):
-    content: str
-
-
-@router.post("/{story_id}/messages")
-async def send_story_message(
-    *,
-    session: SessionDep,
-    current_user: CurrentUser,
-    story_id: uuid.UUID,
-    request: SendMessageRequest
-) -> Any:
-    """Send a message to story channel."""
-    from app.models import StoryMessage
-    from app.websocket.connection_manager import connection_manager
-    
-    # Verify story exists
-    story = session.get(Story, story_id)
-    if not story:
-        raise HTTPException(status_code=404, detail="Story not found")
-    
-    # Create message
-    message = StoryMessage(
-        story_id=story_id,
-        author_type="user",
-        author_name=current_user.full_name or current_user.email,
-        user_id=current_user.id,
-        content=request.content,
-        message_type="text",
-    )
-    session.add(message)
-    session.commit()
-    session.refresh(message)
-    
-    # Broadcast via WebSocket
-    await connection_manager.broadcast_to_project(
-        {
-            "type": "story_message",
-            "story_id": str(story_id),
-            "message_id": str(message.id),
-            "author_type": "user",
-            "author_name": message.author_name,
-            "content": message.content,
-            "message_type": "text",
-            "timestamp": message.created_at.isoformat() if message.created_at else None,
-        },
-        story.project_id
-    )
-    
-    # Publish to Kafka for routing to agent (if story is being processed)
-    from app.kafka.producer import get_kafka_producer
-    from app.kafka.event_schemas import StoryMessageEvent, KafkaTopics
-    
-    try:
-        producer = await get_kafka_producer()
-        event = StoryMessageEvent(
-            story_id=story_id,
-            message_id=message.id,
-            author_type="user",
-            author_name=message.author_name,
-            content=request.content,
-            project_id=story.project_id,
-            user_id=current_user.id,
-        )
-        await producer.publish(KafkaTopics.STORY_EVENTS, event)
-    except Exception as e:
-        # Log but don't fail the request
-        import logging
-        logging.getLogger(__name__).warning(f"Failed to publish story message to Kafka: {e}")
-    
-    return {
-        "id": str(message.id),
-        "author_type": message.author_type,
-        "author_name": message.author_name,
-        "content": message.content,
-        "message_type": message.message_type,
-        "created_at": message.created_at.isoformat() if message.created_at else None,
-    }
-
-
-@router.delete("/{story_id}/messages")
-async def clear_story_messages(
-    *,
-    session: SessionDep,
-    current_user: CurrentUser,
-    story_id: uuid.UUID
-) -> Any:
-    """Clear all messages in story channel."""
-    from app.models import StoryMessage
-    from sqlmodel import delete
-    from app.websocket.connection_manager import connection_manager
-    
-    # Verify story exists
-    story = session.get(Story, story_id)
-    if not story:
-        raise HTTPException(status_code=404, detail="Story not found")
-    
-    # Count messages before delete
-    count_statement = (
-        select(func.count())
-        .select_from(StoryMessage)
-        .where(StoryMessage.story_id == story_id)
-    )
-    count = session.exec(count_statement).one()
-    
-    # Delete all messages for this story
-    session.exec(delete(StoryMessage).where(StoryMessage.story_id == story_id))
-    session.commit()
-    
-    # Broadcast clear event via WebSocket
-    await connection_manager.broadcast_to_project(
-        {
-            "type": "story_messages_cleared",
-            "story_id": str(story_id),
-        },
-        story.project_id
-    )
-    
-    return {"message": f"Deleted {count} messages", "deleted_count": count}
-
-
 # ===== Story Review (BA Agent) =====
 @router.post("/{story_id}/review")
 async def review_story(
@@ -1171,6 +995,11 @@ async def restart_story_task(
             if hasattr(agent, 'clear_story_cache'):
                 agent.clear_story_cache(str(story_id))
                 logger.info(f"[restart] Cleared agent cache for story {story_id}")
+            
+            # Clear any pending signals (cancel/pause) from previous runs
+            if hasattr(agent, 'clear_signal'):
+                agent.clear_signal(str(story_id))
+                logger.info(f"[restart] Cleared signal for story {story_id} from agent {agent.name}")
     
     # Get main workspace from Project
     from app.models import Project
@@ -1206,15 +1035,37 @@ async def restart_story_task(
     session.commit()
     
     # Clear old logs for fresh start
-    from app.models.story_log import StoryLog
+    from app.models.story_log import StoryLog, LogLevel
     session.exec(
         delete(StoryLog).where(StoryLog.story_id == story_id)
     )
     session.commit()
     logger.info(f"[restart] Cleared logs for story {story_id}")
     
+    # Add restart log entry
+    from datetime import datetime, timezone
+    restart_log = StoryLog(
+        story_id=story_id,
+        content="🔄 Story restarted by user",
+        level=LogLevel.INFO,
+        node="restart",
+        created_at=datetime.now(timezone.utc)
+    )
+    session.add(restart_log)
+    session.commit()
+    
     # Broadcast "pending" state to UI immediately with sub_status "queued"
     from app.websocket.connection_manager import connection_manager
+    
+    # Broadcast restart log to UI
+    await connection_manager.broadcast_to_project({
+        "type": "story_log",
+        "story_id": str(story_id),
+        "content": "🔄 Story restarted by user",
+        "level": "info",
+        "node": "restart",
+        "timestamp": restart_log.created_at.isoformat()
+    }, project_id)
     await connection_manager.broadcast_to_project({
         "type": "story_state_changed",
         "story_id": str(story_id),

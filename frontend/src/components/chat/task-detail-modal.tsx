@@ -1,5 +1,5 @@
 
-import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, MessageSquare, FileText, ScrollText, Send, Paperclip, Smile, Link2, ExternalLink, Loader2, Wifi, WifiOff, Square, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye, Trash2, Activity, Sparkles } from "lucide-react"
+import { Download, Zap, User, Users, Flag, Calendar, ChevronRight, FileText, ScrollText, Loader2, RotateCcw, GitBranch, Plus, Minus, FileCode, Pause, Play, AlertTriangle, Eye, Sparkles, Square, ExternalLink } from "lucide-react"
 import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -7,35 +7,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Textarea } from "@/components/ui/textarea"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  Conversation,
-  ConversationContent,
-  ConversationScrollButton,
-} from "@/components/ui/ai/conversation"
-import {
-  Message,
-  MessageContent,
-  MessageAvatar,
-} from "@/components/ui/ai/message"
-import {
-  PromptInput,
-  PromptInputTextarea,
-  PromptInputToolbar,
-  PromptInputTools,
-  PromptInputButton,
-  PromptInputSubmit,
-} from "@/components/ui/ai/prompt-input"
-import {
-  Task,
-  TaskTrigger,
-  TaskContent,
-  TaskItem,
-} from "@/components/ui/ai/task"
 import type { KanbanCardData } from "./kanban-card"
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react"
-import { useStoryWebSocket } from "@/hooks/useStoryWebSocket"
+import React, { useState, useRef, useEffect, useMemo } from "react"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 
 // DiffsView component for showing git diffs
@@ -243,17 +216,6 @@ interface TaskDetailModalProps {
   onViewFiles?: (worktreePath: string) => void  // Navigate to files tab in workspace
 }
 
-// Mock chat messages type
-interface ChatMessage {
-  id: string
-  author: string
-  author_type: 'user' | 'agent'
-  content: string
-  timestamp: string
-  avatar?: string
-  message_type?: 'text' | 'task' | 'system' | 'log'
-}
-
 // Epic info for popup
 interface EpicInfo {
   epic_code?: string
@@ -337,14 +299,11 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     return depId.substring(0, 8) + '...'
   }
   const [activeTab, setActiveTab] = useState<string>("detail")
-  const [chatMessage, setChatMessage] = useState("")
-  const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([])
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isActionLoading, setIsActionLoading] = useState(false)
   
   // Reset to detail tab if current tab is hidden (Done/Archived status)
   useEffect(() => {
-    if ((status === 'Done' || status === 'Archived') && (activeTab === 'chat' || activeTab === 'diffs')) {
+    if ((status === 'Done' || status === 'Archived') && activeTab === 'diffs') {
       setActiveTab('detail')
     }
   }, [status, activeTab])
@@ -646,127 +605,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     }
   }
 
-  // Fetch initial messages from API
-  const fetchMessages = useCallback(async (storyId: string) => {
-    const authToken = getToken()
-    if (!storyId || !authToken) {
-      return
-    }
-    
-    const apiUrl = `${import.meta.env.VITE_API_URL}/api/v1/stories/${storyId}/messages`
-    
-    setIsLoadingMessages(true)
-    try {
-      const response = await fetch(
-        apiUrl,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      )
-      
-       if (response.ok) {
-        const data = await response.json()
-         setInitialMessages(
-          data.data.map((msg: {
-            id: string
-            author_name: string
-            author_type: string
-            content: string
-            created_at: string
-          }) => ({
-            id: msg.id,
-            author: msg.author_name || 'Unknown',
-            author_type: msg.author_type === 'agent' ? 'agent' : 'user',
-            content: msg.content,
-            timestamp: msg.created_at,
-          }))
-        )
-      } else {
-      }
-    } catch (error) {
-    } finally {
-      setIsLoadingMessages(false)
-    }
-  }, [])
-
-  // Reset and fetch messages when dialog opens or card changes
-  useEffect(() => {
-     
-    if (open && card?.id) {
-      setInitialMessages([])
-        fetchMessages(card.id)
-    }
-  }, [open, card?.id, fetchMessages])
-
-  // WebSocket for real-time messages
-  const { messages: chatMessages, isConnected, isAgentThinking, clearMessages } = useStoryWebSocket(
-    open ? card?.id ?? null : null,
-    projectId ?? null,
-    token ?? undefined,
-    initialMessages
-  )
-
   if (!card) return null
-
-  const handleSendMessage = async () => {
-    if (!chatMessage.trim() || !card?.id) return
-
-    const messageContent = chatMessage.trim()
-    setChatMessage("") // Clear immediately for better UX
-
-    try {
-      const authToken = getToken()
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/messages`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ content: messageContent }),
-        }
-      )
-
-      if (!response.ok) {
-        // Restore message on error
-        setChatMessage(messageContent)
-      }
-      // Message will arrive via WebSocket, no need to manually add
-    } catch (error) {
-      // Restore message on error
-      setChatMessage(messageContent)
-    }
-  }
-
-  const handleClearMessages = async () => {
-    if (!card?.id) return
-
-    try {
-      const authToken = getToken()
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v1/stories/${card.id}/messages`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-          },
-        }
-      )
-
-      if (response.ok) {
-        clearMessages() // Clear local state
-        toast.success('Messages cleared')
-      } else {
-        toast.error('Failed to clear messages')
-      }
-    } catch (error) {
-      toast.error('Failed to clear messages')
-    }
-  }
 
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp)
@@ -790,7 +629,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
     })
   }
 
-  // Get type badge color - UserStory, EnablerStory on board; Epic as parent
+  // Get type badge color - UserStory on board; Epic as parent
   const getTypeBadgeColor = (type?: string) => {
     const normalizedType = type?.toUpperCase()
     switch (normalizedType) {
@@ -799,9 +638,6 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
       case "USERSTORY":
       case "USER_STORY":
         return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
-      case "ENABLERSTORY":
-      case "ENABLER_STORY":
-        return "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20"
       default:
         return "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20"
     }
@@ -815,9 +651,6 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
       case "USERSTORY":
       case "USER_STORY":
         return "User Story"
-      case "ENABLERSTORY":
-      case "ENABLER_STORY":
-        return "Enabler Story"
       case "EPIC":
         return "Epic"
       default:
@@ -1072,19 +905,13 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
 
         <Separator />
 
-        {/* Tabs Navigation - Hide Chat and Diffs tabs when Done or Archived */}
+        {/* Tabs Navigation - Hide Diffs tab when Done or Archived */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-          <TabsList className={`grid w-full ${status === 'Done' || status === 'Archived' ? 'grid-cols-2' : 'grid-cols-4'}`}>
+          <TabsList className={`grid w-full ${status === 'Done' || status === 'Archived' ? 'grid-cols-2' : 'grid-cols-3'}`}>
             <TabsTrigger value="detail" className="gap-2">
               <FileText className="w-4 h-4" />
               Detail
             </TabsTrigger>
-            {status !== 'Done' && status !== 'Archived' && (
-              <TabsTrigger value="chat" className="gap-2">
-                <MessageSquare className="w-4 h-4" />
-                Chat
-              </TabsTrigger>
-            )}
             <TabsTrigger value="logs" className="gap-2">
               <ScrollText className="w-4 h-4" />
               Logs
@@ -1186,9 +1013,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   <div className="text-sm font-medium font-mono">
                     {card.assignee_id.slice(0, 8)}
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {card.type === "EnablerStory" ? "Developer/Infrastructure" : "Developer"}
-                  </div>
+                  <div className="text-xs text-muted-foreground">Developer</div>
                 </div>
               </div>
             )}
@@ -1384,177 +1209,6 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                   </div>
                 </div>
               )}
-            </div>
-          </TabsContent>
-
-          {/* Chat Tab */}
-          <TabsContent value="chat" className="flex-1 flex flex-col mt-4 min-h-0 overflow-hidden">
-            {/* Chat Header */}
-            <div className="flex items-center justify-between pb-3 border-b shrink-0">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-muted-foreground" />
-                <h3 className="text-sm font-semibold">Story Discussion</h3>
-                <Badge variant="outline" className="text-xs">
-                  {chatMessages.length} messages
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2">
-                {chatMessages.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleClearMessages}
-                    className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="w-3 h-3 mr-1" />
-                    Clear
-                  </Button>
-                )}
-                <div className="flex items-center gap-1.5 text-xs">
-                  {isConnected ? (
-                    <>
-                      <Wifi className="w-3 h-3 text-green-500" />
-                      <span className="text-green-600 dark:text-green-400">Live</span>
-                    </>
-                  ) : (
-                    <>
-                      <WifiOff className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-muted-foreground">Connecting...</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Messages Area with Auto-scroll */}
-            <Conversation className="flex-1 min-h-0">
-              <ConversationContent className="py-2">
-                {/* Loading State */}
-                {isLoadingMessages && (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                    <span className="ml-2 text-sm text-muted-foreground">Loading messages...</span>
-                  </div>
-                )}
-
-                {/* Messages - render based on message_type */}
-                {!isLoadingMessages && chatMessages.map((msg) => (
-                  msg.message_type === 'task' ? (
-                    // Task progress - show as Task component
-                    <div key={msg.id} className="py-2">
-                      <Task defaultOpen={true}>
-                        <TaskTrigger 
-                          title={msg.author}
-                          icon={<Activity className="size-4 text-blue-500" />}
-                        />
-                        <TaskContent>
-                          <TaskItem className="text-foreground">
-                            <div className="flex items-start gap-2">
-                              <span className="text-xs text-muted-foreground shrink-0">
-                                {formatTimestamp(msg.timestamp)}
-                              </span>
-                              <span className="whitespace-pre-wrap break-words">{msg.content}</span>
-                            </div>
-                          </TaskItem>
-                        </TaskContent>
-                      </Task>
-                    </div>
-                  ) : (
-                    // Regular message - show as Message component
-                    <Message 
-                      key={msg.id} 
-                      from={msg.author_type === 'agent' ? 'assistant' : 'user'}
-                    >
-                      <MessageAvatar
-                        name={msg.author}
-                        fallback={msg.author_type === 'agent' ? '🤖' : msg.author.charAt(0).toUpperCase()}
-                        className={msg.author_type === 'agent' 
-                          ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' 
-                          : 'bg-primary/10 text-primary'
-                        }
-                      />
-                      <div className="flex flex-col gap-1 max-w-[85%]">
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="font-semibold text-foreground">{msg.author}</span>
-                          {msg.author_type === 'agent' && (
-                            <Badge variant="outline" className="text-[10px] h-4 px-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
-                              Agent
-                            </Badge>
-                          )}
-                          <span className="text-muted-foreground">{formatTimestamp(msg.timestamp)}</span>
-                        </div>
-                        <MessageContent
-                          className={msg.author_type === 'agent'
-                            ? 'bg-blue-500/10 border border-blue-500/20'
-                            : ''
-                          }
-                        >
-                          <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                        </MessageContent>
-                      </div>
-                    </Message>
-                  )
-                ))}
-
-                {/* Thinking Indicator - show when agent is processing */}
-                {isAgentThinking && (
-                  <Message from="assistant">
-                    <MessageAvatar
-                      name="Developer"
-                      fallback="🤖"
-                      className="bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                    />
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="font-semibold text-foreground">Developer</span>
-                        <Badge variant="outline" className="text-[10px] h-4 px-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20">
-                          Agent
-                        </Badge>
-                      </div>
-                      <MessageContent className="bg-blue-500/10 border border-blue-500/20">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                          <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                          <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" />
-                          <span className="ml-2 text-muted-foreground text-sm">Đang xử lý...</span>
-                        </div>
-                      </MessageContent>
-                    </div>
-                  </Message>
-                )}
-
-                {/* Empty State - only show when not loading, no messages, and not thinking */}
-                {!isLoadingMessages && chatMessages.length === 0 && !isAgentThinking && (
-                  <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-12">
-                    <MessageSquare className="w-12 h-12 mb-3 opacity-30" />
-                    <p className="text-sm font-medium">No messages yet</p>
-                    <p className="text-xs mt-1">Start the conversation about this story</p>
-                  </div>
-                )}
-              </ConversationContent>
-              <ConversationScrollButton />
-            </Conversation>
-
-            {/* Message Input - blended with messages */}
-            <div className="shrink-0 px-4 pb-2">
-              <PromptInput onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="border-muted-foreground/20">
-                <PromptInputTextarea
-                  value={chatMessage}
-                  onChange={(e) => setChatMessage(e.target.value)}
-                  placeholder="Type a message..."
-                />
-                <PromptInputToolbar>
-                  <PromptInputTools>
-                    <PromptInputButton>
-                      <Paperclip className="w-4 h-4" />
-                    </PromptInputButton>
-                    <PromptInputButton>
-                      <Smile className="w-4 h-4" />
-                    </PromptInputButton>
-                  </PromptInputTools>
-                  <PromptInputSubmit disabled={!chatMessage.trim()} />
-                </PromptInputToolbar>
-              </PromptInput>
             </div>
           </TabsContent>
 

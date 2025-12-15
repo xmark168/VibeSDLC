@@ -785,6 +785,8 @@ class StoryEventRouter(BaseEventRouter):
         """
         with Session(engine) as session:
             from app.services import AgentService
+            from app.models import Story
+            
             agent_service = AgentService(session)
 
             tester = agent_service.get_by_project_and_role(
@@ -794,7 +796,12 @@ class StoryEventRouter(BaseEventRouter):
 
             if tester:
                 story_id = event_dict.get("story_id")
-                story_title = event_dict.get('story_title', 'Unknown Story')
+                
+                # Load story to get workspace info
+                story = session.get(Story, UUID(story_id))
+                if not story:
+                    self.logger.error(f"Story {story_id} not found")
+                    return
                 
                 await self.publish_task(
                     agent_id=tester.id,
@@ -806,14 +813,17 @@ class StoryEventRouter(BaseEventRouter):
                         "trigger_type": "status_review",
                         "story_ids": [str(story_id)],
                         "auto_generated": True,
-                        "content": f"Auto-generate integration tests for story '{story_title}'",
+                        "content": f"Auto-generate integration tests for story '{story.title}'",
                         "execution_mode": "background",
+                        # Pass workspace info from Story
+                        "worktree_path": story.worktree_path,
+                        "branch_name": story.branch_name,
                     }
                 )
 
                 self.logger.info(
-                    f"Routed story status change to Tester: {tester.name} ({tester.id}) "
-                    f"for integration test generation"
+                    f"Routed to Tester with workspace: {story.worktree_path} "
+                    f"({tester.name})"
                 )
             else:
                 self.logger.warning(
@@ -1087,75 +1097,6 @@ class AgentStatusRouter(BaseEventRouter):
         status = event_dict.get("status", "unknown")
 
         self.logger.debug(f"Agent '{agent_name}' status: {status}")
-
-
-class StoryMessageRouter(BaseEventRouter):
-    """Router for story chat messages - routes user messages to Developer agent."""
-    
-    def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
-        event_dict = event if isinstance(event, dict) else event.model_dump()
-        event_type = event_dict.get("event_type", "")
-        author_type = event_dict.get("author_type", "")
-        # Only handle user messages in story chat (not agent/system messages)
-        return event_type == "story.message.created" and author_type == "user"
-    
-    async def route(self, event: BaseKafkaEvent | Dict[str, Any]) -> None:
-        """Route user message in story chat to Developer agent."""
-        event_dict = event if isinstance(event, dict) else event.model_dump()
-        
-        story_id = event_dict.get("story_id")
-        project_id = event_dict.get("project_id")
-        content = event_dict.get("content", "")
-        user_id = event_dict.get("user_id")
-        
-        if not story_id or not project_id:
-            self.logger.warning("[StoryMessageRouter] Missing story_id or project_id")
-            return
-        
-        # Check story status - only route if story is being processed
-        with Session(engine) as session:
-            from app.models import Story
-            from app.models.story import StoryStatus
-            
-            story = session.get(Story, UUID(str(story_id)) if isinstance(story_id, str) else story_id)
-            if not story:
-                self.logger.warning(f"[StoryMessageRouter] Story {story_id} not found")
-                return
-            
-            # Only route if story is IN_PROGRESS
-            if story.status != StoryStatus.IN_PROGRESS:
-                self.logger.debug(f"[StoryMessageRouter] Story {story_id} not in progress, skipping")
-                return
-            
-            # Find Developer agent for this project
-            from app.services import AgentService
-            agent_service = AgentService(session)
-            developer = agent_service.get_by_project_and_role(
-                project_id=UUID(str(project_id)) if isinstance(project_id, str) else project_id,
-                role_type="developer"
-            )
-            
-            if not developer:
-                self.logger.warning(f"[StoryMessageRouter] No Developer agent found for project {project_id}")
-                return
-            
-            # Publish task to Developer
-            await self.publish_task(
-                agent_id=developer.id,
-                task_type=AgentTaskType.STORY_MESSAGE,
-                source_event=event_dict,
-                routing_reason="story_chat_message",
-                priority="high",
-                additional_context={
-                    "story_id": str(story_id),
-                    "story_title": story.title,
-                    "content": content,
-                    "user_id": str(user_id) if user_id else None,
-                    "execution_mode": "background",
-                }
-            )
-            
-            self.logger.info(f"[StoryMessageRouter] Routed story message to Developer {developer.name}")
 
 
 class QuestionAnswerRouter(BaseEventRouter):
@@ -1799,7 +1740,6 @@ class MessageRouterService(BaseKafkaConsumer):
             AgentMessageRouter(producer),
             TaskCompletionRouter(producer),
             StoryEventRouter(producer),
-            StoryMessageRouter(producer),
             QuestionAnswerRouter(producer),
             BatchAnswersRouter(producer),
             DelegationRouter(producer),
