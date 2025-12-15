@@ -314,13 +314,17 @@ async def _check_request_clarity(
         if not is_new and has_specific_change:
             return True, [], related
         
-        # CASE 3: Existing feature WITHOUT specific change → notify and ask what to change
+        # CASE 3: Existing feature WITHOUT specific change → notify clearly and ask what to do
         if not is_new and not has_specific_change:
+            # Use LLM-generated questions if available (should include clear notification)
+            if questions:
+                return False, questions, related
+            
+            # Fallback: Clear notification about duplicate feature with ONE simple question
             existing_feature_questions = [
-                f"Tính năng '{related}' đã có trong hệ thống rồi. Bạn muốn bổ sung/thay đổi gì cụ thể?",
-                "Ví dụ: thêm section mới, thay đổi layout, bổ sung thông tin gì?"
+                f"Tính năng '{related}' đã có trong hệ thống rồi. Bạn muốn thay đổi/chỉnh sửa phần nào của tính năng hiện tại?"
             ]
-            return False, questions if questions else existing_feature_questions, related
+            return False, existing_feature_questions, related
         
         return True, [], related
             
@@ -1209,21 +1213,52 @@ async def update_prd(state: BAState, agent=None) -> dict:
         
         # Build context message
         if related_feature:
+            # EXISTING feature → use simple open question (missing_details is list of strings)
             context_msg = f"Tính năng \"{related_feature}\" đã có trong hệ thống. Mình cần biết thêm chi tiết để cập nhật."
+            batch_questions = [
+                {
+                    "question_text": detail,
+                    "question_type": "open",
+                    "options": None,
+                    "allow_multiple": False,
+                    "context": context_msg if i == 0 else None,
+                }
+                for i, detail in enumerate(missing_details)
+            ]
         else:
+            # NEW feature → call interview_requirements to generate proper multichoice questions
+            logger.info(f"[BA] NEW feature detected, generating multichoice questions via interview_requirements...")
             context_msg = f"Để mình hiểu rõ hơn về \"{user_message}\", bạn cho mình biết thêm nhé!"
-        
-        # Format questions for batch API (use question cards like interview flow)
-        batch_questions = [
-            {
-                "question_text": detail,
-                "question_type": "multichoice",
-                "options": ["Có", "Không", "Khác (vui lòng mô tả)"],
-                "allow_multiple": False,
-                "context": context_msg if i == 0 else None,  # Only add context to first question
-            }
-            for i, detail in enumerate(missing_details)
-        ]
+            
+            # Call interview_requirements to get proper multichoice questions with options
+            interview_result = await interview_requirements(state, agent)
+            generated_questions = interview_result.get("questions", [])
+            
+            if generated_questions:
+                # Use generated multichoice questions
+                batch_questions = [
+                    {
+                        "question_text": q["text"],
+                        "question_type": q.get("type", "multichoice"),
+                        "options": q.get("options"),
+                        "allow_multiple": q.get("allow_multiple", False),
+                        "context": context_msg if i == 0 else None,
+                    }
+                    for i, q in enumerate(generated_questions)
+                ]
+            else:
+                # Fallback: use simple open questions
+                logger.warning("[BA] interview_requirements returned no questions, using fallback")
+                batch_questions = [
+                    {
+                        "question_text": detail,
+                        "question_type": "open",
+                        "options": None,
+                        "allow_multiple": False,
+                        "context": context_msg if i == 0 else None,
+                    }
+                    for i, detail in enumerate(missing_details)
+                ]
         
         logger.info(f"[BA] Sending {len(batch_questions)} clarification questions via question cards...")
         
@@ -1688,21 +1723,52 @@ async def update_stories(state: BAState, agent=None) -> dict:
         
         # Build context message
         if related_feature:
+            # EXISTING feature → use simple open question (missing_details is list of strings)
             context_msg = f"Tính năng \"{related_feature}\" đã có trong hệ thống. Mình cần biết thêm chi tiết để cập nhật."
+            batch_questions = [
+                {
+                    "question_text": detail,
+                    "question_type": "open",
+                    "options": None,
+                    "allow_multiple": False,
+                    "context": context_msg if i == 0 else None,
+                }
+                for i, detail in enumerate(missing_details)
+            ]
         else:
+            # NEW feature → call interview_requirements to generate proper multichoice questions
+            logger.info(f"[BA] NEW feature detected, generating multichoice questions via interview_requirements...")
             context_msg = f"Để mình hiểu rõ hơn về \"{user_message}\", bạn cho mình biết thêm nhé!"
-        
-        # Format questions for batch API (use question cards like interview flow)
-        batch_questions = [
-            {
-                "question_text": detail,
-                "question_type": "multichoice",
-                "options": ["Có", "Không", "Khác (vui lòng mô tả)"],
-                "allow_multiple": False,
-                "context": context_msg if i == 0 else None,
-            }
-            for i, detail in enumerate(missing_details)
-        ]
+            
+            # Call interview_requirements to get proper multichoice questions with options
+            interview_result = await interview_requirements(state, agent)
+            generated_questions = interview_result.get("questions", [])
+            
+            if generated_questions:
+                # Use generated multichoice questions
+                batch_questions = [
+                    {
+                        "question_text": q["text"],
+                        "question_type": q.get("type", "multichoice"),
+                        "options": q.get("options"),
+                        "allow_multiple": q.get("allow_multiple", False),
+                        "context": context_msg if i == 0 else None,
+                    }
+                    for i, q in enumerate(generated_questions)
+                ]
+            else:
+                # Fallback: use simple open questions
+                logger.warning("[BA] interview_requirements returned no questions, using fallback")
+                batch_questions = [
+                    {
+                        "question_text": detail,
+                        "question_type": "open",
+                        "options": None,
+                        "allow_multiple": False,
+                        "context": context_msg if i == 0 else None,
+                    }
+                    for i, detail in enumerate(missing_details)
+                ]
         
         logger.info(f"[BA] Sending {len(batch_questions)} clarification questions via question cards...")
         

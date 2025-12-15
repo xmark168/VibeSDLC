@@ -874,13 +874,23 @@ tasks:
       - Yêu cầu liên quan đến feature ĐÃ CÓ NHƯNG không chỉ rõ muốn thay đổi gì
       - Ví dụ: "thêm trang about" + ĐÃ CÓ epic/feature "Trang About"
       - Ví dụ: "thêm homepage" + ĐÃ CÓ epic "Homepage"
-      → Cần hỏi user muốn bổ sung/thay đổi gì cụ thể
+      → Cần THÔNG BÁO feature đã có và hỏi user muốn làm gì (bổ sung, thay đổi, hay tạo mới khác)
+      
+      LƯU Ý QUAN TRỌNG:
+      - Nếu user nói "thêm tính năng X" mà X ĐÃ CÓ trong PRD/Epics → CASE 3 (thông báo trùng)
+      - Nếu user nói "thêm [chi tiết cụ thể] vào X" (ví dụ: thêm filter, thêm button) → CASE 2 (refine)
+      - Nếu user nói "thêm tính năng Y" mà Y CHƯA CÓ → CASE 1 (tính năng mới)
       </decision_logic>
       
       <clarification_questions>
-      Tạo 2-4 câu hỏi clarification bằng tiếng Việt khi:
-      - is_new_feature = TRUE: hỏi về tính năng mới (dành cho ai, làm gì, chức năng gì)
-      - is_new_feature = FALSE và has_specific_change = FALSE: hỏi user muốn bổ sung/thay đổi gì cụ thể cho feature đã có
+      Tạo câu hỏi clarification bằng tiếng Việt:
+      - is_new_feature = TRUE: hỏi về tính năng mới (2-3 câu: dành cho ai, làm gì, chức năng gì)
+      - is_new_feature = FALSE và has_specific_change = FALSE: CHỈ HỎI 1 CÂU duy nhất
+        + "Tính năng '[tên feature]' đã có trong hệ thống rồi. Bạn muốn thay đổi/chỉnh sửa phần nào của tính năng hiện tại?"
+      
+      QUAN TRỌNG: 
+      - Tạo câu hỏi MỞ (open-ended), KHÔNG tạo câu hỏi Yes/No
+      - Với tính năng đã tồn tại, CHỈ trả về 1 câu hỏi duy nhất (không cần hỏi nhiều câu)
       </clarification_questions>
 
     user_prompt: |
