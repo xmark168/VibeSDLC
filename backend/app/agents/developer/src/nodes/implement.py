@@ -11,6 +11,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.schemas import ImplementOutput
 from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, track_node
+from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
 from app.agents.developer.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
 from app.utils.token_utils import truncate_to_tokens
 from app.agents.developer.src.nodes._llm import implement_llm
@@ -207,22 +208,15 @@ def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundl
 
 
 @track_node("implement")
-async def implement(state: DeveloperState, agent=None) -> DeveloperState:
+async def implement(state: DeveloperState, config: dict = None, agent=None) -> DeveloperState:
     """Execute implementation step with preloaded skills."""
-    from langgraph.types import interrupt
-    from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+    # FIX #1: Removed duplicate signal check - handled by _run_graph_with_signal_check()
     from app.agents.developer.src.utils.story_logger import StoryLogger
     
+    config = config or {}  # Ensure config is not None
     # Create story logger
     story_logger = StoryLogger.from_state(state, agent).with_node("implement")
-    
-    # Check for pause/cancel signal (triggers LangGraph interrupt)
     story_id = state.get("story_id", "")
-    if story_id:
-        signal = check_interrupt_signal(story_id, agent)
-        if signal:
-            await story_logger.info(f"Interrupt signal received: {signal}")
-            interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
     
     reset_modified_files()
     current_step, total_steps = state.get("current_step", 0), state.get("total_steps", 0)
@@ -302,19 +296,15 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
         # Use structured output
+        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
         output = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
-            config=_cfg(state, "implement_code")
+            config=_cfg(config, "implement_code")
         )
         file_content = output.content if output else None
         
-        # Check for interrupt after LLM call (can be long-running)
-        if story_id:
-            signal = check_interrupt_signal(story_id, agent)
-            if signal:
-                await story_logger.info(f"Interrupt after LLM: {signal}")
-                interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
+        # FIX #1: Removed post-LLM signal check - handled by _run_graph_with_signal_check()
         
         if file_content and file_path:
             fp = os.path.join(workspace_path, file_path)
@@ -367,7 +357,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
 from app.agents.developer.src.nodes.parallel_utils import group_steps_by_layer, run_layer_parallel, MAX_CONCURRENT
 
 
-async def _implement_single_step(step: Dict, state: DeveloperState, skill_registry: SkillRegistry, workspace_path: str, deps_content: Dict, created_components: Dict[str, str] = None) -> Dict:
+async def _implement_single_step(step: Dict, state: DeveloperState, skill_registry: SkillRegistry, workspace_path: str, deps_content: Dict, created_components: Dict[str, str] = None, config: dict = None) -> Dict:
     file_path = step.get("file_path", "")
     task = step.get("task", step.get("description", ""))
     action = step.get("action", "")
@@ -403,10 +393,11 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
         # Use structured output
+        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
         output = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
-            config=_cfg(state, f"impl_{file_path}")
+            config=_cfg(config or {}, f"impl_{file_path}")
         )
         file_content = output.content if output else None
         
@@ -422,22 +413,15 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
 
 
 @track_node("implement_parallel")
-async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperState:
+async def implement_parallel(state: DeveloperState, config: dict = None, agent=None) -> DeveloperState:
     """Execute steps in parallel by layer."""
-    from langgraph.types import interrupt
-    from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+    # FIX #1: Removed duplicate signal check - handled by _run_graph_with_signal_check()
     from app.agents.developer.src.utils.story_logger import StoryLogger
     
+    config = config or {}  # Ensure config is not None
     # Create story logger
     story_logger = StoryLogger.from_state(state, agent).with_node("implement_parallel")
-    
-    # Check for pause/cancel signal
     story_id = state.get("story_id", "")
-    if story_id:
-        signal = check_interrupt_signal(story_id, agent)
-        if signal:
-            await story_logger.info(f"Interrupt signal received: {signal}")
-            interrupt({"reason": signal, "story_id": story_id, "node": "implement_parallel"})
     
     try:
         plan_steps = state.get("implementation_plan", [])
@@ -505,9 +489,9 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             await story_logger.info(f"📂 Layer {layer_idx}/{total_layers}: {files_list}{more}")
             
             if is_parallel:
-                results = await run_layer_parallel(layer_steps, lambda s, c=created_components: _implement_single_step(s, state, skill_registry, workspace_path, deps_content, c), state, MAX_CONCURRENT)
+                results = await run_layer_parallel(layer_steps, lambda s, c=created_components: _implement_single_step(s, state, skill_registry, workspace_path, deps_content, c, config), state, MAX_CONCURRENT)
             else:
-                results = [await _implement_single_step(s, state, skill_registry, workspace_path, deps_content, created_components) for s in layer_steps]
+                results = [await _implement_single_step(s, state, skill_registry, workspace_path, deps_content, created_components, config) for s in layer_steps]
             
             for r in results:
                 if r.get("success"):

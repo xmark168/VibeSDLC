@@ -109,12 +109,13 @@ def _clean_logs(logs: str, max_lines: int = 50) -> str:
 
 
 @track_node("analyze_error")
-async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
+async def analyze_error(state: DeveloperState, config: dict = None, agent=None) -> DeveloperState:
     """Zero-shot error analysis with structured output."""
     from langgraph.types import interrupt
     from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
     from app.agents.developer.src.utils.story_logger import StoryLogger
     
+    config = config or {}  # Ensure config is not None
     story_logger = StoryLogger.from_state(state, agent).with_node("analyze_error")
     story_id = state.get("story_id", "")
     
@@ -182,12 +183,13 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
 
 Analyze the error and provide fix steps."""
 
+        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
         structured_llm = code_llm.with_structured_output(ErrorAnalysisOutput)
         result = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
-            config=_cfg(state, "analyze_error")
+            config=_cfg(config, "analyze_error")
         )
-        flush_langfuse(state)
+        flush_langfuse(config)
         
         logger.info(f"[analyze_error] Analysis: {result.error_type} - {result.root_cause[:100]}")
         

@@ -946,6 +946,30 @@ class StoryService:
                 "target_status": new_status.value
             })
 
+        # Block moving from Todo directly to Review or Done
+        # Must go through InProgress first
+        if old_status == StoryStatus.TODO and new_status in [StoryStatus.REVIEW, StoryStatus.DONE]:
+            raise PermissionError({
+                "error": "INVALID_TRANSITION",
+                "message": f"Cannot move from Todo directly to {new_status.value}. Stories must go through InProgress first.",
+                "current_status": old_status.value,
+                "target_status": new_status.value,
+                "suggested_status": StoryStatus.IN_PROGRESS.value
+            })
+
+        # Block moving from InProgress to Review/Done if agent_state is not FINISHED
+        # This ensures the agent has completed its work before the story can be moved forward
+        from app.models.base import StoryAgentState
+        if old_status == StoryStatus.IN_PROGRESS and new_status in [StoryStatus.REVIEW, StoryStatus.DONE]:
+            if story.agent_state and story.agent_state != StoryAgentState.FINISHED:
+                raise PermissionError({
+                    "error": "AGENT_NOT_FINISHED",
+                    "message": f"Cannot move to {new_status.value}: Agent is still working on this story (state: {story.agent_state.value}).",
+                    "current_status": old_status.value,
+                    "target_status": new_status.value,
+                    "agent_state": story.agent_state.value
+                })
+
         project = self.session.get(Project, story.project_id)
         if not project:
             raise ValueError("Project not found")

@@ -64,9 +64,49 @@ class Tester(BaseAgent, PausableAgentMixin):
         
         langfuse_ctx = None
         langfuse_span = None
+        langfuse_handler = None
         
         try:
             is_auto = context.get("trigger_type") == "status_review"
+            
+            # Setup Langfuse tracing
+            from app.core.config import settings
+            if settings.LANGFUSE_ENABLED:
+                try:
+                    from langfuse import get_client
+                    langfuse = get_client()
+                    
+                    langfuse_ctx = langfuse.start_as_current_observation(
+                        as_type="span",
+                        name="tester_execution"
+                    )
+                    langfuse_span = langfuse_ctx.__enter__()
+                    
+                    # Create LangChain CallbackHandler for detailed tracing
+                    from langfuse.langchain import CallbackHandler
+                    langfuse_handler = CallbackHandler()
+                    
+                    langfuse_span.update_trace(
+                        user_id=str(task.user_id) if task.user_id else None,
+                        session_id=story_id,
+                        input={"story_id": story_id, "is_auto": is_auto},
+                        tags=["tester", task.task_type.value],
+                        metadata={
+                            "agent": self.name,
+                            "story_id": story_id,
+                            "is_auto": is_auto,
+                            "workspace_path": context.get("worktree_path", "")
+                        }
+                    )
+                    logger.info(f"[{self.name}] ✓ Langfuse span started - trace={langfuse_span.trace_id}")
+                    
+                except Exception as e:
+                    logger.error(f"[{self.name}] Langfuse setup failed: {e}", exc_info=True)
+                    langfuse_handler = None
+                    langfuse_ctx = None
+                    langfuse_span = None
+            else:
+                logger.debug(f"[{self.name}] Langfuse disabled")
             self._is_auto_task = is_auto
             self._current_story_ids = story_ids
             
@@ -78,6 +118,8 @@ class Tester(BaseAgent, PausableAgentMixin):
             if current_task:
                 self._running_tasks[story_id] = current_task
             
+            # NOTE: langfuse_handler is passed via config["callbacks"], NOT in state
+            # This avoids serialization issues with PostgresSaver checkpoint (msgpack)
             initial_state = {
                 "project_id": str(self.project_id),
                 "user_id": str(task.user_id) if task.user_id else None,
@@ -101,9 +143,12 @@ class Tester(BaseAgent, PausableAgentMixin):
             # Use helper to get or create thread_id
             thread_id = get_or_create_thread_id(story_id, self.agent_id, is_resume)
             
+            # NOTE: langfuse_handler is passed via config["callbacks"], NOT in state
+            # This avoids serialization issues with PostgresSaver checkpoint (msgpack)
             config = {
                 "configurable": {"thread_id": thread_id},
-                "recursion_limit": getattr(self.graph_engine, "recursion_limit", 50)
+                "recursion_limit": getattr(self.graph_engine, "recursion_limit", 50),
+                "callbacks": [langfuse_handler] if langfuse_handler else [],
             }
             
             if not await self._update_story_state(story_id, StoryAgentState.PROCESSING):
@@ -111,29 +156,34 @@ class Tester(BaseAgent, PausableAgentMixin):
             
             if is_resume:
                 logger.info(f"[{self.name}] Resuming story {story_id} from checkpoint")
-                final_state = None
                 
-                try:
-                    checkpoint = await self.graph_engine.checkpointer.aget(config)
-                    if checkpoint:
-                        from langgraph.types import Command
-                        logger.info(f"[{self.name}] Checkpoint found, resuming with Command(resume=True)")
-                        try:
-                            final_state = await self._run_graph_with_signal_check(
-                                self.graph_engine.graph,
-                                Command(resume=True),
-                                config,
-                                story_id
-                            )
-                        except Exception as resume_err:
-                            logger.warning(f"[{self.name}] Resume failed: {resume_err}, falling back to fresh start")
-                            final_state = None
-                except Exception as e:
-                    logger.error(f"[{self.name}] Checkpoint check failed: {e}")
-                    final_state = None
+                # FIX #2: Try to load checkpoint with fallback to memory cache
+                checkpoint = await self._load_checkpoint_with_fallback(story_id, config)
                 
-                if final_state is None:
-                    logger.warning(f"[{self.name}] Auto-restarting from beginning")
+                if checkpoint:
+                    # Use Command(resume=True) for LangGraph
+                    from langgraph.types import Command
+                    logger.info(f"[{self.name}] Checkpoint found, resuming with Command(resume=True)")
+                    try:
+                        final_state = await self._run_graph_with_signal_check(
+                            self.graph_engine.graph,
+                            Command(resume=True),
+                            config,
+                            story_id
+                        )
+                    except Exception as resume_err:
+                        # Resume failed - restart from beginning
+                        logger.warning(f"[{self.name}] Resume failed: {resume_err}, restarting from beginning")
+                        is_resume = False
+                        final_state = await self._run_graph_with_signal_check(
+                            self.graph_engine.graph,
+                            initial_state,
+                            config,
+                            story_id
+                        )
+                else:
+                    # No checkpoint available - restart from beginning
+                    logger.warning(f"[{self.name}] No checkpoint found, restarting from beginning")
                     is_resume = False
                     final_state = await self._run_graph_with_signal_check(
                         self.graph_engine.graph,

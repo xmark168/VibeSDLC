@@ -26,10 +26,10 @@ logger = logging.getLogger(__name__)
 _llm = get_llm("plan")
 
 
-def _cfg(state: dict, name: str) -> dict:
-    """Get LLM config with Langfuse callback."""
-    h = state.get("langfuse_handler")
-    return {"callbacks": [h], "run_name": name} if h else {}
+def _cfg(config: dict, name: str) -> dict:
+    """Get LLM config with Langfuse callback from runtime config."""
+    callbacks = config.get("callbacks", []) if config else []
+    return {"callbacks": callbacks, "run_name": name} if callbacks else {}
 
 
 def _slugify(text: str) -> str:
@@ -495,20 +495,16 @@ def _detect_test_structure(project_path: str) -> dict:
     return structure
 
 
-async def plan_tests(state: TesterState, agent=None) -> dict:
+async def plan_tests(state: TesterState, config: dict = None, agent=None) -> dict:
     """Analyze stories and create test plan with interrupt support."""
-    from langgraph.types import interrupt
-    from app.agents.tester.src.utils.interrupt import check_interrupt_signal
+    # FIX #1: Removed duplicate signal check - handled by _run_graph_with_signal_check()
+    from app.agents.developer.src.utils.story_logger import StoryLogger
     
-    print("[NODE] plan_tests")
+    config = config or {}  # Ensure config is not None
     
-    # Check for pause/cancel signal
+    # Create story logger
+    story_logger = StoryLogger.from_state(state, agent).with_node("plan_tests")
     story_id = state.get("story_id", "")
-    if story_id:
-        signal = check_interrupt_signal(story_id)
-        if signal:
-            logger.info(f"[plan_tests] Interrupt signal received: {signal}")
-            interrupt({"reason": signal, "story_id": story_id, "node": "plan_tests"})
     
     stories = state.get("stories", [])
     project_id = state.get("project_id", "")
@@ -534,7 +530,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
     project_context = state.get("project_context", "")
     
     if not stories:
-        logger.info("[plan_tests] No stories to plan")
+        await story_logger.info("No stories to plan")
         return {
             "test_plan": [],
             "testing_context": testing_context,
@@ -624,7 +620,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
                     component_context=component_context,
                 )),
             ],
-            config=_cfg(state, "plan_tests"),
+            config=_cfg(config, "plan_tests"),
         )
         test_plan = [step.model_dump() for step in result.test_plan]
         
@@ -778,7 +774,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
             msg += f"\n{step['order']}. {test_icon}: {step.get('description', 'N/A')}"
             msg += f"\n   📁 {step.get('file_path', 'N/A')}"
         
-        logger.info(f"[plan_tests] Created plan with {total_steps} steps")
+        await story_logger.message(f"📋 Created test plan with {total_steps} steps")
         
         # Notify via appropriate channel
         await send_message(state, agent, msg, "progress")
@@ -798,7 +794,7 @@ async def plan_tests(state: TesterState, agent=None) -> dict:
         }
         
     except Exception as e:
-        logger.error(f"[plan_tests] Error: {e}", exc_info=True)
+        await story_logger.error(f"Planning error: {str(e)}", exc=e)
         error_msg = await generate_user_message(
             "default",
             f"Error creating test plan: {str(e)[:100]}",

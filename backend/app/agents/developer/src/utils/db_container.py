@@ -20,9 +20,6 @@ def start_postgres_container(story_id: Optional[str] = None) -> Dict[str, str]:
     """
     Start a postgres container and return connection info.
     """
-    # Check if container already exists for this story
-    if story_id and story_id in _containers:
-        return get_connection_info(story_id)
     
     container = PostgresContainer("postgres:16")
     container.start()
