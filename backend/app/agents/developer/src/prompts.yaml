@@ -113,18 +113,23 @@ tasks:
       - "Record to update not found" → ID doesn't exist, check before update
       
       Seed Unique Constraint (P2002) - CRITICAL:
-      - "Unique constraint failed on the fields: (`name`)" → faker.commerce.department() only has ~10 values, causes duplicates
-      - FIX: Replace faker with predefined unique array for fields with @unique constraint
+      - "Unique constraint failed on the fields: (`X`)" → ANY faker method can generate duplicates when creating multiple records
+      - Common culprits:
+        * faker.commerce.department() → only ~10 unique values
+        * faker.internet.email() → can duplicate with common names
+        * faker.phone.number() → can duplicate based on format
+        * faker.company.name() → limited unique combinations
+      - FIX: Use predefined unique arrays OR add unique index counter
       - Example fix for Category:
         ```typescript
         // ❌ WRONG - will cause P2002 unique constraint error
         const categories = await prisma.category.createManyAndReturn({
           data: Array.from({ length: 5 }, () => ({
-            name: faker.commerce.department(),  // Only ~10 values!
+            name: faker.commerce.department(),  // Only ~10 values, will duplicate!
           }))
         });
         
-        // ✅ CORRECT - predefined unique values
+        // ✅ CORRECT Option 1 - predefined unique values
         const categoryNames = ['Fiction', 'Non-Fiction', 'Science', 'History', 'Technology'];
         const categories = await prisma.category.createManyAndReturn({
           data: categoryNames.map((name) => ({
@@ -132,8 +137,16 @@ tasks:
             slug: name.toLowerCase().replace(/\\s+/g, '-'),
           }))
         });
+        
+        // ✅ CORRECT Option 2 - add unique index to faker
+        const categories = await prisma.category.createManyAndReturn({
+          data: Array.from({ length: 5 }, (_, i) => ({
+            name: `${faker.commerce.department()}-${i}`,  // Append index for uniqueness
+            slug: faker.helpers.slugify(`${faker.commerce.department()}-${i}`).toLowerCase(),
+          }))
+        });
         ```
-      - NEVER use faker for fields with @unique constraint in schema
+      - NEVER use faker directly for @unique fields without uniqueness guarantee (predefined array OR unique index)
       
       Build Warnings (CAN IGNORE):
       - "baseline-browser-mapping" → Harmless dev dependency warning

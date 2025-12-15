@@ -165,7 +165,7 @@ def force_remove_directory(
                     subprocess.run(
                         ["robocopy", empty_dir, str(path), "/mir", "/r:0", "/w:0",
                          "/njh", "/njs", "/nc", "/ns", "/np", "/nfl", "/ndl"],
-                        capture_output=True, timeout=60
+                        capture_output=True, timeout=15  # Reduced from 60s to 15s
                     )
                     shutil.rmtree(empty_dir, ignore_errors=True)
                     shutil.rmtree(path, ignore_errors=True)

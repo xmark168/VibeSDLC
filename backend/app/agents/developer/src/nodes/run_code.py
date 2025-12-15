@@ -4,13 +4,16 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import os
 import shutil
 import socket
+import subprocess
 from pathlib import Path
 from typing import Tuple, Optional, List
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.utils.shell_utils import run_shell
 from app.agents.developer.src.utils.llm_utils import get_langfuse_span, track_node
+
 
 from langgraph.types import interrupt
 from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
@@ -104,6 +107,37 @@ def _update_seed_cache(workspace_path: str) -> None:
             cache_file.write_text(current_hash)
     except Exception:
         pass
+
+
+def _run_prisma_db_push(workspace_path: str) -> bool:
+    """Run prisma db push (blocking). Returns True if successful."""
+    schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
+    if not os.path.exists(schema_path):
+        return True  # No schema, nothing to push
+    
+    try:
+        result = subprocess.run(
+            "pnpm exec prisma db push --skip-generate --accept-data-loss",
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=120,
+            shell=True,
+        )
+        if result.returncode == 0:
+            logger.debug("[run_code] prisma db push successful")
+            return True
+        else:
+            logger.warning(f"[run_code] prisma db push failed: {result.stderr[:200] if result.stderr else 'unknown'}")
+            return False
+    except subprocess.TimeoutExpired:
+        logger.warning("[run_code] prisma db push timed out")
+        return False
+    except Exception as e:
+        logger.warning(f"[run_code] prisma db push error: {e}")
+        return False
 
 
 def _run_seed(workspace_path: str) -> Tuple[bool, str, str]:
@@ -377,6 +411,34 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         
         service_names = [s.get('name', 'app') for s in services]
         await log(f"Found {len(services)} service(s): {', '.join(service_names)}")
+        
+        # =====================================================================
+        # Step 0: Prisma DB Push (generate already done in setup_workspace)
+        # =====================================================================
+        schema_file = Path(workspace_path) / "prisma" / "schema.prisma"
+        if schema_file.exists():
+            await log("🗄️ Syncing database schema...")
+            
+            loop = asyncio.get_event_loop()
+            
+            # Only db push - generate already done in setup_workspace
+            push_success = await loop.run_in_executor(_executor, _run_prisma_db_push, workspace_path)
+            
+            if not push_success:
+                await log("❌ Prisma DB push failed", "error")
+                await story_logger.message("❌ Prisma DB push failed - schema sync issue")
+                if run_code_span:
+                    run_code_span.end(output={"status": "FAIL", "step": "prisma_db_push"})
+                return {
+                    **state,
+                    "run_status": "FAIL",
+                    "run_result": {"status": "FAIL", "step": "prisma_db_push", "summary": "Prisma DB push failed"},
+                    "action": "ANALYZE_ERROR"
+                }
+            
+            await log("Database schema synced ✓", "success")
+        else:
+            await log("No schema.prisma found, skipping DB sync", "debug")
         
         # =====================================================================
         # Step 1: Database Seed (if prisma/seed.ts exists)

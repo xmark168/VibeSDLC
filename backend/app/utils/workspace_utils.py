@@ -33,7 +33,7 @@ def _kill_processes_in_directory(directory: Path, agent_name: str = "Agent") -> 
     if platform.system() != "Windows":
         return
     try:
-        subprocess.run(["taskkill", "/F", "/IM", "node.exe"], capture_output=True, timeout=10)
+        subprocess.run(["taskkill", "/F", "/IM", "node.exe"], capture_output=True, timeout=3)  # Reduced from 10s to 3s
     except Exception:
         pass
 
@@ -49,17 +49,7 @@ def cleanup_old_worktree(
     """
     import platform
     
-    # Prune first
-    try:
-        subprocess.run(
-            ["git", "worktree", "prune"],
-            cwd=str(main_workspace),
-            capture_output=True,
-            timeout=10
-        )
-    except Exception:
-        pass
-    
+    # Kill processes first (no need to prune before removal)
     if worktree_path.exists():
         _kill_processes_in_directory(worktree_path, agent_name)
         
@@ -89,20 +79,20 @@ def cleanup_old_worktree(
                                 ["robocopy", empty_dir, str(worktree_path), "/mir", "/r:0", "/w:0",
                                  "/njh", "/njs", "/nc", "/ns", "/np", "/nfl", "/ndl"],
                                 capture_output=True,
-                                timeout=30
+                                timeout=15  # Reduced from 30s to 15s
                             )
                             shutil.rmtree(empty_dir, ignore_errors=True)
                             shutil.rmtree(worktree_path, ignore_errors=True)
                         except Exception:
                             logger.error(f"[{agent_name}] Failed to remove directory: {e}")
     
-    # Prune again + delete branch
+    # Prune worktree list (only once after removal)
     try:
         subprocess.run(
             ["git", "worktree", "prune"],
             cwd=str(main_workspace),
             capture_output=True,
-            timeout=10
+            timeout=5  # Reduced from 10s to 5s
         )
     except Exception:
         pass

@@ -45,7 +45,25 @@ class FileRepository:
                         self.api_routes.append(rel_path)
     
     def _is_important(self, path: str) -> bool:
-        return any(path.endswith(p) for p in ['prisma/schema.prisma', 'src/types/index.ts', 'package.json', 'src/app/layout.tsx', 'src/lib/prisma.ts'])
+        """Determine if a file should be fully loaded into context.
+        
+        Includes:
+        - Core infrastructure (prisma, types, config)
+        - Homepage entry point
+        - Critical navigation components (Input, CategoryNavigation)
+        """
+        important_files = [
+            'prisma/schema.prisma', 
+            'src/types/index.ts', 
+            'package.json', 
+            'src/app/layout.tsx', 
+            'src/lib/prisma.ts',
+            'src/app/page.tsx',  # Homepage
+            'src/components/home/Input.tsx',  # Search navigation
+            'src/components/home/CategoryNavigation.tsx',  # Category navigation
+        ]
+        
+        return any(path.endswith(p) for p in important_files)
     
     def _read_file(self, full_path: str) -> str:
         try:
@@ -56,18 +74,33 @@ class FileRepository:
     
     def to_context(self) -> str:
         parts = ["## Project Files (COMPLETE)", "```", "\n".join(sorted(self.file_tree)), "```"]
+        
+        # Schema
         schema = self.files.get('prisma/schema.prisma', '')
         parts.extend(["\n## prisma/schema.prisma", "```prisma", schema if len(schema) > 100 else "// Empty", "```"])
+        
+        # Types
         types = self.files.get('src/types/index.ts', '')
         if len(types) > 100:
             parts.extend(["\n## src/types/index.ts", "```typescript", types[:2500], "```"])
+        
+        # Homepage components - include full content for navigation-critical files
+        for home_comp in ['src/app/page.tsx', 'src/components/home/Input.tsx', 'src/components/home/CategoryNavigation.tsx']:
+            content = self.files.get(home_comp, '')
+            if len(content) > 100:
+                parts.extend([f"\n## {home_comp}", "```tsx", content[:2500], "```"])
+        
+        # Component imports
         if self.components:
             parts.append("\n## Component Imports")
             for name, path in sorted(self.components.items()):
                 parts.append(f"- {name} → `import {{ {name} }} from '{path}'`")
+        
+        # API routes
         if self.api_routes:
             parts.append("\n## API Routes")
             parts.extend(f"- {r}" for r in sorted(self.api_routes))
+        
         return "\n".join(parts)
 
 

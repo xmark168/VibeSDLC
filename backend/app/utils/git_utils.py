@@ -283,16 +283,16 @@ def git_merge_abort(cwd: Path, timeout: int = 10) -> bool:
 def git_with_retry(
     cmd: List[str],
     cwd: str,
-    retries: int = 3,
-    timeout: int = 30
+    retries: int = 2,
+    timeout: int = 10
 ) -> subprocess.CompletedProcess:
     """Execute git command with retry logic.
     
     Args:
         cmd: Git command as list (e.g., ["git", "add", "file.txt"])
         cwd: Working directory
-        retries: Number of retry attempts
-        timeout: Command timeout in seconds
+        retries: Number of retry attempts (default: 2, reduced from 3)
+        timeout: Command timeout in seconds (default: 10s, reduced from 30s)
         
     Returns:
         CompletedProcess instance
@@ -316,7 +316,7 @@ def git_with_retry(
             
             # If failed but not last attempt, retry
             if attempt < retries - 1:
-                time.sleep(0.5 * (attempt + 1))
+                time.sleep(0.2 * (attempt + 1))
                 continue
             
             # Last attempt failed
@@ -324,12 +324,12 @@ def git_with_retry(
             
         except subprocess.TimeoutExpired:
             if attempt < retries - 1:
-                time.sleep(0.5 * (attempt + 1))
+                time.sleep(0.2 * (attempt + 1))
                 continue
             raise
         except Exception as e:
             if attempt < retries - 1:
-                time.sleep(0.5 * (attempt + 1))
+                time.sleep(0.2 * (attempt + 1))
                 continue
             raise
     

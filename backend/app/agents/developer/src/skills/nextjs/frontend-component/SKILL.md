@@ -17,9 +17,11 @@ import { SearchBar } from '@/components/SearchBar';
 ```
 
 **Rules:**
-- Check "Component Imports" section in context for exact paths
+- Check "Component Imports" section in plan context for exact paths
+  - This section appears after file tree, shows: `ComponentName → import path`
+  - Example: `SearchBar → import { SearchBar } from '@/components/search/SearchBar'`
 - Path must match file location: `src/components/[folder]/[Name].tsx` → `@/components/[folder]/[Name]`
-- Never guess import paths - use paths from context
+- Never guess import paths - always use exact paths from "Component Imports" section
 
 ## ⚠️ PROPS MATCHING - MOST CRITICAL
 
@@ -172,8 +174,8 @@ function MyComponent() {
 import { useState } from 'react';
 'use client';  // ERROR: Must be first line!
 
-// ✅ CORRECT - 'use client' at FIRST LINE, use import
-'use client';
+// ✅ CORRECT - 'use client' at FIRST LINE (line 1!)
+'use client';  // This MUST be the very first line
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -189,6 +191,85 @@ export function BookCard() {
 - useState, useEffect, useRef, useContext
 - onClick, onChange, onSubmit, onHover
 - useRouter, usePathname, useSearchParams
+
+### 1.5 Event Handler Errors - Server vs Client Components
+
+**Error:** "Event handlers cannot be passed to Client Component props"
+
+**Cause:** You're passing a function from Server Component to Client Component.
+
+```tsx
+// ❌ PROBLEM - Server Component passing handler to Client Component
+// page.tsx (Server Component by default - no 'use client')
+export default function Page() {
+  const handleSort = (sort: string) => { ... };  // Function in Server Component
+  
+  return <KanbanBoard onSortChange={handleSort} />;  // ❌ Passing to Client Component
+}
+
+// kanban-board.tsx
+'use client';
+export function KanbanBoard({ onSortChange }: { onSortChange: (sort: string) => void }) {
+  return <button onClick={() => onSortChange('date')}>Sort</button>;
+}
+```
+
+**Solution A - Convert parent to Client Component (Simple):**
+
+Use this when the page doesn't need server-side data fetching or server actions.
+
+```tsx
+// page.tsx - Add 'use client' to make it a Client Component
+'use client';  // ← Add this at first line!
+
+export default function Page() {
+  const handleSort = (sort: string) => { ... };  // ✅ Now OK - function in Client Component
+  return <KanbanBoard onSortChange={handleSort} />;  // ✅ Can pass handlers
+}
+
+// kanban-board.tsx - No changes needed
+'use client';
+export function KanbanBoard({ onSortChange }: { onSortChange: (sort: string) => void }) {
+  return <button onClick={() => onSortChange('date')}>Sort</button>;
+}
+```
+
+**Solution B - Move logic down (Better for SEO/SSR):**
+
+Use this when you need server-side data fetching (`async` component) or server actions.
+
+```tsx
+// page.tsx - Keep as Server Component
+export default async function Page() {
+  const data = await fetchData();  // Server-side data fetching preserved
+  return <KanbanBoard initialData={data} />;  // Pass data, not handlers
+}
+
+// kanban-board.tsx - Handle state + events internally
+'use client';
+
+export function KanbanBoard({ initialData }: { initialData: Data[] }) {
+  const [sort, setSort] = useState('date');
+  const [data, setData] = useState(initialData);
+  
+  const handleSort = (newSort: string) => {  // ✅ Handler in Client Component
+    setSort(newSort);
+    // Sort logic here
+  };
+  
+  return <button onClick={() => handleSort('date')}>Sort</button>;
+}
+```
+
+**When to use which:**
+- **Solution A (Add 'use client' to parent)**: Simple pages with no server data fetching, no form actions
+- **Solution B (Move handler to child)**: Pages with `async` data fetching, forms with server actions, or when you want to preserve SSR benefits
+
+**CRITICAL RULES:**
+- ✅ **DO** add `'use client'` to parent if it's a simple page
+- ✅ **DO** move handler logic into child component if parent needs to stay server component
+- ❌ **NEVER** remove `'use client'` from child components that use hooks/events
+- ❌ **NEVER** try to pass functions from Server Components to Client Components
 
 ### 2. Layout - NO header in pages
 Root `layout.tsx` has `<Navigation />`. Pages only have content:
@@ -291,13 +372,16 @@ Check the plan/context for existing page routes before using `router.push()` or 
 
 ```tsx
 // ❌ WRONG - guessing route that doesn't exist
-router.push(`/books?search=${query}`);  // 404 if /books/page.tsx doesn't exist!
+router.push(`/books?q=${query}`);  // 404 if /books/page.tsx doesn't exist!
 
 // ✅ CORRECT - use route from plan
 router.push(`/search?q=${query}`);  // /search/page.tsx exists in plan
 ```
 
-**RULE:** Always check Dependencies section for existing page paths before navigation.
+**RULES:** 
+- Always check Dependencies section for existing page paths before navigation
+- **Use `q` for search query parameter** (NOT `search`, `query`, or other names)
+- Standard pattern: `/search?q={query}` for search pages
 
 ## Page with Dynamic Params
 
