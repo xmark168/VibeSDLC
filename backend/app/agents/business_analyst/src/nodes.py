@@ -744,15 +744,26 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
         fallback_data={"questions": []}
     )
     
-    # Convert Pydantic Question objects to dicts
+    # Convert Pydantic Question objects to dicts and enforce multichoice type
     questions = []
     for q in result.get("questions", []):
         if hasattr(q, "model_dump"):
-            questions.append(q.model_dump())
+            q_dict = q.model_dump()
         elif isinstance(q, dict):
-            questions.append(q)
+            q_dict = q
+        else:
+            continue
+        
+        # FORCE multichoice type (LLM sometimes returns "open" despite schema default)
+        if q_dict.get("type") != "multichoice":
+            q_dict["type"] = "multichoice"
+            # If no options, add default ones
+            if not q_dict.get("options"):
+                q_dict["options"] = ["Có", "Không", "Khác (vui lòng mô tả)"]
+        
+        questions.append(q_dict)
     
-    logger.info(f"[BA] Generated {len(questions)} questions")
+    logger.info(f"[BA] Generated {len(questions)} questions (all forced to multichoice)")
     
     # If no questions generated, send fallback message to user
     if not questions and agent:
@@ -1540,7 +1551,11 @@ async def update_stories(state: BAState, agent=None) -> dict:
     # STEP 1: CHECK FOR EXISTING STORIES FIRST - Before asking clarification
     # This prevents asking clarification for features that already exist in stories
     # ====================================================================================
-    if not skip_clarity_check:  # Only check if not resuming from clarification
+    # SKIP this check if user wants to DELETE (xóa, delete, remove)
+    user_msg_lower = user_message.lower()
+    is_deletion_request = any(kw in user_msg_lower for kw in ["xóa", "delete", "remove", "loại bỏ", "bỏ"])
+    
+    if not skip_clarity_check and not is_deletion_request:  # Skip for deletion requests
         user_keywords = _extract_intent_keywords(user_message)
         
         # Search for existing stories that might already cover this functionality
@@ -1665,30 +1680,35 @@ async def update_stories(state: BAState, agent=None) -> dict:
     
     # SMART FILTERING: Detect if user mentions specific domain/page
     # If yes, only update that epic (much faster, avoids timeout)
-    relevant_epics = []
-    mentioned_domains = []
-    
-    for epic in all_epics:
-        epic_domain = (epic.get("domain") or "").lower()
-        epic_title = (epic.get("title") or "").lower()
-        
-        # Check if user message mentions this epic's domain or title
-        if epic_domain and epic_domain in user_message_lower:
-            relevant_epics.append(epic)
-            mentioned_domains.append(epic_domain)
-        elif any(keyword in epic_title for keyword in user_message_lower.split() if len(keyword) > 3):
-            # Match significant words (>3 chars) from user message to epic title
-            relevant_epics.append(epic)
-            mentioned_domains.append(epic_domain or "unknown")
-    
-    # If no specific domain mentioned, or too many epics (>5), use ALL epics (general update)
-    # But warn about performance
-    if not relevant_epics or len(relevant_epics) > 5:
-        logger.info(f"[BA] No specific domain detected or too many matches, using ALL {len(all_epics)} epics (may be slow)")
+    # EXCEPTION: For DELETION requests, ALWAYS use ALL epics (LLM needs to see all to decide what to remove)
+    if is_deletion_request:
+        logger.info(f"[BA] Deletion request detected - using ALL {len(all_epics)} epics (LLM needs full context to delete)")
         epics_to_update = all_epics
     else:
-        logger.info(f"[BA] Detected specific domains: {mentioned_domains}. Updating only {len(relevant_epics)} relevant epics (optimization)")
-        epics_to_update = relevant_epics
+        relevant_epics = []
+        mentioned_domains = []
+        
+        for epic in all_epics:
+            epic_domain = (epic.get("domain") or "").lower()
+            epic_title = (epic.get("title") or "").lower()
+            
+            # Check if user message mentions this epic's domain or title
+            if epic_domain and epic_domain in user_message_lower:
+                relevant_epics.append(epic)
+                mentioned_domains.append(epic_domain)
+            elif any(keyword in epic_title for keyword in user_message_lower.split() if len(keyword) > 3):
+                # Match significant words (>3 chars) from user message to epic title
+                relevant_epics.append(epic)
+                mentioned_domains.append(epic_domain or "unknown")
+        
+        # If no specific domain mentioned, or too many epics (>5), use ALL epics (general update)
+        # But warn about performance
+        if not relevant_epics or len(relevant_epics) > 5:
+            logger.info(f"[BA] No specific domain detected or too many matches, using ALL {len(all_epics)} epics (may be slow)")
+            epics_to_update = all_epics
+        else:
+            logger.info(f"[BA] Detected specific domains: {mentioned_domains}. Updating only {len(relevant_epics)} relevant epics (optimization)")
+            epics_to_update = relevant_epics
     
     # Get conversation context for memory
     conversation_context = state.get("conversation_context", "")
@@ -2264,7 +2284,34 @@ async def approve_stories(state: BAState, agent=None) -> dict:
             
             logger.info(f"[BA] Stories: {len(created_stories)} created, {len(updated_stories)} updated")
             
-            # 3. DELETE stories that are NOT in the new artifact (user deleted them)
+            # 3. DELETE epics that are NOT in the new artifact (user deleted them)
+            deleted_epics = []
+            epics_in_artifact = {e.get("epic_code") for e in epics_data if e.get("epic_code")}
+            
+            for existing_epic in existing_epics_db:
+                epic_code = existing_epic.epic_code
+                if epic_code and epic_code not in epics_in_artifact:
+                    # Epic was in DB but NOT in artifact → User deleted it
+                    logger.info(f"[BA] DELETING epic from DB: {epic_code} (not in artifact)")
+                    # Delete all stories in this epic first
+                    epic_stories = [s for s in existing_stories_db if s.epic_id == existing_epic.id]
+                    for story in epic_stories:
+                        session.delete(story)
+                        logger.debug(f"[BA]   Deleting story {story.story_code} (part of deleted epic)")
+                    # Then delete the epic
+                    session.delete(existing_epic)
+                    deleted_epics.append({
+                        "id": str(existing_epic.id),
+                        "epic_code": epic_code,
+                        "title": existing_epic.title,
+                        "stories_deleted": len(epic_stories),
+                        "action": "deleted"
+                    })
+            
+            if deleted_epics:
+                logger.info(f"[BA] Deleted {len(deleted_epics)} epics from DB (including their stories)")
+            
+            # 4. DELETE stories that are NOT in the new artifact (user deleted them)
             # This handles the case where user says "xóa story X"
             deleted_stories = []
             stories_in_artifact = {s.get("id") for s in stories_data if s.get("id")}
@@ -2316,6 +2363,13 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         actions = []
         
         # Only mention what actually changed
+        if len(created_epics) > 0:
+            actions.append(f"{len(created_epics)} epic thêm mới")
+        if len(updated_epics) > 0:
+            actions.append(f"{len(updated_epics)} epic cập nhật")
+        if len(deleted_epics) > 0:
+            total_stories_in_deleted_epics = sum(e.get("stories_deleted", 0) for e in deleted_epics)
+            actions.append(f"{len(deleted_epics)} epic xóa ({total_stories_in_deleted_epics} stories)")
         if len(created_stories) > 0:
             actions.append(f"{len(created_stories)} story thêm mới")
         if len(updated_stories) > 0:

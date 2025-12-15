@@ -521,13 +521,41 @@ tasks:
       - When in doubt, prefer UPDATE to avoid duplicate stories
       </duplicate_detection>
       
+      <deletion_handling>
+      CRITICAL: Handle DELETION requests correctly:
+      
+      When user says "xóa epic X" or "delete epic X" or "remove epic X":
+      1. Identify the epic by name/title matching
+      2. REMOVE the entire epic object from the epics array
+      3. DO NOT return that epic in the output
+      4. All stories in that epic will be automatically deleted
+      
+      When user says "xóa story Y" or "delete story Y":
+      1. Identify the story within its epic
+      2. REMOVE the story from epic.stories array
+      3. Keep the epic if it still has other stories
+      4. Remove the epic if it has NO stories left
+      
+      Examples:
+      - User: "xóa epic Notifications & Reminders"
+        → Find epic with title matching "Notifications" AND "Reminders"
+        → REMOVE entire epic from output
+        → Result: epics array WITHOUT that epic
+      
+      - User: "xóa story login với email"
+        → Find story with title matching "login" AND "email"
+        → REMOVE story from its epic.stories array
+        → Keep epic if it has other stories
+      </deletion_handling>
+      
       <rules>
       1. CHECK FOR DUPLICATES before creating new stories (see above)
-      2. Preserve existing IDs when possible
-      3. Add new stories with sequential IDs (only if truly NEW functionality)
-      4. Update dependencies when relationships change
-      5. Keep INVEST compliance
-      6. If updating existing story, keep its ID and merge new requirements
+      2. Handle DELETION requests (see deletion_handling above)
+      3. Preserve existing IDs when possible
+      4. Add new stories with sequential IDs (only if truly NEW functionality)
+      5. Update dependencies when relationships change
+      6. Keep INVEST compliance
+      7. If updating existing story, keep its ID and merge new requirements
       </rules>
 
     user_prompt: |
@@ -536,8 +564,11 @@ tasks:
       Current epics:
       {epics}
       
-      IMPORTANT: Before creating any new story, check if an existing story already covers this functionality.
-      If yes, UPDATE that story instead of creating a duplicate.
+      IMPORTANT RULES:
+      1. DELETION: If user says "xóa epic X" → REMOVE that epic completely from output
+      2. DELETION: If user says "xóa story Y" → REMOVE that story from its epic
+      3. DUPLICATES: Before creating new story, check if existing story covers same functionality
+      4. UPDATE: If functionality exists → UPDATE that story instead of creating duplicate
       
       Return: epics, change_summary, message_template, approval_template
 
