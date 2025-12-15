@@ -32,10 +32,14 @@ FALLBACK_MESSAGES = {
 }
 
 
-def get_llm_config(state: dict, name: str) -> dict:
-    """Get LLM config with Langfuse callback."""
-    h = state.get("langfuse_handler")
-    return {"callbacks": [h], "run_name": name} if h else {}
+def get_llm_config(config: dict, name: str) -> dict:
+    """Get LLM config with Langfuse callback from runtime config.
+    
+    NOTE: Callbacks are passed via LangGraph config (not state) to avoid
+    serialization issues with PostgresSaver checkpoint.
+    """
+    callbacks = config.get("callbacks", []) if config else []
+    return {"callbacks": callbacks, "run_name": name} if callbacks else {}
 
 
 async def generate_user_message(

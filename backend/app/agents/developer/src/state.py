@@ -15,8 +15,8 @@ class DeveloperState(TypedDict, total=False):
     story_id: str
     story_code: str
     
-    # Langfuse - LangChain callback handler for detailed tracing
-    langfuse_handler: Any
+    # NOTE: langfuse_handler removed - now passed via LangGraph config["callbacks"]
+    # to avoid serialization issues with PostgresSaver checkpoint
     
     epic: str
     story_title: str

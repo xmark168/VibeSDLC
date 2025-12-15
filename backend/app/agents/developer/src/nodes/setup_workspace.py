@@ -326,23 +326,34 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if workspace_path and pkg_json and os.path.exists(pkg_json):
-            await story_logger.info("📦 Installing dependencies (pnpm install)...")
+            # Phase 1 Optimization: Run DB + pnpm + prisma generate in PARALLEL
+            await story_logger.info("⚡ Starting parallel setup: DB + pnpm + Prisma...")
             loop = asyncio.get_event_loop()
             from functools import partial
+            
+            # Launch all 3 in parallel (prisma generate doesn't need DB)
             db_future = loop.run_in_executor(_executor, partial(_start_database, workspace_path, story_id))
             pnpm_future = loop.run_in_executor(_executor, _run_pnpm_install, workspace_path)
+            prisma_gen_future = loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
             
-            # Wait for both
-            db_result, pnpm_success = await asyncio.gather(db_future, pnpm_future)
+            # Wait for all 3 to complete
+            db_result, pnpm_success, gen_success = await asyncio.gather(
+                db_future, pnpm_future, prisma_gen_future
+            )
             
             database_ready = db_result.get("ready", False)
             
             if not pnpm_success:
                 await story_logger.warning("pnpm install failed, continuing...")
+            if not gen_success:
+                await story_logger.warning("prisma generate failed")
             
-            # Setup Prisma after pnpm install completes
-            if pnpm_success:
-                await _setup_prisma(workspace_path, database_ready, story_logger)
+            # Only db push needs database ready (sequential after parallel)
+            if database_ready and gen_success:
+                await story_logger.info("🗄️ Syncing database schema...")
+                push_success = await loop.run_in_executor(_executor, _run_prisma_db_push, workspace_path)
+                if not push_success:
+                    await story_logger.warning("prisma db push failed")
         
         # Build project config with tech stack
         project_config = _build_project_config(tech_stack)

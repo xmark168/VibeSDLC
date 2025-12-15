@@ -128,38 +128,45 @@ def track_node(node_name: str):
     return decorator
 
 
-def get_callback_config(state: dict, name: str) -> dict | None:
-    """Get callback config for Langfuse tracing (Team Leader pattern).
+def get_callback_config(config: dict, name: str) -> dict | None:
+    """Get callback config for Langfuse tracing from LangGraph runtime config.
     
     Returns LangChain CallbackHandler for detailed LLM tracking.
     Handler bridges LangChain → Langfuse, capturing tokens, cost, model info.
     
+    NOTE: Callbacks are passed via LangGraph config (not state) to avoid
+    serialization issues with PostgresSaver checkpoint.
+    
     Args:
-        state: Graph state containing 'langfuse_handler'
+        config: LangGraph runtime config containing 'callbacks'
         name: Name for this specific LLM call (observation name)
         
     Returns:
-        Config dict with callbacks and run_name, or None if no handler
+        Config dict with callbacks and run_name, or None if no callbacks
     """
-    handler = state.get("langfuse_handler")
-    return {"callbacks": [handler], "run_name": name} if handler else None
+    callbacks = config.get("callbacks", []) if config else []
+    return {"callbacks": callbacks, "run_name": name} if callbacks else None
 
 
 # Alias for backward compatibility
 get_langfuse_config = get_callback_config
 
 
-def flush_langfuse(state: dict) -> None:
-    client = state.get("langfuse_client")
-    if client:
-        try:
-            client.flush()
-        except Exception:
-            pass
+def flush_langfuse(config: dict) -> None:
+    """Flush langfuse client if available in config callbacks."""
+    callbacks = config.get("callbacks", []) if config else []
+    for cb in callbacks:
+        if hasattr(cb, 'langfuse') and hasattr(cb.langfuse, 'flush'):
+            try:
+                cb.langfuse.flush()
+            except Exception:
+                pass
 
 
-def get_langfuse_span(state: dict, name: str, input_data: dict = None):
-    if not state.get("langfuse_handler"):
+def get_langfuse_span(config: dict, name: str, input_data: dict = None):
+    """Get langfuse span if callbacks are available."""
+    callbacks = config.get("callbacks", []) if config else []
+    if not callbacks:
         return None
     try:
         from langfuse import get_client

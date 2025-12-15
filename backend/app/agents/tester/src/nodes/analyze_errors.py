@@ -313,10 +313,10 @@ def _format_parsed_errors(errors: List[ParsedTestError]) -> str:
 _llm = get_llm("analyze")
 
 
-def _cfg(state: dict, name: str) -> dict:
-    """Get LLM config with Langfuse callback."""
-    h = state.get("langfuse_handler")
-    return {"callbacks": [h], "run_name": name} if h else {}
+def _cfg(config: dict, name: str) -> dict:
+    """Get LLM config with Langfuse callback from runtime config."""
+    callbacks = config.get("callbacks", []) if config else []
+    return {"callbacks": callbacks, "run_name": name} if callbacks else {}
 
 
 def _is_test_file(file_path: str) -> bool:
@@ -405,8 +405,13 @@ def _sanitize_file_path(file_path: str, workspace_path: str = "") -> str:
     return file_path
 
 
-async def analyze_errors(state: TesterState, agent=None) -> dict:
+async def analyze_errors(state: TesterState, config: dict = None, agent=None) -> dict:
     """Analyze test failures and create fix plan.
+    
+    Args:
+        state: Current tester state
+        config: LangGraph runtime config (contains callbacks for Langfuse)
+        agent: Tester agent instance
     
     This node:
     1. Parses error logs from run_tests
@@ -424,13 +429,19 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     """
     from langgraph.types import interrupt
     from app.agents.tester.src.utils.interrupt import check_interrupt_signal
+    from app.agents.developer.src.utils.story_logger import StoryLogger
+    
+    config = config or {}  # Ensure config is not None
+    
+    # Create story logger
+    story_logger = StoryLogger.from_state(state, agent).with_node("analyze_errors")
     
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")
     if story_id:
         signal = check_interrupt_signal(story_id)
         if signal:
-            logger.info(f"[analyze_errors] Interrupt signal received: {signal}")
+            await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "analyze_errors"})
     
     debug_count = state.get("debug_count", 0)
@@ -549,7 +560,8 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
                     debug_history=history_str or "First attempt",
                 )),
             ],
-            config=_cfg(state, f"analyze_errors_{debug_count + 1}"),
+            # Pass config from runtime (not state) to avoid checkpoint serialization issues
+            config=_cfg(config, f"analyze_errors_{debug_count + 1}"),
         )
         
         root_cause = result.root_cause

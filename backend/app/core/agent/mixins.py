@@ -4,6 +4,7 @@ Mixins provide common patterns that can be mixed into agent classes.
 """
 import asyncio
 import logging
+from datetime import datetime
 from typing import Dict, Set, Optional
 from uuid import UUID
 
@@ -47,6 +48,10 @@ class PausableAgentMixin:
         self._running_tasks: Dict[str, asyncio.Task] = {}
         self._paused_stories: Set[str] = set()
         self._cancelled_stories: Set[str] = set()
+        
+        # NEW: In-memory checkpoint cache (fallback when PostgresSaver fails)
+        self._checkpoint_cache: Dict[str, dict] = {}
+        self._checkpoint_cache_max_size = 10  # LRU cache
     
     def get_story_state_from_db(self, story_id: str) -> Optional[StoryAgentState]:
         """Get current story agent_state from database (source of truth).
@@ -303,9 +308,10 @@ class PausableAgentMixin:
             return False
     
     async def _run_graph_with_signal_check(self, graph, input_data, config, story_id: str):
-        """Run graph with signal checking between nodes using astream().
+        """Run graph with DB state checking (single source of truth) and checkpoint validation.
         
-        This is a common pattern for all agents using LangGraph with checkpoints.
+        FIX #1: Use DB as single source of truth to eliminate race conditions.
+        FIX #2: Validate checkpoint periodically to detect serialization failures.
         
         Args:
             graph: LangGraph compiled graph
@@ -321,33 +327,114 @@ class PausableAgentMixin:
         """
         final_state = None
         node_count = 0
+        last_checkpoint_node = 0
         
-        # Check signal before start
-        signal = self.check_signal(story_id)
-        if signal == "cancel":
-            raise StoryStoppedException(story_id, StoryAgentState.CANCEL_REQUESTED, "Cancel before start")
+        # FIX #1: Check DB state before start (authoritative source)
+        db_state = self.get_story_state_from_db(story_id)
+        if db_state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
+            raise StoryStoppedException(story_id, db_state, "Cancelled before start")
+        elif db_state == StoryAgentState.PAUSED:
+            raise StoryStoppedException(story_id, db_state, "Paused before start")
         
         async for event in graph.astream(input_data, config, stream_mode="values"):
             node_count += 1
             final_state = event
             
-            # Check signal after each node
-            signal = self.check_signal(story_id)
-            if signal == "cancel":
-                self._cancelled_stories.add(story_id)
-                raise StoryStoppedException(story_id, StoryAgentState.CANCEL_REQUESTED, "Cancel signal")
-            elif signal == "pause":
-                self._paused_stories.add(story_id)
-                raise StoryStoppedException(story_id, StoryAgentState.PAUSED, "Pause signal")
+            # FIX #2: Validate checkpoint every 3 nodes to detect serialization failures
+            if node_count - last_checkpoint_node >= 3:
+                try:
+                    checkpoint = await self.graph_engine.checkpointer.aget(config)
+                    if checkpoint:
+                        last_checkpoint_node = node_count
+                        logger.debug(f"[{self.name}] Checkpoint verified at node {node_count}")
+                    else:
+                        logger.warning(f"[{self.name}] Checkpoint missing at node {node_count}")
+                except Exception as e:
+                    logger.error(f"[{self.name}] Checkpoint validation failed at node {node_count}: {e}")
+                    # Continue execution - non-critical error
             
-            # Check DB state
+            # FIX #1: SINGLE CHECK from DB only (removed in-memory signal check)
             db_state = self.get_story_state_from_db(story_id)
+            
             if db_state in [StoryAgentState.CANCEL_REQUESTED, StoryAgentState.CANCELED]:
-                self._cancelled_stories.add(story_id)
-                raise StoryStoppedException(story_id, db_state, "Cancelled (DB)")
+                self._cancelled_stories.add(story_id)  # Update cache after DB check
+                raise StoryStoppedException(story_id, db_state, "Cancelled (DB check)")
             elif db_state == StoryAgentState.PAUSED:
-                self._paused_stories.add(story_id)
-                raise StoryStoppedException(story_id, db_state, "Paused (DB)")
+                self._paused_stories.add(story_id)  # Update cache after DB check
+                # FIX #2: Verify checkpoint before pause
+                try:
+                    checkpoint = await self.graph_engine.checkpointer.aget(config)
+                    if not checkpoint:
+                        logger.error(f"[{self.name}] Cannot pause: no checkpoint available!")
+                except Exception as e:
+                    logger.error(f"[{self.name}] Checkpoint check failed on pause: {e}")
+                raise StoryStoppedException(story_id, db_state, "Paused (DB check)")
         
         logger.info(f"[{self.name}] Graph completed after {node_count} nodes")
         return final_state
+    
+    async def _save_checkpoint_with_fallback(self, story_id: str, state: dict, config: dict) -> bool:
+        """Save checkpoint with fallback to memory cache.
+        
+        FIX #2: Fallback mechanism for checkpoint serialization failures.
+        
+        Args:
+            story_id: Story UUID string
+            state: State dict to checkpoint
+            config: Graph config with thread_id
+            
+        Returns:
+            True if saved to DB, False if fell back to memory
+        """
+        try:
+            # Try PostgresSaver first
+            await self.graph_engine.checkpointer.aput(config, state)
+            logger.debug(f"[{self.name}] Checkpoint saved to DB for {story_id}")
+            return True
+        except Exception as e:
+            logger.warning(f"[{self.name}] DB checkpoint failed, using memory cache: {e}")
+            
+            # Fallback: save to memory (LRU)
+            self._checkpoint_cache[story_id] = {
+                "state": state,
+                "config": config,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Evict oldest if cache full
+            if len(self._checkpoint_cache) > self._checkpoint_cache_max_size:
+                oldest_key = min(self._checkpoint_cache.keys(), 
+                               key=lambda k: self._checkpoint_cache[k]["timestamp"])
+                del self._checkpoint_cache[oldest_key]
+                logger.debug(f"[{self.name}] Evicted checkpoint for {oldest_key}")
+            
+            return False  # Indicate fallback was used
+    
+    async def _load_checkpoint_with_fallback(self, story_id: str, config: dict) -> Optional[dict]:
+        """Load checkpoint with fallback to memory cache.
+        
+        FIX #2: Fallback mechanism for checkpoint loading.
+        
+        Args:
+            story_id: Story UUID string
+            config: Graph config with thread_id
+            
+        Returns:
+            Checkpoint state dict or None if not found
+        """
+        try:
+            # Try PostgresSaver first
+            checkpoint = await self.graph_engine.checkpointer.aget(config)
+            if checkpoint:
+                logger.debug(f"[{self.name}] Checkpoint loaded from DB for {story_id}")
+                return checkpoint
+        except Exception as e:
+            logger.warning(f"[{self.name}] DB checkpoint load failed: {e}")
+        
+        # Fallback: load from memory cache
+        cached = self._checkpoint_cache.get(story_id)
+        if cached:
+            logger.info(f"[{self.name}] Checkpoint loaded from memory cache for {story_id}")
+            return cached["state"]
+        
+        return None

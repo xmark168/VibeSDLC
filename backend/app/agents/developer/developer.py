@@ -330,7 +330,8 @@ class Developer(BaseAgent, PausableAgentMixin):
                 langfuse_handler = None
             
             # Initial state - workspace will be set up by setup_workspace node if needed
-            # NOTE: Store handler directly - LangGraph can serialize CallbackHandler
+            # NOTE: langfuse_handler is passed via config["callbacks"], NOT in state
+            # This avoids serialization issues with PostgresSaver checkpoint (msgpack)
             story_code = story_data.get("story_code", f"STORY-{story_id[:8]}")
             initial_state = {
                 # Graph routing - implement_story routes to setup_workspace
@@ -344,9 +345,6 @@ class Developer(BaseAgent, PausableAgentMixin):
                 "project_id": str(self.project_id),
                 "task_id": str(task.task_id),
                 "user_id": str(task.user_id) if task.user_id else "",
-                
-                # Langfuse - LangChain callback handler for detailed tracing
-                "langfuse_handler": langfuse_handler,
                 
                 # Workspace context - will be populated by setup_workspace node
                 "workspace_path": "",
@@ -441,44 +439,45 @@ class Developer(BaseAgent, PausableAgentMixin):
             # Use helper to get or create thread_id
             thread_id = get_or_create_thread_id(story_id, self.agent_id, is_resume)
 
+            # NOTE: langfuse_handler is passed via config["callbacks"], NOT in state
+            # This avoids serialization issues with PostgresSaver checkpoint (msgpack)
             config = {
                 "configurable": {"thread_id": thread_id},
+                "callbacks": [langfuse_handler] if langfuse_handler else [],
             }
 
             # Check if resuming from pause
             if is_resume:
                 logger.info(f"[{self.name}] Resuming story {story_id} from checkpoint")
-                final_state = None
                 
-                # Try to resume from checkpoint, with fallback to fresh start
-                try:
-                    # Check checkpoint exists
-                    checkpoint = await self.graph_engine.checkpointer.aget(config)
-                    if checkpoint:
-                        # Checkpoint exists, attempt resume
-                        from langgraph.types import Command
-                        logger.info(f"[{self.name}] Checkpoint found, resuming with Command(resume=True)")
-                        try:
-                            # Use signal-checking wrapper for resume
-                            final_state = await self._run_graph_with_signal_check(
-                                self.graph_engine.graph, 
-                                Command(resume=True), 
-                                config, 
-                                story_id
-                            )
-                        except Exception as resume_err:
-                            # Resume failed (checkpoint may have been deleted after check)
-                            logger.warning(f"[{self.name}] Resume failed: {resume_err}, falling back to fresh start")
-                            final_state = None  # Will trigger fallback below
-                except Exception as e:
-                    logger.error(f"[{self.name}] Checkpoint check failed: {e}")
-                    final_state = None  # Will trigger fallback below
+                # FIX #2: Try to load checkpoint with fallback to memory cache
+                checkpoint = await self._load_checkpoint_with_fallback(story_id, config)
                 
-                # Fallback: start fresh if resume failed
-                if final_state is None:
-                    logger.warning(f"[{self.name}] Auto-restarting from beginning")
+                if checkpoint:
+                    # Use Command(resume=True) for LangGraph
+                    from langgraph.types import Command
+                    logger.info(f"[{self.name}] Checkpoint found, resuming with Command(resume=True)")
+                    try:
+                        final_state = await self._run_graph_with_signal_check(
+                            self.graph_engine.graph,
+                            Command(resume=True),
+                            config,
+                            story_id
+                        )
+                    except Exception as resume_err:
+                        # Resume failed - restart from beginning
+                        logger.warning(f"[{self.name}] Resume failed: {resume_err}, restarting from beginning")
+                        is_resume = False
+                        final_state = await self._run_graph_with_signal_check(
+                            self.graph_engine.graph,
+                            initial_state,
+                            config,
+                            story_id
+                        )
+                else:
+                    # No checkpoint available - restart from beginning
+                    logger.warning(f"[{self.name}] No checkpoint found, restarting from beginning")
                     is_resume = False
-                    # Use signal-checking wrapper for fresh start
                     final_state = await self._run_graph_with_signal_check(
                         self.graph_engine.graph,
                         initial_state,
@@ -821,6 +820,25 @@ class Developer(BaseAgent, PausableAgentMixin):
         
         await log_to_story(story_id, project_id, f"🔄 Starting merge of {branch_name} to main...", "info", "merge")
         
+        # STOP DEV SERVER IF RUNNING (before merge to avoid conflicts)
+        with Session(engine) as session:
+            story = session.get(Story, UUID(story_id))
+            if story and story.running_pid:
+                await log_to_story(story_id, project_id, f"🛑 Stopping dev server (PID {story.running_pid})...", "info", "merge")
+                try:
+                    import os
+                    import signal
+                    os.kill(story.running_pid, signal.SIGTERM)
+                    await log_to_story(story_id, project_id, f"✅ Dev server stopped", "success", "merge")
+                except (ProcessLookupError, OSError):
+                    await log_to_story(story_id, project_id, f"⚠️ Dev server already stopped or not found", "warning", "merge")
+                
+                # Clear dev server fields in DB
+                story.running_pid = None
+                story.running_port = None
+                session.add(story)
+                session.commit()
+        
         try:
             # Use main workspace (not worktree) for merge operations
             main_ws = main_workspace if main_workspace and Path(main_workspace).exists() else workspace
@@ -903,6 +921,9 @@ class Developer(BaseAgent, PausableAgentMixin):
                 "status": "Done",
                 "merge_status": "merged",
                 "pr_state": "merged",
+                # Clear dev server status để frontend ẩn nút dev server
+                "running_pid": None,
+                "running_port": None,
             }, UUID(project_id))
             
             await log_to_story(story_id, project_id, f"Story moved to Done", "success", "merge")

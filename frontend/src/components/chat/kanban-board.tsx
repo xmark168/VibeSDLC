@@ -630,7 +630,28 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
         finalOrder.splice(newIndex, 0, activeCard)
       }
 
-      // Validate dependencies - block move if dependencies not completed (except moving to Todo/Archived)
+      // Validation 1: Block Todo → Review/Done (must go through InProgress first)
+      if (activeCard && activeContainer === 'todo' && (overContainer === 'review' || overContainer === 'done')) {
+        toast.error('Cannot move from Todo directly to Review/Done. Stories must go through InProgress first.')
+        if (savedClonedCards) {
+          setCards(savedClonedCards)
+        }
+        return
+      }
+
+      // Validation 2: Block InProgress → Review/Done if agent not FINISHED
+      if (activeCard && activeContainer === 'inprogress' && (overContainer === 'review' || overContainer === 'done')) {
+        const agentState = activeCard.agent_state
+        if (agentState && agentState !== 'FINISHED' && agentState !== 'CANCELED') {
+          toast.error(`Cannot move to ${overContainer === 'review' ? 'Review' : 'Done'}: Agent is still working on this story (${agentState})`)
+          if (savedClonedCards) {
+            setCards(savedClonedCards)
+          }
+          return
+        }
+      }
+
+      // Validation 3: Check dependencies - block move if dependencies not completed (except moving to Todo/Archived)
       if (activeCard && overContainer !== 'todo' && overContainer !== 'archived') {
         const { isBlocked, incompleteDeps } = checkDependenciesCompleted(activeCard, savedClonedCards || undefined)
         if (isBlocked) {

@@ -702,6 +702,11 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
                     name="business_analyst_graph"
                 )
                 langfuse_span = langfuse_ctx.__enter__()
+                
+                # Create LangChain CallbackHandler for detailed tracing
+                from langfuse.langchain import CallbackHandler
+                langfuse_handler = CallbackHandler()
+                
                 langfuse_span.update_trace(
                     user_id=str(task.user_id) if task.user_id else None,
                     session_id=str(self.project_id),
@@ -712,6 +717,9 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
 
             except Exception as e:
                 logger.debug(f"[{self.name}] Langfuse setup: {e}")
+                langfuse_handler = None
+        else:
+            langfuse_handler = None
         
         # Prepare initial state
         initial_state = {

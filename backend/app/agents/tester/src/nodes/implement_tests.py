@@ -120,10 +120,10 @@ def _preload_skills(registry: SkillRegistry, skill_ids: list[str]) -> str:
     return "<skills>\n" + "\n\n---\n\n".join(parts) + "\n</skills>"
 
 
-def _cfg(state: dict, name: str) -> dict:
-    """Get LLM config with Langfuse callback."""
-    h = state.get("langfuse_handler")
-    return {"callbacks": [h], "run_name": name} if h else {"run_name": name}
+def _cfg(config: dict, name: str) -> dict:
+    """Get LLM config with Langfuse callback from runtime config."""
+    callbacks = config.get("callbacks", []) if config else []
+    return {"callbacks": callbacks, "run_name": name} if callbacks else {"run_name": name}
 
 
 def _get_relevant_component_source(state: dict, step: dict, workspace_path: str = "") -> str:
@@ -330,6 +330,7 @@ async def _implement_single_step(
     total_steps: int,
     skill_registry: SkillRegistry,
     workspace_path: str,
+    config: dict = None,
 ) -> dict:
     """Implement a single test step (called in parallel).
     
@@ -520,10 +521,11 @@ Scan the source code above and list what you found:
         # Get implement LLM
         step_llm = get_llm("implement")
         structured_llm = step_llm.with_structured_output(TestFileOutput)
+        # Pass config from runtime (not state) to avoid checkpoint serialization issues
         result = await _invoke_with_retry(
             structured_llm,
             messages,
-            config=_cfg(state, f"implement_step_{step_index + 1}"),
+            config=_cfg(config, f"implement_step_{step_index + 1}"),
         )
         
         # Direct file write
@@ -555,8 +557,13 @@ Scan the source code above and list what you found:
 # Main Node Function - PARALLEL EXECUTION
 # =============================================================================
 
-async def implement_tests(state: TesterState, agent=None) -> dict:
+async def implement_tests(state: TesterState, config: dict = None, agent=None) -> dict:
     """Implement ALL test steps in PARALLEL using asyncio.gather.
+    
+    Args:
+        state: Current tester state
+        config: LangGraph runtime config (contains callbacks for Langfuse)
+        agent: Tester agent instance
 
     This node:
     1. Gets ALL steps from test_plan
@@ -571,16 +578,14 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
     - 50% faster: IT and UT run at the same time
     - Same quality: Each step gets full context
     """
-    from langgraph.types import interrupt
-    from app.agents.tester.src.utils.interrupt import check_interrupt_signal
+    # FIX #1: Removed duplicate signal check - handled by _run_graph_with_signal_check()
+    from app.agents.developer.src.utils.story_logger import StoryLogger
     
-    # Check for pause/cancel signal
+    config = config or {}  # Ensure config is not None
+    
+    # Create story logger
+    story_logger = StoryLogger.from_state(state, agent).with_node("implement_tests")
     story_id = state.get("story_id", "")
-    if story_id:
-        signal = check_interrupt_signal(story_id)
-        if signal:
-            logger.info(f"[implement_tests] Interrupt signal received: {signal}")
-            interrupt({"reason": signal, "story_id": story_id, "node": "implement_tests"})
     
     test_plan = state.get("test_plan", [])
     total_steps = len(test_plan)
@@ -601,7 +606,7 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
         steps_to_run = list(enumerate(test_plan))
     
     if not steps_to_run:
-        logger.info("[implement_tests] No steps to implement")
+        await story_logger.info("No steps to implement")
         return {
             "message": "Không có steps cần implement.",
             "action": "RUN",
@@ -621,11 +626,12 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
             total_steps=total_steps,
             skill_registry=skill_registry,
             workspace_path=workspace_path,
+            config=config,
         )
         tasks.append(task)
     
     # Run ALL implementations in PARALLEL
-    logger.info(f"[implement_tests] Running {len(tasks)} steps in parallel...")
+    await story_logger.message(f"🔨 Implementing {len(tasks)} test files in parallel...")
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
     # Collect results
@@ -667,13 +673,7 @@ async def implement_tests(state: TesterState, agent=None) -> dict:
         test_desc = f"{len(files_modified)} test files"
         git_commit_tests(workspace_path, test_desc, files_modified)
     
-    # Check for interrupt after implementation
-    story_id = state.get("story_id", "")
-    if story_id:
-        signal = check_interrupt_signal(story_id)
-        if signal:
-            logger.info(f"[implement_tests] Interrupt after implementation: {signal}")
-            interrupt({"reason": signal, "story_id": story_id, "node": "implement_tests"})
+    # FIX #1: Removed post-implementation signal check - handled by _run_graph_with_signal_check()
     
     # Progress message (persona-driven intro + file list)
     intro = await generate_user_message(

@@ -36,22 +36,15 @@ def _smart_truncate(content: str, max_tokens: int = MAX_REVIEW_TOKENS) -> tuple[
 
 
 @track_node("review")
-async def review(state: DeveloperState, agent=None) -> DeveloperState:
+async def review(state: DeveloperState, config: dict = None, agent=None) -> DeveloperState:
     """Review implemented code with LGTM/LBTM decision."""
-    from langgraph.types import interrupt
-    from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+    # FIX #1: Removed duplicate signal check - handled by _run_graph_with_signal_check()
     from app.agents.developer.src.utils.story_logger import StoryLogger
     
+    config = config or {}  # Ensure config is not None
     # Create story logger
     story_logger = StoryLogger.from_state(state, agent).with_node("review")
-    
-    # Check for pause/cancel signal
     story_id = state.get("story_id", "")
-    if story_id:
-        signal = check_interrupt_signal(story_id, agent)
-        if signal:
-            await story_logger.info(f"Interrupt signal received: {signal}")
-            interrupt({"reason": signal, "story_id": story_id, "node": "review"})
     
     current_step = state.get("current_step", 0)
     total_steps = state.get("total_steps", 0)
@@ -120,9 +113,10 @@ async def review(state: DeveloperState, agent=None) -> DeveloperState:
             HumanMessage(content=input_text)
         ]
         
+        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
         structured_llm = get_llm("review").with_structured_output(SimpleReviewOutput)
-        result = await structured_llm.ainvoke(messages, config=_cfg(state, "review"))
-        flush_langfuse(state)
+        result = await structured_llm.ainvoke(messages, config=_cfg(config, "review"))
+        flush_langfuse(config)
         review_result = result.model_dump()
         
         if review_result['decision'] == "LGTM":
