@@ -590,13 +590,24 @@ tasks:
       2. If user says "remove X from requirements" - remove ONLY that item
       3. If user says "add X to acceptance criteria" - add ONLY that item
       4. Preserve story ID, epic_id, dependencies unless explicitly changed
-      5. Return the COMPLETE updated story with all fields
+      5. ALWAYS return the COMPLETE updated story with ALL fields populated
       </rules>
+      
+      <deletion_handling>
+      CRITICAL: If user wants to DELETE the story (says "xóa", "delete", "remove"):
+      1. Return the COMPLETE story object with ALL fields as usual
+      2. Set requirements = [] (empty array)
+      3. Set acceptance_criteria = [] (empty array)
+      4. Keep id, epic_id, title, description, priority, story_point, dependencies
+      5. The code will detect empty requirements/acceptance_criteria and delete the story
+      
+      DO NOT return an empty object {}! ALWAYS return full story structure.
+      </deletion_handling>
       
       <output>
       - story_id: ID of the story being edited
       - found: true if story found, false otherwise
-      - updated_story: complete story object with changes applied
+      - updated_story: complete story object with ALL fields (NEVER empty {})
       - change_summary: brief Vietnamese summary of what changed
       - message: friendly Vietnamese response to user
       </output>
@@ -607,7 +618,15 @@ tasks:
       Target story:
       {target_story}
       
-      Apply ONLY the specific changes requested. Return the complete updated story.
+      Apply ONLY the specific changes requested. 
+      
+      IMPORTANT: If user wants to DELETE this story:
+      - Keep ALL fields (id, epic_id, title, description, priority, story_point, dependencies)
+      - Set requirements = []
+      - Set acceptance_criteria = []
+      - This will signal the code to delete the story
+      
+      Return the complete updated story with all fields.
 
   # ---------------------------------------------------------------------------
   # DOMAIN RESEARCH (Follow-up questions)

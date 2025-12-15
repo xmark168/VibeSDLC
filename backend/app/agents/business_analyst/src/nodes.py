@@ -57,6 +57,10 @@ logger = logging.getLogger(__name__)
 # Token tracking via callback set in base_agent._process_task()
 # =============================================================================
 
+# Retry configuration
+MAX_LLM_RETRIES = 2  # Total 3 attempts (initial + 2 retries)
+RETRY_BACKOFF_BASE = 1.0  # Linear backoff: 1s, 2s
+
 # Step mappings for BA agent
 BA_STEP_MAP = {
     "fast": "router",      # Intent, simple tasks
@@ -82,46 +86,104 @@ async def _invoke_structured(
     schema,
     messages: list,
     config: dict = None,
-    fallback_data: dict = None
+    fallback_data: dict = None,
+    max_retries: int = None
 ) -> dict:
-    """Invoke LLM with structured output, with fallback chain.
+    """Invoke LLM with structured output, with retry and fallback chain.
     
-    Pattern from Developer V2:
-    1. PRIMARY: with_structured_output() - 99% reliable
-    2. FALLBACK: Return fallback_data if provided
+    Strategy:
+    1. PRIMARY: with_structured_output() with retry on validation errors
+    2. FALLBACK: Return fallback_data if all retries fail
     
     Args:
         llm: LLM instance
         schema: Pydantic schema class
         messages: List of messages
         config: Optional config dict for Langfuse
-        fallback_data: Data to return if structured output fails
+        fallback_data: Data to return if all retries fail
+        max_retries: Maximum retry attempts (default: MAX_LLM_RETRIES from config)
     
     Returns:
         Parsed dict from schema
     """
-    try:
-        structured_llm = llm.with_structured_output(schema)
-        if config:
-            result = await structured_llm.ainvoke(messages, config=config)
-        else:
-            result = await structured_llm.ainvoke(messages)
-        
-        # Check if result is None (LLM failed to return structured output)
-        if result is None:
-            logger.warning("[BA] LLM returned None instead of structured output")
+    import asyncio
+    from pydantic import ValidationError
+    
+    # Use global config if not specified
+    if max_retries is None:
+        max_retries = MAX_LLM_RETRIES
+    
+    last_error = None
+    
+    for attempt in range(max_retries + 1):  # +1 for initial attempt
+        try:
+            structured_llm = llm.with_structured_output(schema)
+            if config:
+                result = await structured_llm.ainvoke(messages, config=config)
+            else:
+                result = await structured_llm.ainvoke(messages)
+            
+            # Check if result is None (LLM failed to return structured output)
+            if result is None:
+                logger.warning(f"[BA] LLM returned None (attempt {attempt + 1}/{max_retries + 1})")
+                last_error = ValueError("LLM returned None")
+                if attempt < max_retries:
+                    wait_time = RETRY_BACKOFF_BASE * (attempt + 1)
+                    logger.info(f"[BA] Retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                # Last attempt failed
+                if fallback_data:
+                    logger.info("[BA] All retries exhausted, using fallback data")
+                    return fallback_data
+                raise last_error
+            
+            # Success - return result
+            return result.model_dump()
+            
+        except ValidationError as e:
+            # Pydantic validation error - LLM returned wrong structure
+            last_error = e
+            logger.warning(f"[BA] Structured output validation failed (attempt {attempt + 1}/{max_retries + 1}): {e}")
+            if attempt < max_retries:
+                wait_time = RETRY_BACKOFF_BASE * (attempt + 1)
+                logger.info(f"[BA] Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+                continue
+            # Last attempt failed
+            if fallback_data:
+                logger.info("[BA] All retries exhausted, using fallback data")
+                return fallback_data
+            raise
+            
+        except Exception as e:
+            # Other errors (network, API, etc.) - let LangChain's auto-retry handle it
+            # Only catch and retry if it's a known retryable error
+            error_str = str(e).lower()
+            is_retryable = any(keyword in error_str for keyword in [
+                "timeout", "connection", "rate limit", "429", "500", "503", "504"
+            ])
+            
+            last_error = e
+            if is_retryable and attempt < max_retries:
+                wait_time = RETRY_BACKOFF_BASE * (attempt + 1)
+                logger.warning(f"[BA] Retryable error (attempt {attempt + 1}/{max_retries + 1}): {e}")
+                logger.info(f"[BA] Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+                continue
+            
+            # Non-retryable error or last attempt
+            logger.warning(f"[BA] LLM call failed: {e}")
             if fallback_data:
                 logger.info("[BA] Using fallback data")
                 return fallback_data
-            raise ValueError("LLM returned None")
-        
-        return result.model_dump()
-    except Exception as e:
-        logger.warning(f"[BA] Structured output failed: {e}")
-        if fallback_data:
-            logger.info("[BA] Using fallback data")
-            return fallback_data
-        raise
+            raise
+    
+    # Should never reach here, but just in case
+    if fallback_data:
+        logger.info("[BA] Fallback after all retries")
+        return fallback_data
+    raise last_error or Exception("Unknown error in _invoke_structured")
 
 def _extract_intent_keywords(user_message: str) -> list:
     """Extract key intent keywords from user message for matching.
@@ -1802,80 +1864,147 @@ async def update_stories(state: BAState, agent=None) -> dict:
 async def edit_single_story(state: BAState, agent=None) -> dict:
     """Node: Edit a SINGLE specific story based on user request.
     
-    This is a FAST targeted update - finds the story by title/ID and applies only the requested change.
+    This is a FAST targeted update - finds the story by ID and applies only the requested change.
     Much faster than update_stories which regenerates everything.
     """
     logger.info(f"[BA] Editing single story (targeted mode)...")
     
-    epics = state.get("epics", [])
-    stories = state.get("stories", [])
+    import re
+    
     user_message = state.get("user_message", "")
-    
-    if not epics and not stories:
-        logger.warning("[BA] No existing stories to edit")
-        return {"error": "No existing stories to edit"}
-    
-    # Step 1: Find the target story from user message
-    # Search by title match or ID match
-    target_story = None
-    target_epic_idx = None
-    target_story_idx = None
     user_msg_lower = user_message.lower()
     
-    # Flatten stories if not already
-    if not stories:
-        stories = []
-        for epic in epics:
-            for story in epic.get("stories", []):
-                story["epic_id"] = epic.get("id")
-                story["epic_title"] = epic.get("title")
-                stories.append(story)
+    # ====================================================================================
+    # STEP 1: Extract story ID or title from user message
+    # ====================================================================================
+    # Try 1: Extract story ID with regex (most reliable)
+    # Pattern: EPIC-XXX-US-YYY or epic-xxx-us-yyy
+    story_id_pattern = r'epic-\d+-us-\d+'
+    id_match = re.search(story_id_pattern, user_msg_lower)
     
-    # Search for story by title or ID - use BEST MATCH strategy
-    best_match_story = None
-    best_match_idx = None
-    best_match_score = 0
+    target_story_id = None
+    search_by_title = False
     
-    for i, story in enumerate(stories):
-        story_title = story.get("title", "").lower()
-        story_id = story.get("id", "").lower()
+    if id_match:
+        target_story_id = id_match.group(0).upper()  # Normalize to uppercase
+        logger.info(f"[BA] Extracted story ID: {target_story_id}")
+    else:
+        # Try 2: Check if user mentioned story title (quoted or after keywords)
+        # Patterns: "sửa story 'title here'" or "xóa story title here"
+        title_patterns = [
+            r"['\"](.+?)['\"]",  # Quoted: "story title" or 'story title'
+            r"(?:story|stories)\s+(.{10,100}?)(?:\s+(?:bỏ|xóa|thêm|sửa|add|remove|delete|change)|$)",  # After "story": "sửa story ABC"
+        ]
         
-        # Check if story ID is mentioned in user message (exact match)
-        if story_id and story_id in user_msg_lower:
-            target_story = story
-            target_story_idx = i
-            logger.info(f"[BA] Found story by ID: {story_id}")
-            break
+        title_match = None
+        for pattern in title_patterns:
+            title_match = re.search(pattern, user_message, re.IGNORECASE)
+            if title_match:
+                break
         
-        # Calculate match score based on KEY WORDS in story title
-        # Focus on unique/distinctive words, not common ones like "want", "administrator"
-        common_words = {"as", "a", "an", "i", "want", "to", "so", "that", "can", "the", "for", "and", "or", "in", "on", "is", "be", "user", "administrator", "customer"}
-        title_words = [w for w in story_title.split() if len(w) > 2 and w not in common_words]
+        if title_match:
+            search_by_title = True
+            title_query = title_match.group(1).strip()
+            logger.info(f"[BA] No ID found, will search by title: '{title_query[:50]}...'")
+        else:
+            # No ID, no clear title → vague request
+            logger.warning(f"[BA] No story ID or title found in message: {user_message[:100]}")
+            logger.info("[BA] Falling back to update_stories for vague request")
+            return await update_stories(state, agent)
+    
+    # ====================================================================================
+    # STEP 2: Load epics from state or artifact
+    # ====================================================================================
+    epics = state.get("epics", [])
+    
+    # If no epics in state, try to load from artifact (same pattern as approve_stories)
+    if not epics and agent:
+        logger.info("[BA] No epics in state, loading from artifact...")
+        try:
+            with Session(engine) as session:
+                service = ArtifactService(session)
+                artifact = service.get_latest_version(
+                    project_id=agent.project_id,
+                    artifact_type=ArtifactType.USER_STORIES
+                )
+                if artifact and artifact.content:
+                    epics = artifact.content.get("epics", [])
+                    logger.info(f"[BA] Loaded {len(epics)} epics from artifact")
+        except Exception as e:
+            logger.warning(f"[BA] Failed to load from artifact: {e}")
+    
+    if not epics:
+        logger.warning("[BA] No existing epics/stories to edit")
+        return {"error": "No existing stories to edit"}
+    
+    # ====================================================================================
+    # STEP 3: Find target story (by ID or title)
+    # ====================================================================================
+    target_story = None
+    target_story_idx = None
+    
+    # Build a flat list of all stories
+    stories = []
+    for epic in epics:
+        for story in epic.get("stories", []):
+            story["epic_id"] = epic.get("id")
+            story["epic_title"] = epic.get("title")
+            stories.append(story)
+    
+    if target_story_id:
+        # Search by ID (exact match)
+        for i, story in enumerate(stories):
+            if story.get("id", "").upper() == target_story_id:
+                target_story = story
+                target_story_idx = i
+                logger.info(f"[BA] Found story by ID: {target_story_id} - {story.get('title')[:50]}...")
+                break
         
-        # Count how many KEY words from title appear in user message
-        match_count = sum(1 for w in title_words if w in user_msg_lower)
+        if not target_story:
+            logger.warning(f"[BA] Story {target_story_id} not found in {len(stories)} existing stories")
+            # Fallback: Let LLM try to find it
+            return await _edit_story_with_llm_search(state, agent, epics, stories)
+    
+    elif search_by_title:
+        # Search by title (fuzzy match with scoring)
+        title_query_lower = title_query.lower()
+        best_match = None
+        best_score = 0
         
-        # Calculate score as percentage of key words matched
-        if title_words:
-            score = match_count / len(title_words)
-            logger.debug(f"[BA] Story '{story_title[:40]}...' score: {score:.2f} ({match_count}/{len(title_words)} key words)")
+        for i, story in enumerate(stories):
+            story_title = story.get("title", "").lower()
             
-            # Keep track of best match
-            if score > best_match_score:
-                best_match_score = score
-                best_match_story = story
-                best_match_idx = i
-    
-    # Use best match if score is good enough (at least 40% key words match)
-    if not target_story and best_match_story and best_match_score >= 0.4:
-        target_story = best_match_story
-        target_story_idx = best_match_idx
-        logger.info(f"[BA] Found story by best title match (score={best_match_score:.2f}): {target_story.get('title')[:50]}...")
-    
-    if not target_story:
-        logger.warning(f"[BA] Could not find target story in message: {user_message[:100]}...")
-        # Fallback: Let LLM try to find it
-        return await _edit_story_with_llm_search(state, agent, epics, stories)
+            # Calculate similarity score
+            # Method 1: Exact substring match (highest priority)
+            if title_query_lower in story_title or story_title in title_query_lower:
+                score = 1.0
+            else:
+                # Method 2: Word overlap (count matching words)
+                query_words = set(title_query_lower.split())
+                title_words = set(story_title.split())
+                common_words = query_words & title_words
+                
+                if len(query_words) > 0:
+                    score = len(common_words) / len(query_words)
+                else:
+                    score = 0
+            
+            if score > best_score:
+                best_score = score
+                best_match = (story, i)
+            
+            # Log top matches for debugging
+            if score >= 0.3:
+                logger.debug(f"[BA] Story '{story_title[:50]}...' similarity: {score:.2f}")
+        
+        # Use best match if score is good enough (>= 50% similarity)
+        if best_match and best_score >= 0.5:
+            target_story, target_story_idx = best_match
+            logger.info(f"[BA] Found story by title (score={best_score:.2f}): {target_story.get('title')[:50]}...")
+        else:
+            logger.warning(f"[BA] No good title match found (best score: {best_score:.2f})")
+            # Fallback: Let LLM try to find it
+            return await _edit_story_with_llm_search(state, agent, epics, stories)
     
     # Step 2: Use LLM to apply the specific change
     logger.info(f"[BA] Applying changes to story: {target_story.get('id')} - {target_story.get('title')[:50]}...")
