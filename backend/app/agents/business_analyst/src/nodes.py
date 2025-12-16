@@ -185,6 +185,45 @@ async def _invoke_structured(
         return fallback_data
     raise last_error or Exception("Unknown error in _invoke_structured")
 
+def _classify_crud_operation(user_message: str) -> tuple:
+    """Classify user message into CRUD operation and confidence.
+    
+    Returns (operation, confidence) where:
+    - operation: "CREATE" | "READ" | "UPDATE" | "DELETE" | "UNKNOWN"
+    - confidence: 0.0-1.0 (how confident we are)
+    
+    Examples:
+    - "xóa epic Notifications" → ("DELETE", 1.0)
+    - "sửa story EPIC-001-US-003" → ("UPDATE", 1.0)
+    - "thêm menu ở homepage" → ("CREATE", 0.9)
+    - "trang about" → ("UNKNOWN", 0.0)
+    """
+    user_msg_lower = user_message.lower()
+    
+    # DELETE - highest priority (most explicit)
+    delete_keywords = ["xóa", "delete", "remove", "bỏ", "loại bỏ", "gỡ bỏ"]
+    if any(kw in user_msg_lower for kw in delete_keywords):
+        return ("DELETE", 1.0)
+    
+    # UPDATE - second priority
+    update_keywords = ["sửa", "edit", "update", "chỉnh", "thay đổi", "modify", "đổi"]
+    if any(kw in user_msg_lower for kw in update_keywords):
+        return ("UPDATE", 1.0)
+    
+    # CREATE - third priority (can be ambiguous with refinement)
+    create_keywords = ["thêm", "add", "tạo", "create", "thêm mới", "bổ sung"]
+    if any(kw in user_msg_lower for kw in create_keywords):
+        # Lower confidence because "thêm" can mean refine existing OR create new
+        return ("CREATE", 0.8)
+    
+    # READ - rarely used in BA context
+    read_keywords = ["xem", "hiển thị", "show", "view", "list"]
+    if any(kw in user_msg_lower for kw in read_keywords):
+        return ("READ", 0.6)
+    
+    return ("UNKNOWN", 0.0)
+
+
 def _extract_intent_keywords(user_message: str) -> list:
     """Extract key intent keywords from user message for matching.
     
@@ -1194,15 +1233,34 @@ async def update_prd(state: BAState, agent=None) -> dict:
         return await generate_prd(state, agent)
     
     # ====================================================================================
-    # STEP 1: CHECK CLARITY - Ask clarification if this is a NEW feature or existing without specific change
-    # Skip if we're resuming from a previous clarification (skip_clarity_check=True)
+    # STEP 0: CLASSIFY CRUD OPERATION
     # ====================================================================================
-    if skip_clarity_check:
-        logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
+    crud_operation, crud_confidence = _classify_crud_operation(user_message)
+    logger.info(f"[BA] CRUD classification: {crud_operation} (confidence: {crud_confidence:.2f})")
+    
+    # ====================================================================================
+    # STEP 1: CHECK CLARITY - Ask clarification ONLY for CREATE operations on NEW features
+    # DELETE/UPDATE operations are always clear (user explicitly states what to modify/remove)
+    # ====================================================================================
+    should_skip_clarity = (
+        skip_clarity_check or 
+        crud_operation == "DELETE" or 
+        crud_operation == "UPDATE"
+    )
+    
+    if should_skip_clarity:
+        if crud_operation == "DELETE":
+            logger.info(f"[BA] Skipping clarity check (DELETE operation - always clear)")
+        elif crud_operation == "UPDATE":
+            logger.info(f"[BA] Skipping clarity check (UPDATE operation - always clear)")
+        else:
+            logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
         is_clear = True
         missing_details = []
         related_feature = None
     else:
+        # Only CREATE operations need clarity check
+        logger.info(f"[BA] CREATE operation detected - checking if NEW feature or REFINEMENT of existing")
         is_clear, missing_details, related_feature = await _check_request_clarity(
             user_message, existing_epics, existing_prd, agent
         )
@@ -1226,29 +1284,65 @@ async def update_prd(state: BAState, agent=None) -> dict:
                 for i, detail in enumerate(missing_details)
             ]
         else:
-            # NEW feature → call interview_requirements to generate proper multichoice questions
-            logger.info(f"[BA] NEW feature detected, generating multichoice questions via interview_requirements...")
+            # NEW feature → generate multichoice questions specific to this feature
+            logger.info(f"[BA] NEW feature detected, generating feature-specific multichoice questions...")
             context_msg = f"Để mình hiểu rõ hơn về \"{user_message}\", bạn cho mình biết thêm nhé!"
             
-            # Call interview_requirements to get proper multichoice questions with options
-            interview_result = await interview_requirements(state, agent)
-            generated_questions = interview_result.get("questions", [])
-            
-            if generated_questions:
-                # Use generated multichoice questions
-                batch_questions = [
-                    {
-                        "question_text": q["text"],
-                        "question_type": q.get("type", "multichoice"),
-                        "options": q.get("options"),
-                        "allow_multiple": q.get("allow_multiple", False),
-                        "context": context_msg if i == 0 else None,
-                    }
-                    for i, q in enumerate(generated_questions)
+            # Generate multichoice questions using LLM (specific to the new feature, not general interview)
+            try:
+                system_prompt = _sys_prompt(agent, "generate_feature_questions")
+                user_prompt = _user_prompt(
+                    "generate_feature_questions",
+                    user_message=user_message
+                )
+                
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_prompt)
                 ]
-            else:
+                
+                result = await _invoke_structured(
+                    llm=_default_llm,
+                    schema=QuestionsOutput,
+                    messages=messages,
+                    config=_cfg(state, "generate_feature_questions"),
+                    fallback_data={"questions": []}
+                )
+                
+                generated_questions = []
+                for q in result.get("questions", []):
+                    if hasattr(q, "model_dump"):
+                        q_dict = q.model_dump()
+                    elif isinstance(q, dict):
+                        q_dict = q
+                    else:
+                        continue
+                    
+                    # Ensure multichoice type
+                    if q_dict.get("type") != "multichoice":
+                        q_dict["type"] = "multichoice"
+                    if not q_dict.get("options"):
+                        q_dict["options"] = ["Có", "Không", "Khác (vui lòng mô tả)"]
+                    
+                    generated_questions.append(q_dict)
+                
+                if generated_questions:
+                    batch_questions = [
+                        {
+                            "question_text": q["text"],
+                            "question_type": q.get("type", "multichoice"),
+                            "options": q.get("options"),
+                            "allow_multiple": q.get("allow_multiple", False),
+                            "context": context_msg if i == 0 else None,
+                        }
+                        for i, q in enumerate(generated_questions)
+                    ]
+                else:
+                    raise ValueError("No questions generated")
+                    
+            except Exception as e:
+                logger.warning(f"[BA] Failed to generate feature-specific questions: {e}, using fallback")
                 # Fallback: use simple open questions
-                logger.warning("[BA] interview_requirements returned no questions, using fallback")
                 batch_questions = [
                     {
                         "question_text": detail,
@@ -1645,17 +1739,27 @@ async def update_stories(state: BAState, agent=None) -> dict:
     skip_clarity_check = state.get("skip_clarity_check", False)
     
     # ====================================================================================
-    # STEP 1: CHECK FOR EXISTING STORIES FIRST - Before asking clarification
-    # This prevents asking clarification for features that already exist in stories
+    # STEP 0: CLASSIFY CRUD OPERATION - Determine what user wants to do
+    # This simplifies routing and reduces unnecessary checks
     # ====================================================================================
-    # SKIP this check if user wants to DELETE (xóa, delete, remove)
-    user_msg_lower = user_message.lower()
-    is_deletion_request = any(kw in user_msg_lower for kw in ["xóa", "delete", "remove", "loại bỏ", "bỏ"])
+    crud_operation, crud_confidence = _classify_crud_operation(user_message)
+    logger.info(f"[BA] CRUD classification: {crud_operation} (confidence: {crud_confidence:.2f})")
     
-    if not skip_clarity_check and not is_deletion_request:  # Skip for deletion requests
+    # ====================================================================================
+    # STEP 1: UNIFIED DUPLICATE DETECTION - Check if feature/story already exists
+    # This combines story-level and epic-level checks into one unified flow
+    # ====================================================================================
+    # SKIP this check for DELETE/UPDATE operations (they are explicit, no need to check duplicates)
+    user_msg_lower = user_message.lower()
+    is_deletion_request = crud_operation == "DELETE"
+    is_update_request = crud_operation == "UPDATE"
+    
+    # For CREATE operations, check if similar functionality already exists
+    # This prevents duplicate stories and helps user refine existing ones
+    if not skip_clarity_check and crud_operation == "CREATE":
         user_keywords = _extract_intent_keywords(user_message)
         
-        # Search for existing stories that might already cover this functionality
+        # LEVEL 1: Check for existing STORIES (most specific)
         matching_stories = []
         for epic in all_epics:
             for story in epic.get("stories", []):
@@ -1669,50 +1773,111 @@ async def update_stories(state: BAState, agent=None) -> dict:
                 if matches >= 2:  # At least 2 keywords match
                     matching_stories.append({
                         "story": story,
+                        "epic_id": epic.get("id"),
+                        "epic_title": epic.get("title"),
                         "epic_domain": epic.get("domain"),
                         "match_score": matches / len(user_keywords) if user_keywords else 0
                     })
         
+        # LEVEL 2: Check for existing EPICS (broader scope)
+        matching_epics = []
+        for epic in all_epics:
+            epic_text = f"{epic.get('title', '')} {epic.get('domain', '')} {epic.get('description', '')}".lower()
+            matches = sum(1 for kw in user_keywords if kw in epic_text)
+            if matches >= 1:  # At least 1 keyword match for epic
+                matching_epics.append({
+                    "epic": epic,
+                    "match_score": matches / len(user_keywords) if user_keywords else 0
+                })
+        
+        # DECISION LOGIC: What to do with matches?
         if matching_stories and agent:
-            # Found existing stories that might cover this functionality
+            # CASE A: Found specific story → Ask user to refine it (most specific)
             matching_stories.sort(key=lambda x: x["match_score"], reverse=True)
             best_match = matching_stories[0]
             story = best_match["story"]
             
-            logger.info(f"[BA] Found existing story that might cover this: {story.get('id')} - {story.get('title')}")
+            logger.info(f"[BA] Found existing story: {story.get('id')} - {story.get('title')} (score: {best_match['match_score']:.2f})")
             
-            # Ask user if they want to update existing story or create new one
+            # SMART MESSAGE: Tell user story exists, ask what to add
             existing_story_msg = (
                 f"🔍 Mình tìm thấy story \"{story.get('title', '')}\" (ID: {story.get('id')}) "
-                f"trong domain {best_match['epic_domain']} có vẻ đã cover chức năng này rồi.\n\n"
-                f"Bạn muốn bổ sung gì vào story này không?"
+                f"trong epic \"{best_match['epic_title']}\" có vẻ đã cover chức năng này rồi.\n\n"
+                f"Bạn muốn bổ sung gì vào story này? (Ví dụ: thêm requirement, acceptance criteria, ...)"
             )
             
             await agent.message_user("response", existing_story_msg)
             
-            # Return early - STOP the flow (waiting for user decision)
+            # Return early - STOP the flow (waiting for user to clarify what to add)
             return {
                 "found_existing_story": True,
                 "existing_story_id": story.get("id"),
                 "existing_story_title": story.get("title"),
+                "existing_epic_id": best_match["epic_id"],
                 "awaiting_user_decision": True,
                 "is_complete": True,
                 "result": {
-                    "summary": "Found existing story - awaiting user decision",
+                    "summary": f"Found existing story '{story.get('title')}' - awaiting user clarification",
                     "task_completed": False
                 }
             }
+        
+        elif matching_epics and agent:
+            # CASE B: Found epic but no specific story → This is REFINEMENT (add to existing epic)
+            matching_epics.sort(key=lambda x: x["match_score"], reverse=True)
+            best_epic = matching_epics[0]["epic"]
+            
+            logger.info(f"[BA] Found existing epic: {best_epic.get('title')} (score: {matching_epics[0]['match_score']:.2f}) - will refine it")
+            
+            # NO NEED TO ASK - This is clearly a refinement of existing epic
+            # Just proceed to add story to this epic (skip clarity check)
+            logger.info(f"[BA] Refinement detected - will add new story to epic '{best_epic.get('title')}'")
+            # Continue to STEP 3 (skip STEP 2 clarity check)
     
     # ====================================================================================
-    # STEP 2: CHECK CLARITY - Ask clarification if this is a NEW feature
-    # Only runs if no existing stories found AND not resuming from clarification
+    # STEP 2: CHECK CLARITY - Ask clarification ONLY for CREATE operations on NEW features
+    # DELETE/UPDATE operations are always clear (user explicitly states what to modify/remove)
     # ====================================================================================
-    if skip_clarity_check:
-        logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
+    # SKIP clarity check for:
+    # 1. DELETE operations (always explicit: "xóa epic X")
+    # 2. UPDATE operations (always explicit: "sửa story Y")
+    # 3. Resuming from previous clarification (skip_clarity_check=True)
+    # 4. Found matching epic in STEP 1 (this is REFINEMENT, not NEW feature)
+    
+    # Check if we found matching epic in STEP 1 (CASE B)
+    found_matching_epic = False
+    if crud_operation == "CREATE" and not skip_clarity_check:
+        user_keywords = _extract_intent_keywords(user_message)
+        for epic in all_epics:
+            epic_text = f"{epic.get('title', '')} {epic.get('domain', '')}".lower()
+            matches = sum(1 for kw in user_keywords if kw in epic_text)
+            if matches >= 1:
+                found_matching_epic = True
+                logger.info(f"[BA] Found matching epic '{epic.get('title')}' - treating as REFINEMENT")
+                break
+    
+    should_skip_clarity = (
+        skip_clarity_check or 
+        crud_operation == "DELETE" or 
+        crud_operation == "UPDATE" or
+        found_matching_epic  # NEW: Skip if found matching epic (REFINEMENT)
+    )
+    
+    if should_skip_clarity:
+        if crud_operation == "DELETE":
+            logger.info(f"[BA] Skipping clarity check (DELETE operation - always clear)")
+        elif crud_operation == "UPDATE":
+            logger.info(f"[BA] Skipping clarity check (UPDATE operation - always clear)")
+        elif found_matching_epic:
+            logger.info(f"[BA] Skipping clarity check (found matching epic - this is REFINEMENT)")
+        else:
+            logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
         is_clear = True
         missing_details = []
         related_feature = None
     else:
+        # Only CREATE operations on COMPLETELY NEW features need clarity check
+        logger.info(f"[BA] CREATE operation on NEW feature - checking for clarification needs")
         is_clear, missing_details, related_feature = await _check_request_clarity(
             user_message, all_epics, existing_prd, agent
         )
@@ -1736,29 +1901,65 @@ async def update_stories(state: BAState, agent=None) -> dict:
                 for i, detail in enumerate(missing_details)
             ]
         else:
-            # NEW feature → call interview_requirements to generate proper multichoice questions
-            logger.info(f"[BA] NEW feature detected, generating multichoice questions via interview_requirements...")
+            # NEW feature → generate multichoice questions specific to this feature
+            logger.info(f"[BA] NEW feature detected, generating feature-specific multichoice questions...")
             context_msg = f"Để mình hiểu rõ hơn về \"{user_message}\", bạn cho mình biết thêm nhé!"
             
-            # Call interview_requirements to get proper multichoice questions with options
-            interview_result = await interview_requirements(state, agent)
-            generated_questions = interview_result.get("questions", [])
-            
-            if generated_questions:
-                # Use generated multichoice questions
-                batch_questions = [
-                    {
-                        "question_text": q["text"],
-                        "question_type": q.get("type", "multichoice"),
-                        "options": q.get("options"),
-                        "allow_multiple": q.get("allow_multiple", False),
-                        "context": context_msg if i == 0 else None,
-                    }
-                    for i, q in enumerate(generated_questions)
+            # Generate multichoice questions using LLM (specific to the new feature, not general interview)
+            try:
+                system_prompt = _sys_prompt(agent, "generate_feature_questions")
+                user_prompt = _user_prompt(
+                    "generate_feature_questions",
+                    user_message=user_message
+                )
+                
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_prompt)
                 ]
-            else:
+                
+                result = await _invoke_structured(
+                    llm=_default_llm,
+                    schema=QuestionsOutput,
+                    messages=messages,
+                    config=_cfg(state, "generate_feature_questions"),
+                    fallback_data={"questions": []}
+                )
+                
+                generated_questions = []
+                for q in result.get("questions", []):
+                    if hasattr(q, "model_dump"):
+                        q_dict = q.model_dump()
+                    elif isinstance(q, dict):
+                        q_dict = q
+                    else:
+                        continue
+                    
+                    # Ensure multichoice type
+                    if q_dict.get("type") != "multichoice":
+                        q_dict["type"] = "multichoice"
+                    if not q_dict.get("options"):
+                        q_dict["options"] = ["Có", "Không", "Khác (vui lòng mô tả)"]
+                    
+                    generated_questions.append(q_dict)
+                
+                if generated_questions:
+                    batch_questions = [
+                        {
+                            "question_text": q["text"],
+                            "question_type": q.get("type", "multichoice"),
+                            "options": q.get("options"),
+                            "allow_multiple": q.get("allow_multiple", False),
+                            "context": context_msg if i == 0 else None,
+                        }
+                        for i, q in enumerate(generated_questions)
+                    ]
+                else:
+                    raise ValueError("No questions generated")
+                    
+            except Exception as e:
+                logger.warning(f"[BA] Failed to generate feature-specific questions: {e}, using fallback")
                 # Fallback: use simple open questions
-                logger.warning("[BA] interview_requirements returned no questions, using fallback")
                 batch_questions = [
                     {
                         "question_text": detail,
@@ -1808,10 +2009,32 @@ async def update_stories(state: BAState, agent=None) -> dict:
     
     # SMART FILTERING: Detect if user mentions specific domain/page
     # If yes, only update that epic (much faster, avoids timeout)
-    # EXCEPTION: For DELETION requests, ALWAYS use ALL epics (LLM needs to see all to decide what to remove)
+    # SPECIAL HANDLING FOR DELETION: Find the epic to delete by matching keywords
     if is_deletion_request:
-        logger.info(f"[BA] Deletion request detected - using ALL {len(all_epics)} epics (LLM needs full context to delete)")
-        epics_to_update = all_epics
+        # Extract keywords from user message to find target epic
+        user_keywords = _extract_intent_keywords(user_message)
+        
+        # Find epic(s) that match the deletion request
+        matching_epics_for_deletion = []
+        for epic in all_epics:
+            epic_text = f"{epic.get('title', '')} {epic.get('domain', '')} {epic.get('description', '')}".lower()
+            matches = sum(1 for kw in user_keywords if kw in epic_text)
+            if matches >= 1:  # At least 1 keyword match
+                matching_epics_for_deletion.append({
+                    "epic": epic,
+                    "match_score": matches / len(user_keywords) if user_keywords else 0
+                })
+        
+        if matching_epics_for_deletion:
+            # Sort by match score and take top matches
+            matching_epics_for_deletion.sort(key=lambda x: x["match_score"], reverse=True)
+            # Only send matched epics to LLM (much smaller payload)
+            epics_to_update = [m["epic"] for m in matching_epics_for_deletion[:3]]  # Max 3 epics
+            logger.info(f"[BA] Deletion request - found {len(epics_to_update)} matching epic(s) to delete: {[e.get('title') for e in epics_to_update]}")
+        else:
+            # No match found, send all epics (fallback)
+            logger.warning(f"[BA] Deletion request - no matching epic found, sending all {len(all_epics)} epics")
+            epics_to_update = all_epics
     else:
         relevant_epics = []
         mentioned_domains = []
@@ -1856,13 +2079,32 @@ async def update_stories(state: BAState, agent=None) -> dict:
         HumanMessage(content=user_prompt)
     ]
     
-    result = await _invoke_structured(
-        llm=_story_llm,
-        schema=FullStoriesOutput,
-        messages=messages,
-        config=_cfg(state, "update_stories"),
-        fallback_data={"epics": epics_to_update, "message_template": "", "approval_template": "", "change_summary": "Không thể cập nhật"}
-    )
+    # Log payload size for debugging
+    total_chars = len(system_prompt) + len(user_prompt)
+    logger.info(f"[BA] Calling LLM for update_stories: {len(epics_to_update)} epics, payload size: {total_chars} chars")
+    
+    # Add timeout wrapper for LLM call
+    import asyncio
+    try:
+        # Set timeout to 120 seconds (2 minutes) for large payloads
+        result = await asyncio.wait_for(
+            _invoke_structured(
+                llm=_story_llm,
+                schema=FullStoriesOutput,
+                messages=messages,
+                config=_cfg(state, "update_stories"),
+                fallback_data={"epics": epics_to_update, "message_template": "", "approval_template": "", "change_summary": "Không thể cập nhật"}
+            ),
+            timeout=120.0  # 2 minutes timeout
+        )
+        logger.info(f"[BA] LLM call completed successfully")
+    except asyncio.TimeoutError:
+        logger.error(f"[BA] LLM call TIMEOUT after 120s! Payload: {len(epics_to_update)} epics, {total_chars} chars")
+        # Use fallback data
+        result = {"epics": epics_to_update, "message_template": "", "approval_template": "", "change_summary": "⚠️ Timeout - không thể cập nhật (payload quá lớn)"}
+    except Exception as e:
+        logger.error(f"[BA] LLM call FAILED: {e}")
+        result = {"epics": epics_to_update, "message_template": "", "approval_template": "", "change_summary": f"⚠️ Lỗi: {str(e)[:100]}"}
     
     # Convert Pydantic Epic objects to dicts
     updated_epics_from_llm = []
@@ -1880,14 +2122,26 @@ async def update_stories(state: BAState, agent=None) -> dict:
         # Build map of updated epics by ID
         updated_map = {epic.get("id"): epic for epic in updated_epics_from_llm}
         
+        # Build set of IDs that were sent to LLM (for deletion detection)
+        sent_epic_ids = {epic.get("id") for epic in epics_to_update}
+        
         # Merge: replace updated epics, keep others unchanged
+        # SPECIAL: If an epic was sent to LLM but NOT in result → it was DELETED
         final_epics = []
         for epic in all_epics:
             epic_id = epic.get("id")
-            if epic_id in updated_map:
-                final_epics.append(updated_map[epic_id])  # Use updated version
+            if epic_id in sent_epic_ids:
+                # This epic was sent to LLM
+                if epic_id in updated_map:
+                    # Epic still exists in result → keep it (might be modified)
+                    final_epics.append(updated_map[epic_id])
+                else:
+                    # Epic was sent but NOT in result → it was DELETED by LLM
+                    logger.info(f"[BA] Epic '{epic.get('title')}' was DELETED by LLM")
+                    # Don't add to final_epics (effectively deleted)
             else:
-                final_epics.append(epic)  # Keep original
+                # Epic was NOT sent to LLM → keep original
+                final_epics.append(epic)
     else:
         # All epics were updated, use result directly
         final_epics = updated_epics_from_llm
