@@ -1,14 +1,11 @@
-"""Analyze and Plan node - Zero-shot planning with FileRepository."""
+"""Analyze and Plan node"""
 import os
-import re
 import logging
-import glob as glob_module
 from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
-
 from app.agents.developer.src.state import DeveloperState
-from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
-from app.agents.developer.src.nodes._llm import get_llm, fast_llm
+from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
+from app.agents.developer.src.nodes._llm import  fast_llm
 from app.agents.developer.src.schemas import SimplePlanOutput
 from app.agents.developer.src.skills.registry import SkillRegistry
 from app.agents.developer.src.skills import get_plan_prompts
@@ -16,7 +13,6 @@ from app.agents.developer.src.skills import get_plan_prompts
 logger = logging.getLogger(__name__)
 
 BOILERPLATE_FILES = {"src/lib/prisma.ts", "src/lib/utils.ts", "src/auth.ts"}
-
 
 class FileRepository:
     """Pre-computed workspace context for zero-shot planning."""
@@ -170,20 +166,15 @@ def _auto_fix_dependencies(steps: list) -> list:
     return steps
 
 
-async def plan(state: DeveloperState, agent=None) -> DeveloperState:
+@track_node("plan")
+async def plan(state: DeveloperState, config: dict = None, agent=None) -> DeveloperState:
     """Zero-shot planning with FileRepository."""
-    from langgraph.types import interrupt
-    from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+    # FIX #1: Removed duplicate signal check - handled by _run_graph_with_signal_check()
     from app.agents.developer.src.utils.story_logger import StoryLogger
     
+    config = config or {}  # Ensure config is not None
     story_logger = StoryLogger.from_state(state, agent).with_node("plan")
     story_id = state.get("story_id", "")
-    
-    if story_id:
-        signal = check_interrupt_signal(story_id, agent)
-        if signal:
-            await story_logger.info(f"Interrupt signal received: {signal}")
-            interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
     
     await story_logger.info("Analyzing requirements...")
     workspace_path = state.get("workspace_path", "")
@@ -194,14 +185,15 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
         repo = FileRepository(workspace_path)
         context = repo.to_context()
         
-        plan_prompts = get_plan_prompts(tech_stack)
+        skills_dir = Path(__file__).parent.parent / "skills"
+        plan_prompts = get_plan_prompts(tech_stack, skills_dir)
         system_prompt = plan_prompts.get('zero_shot_system', plan_prompts.get('system_prompt', ''))
         
         req_text = chr(10).join(f"- {r}" for r in state.get("story_requirements", []))
         ac_text = chr(10).join(f"- {ac}" for ac in state.get("acceptance_criteria", []))
         
         input_text = f"""## Project Context
-{context}
+        {context}
 
 ## Story
 **Title**: {state.get('story_title', '')}
@@ -209,17 +201,22 @@ async def plan(state: DeveloperState, agent=None) -> DeveloperState:
 **Requirements**: {req_text}
 **Acceptance**: {ac_text}
 
-Create implementation plan. Output JSON steps directly."""
+Create implementation plan."""
 
         await story_logger.info("Generating implementation plan...")
         structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
-        result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "plan_zero_shot"))
-        flush_langfuse(state)
         
-        if story_id:
-            signal = check_interrupt_signal(story_id, agent)
-            if signal:
-                interrupt({"reason": signal, "story_id": story_id, "node": "plan"})
+        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
+        llm_config = _cfg(config, "plan_zero_shot")
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"✓ LANGFUSE: Config for LLM call: callbacks={llm_config.get('callbacks', []) if llm_config else []}")
+        
+        result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=llm_config)
+        flush_langfuse(config)
+        
+        # FIX #1: Removed post-LLM signal check - handled by _run_graph_with_signal_check()
         
         steps = result.model_dump().get("steps", [])
         

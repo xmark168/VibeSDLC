@@ -6,11 +6,10 @@ from dataclasses import dataclass
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
 from typing import Literal, List, Optional
-
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.schemas import PlanStep
 from app.agents.developer.src.config import MAX_DEBUG_ATTEMPTS
-from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse
+from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
 from app.agents.developer.src.utils.prompt_utils import build_system_prompt as _build_system_prompt
 from app.agents.developer.src.nodes._llm import code_llm
 from app.agents.developer.src.skills import SkillRegistry
@@ -109,12 +108,14 @@ def _clean_logs(logs: str, max_lines: int = 50) -> str:
     return '\n'.join(filtered[:max_lines]) or logs[:2000]
 
 
-async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
+@track_node("analyze_error")
+async def analyze_error(state: DeveloperState, config: dict = None, agent=None) -> DeveloperState:
     """Zero-shot error analysis with structured output."""
     from langgraph.types import interrupt
     from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
     from app.agents.developer.src.utils.story_logger import StoryLogger
     
+    config = config or {}  # Ensure config is not None
     story_logger = StoryLogger.from_state(state, agent).with_node("analyze_error")
     story_id = state.get("story_id", "")
     
@@ -182,9 +183,13 @@ async def analyze_error(state: DeveloperState, agent=None) -> DeveloperState:
 
 Analyze the error and provide fix steps."""
 
+        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
         structured_llm = code_llm.with_structured_output(ErrorAnalysisOutput)
-        result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "analyze_error"))
-        flush_langfuse(state)
+        result = await structured_llm.ainvoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
+            config=_cfg(config, "analyze_error")
+        )
+        flush_langfuse(config)
         
         logger.info(f"[analyze_error] Analysis: {result.error_type} - {result.root_cause[:100]}")
         

@@ -131,23 +131,40 @@ def _run_prisma_db_push(workspace_path: str) -> bool:
         return False
 
 
-def _run_prisma_seed(workspace_path: str) -> bool:
-    """Run prisma db seed (60s timeout)."""
-    seed_file = os.path.join(workspace_path, "prisma", "seed.ts")
-    if not os.path.exists(seed_file):
+
+
+
+async def _setup_prisma(workspace_path: str, database_ready: bool, story_logger) -> bool:
+    """Setup Prisma: generate client, push schema, and seed database.
+    
+    Returns True if all steps succeeded, False otherwise.
+    """
+    schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
+    if not os.path.exists(schema_path):
         return True
-    try:
-        result = subprocess.run("pnpm exec ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts", cwd=workspace_path, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60, shell=True)
-        if result.returncode == 0:
-            return True
-        logger.warning(f"[setup_workspace] seed FAILED: {result.stderr[:200] if result.stderr else ''}")
+    
+    loop = asyncio.get_event_loop()
+    
+    # Generate Prisma client
+    await story_logger.info("🗄️ Generating Prisma client...")
+    gen_success = await loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
+    
+    if not gen_success:
+        await story_logger.warning("prisma generate failed")
         return False
-    except subprocess.TimeoutExpired:
-        logger.warning("[setup_workspace] seed TIMEOUT")
-        return False
-    except Exception as e:
-        logger.warning(f"[setup_workspace] seed ERROR: {e}")
-        return False
+    
+    # Push schema to database
+    if database_ready:
+        await story_logger.info("🗄️ Syncing database schema (prisma db push)...")
+        push_success = await loop.run_in_executor(_executor, _run_prisma_db_push, workspace_path)
+        if not push_success:
+            await story_logger.warning("prisma db push failed, tables may not be created")
+            return False
+        
+        # Skip seeding in setup - will be done in build step
+        # This avoids duplicate seed and early failures
+    
+    return True
 
 
 def _start_database(workspace_path: str, story_id: str = None) -> dict:
@@ -244,9 +261,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         story_id = state.get("story_id", state.get("task_id", "unknown"))
         story_code = state.get("story_code", f"STORY-{story_id[:8]}")
         
-        if state.get("workspace_ready"):
-            await story_logger.debug("Workspace ready, checking dependencies...")
-        
         # Use story_code for branch name (sanitized)
         safe_code = story_code.replace('/', '-').replace('\\', '-')
         branch_name = f"story_{safe_code}"
@@ -270,7 +284,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 main_workspace = agent.workspace_path
             else:
                 await story_logger.error("Agent has no workspace path attribute")
-                return {**state, "workspace_ready": False, "index_ready": False}
+                return {**state, "workspace_ready": False}
             
             workspace_info = setup_git_worktree(
                 story_code=story_code,
@@ -279,7 +293,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 agent_name=agent.name if agent else "Developer"
             )
         
-        index_ready = False
         workspace_path = workspace_info.get("workspace_path", "")
         branch_name = workspace_info.get("branch_name", "")
         
@@ -313,44 +326,34 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         
         pkg_json = os.path.join(workspace_path, "package.json") if workspace_path else ""
         if workspace_path and pkg_json and os.path.exists(pkg_json):
-            await story_logger.info("📦 Installing dependencies (pnpm install)...")
+            # Phase 1 Optimization: Run DB + pnpm + prisma generate in PARALLEL
+            await story_logger.info("⚡ Starting parallel setup: DB + pnpm + Prisma...")
             loop = asyncio.get_event_loop()
             from functools import partial
+            
+            # Launch all 3 in parallel (prisma generate doesn't need DB)
             db_future = loop.run_in_executor(_executor, partial(_start_database, workspace_path, story_id))
             pnpm_future = loop.run_in_executor(_executor, _run_pnpm_install, workspace_path)
+            prisma_gen_future = loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
             
-            # Wait for both
-            db_result, pnpm_success = await asyncio.gather(db_future, pnpm_future)
+            # Wait for all 3 to complete
+            db_result, pnpm_success, gen_success = await asyncio.gather(
+                db_future, pnpm_future, prisma_gen_future
+            )
             
             database_ready = db_result.get("ready", False)
-            db_result.get("url", "")
             
             if not pnpm_success:
                 await story_logger.warning("pnpm install failed, continuing...")
+            if not gen_success:
+                await story_logger.warning("prisma generate failed")
             
-            # Run prisma generate and db push AFTER pnpm install completes
-            schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
-            if pnpm_success and os.path.exists(schema_path):
-                await story_logger.info("🗄️ Generating Prisma client...")
-                gen_success = await loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
-                
-                if gen_success:
-                    # Run db push to create/update tables
-                    if database_ready:
-                        await story_logger.info("🗄️ Syncing database schema (prisma db push)...")
-                        push_success = await loop.run_in_executor(_executor, _run_prisma_db_push, workspace_path)
-                        if not push_success:
-                            await story_logger.warning("prisma db push failed, tables may not be created")
-                        else:
-                            # Run seed after db push succeeds
-                            seed_file = os.path.join(workspace_path, "prisma", "seed.ts")
-                            if os.path.exists(seed_file):
-                                await story_logger.info("🌱 Seeding database...")
-                                seed_success = await loop.run_in_executor(_executor, _run_prisma_seed, workspace_path)
-                                if not seed_success:
-                                    await story_logger.warning("prisma db seed failed, will retry in build step")
-                else:
-                    await story_logger.warning("prisma generate failed")
+            # Only db push needs database ready (sequential after parallel)
+            if database_ready and gen_success:
+                await story_logger.info("🗄️ Syncing database schema...")
+                push_success = await loop.run_in_executor(_executor, _run_prisma_db_push, workspace_path)
+                if not push_success:
+                    await story_logger.warning("prisma db push failed")
         
         # Build project config with tech stack
         project_config = _build_project_config(tech_stack)
@@ -374,7 +377,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             "branch_name": workspace_info["branch_name"],
             "main_workspace": workspace_info["main_workspace"],
             "workspace_ready": workspace_info["workspace_ready"],
-            "index_ready": index_ready,
             "agents_md": agents_md,
             "project_context": project_context,
             "tech_stack": tech_stack,

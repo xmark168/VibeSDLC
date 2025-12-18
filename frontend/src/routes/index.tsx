@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { HeroSection } from "@/components/landing/hero-section"
 import { AnimatedSection } from "@/components/landing/animated-section"
 import { GlowingEffect } from "@/components/ui/glow-effect-card"
@@ -134,7 +134,13 @@ const agents = [
 
 function AgentFlipCard({ agent }: { agent: typeof agents[0] }) {
   const [isFlipped, setIsFlipped] = useState(false)
+  const navigate = useNavigate()
   const Icon = agent.icon
+
+  const handleChatClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    navigate({ to: '/projects' })
+  }
 
   return (
     <div
@@ -231,13 +237,16 @@ function AgentFlipCard({ agent }: { agent: typeof agents[0] }) {
               ))}
             </div>
 
-            <div className={cn(
-              "mt-4 flex items-center justify-between p-3 -mx-1 rounded-xl",
-              "bg-zinc-100 dark:bg-zinc-800/50",
-              "hover:bg-gradient-to-r hover:from-zinc-100 hover:to-transparent",
-              "dark:hover:from-zinc-800 dark:hover:to-transparent",
-              "transition-all duration-300 cursor-pointer group/cta"
-            )}>
+            <div 
+              onClick={handleChatClick}
+              className={cn(
+                "mt-4 flex items-center justify-between p-3 -mx-1 rounded-xl",
+                "bg-zinc-100 dark:bg-zinc-800/50",
+                "hover:bg-gradient-to-r hover:from-zinc-100 hover:to-transparent",
+                "dark:hover:from-zinc-800 dark:hover:to-transparent",
+                "transition-all duration-300 cursor-pointer group/cta"
+              )}
+            >
               <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200 group-hover/cta:text-zinc-900 dark:group-hover/cta:text-white transition-colors">
                 Chat with {agent.title}
               </span>

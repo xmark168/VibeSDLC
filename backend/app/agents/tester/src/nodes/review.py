@@ -5,19 +5,19 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import List, Literal
-from pydantic import BaseModel, Field
+from typing import List
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.utils.token_utils import smart_truncate_tokens
-from app.agents.tester.src._llm import review_llm
+from app.agents.tester.src.schemas import ReviewDecision
+from app.utils.token_utils import smart_truncate_tokens
+from app.core.agent.llm_factory import get_llm
 
 logger = logging.getLogger(__name__)
 
-_llm = review_llm
+_llm = get_llm("review")
 
 # Config
 MAX_REVIEW_TOKENS = 8000
@@ -26,19 +26,10 @@ MAX_REVIEWS = 2  # Max reviews before force advancing
 MAX_LBTM_PER_FILE = 3  # Force LGTM for file after 3 LBTM
 
 
-def _cfg(state: dict, name: str) -> dict:
-    """Get LLM config with Langfuse callback."""
-    h = state.get("langfuse_handler")
-    return {"callbacks": [h], "run_name": name} if h else {"run_name": name}
-
-
-
-
-class ReviewDecision(BaseModel):
-    """Structured review decision output."""
-    decision: Literal["LGTM", "LBTM"] = Field(description="LGTM (Looks Good To Me) or LBTM (Looks Bad To Me)")
-    feedback: str = Field(default="", description="Brief explanation of decision")
-    issues: List[str] = Field(default_factory=list, description="List of specific issues found")
+def _cfg(config: dict, name: str) -> dict:
+    """Get LLM config with Langfuse callback from runtime config."""
+    callbacks = config.get("callbacks", []) if config else []
+    return {"callbacks": callbacks, "run_name": name} if callbacks else {"run_name": name}
 
 
 def _read_test_file(workspace_path: str, file_path: str) -> tuple[str, str]:
@@ -87,6 +78,7 @@ async def _review_single_file(
     file_path: str,
     step: dict,
     step_index: int,
+    config: dict = None,
 ) -> dict:
     """Review a single test file (called in parallel).
     
@@ -135,7 +127,8 @@ async def _review_single_file(
         
         # Call LLM with structured output
         structured_llm = _llm.with_structured_output(ReviewDecision)
-        review_result = await structured_llm.ainvoke(messages, config=_cfg(state, f"review_{step_index + 1}"))
+        # Pass config from runtime (not state) to avoid checkpoint serialization issues
+        review_result = await structured_llm.ainvoke(messages, config=_cfg(config or {}, f"review_{step_index + 1}"))
         
         decision = review_result.decision
         feedback = review_result.feedback
@@ -173,8 +166,13 @@ async def _review_single_file(
         }
 
 
-async def review(state: TesterState, agent=None) -> dict:
+async def review(state: TesterState, config: dict = None, agent=None) -> dict:
     """Review ALL test files in PARALLEL using asyncio.gather.
+    
+    Args:
+        state: Current tester state
+        config: LangGraph runtime config (contains callbacks for Langfuse)
+        agent: Tester agent instance
 
     This node:
     1. Gets all files_modified from implement_tests
@@ -188,16 +186,14 @@ async def review(state: TesterState, agent=None) -> dict:
     - 50% faster: All files reviewed simultaneously
     - Better feedback: Each file gets specific feedback
     """
-    from langgraph.types import interrupt
-    from app.agents.tester.src.graph import check_interrupt_signal
+    # FIX #1: Removed duplicate signal check - handled by _run_graph_with_signal_check()
+    from app.agents.developer.src.utils.story_logger import StoryLogger
     
-    # Check for pause/cancel signal
+    config = config or {}  # Ensure config is not None
+    
+    # Create story logger
+    story_logger = StoryLogger.from_state(state, agent).with_node("review")
     story_id = state.get("story_id", "")
-    if story_id:
-        signal = check_interrupt_signal(story_id)
-        if signal:
-            logger.info(f"[review] Interrupt signal received: {signal}")
-            interrupt({"reason": signal, "story_id": story_id, "node": "review"})
     
     files_modified = state.get("files_modified", [])
     test_plan = state.get("test_plan", [])
@@ -232,6 +228,7 @@ async def review(state: TesterState, agent=None) -> dict:
             file_path=file_path,
             step=step,
             step_index=step_index,
+            config=config,
         )
         tasks.append(task)
     

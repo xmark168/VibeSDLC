@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import useAuth from "@/hooks/useAuth"
-import { withToast } from "@/utils"
 import { FaGooglePlusG } from "react-icons/fa6"
 
 type OAuthLoadingProvider = "google" | "github" | "facebook" | null
@@ -27,29 +26,14 @@ export function SignUpForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    await withToast(
-      new Promise((resolve, reject) => {
-        signUpMutation.mutate(
-          {
-            requestBody: {
-              full_name: formData.fullname,
-              email: formData.email,
-              password: formData.password,
-              confirm_password: formData.confirmPassword,
-            },
-          },
-          {
-            onSuccess: resolve,
-            onError: reject,
-          },
-        )
-      }),
-      {
-        loading: "Creating account...",
-        success: <b>Account created successfully!</b>,
-        error: <b>Failed to create account. Please try again.</b>,
+    signUpMutation.mutate({
+      requestBody: {
+        full_name: formData.fullname,
+        email: formData.email,
+        password: formData.password,
+        confirm_password: formData.confirmPassword,
       },
-    )
+    })
   }
   const handleLoginGoogle = () => {
     if (oauthLoading) return

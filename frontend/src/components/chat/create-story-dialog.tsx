@@ -22,7 +22,7 @@ export interface StoryEditData {
   id: string
   title: string
   description?: string
-  type: "UserStory" | "EnablerStory"
+  type: "UserStory"
   story_point?: number
   priority?: number
   rank?: number
@@ -458,40 +458,6 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
         <Separator />
 
         <div className="space-y-4">
-          {/* Story Type */}
-          <div className="space-y-2">
-            <Label className="text-sm font-semibold">Story Type *</Label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, type: "UserStory" }))}
-                className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                  formData.type === "UserStory"
-                    ? "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-2 border-blue-200 dark:border-blue-800"
-                    : "bg-muted/30 text-muted-foreground hover:bg-muted/50 border-2 border-transparent"
-                }`}
-              >
-                User Story
-              </button>
-              <button
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, type: "EnablerStory" }))}
-                className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                  formData.type === "EnablerStory"
-                    ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-2 border-emerald-200 dark:border-emerald-800"
-                    : "bg-muted/30 text-muted-foreground hover:bg-muted/50 border-2 border-transparent"
-                }`}
-              >
-                Enabler Story
-              </button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {formData.type === "UserStory"
-                ? "User-facing features that deliver direct value to end users"
-                : "Infrastructure, technical foundations, and architectural work"}
-            </p>
-          </div>
-
           {/* Title */}
           <div className="space-y-2">
             <Label htmlFor="title" className="text-sm font-semibold">

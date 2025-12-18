@@ -462,7 +462,7 @@ def create_bug_story(
         with Session(engine) as session:
             story = Story(
                 project_id=UUID(project_id),
-                type=StoryType.ENABLER_STORY,
+                type=StoryType.USER_STORY,
                 title=f"🐛 Fix: {title}",
                 description=description,
                 status=StoryStatus.TODO,

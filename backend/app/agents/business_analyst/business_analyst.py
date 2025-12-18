@@ -8,7 +8,8 @@ from uuid import UUID
 from sqlmodel import Session, select
 from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
 from app.core.agent.project_context import ProjectContext
-from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType, Epic, Story, EpicStatus, StoryStatus
+from app.core.agent.mixins import PausableAgentMixin
+from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
 from app.core.db import engine
@@ -34,7 +35,7 @@ class TaskStoppedException(Exception):
         super().__init__(self.message)
 
 
-class BusinessAnalyst(BaseAgent):
+class BusinessAnalyst(BaseAgent, PausableAgentMixin):
     """
     Business Analyst using LangGraph for workflow management.
     """
@@ -60,10 +61,8 @@ class BusinessAnalyst(BaseAgent):
         # Pass self to graph for Langfuse callback access
         self.graph_engine = BusinessAnalystGraph(agent=self)
         
-        # Pause/Resume/Cancel tracking (Dev V2 pattern)
-        self._running_tasks: Dict[str, asyncio.Task] = {}
-        self._paused_tasks: Set[str] = set()
-        self._cancelled_tasks: Set[str] = set()
+        # Initialize PausableAgentMixin (provides pause/resume/cancel functionality)
+        self.init_pausable_mixin()
         
         logger.info(f"[{self.name}] LangGraph initialized successfully")
     
@@ -754,26 +753,23 @@ class BusinessAnalyst(BaseAgent):
             conversation_context = self.context.format_memory()
             logger.info(f"[{self.name}] Using local conversation context ({len(conversation_context)} chars)")
         
-        # Setup Langfuse tracing (1 trace for entire graph - same as Team Leader)
-        langfuse_handler = None
-        langfuse_span = None
         langfuse_ctx = None
         
-        # Check if Langfuse is enabled before initializing
         from app.core.config import settings
         if settings.LANGFUSE_ENABLED:
             try:
                 from langfuse import get_client
-                from langfuse.langchain import CallbackHandler
                 langfuse = get_client()
-                # Create parent span for entire graph execution
                 langfuse_ctx = langfuse.start_as_current_observation(
                     as_type="span",
                     name="business_analyst_graph"
                 )
-                # Enter context and get span object
                 langfuse_span = langfuse_ctx.__enter__()
-                # Update trace with metadata
+                
+                # Create LangChain CallbackHandler for detailed tracing
+                from langfuse.langchain import CallbackHandler
+                langfuse_handler = CallbackHandler()
+                
                 langfuse_span.update_trace(
                     user_id=str(task.user_id) if task.user_id else None,
                     session_id=str(self.project_id),
@@ -781,10 +777,12 @@ class BusinessAnalyst(BaseAgent):
                     tags=["business_analyst", self.role_type],
                     metadata={"agent": self.name, "task_id": str(task.task_id)}
                 )
-                # Handler inherits trace context automatically
-                langfuse_handler = CallbackHandler()
+
             except Exception as e:
                 logger.debug(f"[{self.name}] Langfuse setup: {e}")
+                langfuse_handler = None
+        else:
+            langfuse_handler = None
         
         # Prepare initial state
         initial_state = {

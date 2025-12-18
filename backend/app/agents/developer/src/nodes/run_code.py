@@ -6,14 +6,11 @@ import json
 import logging
 import shutil
 import socket
-import subprocess
-import time
 from pathlib import Path
 from typing import Tuple, Optional, List
-
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.utils.shell_utils import run_shell
-from app.agents.developer.src.utils.llm_utils import get_langfuse_span
+from app.agents.developer.src.utils.llm_utils import get_langfuse_span, track_node
 
 from langgraph.types import interrupt
 from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
@@ -121,9 +118,10 @@ def _run_seed(workspace_path: str) -> Tuple[bool, str, str]:
         return True, "", ""
     
     logger.debug("[run_code] Running database seed...")
+    # Use prisma db seed command - handles compiler-options automatically
     success, stdout, stderr = _run_step(
-        "DB Seed", "pnpm exec ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts",
-        workspace_path, "prisma", timeout=60, allow_fail=False  # Seed errors should be fixed
+        "DB Seed", "pnpm prisma db seed",
+        workspace_path, ".", timeout=60, allow_fail=False  # Seed errors should be fixed
     )
     
     if success:
@@ -181,9 +179,8 @@ def _run_step(
 
 
 async def _run_format_lint_parallel(services: List[dict], workspace_path: str) -> None:
-    """Run format and lint commands in parallel for all services.
-    
-    Optimization: Saves ~20-40s by running format/lint concurrently.
+    """
+    Run format and lint commands in parallel for all services.
     """
     loop = asyncio.get_event_loop()
     tasks = []
@@ -315,6 +312,7 @@ def _find_free_port() -> int:
         port = s.getsockname()[1]
     return port
 
+@track_node("run_code")
 async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
 
     

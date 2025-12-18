@@ -8,63 +8,18 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
 
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
-from app.agents.tester.src.nodes.core_nodes import send_message, generate_user_message
-from app.agents.tester.src.utils.token_utils import truncate_error_logs
-from app.agents.tester.src._llm import analyze_llm
+from app.agents.tester.src.nodes.helpers import send_message, generate_user_message, get_llm_config as _cfg
+from app.agents.tester.src.schemas import FixStep, ErrorAnalysisOutput
+from app.utils.token_utils import truncate_error_logs
+from app.core.agent.llm_factory import get_llm
 from app.agents.tester.src.config import MAX_DEBUG_ATTEMPTS
-from app.agents.tester.src.nodes.plan_tests import _get_existing_routes
+from app.agents.tester.src.nodes.plan import _get_existing_routes
 
 logger = logging.getLogger(__name__)
 
-
-def _build_debug_summary(state: Dict) -> str:
-    """Build summary of previous debug attempts to avoid repeating mistakes."""
-    debug_count = state.get("debug_count", 0)
-    review_count = state.get("review_count", 0)
-    
-    if debug_count == 0 and review_count == 0:
-        return ""
-    
-    parts = ["## Debug Summary (Previous Attempts)"]
-    
-    # Debug iterations info
-    if debug_count > 0:
-        parts.append(f"- Debug iterations: {debug_count}/{MAX_DEBUG_ATTEMPTS}")
-    
-    # Review feedback history
-    if review_count > 0:
-        parts.append(f"- Review attempts: {review_count}")
-        review_feedback = state.get("review_feedback", "")
-        if review_feedback:
-            parts.append(f"- Last review feedback:\n```\n{review_feedback[:500]}\n```")
-    
-    # Previous errors
-    error = state.get("error", "")
-    run_stderr = state.get("run_stderr", "")
-    if error:
-        parts.append(f"- Last error: {error[:300]}")
-    if run_stderr:
-        parts.append(f"- Runtime stderr (truncated):\n```\n{run_stderr[:500]}\n```")
-    
-    # Files already modified
-    files_modified = state.get("files_modified", [])
-    if files_modified:
-        parts.append(f"- Files modified: {', '.join(files_modified[:10])}")
-    
-    # Debug history
-    debug_history = state.get("debug_history", [])
-    if debug_history:
-        parts.append("- Previous fix attempts:")
-        for i, attempt in enumerate(debug_history[-3:], 1):  # Last 3 attempts
-            parts.append(f"  {i}. {attempt[:100]}")
-    
-    parts.append("\n⚠️ IMPORTANT: Learn from previous attempts. Don't repeat the same mistakes!")
-    
-    return "\n".join(parts)
 
 
 def _extract_component_imports(test_content: str) -> List[str]:
@@ -355,32 +310,13 @@ def _format_parsed_errors(errors: List[ParsedTestError]) -> str:
     
     return "\n".join(lines)
 
-_llm = analyze_llm
+_llm = get_llm("analyze")
 
 
-def _cfg(state: dict, name: str) -> dict:
-    """Get LLM config with Langfuse callback."""
-    h = state.get("langfuse_handler")
-    return {"callbacks": [h], "run_name": name} if h else {}
-
-
-
-
-
-class FixStep(BaseModel):
-    """Single fix step."""
-    file_path: str = Field(description="Path to file to fix")
-    description: str = Field(default="Fix error", description="Description of the fix")
-    action: str = Field(default="modify", description="Action: create/modify/delete")
-    find_code: str = Field(default="", description="Code to find and replace")
-    replace_with: str = Field(default="", description="Replacement code")
-
-
-class ErrorAnalysisOutput(BaseModel):
-    """Structured output for error analysis."""
-    root_cause: str = Field(description="Root cause of the error")
-    error_code: str = Field(default="UNKNOWN", description="Error classification code")
-    fix_steps: List[FixStep] = Field(description="List of fix steps")
+def _cfg(config: dict, name: str) -> dict:
+    """Get LLM config with Langfuse callback from runtime config."""
+    callbacks = config.get("callbacks", []) if config else []
+    return {"callbacks": callbacks, "run_name": name} if callbacks else {}
 
 
 def _is_test_file(file_path: str) -> bool:
@@ -469,8 +405,13 @@ def _sanitize_file_path(file_path: str, workspace_path: str = "") -> str:
     return file_path
 
 
-async def analyze_errors(state: TesterState, agent=None) -> dict:
+async def analyze_errors(state: TesterState, config: dict = None, agent=None) -> dict:
     """Analyze test failures and create fix plan.
+    
+    Args:
+        state: Current tester state
+        config: LangGraph runtime config (contains callbacks for Langfuse)
+        agent: Tester agent instance
     
     This node:
     1. Parses error logs from run_tests
@@ -487,14 +428,20 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
     - debug_history: Append current analysis
     """
     from langgraph.types import interrupt
-    from app.agents.tester.src.graph import check_interrupt_signal
+    from app.agents.tester.src.utils.interrupt import check_interrupt_signal
+    from app.agents.developer.src.utils.story_logger import StoryLogger
+    
+    config = config or {}  # Ensure config is not None
+    
+    # Create story logger
+    story_logger = StoryLogger.from_state(state, agent).with_node("analyze_errors")
     
     # Check for pause/cancel signal
     story_id = state.get("story_id", "")
     if story_id:
         signal = check_interrupt_signal(story_id)
         if signal:
-            logger.info(f"[analyze_errors] Interrupt signal received: {signal}")
+            await story_logger.info(f"Interrupt signal received: {signal}")
             interrupt({"reason": signal, "story_id": story_id, "node": "analyze_errors"})
     
     debug_count = state.get("debug_count", 0)
@@ -613,7 +560,8 @@ async def analyze_errors(state: TesterState, agent=None) -> dict:
                     debug_history=history_str or "First attempt",
                 )),
             ],
-            config=_cfg(state, f"analyze_errors_{debug_count + 1}"),
+            # Pass config from runtime (not state) to avoid checkpoint serialization issues
+            config=_cfg(config, f"analyze_errors_{debug_count + 1}"),
         )
         
         root_cause = result.root_cause

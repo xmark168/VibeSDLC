@@ -9,6 +9,7 @@ export interface Agent {
     role: string;
     color: string;
     icon: string;
+    persona_avatar?: string | null;
 }
 interface MentionDropdownProps {
     agents: Agent[];
@@ -95,10 +96,18 @@ export const MentionDropdown = ({ agents, onSelect, onClose, excludeRef }: Menti
                     >
                         {/* Avatar */}
                         <div
-                            className="h-10 w-10 rounded-full flex items-center justify-center text-lg shrink-0"
-                            style={{ backgroundColor: agent.color }}
+                            className="h-10 w-10 rounded-full flex items-center justify-center text-lg shrink-0 overflow-hidden"
+                            style={{ backgroundColor: agent.persona_avatar ? 'transparent' : agent.color }}
                         >
-                            {agent.icon}
+                            {agent.persona_avatar ? (
+                                <img 
+                                    src={agent.persona_avatar} 
+                                    alt={agent.name}
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                agent.icon
+                            )}
                         </div>
 
                         {/* Name and Role */}

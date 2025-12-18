@@ -65,9 +65,9 @@ class StoryHandler(BaseEventHandler):
                 return
 
             ws_message = {
-                "type": "kanban_update",
-                "action": "story_status_changed",
+                "type": "story_status_changed",
                 "story_id": str(event_data.get("story_id", "")),
+                "status": event_data.get("new_status", ""),
                 "old_status": event_data.get("old_status", ""),
                 "new_status": event_data.get("new_status", ""),
                 "timestamp": self._get_timestamp(event_data),
@@ -77,35 +77,6 @@ class StoryHandler(BaseEventHandler):
 
         except Exception as e:
             logger.error(f"Error handling story status change: {e}", exc_info=True)
-
-    async def handle_story_message_created(self, event):
-        """Handle story channel message from agent/user."""
-        try:
-            event_data = self._normalize_event(event)
-            project_id = self._to_uuid(event_data.get("project_id"))
-            
-            if not project_id:
-                logger.warning("Story message event missing project_id")
-                return
-
-            ws_message = {
-                "type": "story_message",
-                "story_id": str(event_data.get("story_id", "")),
-                "message_id": str(event_data.get("message_id", "")),
-                "author_type": event_data.get("author_type", ""),
-                "author_name": event_data.get("author_name", ""),
-                "content": event_data.get("content", ""),
-                "message_type": event_data.get("message_type", "update"),
-                "structured_data": event_data.get("structured_data"),
-                "details": event_data.get("structured_data"),  # Alias for frontend
-                "timestamp": self._get_timestamp(event_data),
-            }
-
-            await self._broadcast(project_id, ws_message)
-            logger.debug(f"Broadcasted story message to project {project_id}")
-
-        except Exception as e:
-            logger.error(f"Error handling story message: {e}", exc_info=True)
 
     async def handle_story_agent_state_changed(self, event):
         """Handle agent execution state change on a story."""

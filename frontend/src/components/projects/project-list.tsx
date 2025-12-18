@@ -40,7 +40,7 @@ export const ProjectList = ({ projects, onCreateProject }: ProjectListProps) => 
   // Create a map of projectId -> agents
   const agentsByProject = agentQueries.reduce((acc, query) => {
     if (query.data) {
-      acc[query.data.projectId] = query.data.agents
+      acc[query.data.projectId] = query.data.agents?.data
     }
     return acc
   }, {} as Record<string, any[]>)
@@ -182,31 +182,6 @@ export const ProjectList = ({ projects, onCreateProject }: ProjectListProps) => 
             Learn how it works
             <ArrowRight className="w-3 h-3" />
           </motion.a>
-        </motion.div>
-
-        {/* Feature Highlights */}
-        <motion.div 
-          className="grid grid-cols-3 gap-6 mt-12 pt-8 border-t border-border/50 max-w-lg w-full"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-        >
-          {[
-            { icon: "🤖", label: "AI Agents" },
-            { icon: "⚡", label: "Fast Setup" },
-            { icon: "🔒", label: "Secure" },
-          ].map((feature, i) => (
-            <motion.div 
-              key={feature.label}
-              className="text-center"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6 + i * 0.1 }}
-            >
-              <div className="text-2xl mb-1">{feature.icon}</div>
-              <div className="text-xs text-muted-foreground font-medium">{feature.label}</div>
-            </motion.div>
-          ))}
         </motion.div>
       </motion.div>
     )

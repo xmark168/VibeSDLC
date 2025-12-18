@@ -1,7 +1,7 @@
 // Story-related types
 
 export type StoryStatus = 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived';
-export type StoryType = 'UserStory' | 'EnablerStory';
+export type StoryType = 'UserStory';
 
 export interface Story {
   id: string;

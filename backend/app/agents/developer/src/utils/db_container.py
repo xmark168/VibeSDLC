@@ -10,7 +10,6 @@ from app.core.db import engine
 from app.models import Story
 logger = logging.getLogger(__name__)
 
-# Disable Ryuk auto-cleanup so containers persist after process exit
 os.environ["TESTCONTAINERS_RYUK_DISABLED"] = "true"
 
 # Container registry: story_id -> container
@@ -21,9 +20,6 @@ def start_postgres_container(story_id: Optional[str] = None) -> Dict[str, str]:
     """
     Start a postgres container and return connection info.
     """
-    # Check if container already exists for this story
-    if story_id and story_id in _containers:
-        return get_connection_info(story_id)
     
     container = PostgresContainer("postgres:16")
     container.start()
@@ -115,9 +111,19 @@ def stop_container_by_id(container_id: str) -> bool:
     try:
         import docker
         client = docker.from_env()
+        
+        # Set timeout to avoid hanging
         container = client.containers.get(container_id)
-        container.stop()
+        container.stop(timeout=10)
         container.remove()
+        
+        # Clear from registry if exists
+        for story_id, cont in list(_containers.items()):
+            if hasattr(cont, 'id') and cont.id == container_id:
+                del _containers[story_id]
+                logger.info(f"Cleared container from registry: {story_id}")
+                break
+        
         return True
     except Exception as e:
         logger.error(f"[db_container] Failed to stop container {container_id}: {e}")

@@ -11,10 +11,8 @@ from app.models import AgentExecution, AgentExecutionStatus
 
 
 class ExecutionService:
-    """Service for agent execution tracking.
-    
-    Provides async-safe methods for creating and updating execution records
-    without blocking the event loop.
+    """
+    Service for agent execution tracking.
     """
 
     def __init__(self, session: Session):
@@ -32,22 +30,7 @@ class ExecutionService:
         agent_id: Optional[UUID] = None,
         pool_id: Optional[UUID] = None,
     ) -> UUID:
-        """Create execution record (async-safe, uses thread pool).
-        
-        Args:
-            project_id: Project UUID
-            agent_name: Agent name
-            agent_type: Agent type/role
-            trigger_message_id: Optional message that triggered this
-            user_id: Optional user ID
-            task_type: Optional task type
-            task_content_preview: Optional preview of task content
-            agent_id: Optional agent UUID
-            pool_id: Optional pool UUID
-            
-        Returns:
-            Created execution ID
-        """
+        """Create execution record (async-safe, uses thread pool) """
         execution = AgentExecution(
             project_id=project_id,
             agent_name=agent_name,

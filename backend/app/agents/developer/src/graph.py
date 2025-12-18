@@ -9,22 +9,19 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.nodes import (
     setup_workspace, plan, implement, implement_parallel,
-    run_code, analyze_error, review, story_chat, respond,
+    run_code, analyze_error, review, respond,
 )
 
 
-def route_by_task_type(state: DeveloperState) -> Literal["story_chat", "respond", "setup_workspace"]:
+def route_by_task_type(state: DeveloperState) -> Literal["respond", "setup_workspace"]:
     """Route based on graph_task_type - no LLM needed.
     
     Routes:
-    - story_message → story_chat node (reply in story chat)
     - message → respond node (reply to @Developer in main chat)
     - implement_story (default) → setup_workspace (start story implementation)
     """
     task_type = state.get("graph_task_type", "implement_story")
-    if task_type == "story_message":
-        return "story_chat"
-    elif task_type == "message":
+    if task_type == "message":
         return "respond"
     return "setup_workspace"
 
@@ -162,7 +159,6 @@ class DeveloperGraph:
         g = StateGraph(DeveloperState)
         
         # Chat/Response nodes
-        g.add_node("story_chat", partial(story_chat, agent=agent))
         g.add_node("respond", partial(respond, agent=agent))
         
         # Story implementation nodes
@@ -179,7 +175,6 @@ class DeveloperGraph:
         g.set_conditional_entry_point(route_by_task_type)
         
         # Chat nodes go directly to END
-        g.add_edge("story_chat", "__end__")
         g.add_edge("respond", "__end__")
         
         # Story implementation flow

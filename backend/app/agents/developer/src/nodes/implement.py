@@ -8,12 +8,12 @@ import hashlib
 from pathlib import Path
 from typing import List, Dict, Optional
 from langchain_core.messages import SystemMessage, HumanMessage
-
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.schemas import ImplementOutput
-from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg
+from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, track_node
+from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
 from app.agents.developer.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
-from app.agents.developer.src.utils.token_utils import truncate_to_tokens
+from app.utils.token_utils import truncate_to_tokens
 from app.agents.developer.src.nodes._llm import implement_llm
 from app.agents.developer.src.skills import SkillRegistry
 from app.agents.developer.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
@@ -207,22 +207,16 @@ def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundl
     return "\n\n---\n\n".join(parts)
 
 
-async def implement(state: DeveloperState, agent=None) -> DeveloperState:
+@track_node("implement")
+async def implement(state: DeveloperState, config: dict = None, agent=None) -> DeveloperState:
     """Execute implementation step with preloaded skills."""
-    from langgraph.types import interrupt
-    from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+    # FIX #1: Removed duplicate signal check - handled by _run_graph_with_signal_check()
     from app.agents.developer.src.utils.story_logger import StoryLogger
     
+    config = config or {}  # Ensure config is not None
     # Create story logger
     story_logger = StoryLogger.from_state(state, agent).with_node("implement")
-    
-    # Check for pause/cancel signal (triggers LangGraph interrupt)
     story_id = state.get("story_id", "")
-    if story_id:
-        signal = check_interrupt_signal(story_id, agent)
-        if signal:
-            await story_logger.info(f"Interrupt signal received: {signal}")
-            interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
     
     reset_modified_files()
     current_step, total_steps = state.get("current_step", 0), state.get("total_steps", 0)
@@ -302,16 +296,15 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
         # Use structured output
+        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
-        output = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, "implement_code"))
+        output = await structured_llm.ainvoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
+            config=_cfg(config, "implement_code")
+        )
         file_content = output.content if output else None
         
-        # Check for interrupt after LLM call (can be long-running)
-        if story_id:
-            signal = check_interrupt_signal(story_id, agent)
-            if signal:
-                await story_logger.info(f"Interrupt after LLM: {signal}")
-                interrupt({"reason": signal, "story_id": story_id, "node": "implement"})
+        # FIX #1: Removed post-LLM signal check - handled by _run_graph_with_signal_check()
         
         if file_content and file_path:
             fp = os.path.join(workspace_path, file_path)
@@ -327,7 +320,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
                 subprocess.run("pnpm exec prisma db push --accept-data-loss", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
                 seed_file = Path(workspace_path) / "prisma" / "seed.ts"
                 if seed_file.exists():
-                    subprocess.run("pnpm exec ts-node prisma/seed.ts", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
+                    subprocess.run("pnpm prisma db seed", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
             except:
                 pass
         
@@ -364,7 +357,7 @@ async def implement(state: DeveloperState, agent=None) -> DeveloperState:
 from app.agents.developer.src.nodes.parallel_utils import group_steps_by_layer, run_layer_parallel, MAX_CONCURRENT
 
 
-async def _implement_single_step(step: Dict, state: DeveloperState, skill_registry: SkillRegistry, workspace_path: str, deps_content: Dict, created_components: Dict[str, str] = None) -> Dict:
+async def _implement_single_step(step: Dict, state: DeveloperState, skill_registry: SkillRegistry, workspace_path: str, deps_content: Dict, created_components: Dict[str, str] = None, config: dict = None) -> Dict:
     file_path = step.get("file_path", "")
     task = step.get("task", step.get("description", ""))
     action = step.get("action", "")
@@ -400,8 +393,12 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
         # Use structured output
+        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
-        output = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=_cfg(state, f"impl_{file_path}"))
+        output = await structured_llm.ainvoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
+            config=_cfg(config or {}, f"impl_{file_path}")
+        )
         file_content = output.content if output else None
         
         if file_content and file_path:
@@ -415,22 +412,16 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
         return {"file_path": file_path, "success": False, "error": str(e)}
 
 
-async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperState:
+@track_node("implement_parallel")
+async def implement_parallel(state: DeveloperState, config: dict = None, agent=None) -> DeveloperState:
     """Execute steps in parallel by layer."""
-    from langgraph.types import interrupt
-    from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+    # FIX #1: Removed duplicate signal check - handled by _run_graph_with_signal_check()
     from app.agents.developer.src.utils.story_logger import StoryLogger
     
+    config = config or {}  # Ensure config is not None
     # Create story logger
     story_logger = StoryLogger.from_state(state, agent).with_node("implement_parallel")
-    
-    # Check for pause/cancel signal
     story_id = state.get("story_id", "")
-    if story_id:
-        signal = check_interrupt_signal(story_id, agent)
-        if signal:
-            await story_logger.info(f"Interrupt signal received: {signal}")
-            interrupt({"reason": signal, "story_id": story_id, "node": "implement_parallel"})
     
     try:
         plan_steps = state.get("implementation_plan", [])
@@ -472,7 +463,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                 signal = check_interrupt_signal(story_id, agent)
                 if signal:
                     if signal == "cancel":
-                        from app.agents.developer.src.exceptions import StoryStoppedException
+                        from app.core.agent.mixins import StoryStoppedException
                         from app.models.base import StoryAgentState
                         raise StoryStoppedException(
                             story_id,
@@ -490,7 +481,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                         }
             
             layer_steps = layers[layer_num]
-            is_parallel = len(layer_steps) > 1 and layer_num >= 5
+            is_parallel = len(layer_steps) > 1 and layer_num >= 4  # CHANGED: từ 5 → 4
             
             # Log layer progress
             files_list = ", ".join([s.get("file_path", "").split("/")[-1] for s in layer_steps[:3]])
@@ -498,9 +489,9 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
             await story_logger.info(f"📂 Layer {layer_idx}/{total_layers}: {files_list}{more}")
             
             if is_parallel:
-                results = await run_layer_parallel(layer_steps, lambda s, c=created_components: _implement_single_step(s, state, skill_registry, workspace_path, deps_content, c), state, MAX_CONCURRENT)
+                results = await run_layer_parallel(layer_steps, lambda s, c=created_components: _implement_single_step(s, state, skill_registry, workspace_path, deps_content, c, config), state, MAX_CONCURRENT)
             else:
-                results = [await _implement_single_step(s, state, skill_registry, workspace_path, deps_content, created_components) for s in layer_steps]
+                results = [await _implement_single_step(s, state, skill_registry, workspace_path, deps_content, created_components, config) for s in layer_steps]
             
             for r in results:
                 if r.get("success"):
@@ -518,21 +509,15 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
                             deps_content["prisma/schema.prisma"] = f.read()
                 except:
                     pass
-            elif layer_num == 2 and any("seed.ts" in str(r.get("file_path", "")) for r in results):
-                seed = os.path.join(workspace_path, "prisma/seed.ts")
-                if os.path.exists(seed):
-                    try:
-                        result = subprocess.run("pnpm exec ts-node prisma/seed.ts", cwd=workspace_path, shell=True, capture_output=True, text=True, timeout=60)
-                        if result.returncode == 0:
-                            Path(workspace_path, ".seed_cache").write_text(hashlib.md5(Path(seed).read_bytes()).hexdigest())
-                    except:
-                        pass
-            elif layer_num == 3:
+            elif layer_num == 2:
+                # Layer 2: Types (was layer 3)
                 tp = os.path.join(workspace_path, "src/types/index.ts")
                 if os.path.exists(tp):
                     with open(tp, 'r', encoding='utf-8') as f:
                         deps_content["src/types/index.ts"] = f.read()
-            elif layer_num >= 5:
+            elif layer_num >= 4:
+                # Layer 4+: API/Components (was layer 5+)
+                # Seed.ts is now in layer 4 and runs in parallel with API routes
                 for r in results:
                     fp = r.get("file_path", "")
                     if fp and fp.endswith(".tsx"):
@@ -563,7 +548,7 @@ async def implement_parallel(state: DeveloperState, agent=None) -> DeveloperStat
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "current_layer": total_layers, "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:
         from langgraph.errors import GraphInterrupt
-        from app.agents.developer.src.exceptions import StoryStoppedException
+        from app.core.agent.mixins import StoryStoppedException
         if isinstance(e, (GraphInterrupt, StoryStoppedException)):
             raise
         await story_logger.error(f"Parallel implementation failed: {str(e)}", exc=e)

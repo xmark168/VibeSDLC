@@ -595,6 +595,51 @@ def _get_workspace_path(project_path: str) -> Path:
     return workspace_path
 
 
+def kill_processes_using_directory(directory: str) -> int:
+    """Kill all node/pnpm processes. Returns count killed."""
+    import subprocess
+    import sys
+    
+    killed = 0
+    is_windows = sys.platform == 'win32'
+    
+    if is_windows:
+        try:
+            CREATE_NO_WINDOW = 0x08000000
+            result = subprocess.run(
+                'powershell -Command "Get-Process | Where-Object {$_.Path -like \'*node*\' -or $_.Path -like \'*pnpm*\'} | ForEach-Object { $_.Id }"',
+                shell=True, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
+            )
+            for pid_str in result.stdout.strip().split('\n'):
+                if pid_str.strip().isdigit():
+                    try:
+                        subprocess.run(f"taskkill /F /PID {pid_str.strip()} /T", shell=True, capture_output=True, creationflags=CREATE_NO_WINDOW)
+                        killed += 1
+                    except:
+                        pass
+        except:
+            pass
+    else:
+        # Unix: find and kill node/pnpm processes
+        try:
+            result = subprocess.run(
+                "ps aux | grep -E '(node|pnpm)' | grep -v grep | awk '{print $2}'",
+                shell=True, capture_output=True, text=True
+            )
+            for pid_str in result.stdout.strip().split('\n'):
+                if pid_str.strip().isdigit():
+                    try:
+                        import os
+                        os.kill(int(pid_str.strip()), 9)
+                        killed += 1
+                    except:
+                        pass
+        except:
+            pass
+    
+    return killed
+
+
 def _cleanup_dev_server(workspace_path: Path, port: int = None, pid: int = None) -> None:
     """Clean up dev server processes and lock files."""
     import subprocess
@@ -607,7 +652,8 @@ def _cleanup_dev_server(workspace_path: Path, port: int = None, pid: int = None)
         try:
             if is_windows:
                 # /T kills child processes too
-                subprocess.run(f"taskkill /F /PID {pid} /T", shell=True, capture_output=True)
+                CREATE_NO_WINDOW = 0x08000000
+                subprocess.run(f"taskkill /F /PID {pid} /T", shell=True, capture_output=True, creationflags=CREATE_NO_WINDOW)
             else:
                 os.kill(pid, 9)
             logger.info(f"Killed process PID {pid}")
@@ -619,9 +665,10 @@ def _cleanup_dev_server(workspace_path: Path, port: int = None, pid: int = None)
         try:
             if is_windows:
                 # Find all processes using this port
+                CREATE_NO_WINDOW = 0x08000000
                 result = subprocess.run(
                     f'netstat -ano | findstr :{port} | findstr LISTENING',
-                    shell=True, capture_output=True, text=True
+                    shell=True, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
                 )
                 killed_pids = set()
                 for line in result.stdout.strip().split('\n'):
@@ -630,7 +677,7 @@ def _cleanup_dev_server(workspace_path: Path, port: int = None, pid: int = None)
                         try:
                             target_pid = int(parts[-1])
                             if target_pid not in killed_pids:
-                                subprocess.run(f"taskkill /F /PID {target_pid} /T", shell=True, capture_output=True)
+                                subprocess.run(f"taskkill /F /PID {target_pid} /T", shell=True, capture_output=True, creationflags=CREATE_NO_WINDOW)
                                 killed_pids.add(target_pid)
                         except ValueError:
                             pass
@@ -670,6 +717,12 @@ def _cleanup_dev_server(workspace_path: Path, port: int = None, pid: int = None)
                 logger.info("Removed Next.js trace directory")
             except Exception:
                 pass
+    
+    # Kill all node/pnpm processes using workspace
+    if workspace_path and workspace_path.exists():
+        killed = kill_processes_using_directory(str(workspace_path))
+        if killed > 0:
+            logger.info(f"Killed {killed} node/pnpm processes")
 
 
 @router.post("/{project_id}/dev-server/start")
@@ -818,6 +871,7 @@ async def start_project_dev_server(
             capture_output=True,
             text=True,
             timeout=300,  # 5 minutes timeout for install
+            creationflags=0x08000000 if is_windows else 0,
         )
         if install_result.returncode != 0:
             await broadcast_log("Failed to install dependencies", "error")
@@ -840,6 +894,7 @@ async def start_project_dev_server(
                 capture_output=True,
                 text=True,
                 timeout=60,
+                creationflags=0x08000000 if is_windows else 0,
             )
             if db_push_result.returncode == 0:
                 await broadcast_log("Database schema ready", "success")
@@ -859,6 +914,7 @@ async def start_project_dev_server(
                 capture_output=True,
                 text=True,
                 timeout=60,
+                creationflags=0x08000000 if is_windows else 0,
             )
             if generate_result.returncode == 0:
                 await broadcast_log("Prisma client generated", "success")
@@ -873,20 +929,22 @@ async def start_project_dev_server(
                 await broadcast_log("Seeding database...", "running")
                 logger.info("Running database seed...")
                 
-                # Use same command as run_code.py
+                # Use prisma db seed - works on all platforms
                 if seed_file.exists():
-                    seed_cmd = 'pnpm exec ts-node --compiler-options {"module":"CommonJS"} prisma/seed.ts'
+                    seed_args = "pnpm prisma db seed"
                 else:
-                    seed_cmd = "node prisma/seed.js"
+                    seed_args = "node prisma/seed.js"
+                use_shell = True
                 
                 seed_result = await asyncio.to_thread(
                     subprocess.run,
-                    seed_cmd,
+                    seed_args,
                     cwd=str(workspace_path),
-                    shell=True,
+                    shell=use_shell,
                     capture_output=True,
                     text=True,
                     timeout=120,
+                    creationflags=0x08000000 if is_windows else 0,
                 )
                 if seed_result.returncode == 0:
                     await broadcast_log("Database seeded", "success")
@@ -903,67 +961,76 @@ async def start_project_dev_server(
     await broadcast_log("Starting development server...", "running")
     logger.info(f"Starting dev server for project {project_id} on port {port}")
     
-    try:
-        logger.info(f"Workspace path: {workspace_path}")
-        
-        if is_windows:
-            # On Windows: CREATE_NO_WINDOW prevents terminal popup
-            # DETACHED_PROCESS runs independently from parent
-            CREATE_NO_WINDOW = 0x08000000
+    # Retry logic (same as story dev server)
+    max_attempts = 3
+    last_error = None
+    
+    for attempt in range(max_attempts):
+        try:
             process = subprocess.Popen(
-                f"pnpm dev --port {port} --hostname 0.0.0.0",
+                f"pnpm dev --port {port} --hostname 0.0.0.0" if is_windows else ["pnpm", "dev", "--port", str(port), "--hostname", "0.0.0.0"],
                 cwd=str(workspace_path),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
-                shell=True,
-                creationflags=CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                shell=is_windows,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if is_windows else 0,
                 env={**os.environ, "FORCE_COLOR": "0"},
             )
-        else:
-            process = subprocess.Popen(
-                ["pnpm", "dev", "--port", str(port), "--hostname", "0.0.0.0"],
-                cwd=str(workspace_path),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-                env={**os.environ, "FORCE_COLOR": "0"},
-            )
-        
-        # Wait for server to be ready (increased timeout for first start)
-        logger.info(f"Waiting for dev server on port {port}...")
-        if await wait_for_port_async(port, timeout=60.0) and process.poll() is None:
-            # Store in project
-            project.dev_server_port = port
-            project.dev_server_pid = process.pid
-            session.add(project)
-            session.commit()
             
-            logger.info(f"Dev server started on port {port} (PID: {process.pid})")
-            await broadcast_log(f"Server ready on port {port}", "success")
+            # Wait for port to be ready
+            await broadcast_log(f"Waiting for server to be ready on port {port}...")
+            logger.info(f"Waiting for dev server on port {port}...")
             
-            # Broadcast via WebSocket
-            from app.websocket.connection_manager import connection_manager
-            await connection_manager.broadcast_to_project({
-                "type": "project_dev_server",
-                "project_id": str(project_id),
-                "running_port": port,
-                "running_pid": process.pid,
-            }, project_id)
+            if await wait_for_port_async(port, timeout=60.0) and process.poll() is None:
+                # Store in project
+                project.dev_server_port = port
+                project.dev_server_pid = process.pid
+                session.add(project)
+                session.commit()
+                
+                logger.info(f"Dev server started on port {port} (PID: {process.pid})")
+                await broadcast_log(f"Server ready on port {port}", "success")
+                
+                # Broadcast via WebSocket
+                from app.websocket.connection_manager import connection_manager
+                await connection_manager.broadcast_to_project({
+                    "type": "project_dev_server",
+                    "project_id": str(project_id),
+                    "running_port": port,
+                    "running_pid": process.pid,
+                }, project_id)
+                
+                return {"success": True, "port": port, "pid": process.pid}
+            else:
+                if process.poll() is not None:
+                    raise Exception(f"Process exited with code {process.returncode}")
+                else:
+                    raise Exception(f"Server started but port {port} not responding after 60s")
+                    
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Attempt {attempt + 1}/{max_attempts} failed: {str(e)}")
+            await broadcast_log(f"Attempt {attempt + 1}/{max_attempts} failed: {str(e)}", "warning")
             
-            return {"success": True, "port": port, "pid": process.pid}
-        else:
-            if process.poll() is not None:
-                stdout, stderr = process.communicate()
-                logger.error(f"Process stdout: {stdout.decode() if stdout else ''}")
-                logger.error(f"Process stderr: {stderr.decode() if stderr else ''}")
-                raise Exception(f"Process exited with code {process.returncode}")
-            raise Exception("Server did not start in time")
-            
-    except Exception as e:
-        logger.error(f"Failed to start dev server: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to start dev server: {str(e)}")
+            if attempt < max_attempts - 1:
+                # Kill processes using the directory
+                await broadcast_log(f"Killing processes using directory...")
+                killed = kill_processes_using_directory(str(workspace_path))
+                if killed:
+                    await broadcast_log(f"Killed {killed} processes")
+                    logger.info(f"Killed {killed} processes")
+                await asyncio.sleep(1)
+                
+                # Try new port
+                port = find_free_port()
+                await broadcast_log(f"Retrying with port {port}...")
+                logger.info(f"Retrying with port {port}...")
+    
+    # All attempts failed
+    logger.error(f"Failed to start dev server after {max_attempts} attempts: {str(last_error)}")
+    await broadcast_log(f"Failed to start dev server after {max_attempts} attempts: {str(last_error)}", "error")
+    raise HTTPException(status_code=500, detail=f"Failed to start dev server: {str(last_error)}")
 
 
 @router.post("/{project_id}/dev-server/stop")
@@ -974,11 +1041,24 @@ async def stop_project_dev_server(
     project_id: UUID
 ) -> Any:
     """Stop dev server for project main workspace."""
+    
+    # Helper: Broadcast log to frontend
+    async def broadcast_log(message: str):
+        from app.websocket.connection_manager import connection_manager
+        await connection_manager.broadcast_to_project({
+            "type": "dev_server_log",
+            "project_id": str(project_id),
+            "message": message,
+            "status": "running",
+        }, project_id)
+    
     project_service = ProjectService(session)
     project = project_service.get_by_id(project_id)
     
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    
+    await broadcast_log("Stopping development server...")
     
     # Get workspace path for cleanup
     workspace_path = None
@@ -986,20 +1066,48 @@ async def stop_project_dev_server(
         workspace_path = _get_workspace_path(project.project_path)
     
     # Clean up dev server processes and files
+    await broadcast_log("Cleaning up processes...")
     _cleanup_dev_server(
         workspace_path=workspace_path,
         port=project.dev_server_port,
         pid=project.dev_server_pid
     )
     
-    # Stop database container if exists
+    # Stop database container if exists (with retry)
     if project.db_container_id:
+        await broadcast_log("Stopping database container...")
         try:
-            from app.agents.developer.src.utils.db_container import stop_container_by_id
-            stop_container_by_id(project.db_container_id)
-            logger.info(f"Stopped database container: {project.db_container_id}")
+            from app.agents.developer.src.utils.db_container import stop_container_by_id, clear_container_from_registry
+            
+            # Try to stop container (with timeout)
+            stopped = stop_container_by_id(project.db_container_id)
+            
+            if stopped:
+                logger.info(f"Stopped database container: {project.db_container_id}")
+            else:
+                # If stop failed, try force kill
+                logger.warning(f"Normal stop failed, trying force kill...")
+                try:
+                    import docker
+                    client = docker.from_env()
+                    container = client.containers.get(project.db_container_id)
+                    container.kill()  # Force kill
+                    container.remove(force=True)
+                    logger.info(f"Force killed container: {project.db_container_id}")
+                except Exception as e2:
+                    logger.error(f"Force kill also failed: {e2}")
+            
+            # Clear from registry regardless of stop result
+            clear_container_from_registry(str(project_id))
+            
         except Exception as e:
             logger.warning(f"Failed to stop database container: {e}")
+            # Clear from registry anyway to prevent memory leak
+            try:
+                from app.agents.developer.src.utils.db_container import clear_container_from_registry
+                clear_container_from_registry(str(project_id))
+            except:
+                pass
     
     # Clear from DB
     project.dev_server_port = None
@@ -1008,6 +1116,8 @@ async def stop_project_dev_server(
     project.db_port = None
     session.add(project)
     session.commit()
+    
+    await broadcast_log("Server stopped successfully")
     
     # Broadcast via WebSocket
     from app.websocket.connection_manager import connection_manager
@@ -1044,9 +1154,10 @@ def get_project_dev_server_status(
         is_windows = sys.platform == 'win32'
         try:
             if is_windows:
+                CREATE_NO_WINDOW = 0x08000000
                 result = subprocess.run(
                     f'tasklist /FI "PID eq {project.dev_server_pid}"',
-                    shell=True, capture_output=True, text=True
+                    shell=True, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
                 )
                 is_running = str(project.dev_server_pid) in result.stdout
             else:
@@ -1229,11 +1340,12 @@ async def seed_project_database(
     
     is_windows = sys.platform == "win32"
     
-    # Use same command as run_code.py
+    # Use prisma db seed - works on all platforms
     if seed_file.exists():
-        seed_cmd = 'pnpm exec ts-node --compiler-options {"module":"CommonJS"} prisma/seed.ts'
+        seed_args = "pnpm prisma db seed"
     else:
-        seed_cmd = "node prisma/seed.js"
+        seed_args = "node prisma/seed.js"
+    use_shell = True
     
     # Broadcast start
     from app.websocket.connection_manager import connection_manager
@@ -1247,9 +1359,9 @@ async def seed_project_database(
     try:
         seed_result = await asyncio.to_thread(
             subprocess.run,
-            seed_cmd,
+            seed_args,
             cwd=str(workspace_path),
-            shell=True,
+            shell=use_shell,
             capture_output=True,
             text=True,
             timeout=120,

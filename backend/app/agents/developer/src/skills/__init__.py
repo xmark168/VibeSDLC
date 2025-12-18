@@ -2,7 +2,7 @@
 Skills package
 """
 
-from app.agents.developer.src.skills.skill_loader import (
+from app.core.skills.skill_loader import (
     Skill,
     SkillMetadata,
     load_skill,

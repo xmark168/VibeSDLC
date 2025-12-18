@@ -20,6 +20,9 @@ class TesterState(TypedDict, total=False):
     is_auto: bool
     action: Action
     
+    # NOTE: langfuse_handler removed - now passed via LangGraph config["callbacks"]
+    # to avoid serialization issues with PostgresSaver checkpoint
+    
     # Checkpoint/Interrupt
     checkpoint_thread_id: str
     is_resume: bool
@@ -28,7 +31,6 @@ class TesterState(TypedDict, total=False):
     # Workspace
     workspace_path: str
     branch_name: str
-    main_workspace: str
     workspace_ready: bool
     merged: bool
     project_path: str
