@@ -5,13 +5,14 @@ type AppStoreType = {
   user: UserPublic | undefined
   isLoading: boolean
   setUser: (user?: UserPublic | undefined) => void
+  setIsLoading: (loading: boolean) => void
 }
 
 export const useAppStore = create<AppStoreType>((set, get) => ({
   user: undefined,
   isLoading: true,
   setUser: (user?: UserPublic | undefined) => {
-    set({ user })
+    set({ user, isLoading: false })
     if (!user) {
       localStorage.removeItem("access_token")
     }

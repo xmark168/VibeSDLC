@@ -311,23 +311,18 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   useEffect(() => {
     const handleStoryStateChanged = (event: CustomEvent) => {
       const { story_id, agent_state, sub_status, running_port, running_pid, pr_state, merge_status } = event.detail
-      console.log('[KanbanBoard] Story state changed event:', { story_id, agent_state, sub_status, running_port, running_pid, pr_state, merge_status })
       
       setCards(prev => {
         const updatedCards = prev.map(card => {
           if (card.id !== story_id) return card
-          // Merge updates - only update fields that are explicitly provided
           const updated = { ...card }
           if (agent_state !== undefined) updated.agent_state = agent_state
-          // Update sub_status for PENDING state (queued/cleaning/starting)
           if (sub_status !== undefined) updated.agent_sub_status = sub_status
-          // Clear sub_status when moving away from PENDING
           if (agent_state && agent_state !== 'PENDING') updated.agent_sub_status = null
           if (running_port !== undefined) updated.running_port = running_port
           if (running_pid !== undefined) updated.running_pid = running_pid
           if (pr_state !== undefined) updated.pr_state = pr_state
           if (merge_status !== undefined) updated.merge_status = merge_status
-          console.log('[KanbanBoard] Card updated:', { before: card, after: updated })
           return updated
         })
         return updatedCards
@@ -344,7 +339,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
   useEffect(() => {
     const handleStoryStatusChanged = (event: CustomEvent) => {
       const { story_id, status, merge_status, pr_state } = event.detail
-      console.log('[KanbanBoard] Story status changed event:', { story_id, status, merge_status, pr_state })
       
       setCards(prev => {
         const updatedCards = prev.map(card => {
@@ -353,7 +347,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
           if (status) updated.columnId = status.toLowerCase()
           if (merge_status !== undefined) updated.merge_status = merge_status
           if (pr_state !== undefined) updated.pr_state = pr_state
-          console.log('[KanbanBoard] Card status updated:', { before: card, after: updated })
           return updated
         })
         return updatedCards
@@ -524,20 +517,7 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
-    // IMPORTANT: Use clonedCardsRef to get original column (avoid clonedCards state dependency)
     const originalColumnId = clonedCardsRef.current?.find(c => c.id === active.id)?.columnId
-    
-    // Debug log
-    const draggedCard = clonedCardsRef.current?.find(c => c.id === active.id)
-    console.log('[Kanban] DragEnd:', {
-      activeId: active.id,
-      overId: over?.id,
-      originalColumnId,
-      draggedCardTitle: draggedCard?.content,
-      draggedCardDeps: draggedCard?.dependencies,
-      clonedCardsExists: !!clonedCardsRef.current,
-    })
-    // Save clonedCards snapshot for potential revert before resetting refs
     const savedClonedCards = clonedCardsRef.current
 
     // Always reset active state
@@ -573,12 +553,6 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
     }
 
     if (!activeContainer || !overContainer) return
-
-    console.log('[Kanban] Container check:', {
-      activeContainer,
-      overContainer,
-      isCrossContainer: activeContainer !== overContainer
-    })
 
     const statusMap: Record<string, 'Todo' | 'InProgress' | 'Review' | 'Done' | 'Archived'> = {
       'todo': 'Todo',
@@ -679,15 +653,7 @@ export function KanbanBoard({ kanbanData, projectId, onViewFiles }: KanbanBoardP
 
       // Validation 3: Check dependencies - block move if dependencies not completed (except moving to Todo/Archived)
       if (activeCard && overContainer !== 'todo' && overContainer !== 'archived') {
-        // Use savedClonedCards to check dependencies (original state before drag)
         const { isBlocked, incompleteDeps } = checkDependenciesCompleted(activeCard, savedClonedCards || undefined)
-        console.log('[Kanban] Dependency check:', { 
-          cardTitle: activeCard.content,
-          targetColumn: overContainer,
-          dependencies: activeCard.dependencies,
-          isBlocked, 
-          incompleteDeps: incompleteDeps.map(d => d.content)
-        })
         if (isBlocked) {
           toast.error(`Cannot move story: ${incompleteDeps.length} incomplete dependencies`)
           // Revert to original state

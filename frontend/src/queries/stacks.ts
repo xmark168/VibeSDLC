@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "@/lib/toast"
+import { parseApiError } from "@/lib/api-error"
 import { stacksApi } from "@/apis/stacks"
 import type { TechStackCreate, TechStackUpdate } from "@/types/stack"
 
@@ -62,7 +63,7 @@ export function useCreateStack() {
       toast.success(`Stack "${data.name}" created successfully`)
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to create stack")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -79,7 +80,7 @@ export function useUpdateStack() {
       toast.success(`Stack "${data.name}" updated successfully`)
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to update stack")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -95,7 +96,7 @@ export function useDeleteStack() {
       toast.success("Stack deleted successfully")
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to delete stack")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -128,7 +129,7 @@ export function useCreateSkillFile() {
       toast.success("File created successfully")
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to create file")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -144,7 +145,7 @@ export function useUpdateSkillFile() {
       toast.success("File saved successfully")
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to save file")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -160,7 +161,7 @@ export function useDeleteSkillFile() {
       toast.success("File deleted successfully")
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to delete file")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -176,7 +177,7 @@ export function useCreateSkillFolder() {
       toast.success("Folder created successfully")
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to create folder")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -192,7 +193,7 @@ export function useDeleteSkillFolder() {
       toast.success("Folder deleted successfully")
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to delete folder")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -225,7 +226,7 @@ export function useCreateBoilerplateFile() {
       toast.success("File created successfully")
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to create file")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -241,7 +242,7 @@ export function useUpdateBoilerplateFile() {
       toast.success("File saved successfully")
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to save file")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -257,7 +258,7 @@ export function useDeleteBoilerplateFile() {
       toast.success("File deleted successfully")
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to delete file")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -273,7 +274,7 @@ export function useCreateBoilerplateFolder() {
       toast.success("Folder created successfully")
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to create folder")
+      toast.error(parseApiError(error))
     },
   })
 }
@@ -289,7 +290,7 @@ export function useDeleteBoilerplateFolder() {
       toast.success("Folder deleted successfully")
     },
     onError: (error: any) => {
-      toast.error(error.body?.detail || error.message || "Failed to delete folder")
+      toast.error(parseApiError(error))
     },
   })
 }

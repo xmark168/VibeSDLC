@@ -31,6 +31,7 @@ class UserSubscriptionResponse(BaseModel):
     """User subscription with credit wallet"""
     subscription: SubscriptionPublic | None = None
     credit_wallet: CreditWalletPublic | None = None
+    purchased_wallet: CreditWalletPublic | None = None
 
 
 class UpdateAutoRenew(BaseModel):

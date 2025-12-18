@@ -237,19 +237,6 @@ async def create_message_with_file(
         file_path = upload_dir / safe_filename
         file_path.write_bytes(file_bytes)
         
-        # Debug: verify file was saved correctly
-        saved_bytes = file_path.read_bytes()
-        logger.info(f"Saved uploaded file: {file_path}")
-        logger.info(f"  - Original size: {len(file_bytes)} bytes")
-        logger.info(f"  - Saved size: {len(saved_bytes)} bytes")
-        logger.info(f"  - First 20 bytes (hex): {file_bytes[:20].hex()}")
-        logger.info(f"  - Match: {file_bytes == saved_bytes}")
-        
-        # Log extracted text for debugging
-        logger.info(f"=== EXTRACTED TEXT FROM {file.filename} ({len(extracted_text)} chars) ===")
-        logger.info(f"CONTENT PREVIEW (first 500 chars):\n{extracted_text[:500]}")
-        logger.info(f"=== END EXTRACTED TEXT ===")
-        
         attachment = {
             "type": "document",
             "filename": file.filename,
@@ -421,16 +408,6 @@ async def download_attachment(
     if not file_path.exists():
         logger.error(f"Attachment file not found: {file_path}")
         raise HTTPException(status_code=404, detail="File not found on server")
-    
-    # Debug: log file info before download
-    file_size = file_path.stat().st_size
-    file_bytes = file_path.read_bytes()
-    logger.info(f"Download attachment: {file_path}")
-    logger.info(f"  - File size: {file_size} bytes")
-    logger.info(f"  - First 20 bytes (hex): {file_bytes[:20].hex()}")
-    logger.info(f"  - Is valid ZIP/DOCX (starts with PK): {file_bytes[:2] == b'PK'}")
-    logger.info(f"  - Original filename: {attachment.get('filename')}")
-    logger.info(f"  - MIME type: {attachment.get('mime_type')}")
     
     # Return file for download
     return FileResponse(
