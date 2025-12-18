@@ -103,14 +103,14 @@ tasks:
       - FIX: Replace faker with predefined unique array for fields with @unique constraint
       - Example fix for Category:
         ```typescript
-        // ❌ WRONG - will cause P2002 unique constraint error
+        // WRONG - will cause P2002 unique constraint error
         const categories = await prisma.category.createManyAndReturn({
           data: Array.from({ length: 5 }, () => ({
             name: faker.commerce.department(),  // Only ~10 values!
           }))
         });
         
-        // ✅ CORRECT - predefined unique values
+        // CORRECT - predefined unique values
         const categoryNames = ['Fiction', 'Non-Fiction', 'Science', 'History', 'Technology'];
         const categories = await prisma.category.createManyAndReturn({
           data: categoryNames.map((name) => ({

@@ -14,17 +14,21 @@ interface TypingIndicatorProps {
 export function TypingIndicator({ agentName, message, avatar }: TypingIndicatorProps) {
   return (
     <div className="flex items-start gap-3 mb-4">
-      {/* Agent Avatar */}
-      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0 text-lg overflow-hidden">
-        {avatar ? (
-          <img 
-            src={avatar} 
-            alt={agentName}
-            className="w-8 h-8 rounded-full object-cover"
-          />
-        ) : (
-          <span>🤖</span>
-        )}
+      {/* Agent Avatar with Online Status */}
+      <div className="relative w-8 h-8 flex-shrink-0">
+        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-lg overflow-hidden">
+          {avatar ? (
+            <img 
+              src={avatar} 
+              alt={agentName}
+              className="w-8 h-8 rounded-full object-cover"
+            />
+          ) : (
+            <span>🤖</span>
+          )}
+        </div>
+        {/* Online status indicator - green dot when typing */}
+        <span className="absolute bottom-0 right-0 block h-3 w-3 rounded-full border-2 border-background bg-yellow-500" />
       </div>
       
       {/* Typing Animation */}

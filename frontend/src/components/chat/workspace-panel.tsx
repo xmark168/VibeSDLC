@@ -165,7 +165,6 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   const [agentDetailOpen, setAgentDetailOpen] = useState(false)
 
   const agentItems = useMemo(() => {
-  
     const agentsList: AgentPublic[] = Array.isArray(projectAgents) 
       ? projectAgents 
       : (projectAgents?.data || [])
@@ -235,7 +234,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
   const [isLoadingLogs, setIsLoadingLogs] = useState(false)
   const logsContainerRef = useRef<HTMLDivElement>(null)
 
-  // Fetch project logs
+  // Fetch project logs (initial load only - real-time updates via WebSocket)
   useEffect(() => {
     if (!projectId) return
     const fetchLogs = async () => {
@@ -251,8 +250,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
       }
     }
     fetchLogs()
-    const interval = setInterval(fetchLogs, 10000)
-    return () => clearInterval(interval)
+    // No polling interval - rely on WebSocket for real-time updates
   }, [projectId])
 
   // Update selectedFile when initialSelectedFile changes from parent

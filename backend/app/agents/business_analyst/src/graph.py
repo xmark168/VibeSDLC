@@ -45,7 +45,7 @@ async def get_postgres_checkpointer() -> AsyncPostgresSaver:
             import psycopg_pool
             
             # Build connection string from settings
-            db_url = str(settings.DATABASE_URL)
+            db_url = str(settings.SQLALCHEMY_DATABASE_URI)
             if db_url.startswith("postgresql+psycopg"):
                 db_url = db_url.replace("postgresql+psycopg", "postgresql")
             

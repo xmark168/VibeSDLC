@@ -342,8 +342,8 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
     parallel_errors = state.get("parallel_errors")
     if parallel_errors and len(parallel_errors) > 0:
         error_summary = f"{len(parallel_errors)} implementation errors"
-        await log(f"❌ Skipping build - implementation had errors: {error_summary}", "error")
-        await story_logger.message(f"❌ Implementation failed with {len(parallel_errors)} errors")
+        await log(f"Skipping build - implementation had errors: {error_summary}", "error")
+        await story_logger.message(f"Implementation failed with {len(parallel_errors)} errors")
         return {
             **state,
             "run_status": "FAIL",
@@ -396,8 +396,8 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
                 else:
                     # Seed failed - return to ANALYZE_ERROR for fixing
                     error_output = seed_stderr or seed_stdout or "Unknown seed error"
-                    await log(f"❌ Database seed FAILED: {error_output[:500]}", "error")
-                    await story_logger.message(f"❌ Seed failed - analyzing error...")
+                    await log(f"Database seed FAILED: {error_output[:500]}", "error")
+                    await story_logger.message(f"Seed failed - analyzing error...")
                     if run_code_span:
                         run_code_span.end(output={"status": "FAIL", "step": "seed", "error": error_output[:500]})
                     return {
@@ -418,7 +418,7 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         # =====================================================================
         # Step 2: Format + Lint (parallel for each service)
         # =====================================================================
-        await log("📝 Running code formatting and linting...")
+        await log("Running code formatting and linting...")
         
         for svc in services:
             svc_name = svc.get("name", "app")
@@ -500,11 +500,11 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         # Final Result
         # =====================================================================
         if all_passed:
-            await log(f"✅ All builds passed: {summary}")
-            await story_logger.message("✅ Build validation passed!")
+            await log(f"All builds passed: {summary}")
+            await story_logger.message("Build validation passed!")
         else:
-            await log(f"❌ Build failed: {summary}", "error")
-            await story_logger.message(f"❌ Build validation failed: {summary}")
+            await log(f"Build failed: {summary}", "error")
+            await story_logger.message(f"Build validation failed: {summary}")
         
         if run_code_span:
             run_code_span.end(output={"status": run_status, "summary": summary})

@@ -19,7 +19,7 @@ async function main() {
     },
   });
 
-  console.log(`✅ Created demo user: ${demoUser.email}`);
+  console.log(`Created demo user: ${demoUser.email}`);
 
   // Create admin user
   const adminUser = await prisma.user.upsert({
@@ -32,14 +32,14 @@ async function main() {
     },
   });
 
-  console.log(`✅ Created admin user: ${adminUser.email}`);
+  console.log(`Created admin user: ${adminUser.email}`);
 
   console.log("🌱 Database seed completed!");
 }
 
 main()
   .catch((e) => {
-    console.error("❌ Seed failed:", e);
+    console.error("Seed failed:", e);
     process.exit(1);
   })
   .finally(async () => {

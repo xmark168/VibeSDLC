@@ -1576,7 +1576,7 @@ export function TaskDetailModal({ card, open, onOpenChange, onDownloadResult, al
                       log.level === 'warning' ? 'bg-yellow-500/10 text-yellow-600' :
                       log.level === 'success' ? 'bg-green-500/10 text-green-600' :
                       log.node === 'restart' ? 'bg-purple-500/10 text-purple-600 font-medium' :
-                      log.content?.startsWith('✅') || log.content?.startsWith('🚀') ? 'bg-green-500/10 text-green-600 font-medium' :
+                      log.content?.startsWith('') || log.content?.startsWith('🚀') ? 'bg-green-500/10 text-green-600 font-medium' :
                       log.content?.startsWith('❌') ? 'bg-red-500/10 text-red-500 font-medium' :
                       log.content?.startsWith('⚠️') ? 'bg-yellow-500/10 text-yellow-600 font-medium' :
                       'text-muted-foreground hover:bg-muted/50'
