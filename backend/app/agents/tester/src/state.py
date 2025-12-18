@@ -91,7 +91,6 @@ class TesterState(TypedDict, total=False):
     run_stdout: str
     run_stderr: str
     
-    # Debug
     debug_count: int
     max_debug: int
     error_analysis: str

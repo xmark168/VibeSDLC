@@ -84,9 +84,6 @@ def route_by_intent(state: BAState) -> Literal["conversational", "interview", "p
     epics = state.get("epics", [])
     document_type = state.get("document_type", "")
     
-    # Debug logging
-    logger.info(f"[BA Graph] route_by_intent called: intent={intent}, epics_count={len(epics)}, has_prd={bool(existing_prd)}, document_type={document_type}")
-    
     # Conversational messages go directly to respond node
     if intent == "conversational":
         logger.info("[BA Graph] Routing to 'conversational' (casual chat)")

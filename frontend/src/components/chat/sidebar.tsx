@@ -11,6 +11,8 @@ import { useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { useQuery } from "@tanstack/react-query"
+import { getUserSubscription } from "@/queries/subscription"
 
 interface SidebarProps {
   collapsed: boolean
@@ -23,6 +25,22 @@ export function Sidebar({
 }: SidebarProps) {
   const [myChatsExpanded, setMyChatsExpanded] = useState(true)
   const navigate = useNavigate()
+
+  const { data: subscriptionData } = useQuery({
+    queryKey: ["subscription"],
+    queryFn: getUserSubscription,
+  })
+
+  // Calculate total credits from both wallets
+  const subRemainingCredits = subscriptionData?.credit_wallet?.remaining_credits || 0
+  const purchasedRemainingCredits = subscriptionData?.purchased_wallet?.remaining_credits || 0
+  const totalRemainingCredits = subRemainingCredits + purchasedRemainingCredits
+
+  const subTotalCredits = subscriptionData?.credit_wallet?.total_credits || 0
+  const purchasedTotalCredits = subscriptionData?.purchased_wallet?.total_credits || 0
+  const totalCredits = subTotalCredits + purchasedTotalCredits
+
+  const creditPercentage = totalCredits > 0 ? (totalRemainingCredits / totalCredits) * 100 : 0
 
   const handleBackToProjects = () => {
     navigate({ to: "/projects" })
@@ -110,12 +128,12 @@ export function Sidebar({
         <div className="mt-3 px-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
             <span>Credits remaining</span>
-            <span>0.32 left</span>
+            <span>{totalRemainingCredits.toLocaleString()} left</span>
           </div>
           <div className="h-1 bg-sidebar-accent rounded-full overflow-hidden">
             <div
               className="h-full bg-[#8b5cf6] rounded-full"
-              style={{ width: "32%" }}
+              style={{ width: `${creditPercentage}%` }}
             />
           </div>
         </div>

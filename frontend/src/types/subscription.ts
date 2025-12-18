@@ -21,4 +21,5 @@ export interface CreditWallet {
 export interface UserSubscriptionResponse {
   subscription: Subscription | null
   credit_wallet: CreditWallet | null
+  purchased_wallet: CreditWallet | null
 }

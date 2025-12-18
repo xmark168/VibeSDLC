@@ -1143,7 +1143,7 @@ async def start_dev_server(
             session.commit()
             session.refresh(log_entry)
         except Exception as e:
-            print(f"Failed to save log to DB: {e}")
+            logger.error(f"Failed to save log to DB: {e}")
         
         # Broadcast via WebSocket (use story_log type, not story_message)
         await connection_manager.broadcast_to_project({
@@ -1357,7 +1357,7 @@ async def stop_dev_server(
             session.commit()
             session.refresh(log_entry)
         except Exception as e:
-            print(f"Failed to save log to DB: {e}")
+            logger.error(f"Failed to save log to DB: {e}")
         
         # Broadcast via WebSocket (use story_log type, not story_message)
         await connection_manager.broadcast_to_project({

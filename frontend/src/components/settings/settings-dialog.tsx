@@ -130,9 +130,21 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
 
   // Get current plan name and credit info
   const currentPlanName = subscriptionData?.subscription?.plan?.name || "Free"
-  const totalCredits = subscriptionData?.credit_wallet?.total_credits || 0
-  const usedCredits = subscriptionData?.credit_wallet?.used_credits || 0
-  const remainingCredits = subscriptionData?.credit_wallet?.remaining_credits || 0
+  
+  // Subscription credits (from plan, with expiry)
+  const subTotalCredits = subscriptionData?.credit_wallet?.total_credits || 0
+  const subUsedCredits = subscriptionData?.credit_wallet?.used_credits || 0
+  const subRemainingCredits = subscriptionData?.credit_wallet?.remaining_credits || 0
+  
+  // Purchased credits (permanent, no expiry)
+  const purchasedTotalCredits = subscriptionData?.purchased_wallet?.total_credits || 0
+  const purchasedUsedCredits = subscriptionData?.purchased_wallet?.used_credits || 0
+  const purchasedRemainingCredits = subscriptionData?.purchased_wallet?.remaining_credits || 0
+  
+  // Total credits
+  const totalCredits = subTotalCredits + purchasedTotalCredits
+  const usedCredits = subUsedCredits + purchasedUsedCredits
+  const remainingCredits = subRemainingCredits + purchasedRemainingCredits
   const creditPercentage = totalCredits > 0 ? (remainingCredits / totalCredits) * 100 : 0
 
   // Format period end date
@@ -332,41 +344,82 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                         <p className="text-sm text-muted-foreground">Loading...</p>
                       </div>
                     ) : (
-                      <div className="bg-secondary/30 rounded-lg p-6">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-medium">Credits remaining</h3>
-                            <Info className="h-4 w-4 text-muted-foreground" />
+                      <div className="space-y-4">
+                        {/* Total Credits Overview */}
+                        <div className="bg-secondary/30 rounded-lg p-6">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-base font-medium">Total Credits</h3>
+                              <Info className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                            <span className="text-sm font-medium">
+                              {remainingCredits.toLocaleString()} / {totalCredits.toLocaleString()}
+                            </span>
                           </div>
-                          <span className="text-sm font-medium">
-                            {remainingCredits.toLocaleString()} / {totalCredits.toLocaleString()}
-                          </span>
+
+                          {totalCredits > 0 && (
+                            <div className="space-y-2 mb-4">
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-primary transition-all"
+                                    style={{ width: `${creditPercentage}%` }}
+                                  />
+                                </div>
+                                <span className="text-sm font-medium">{remainingCredits.toLocaleString()} left</span>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="pt-4 border-t border-border/50">
+                            <p className="text-sm text-muted-foreground">
+                              Current plan: <span className="font-semibold text-foreground">{currentPlanName}</span>
+                            </p>
+                          </div>
                         </div>
 
-                        {totalCredits > 0 && (
-                          <div className="space-y-2 mb-4">
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-primary transition-all"
-                                  style={{ width: `${creditPercentage}%` }}
-                                />
+                        {/* Credits Breakdown */}
+                        {(subTotalCredits > 0 || purchasedTotalCredits > 0) && (
+                          <div className="grid grid-cols-2 gap-4">
+                            {/* Subscription Credits */}
+                            {subTotalCredits > 0 && (
+                              <div className="bg-secondary/20 rounded-lg p-4 border border-border/50">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <h4 className="text-sm font-medium">Plan Credits</h4>
+                                </div>
+                                <p className="text-2xl font-semibold mb-1">
+                                  {subRemainingCredits.toLocaleString()}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  of {subTotalCredits.toLocaleString()}
+                                </p>
+                                {periodEnd && (
+                                  <p className="text-xs text-muted-foreground mt-2">
+                                    Resets on {periodEnd}
+                                  </p>
+                                )}
                               </div>
-                              <span className="text-sm font-medium">{remainingCredits.toLocaleString()} left</span>
-                            </div>
-                            {periodEnd && (
-                              <p className="text-sm text-muted-foreground">
-                                {totalCredits.toLocaleString()} credits reset on {periodEnd}
-                              </p>
+                            )}
+
+                            {/* Purchased Credits */}
+                            {purchasedTotalCredits > 0 && (
+                              <div className="bg-secondary/20 rounded-lg p-4 border border-border/50">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <h4 className="text-sm font-medium">Purchased Credits</h4>
+                                </div>
+                                <p className="text-2xl font-semibold mb-1">
+                                  {purchasedRemainingCredits.toLocaleString()}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  of {purchasedTotalCredits.toLocaleString()}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-2">
+                                  No expiry
+                                </p>
+                              </div>
                             )}
                           </div>
                         )}
-
-                        <div className="pt-4 border-t border-border/50">
-                          <p className="text-sm text-muted-foreground">
-                            Current plan: <span className="font-semibold text-foreground">{currentPlanName}</span>
-                          </p>
-                        </div>
                       </div>
                     )}
                   </div>

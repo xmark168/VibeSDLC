@@ -145,10 +145,10 @@ class SubscriptionService:
         order: Order
     ) -> tuple[CreditWallet, Invoice]:
         """
-        Add credits to user's active subscription wallet
+        Add credits to user's purchased wallet (permanent, no expiry)
         Returns: (CreditWallet, Invoice)
         """
-        # Get user's active subscription
+        # Get user's active subscription (needed for invoice generation)
         statement = (
             select(Subscription)
             .where(Subscription.user_id == user_id)
@@ -160,21 +160,32 @@ class SubscriptionService:
         if not subscription:
             raise ValueError("No active subscription found")
 
-        # Get wallet for this subscription
+        # Get or create purchased wallet (permanent wallet, not tied to subscription lifecycle)
         wallet_statement = (
             select(CreditWallet)
             .where(CreditWallet.user_id == user_id)
-            .where(CreditWallet.subscription_id == subscription.id)
-            .where(CreditWallet.wallet_type == "subscription")
+            .where(CreditWallet.wallet_type == "purchased")
         )
         wallet = self.session.exec(wallet_statement).first()
 
         if not wallet:
-            raise ValueError("No wallet found for subscription")
-
-        # Add credits to wallet
-        wallet.total_credits += credit_amount
-        self.session.add(wallet)
+            # Create new purchased wallet with no expiry
+            wallet = CreditWallet(
+                user_id=user_id,
+                wallet_type="purchased",
+                subscription_id=None,
+                period_start=datetime.now(timezone.utc),
+                period_end=None,
+                total_credits=credit_amount,
+                used_credits=0
+            )
+            self.session.add(wallet)
+            logger.info(f"Created new purchased wallet for user {user_id} with {credit_amount} credits")
+        else:
+            # Add credits to existing purchased wallet
+            wallet.total_credits = (wallet.total_credits or 0) + credit_amount
+            self.session.add(wallet)
+            logger.info(f"Added {credit_amount} credits to existing purchased wallet {wallet.id}")
 
         # Generate invoice
         invoice = self._generate_invoice(order, subscription)
@@ -184,5 +195,5 @@ class SubscriptionService:
         self.session.refresh(wallet)
         self.session.refresh(invoice)
 
-        logger.info(f"Added {credit_amount} credits to wallet {wallet.id} for user {user_id}")
+        logger.info(f"Total purchased credits for user {user_id}: {wallet.total_credits}")
         return wallet, invoice
