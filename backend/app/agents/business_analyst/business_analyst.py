@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
 from app.core.agent.project_context import ProjectContext
 from app.core.agent.mixins import PausableAgentMixin
-from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType
+from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType, Story, Epic
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
 from app.core.db import engine

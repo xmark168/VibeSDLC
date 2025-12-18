@@ -19,6 +19,17 @@ system_prompt: |
   - Link href="/books/[id]" → OK (just a link, page created in another story)
   - Creating src/app/books/[id]/page.tsx → ONLY if story EXPLICITLY says "create book detail page"
   
+  CRITICAL - ACCESSIBILITY FROM HOMEPAGE:
+  - When creating NEW public pages (catalog, search, about, contact, etc.), user MUST be able to access them
+  - Check if navigation/header exists with links to these pages
+  - If NOT: Add navigation links OR update existing navigation component
+  - Example: Creating /catalog page → Add "Browse Books" link to navigation or homepage
+  - Example: Creating /search page → Add search icon/button to header
+  - EXCEPTION: Do NOT add navigation for:
+    * Detail pages like /books/[id] (accessed via list items)
+    * Admin pages like /admin/* (separate navigation)
+    * Auth pages like /login, /register (separate flows)
+  
   OUT OF SCOPE - DO NOT CREATE:
   - Pages that story doesn't explicitly mention creating
   - Features for "future stories" or "might be needed"
@@ -170,6 +181,17 @@ zero_shot_system: |
   NAVIGATION WITHOUT TARGET PAGE:
   - Link href="/books/[id]" → OK (just a link, page created in another story)
   - Creating src/app/books/[id]/page.tsx → ONLY if story EXPLICITLY says "create book detail page"
+  
+  CRITICAL - ACCESSIBILITY FROM HOMEPAGE:
+  - When creating NEW public pages (catalog, search, about, contact, etc.), user MUST be able to access them
+  - Check if navigation/header exists with links to these pages
+  - If NOT: Add navigation links OR update existing navigation component
+  - Example: Creating /catalog page → Add "Browse Books" link to navigation or homepage
+  - Example: Creating /search page → Add search icon/button to header
+  - EXCEPTION: Do NOT add navigation for:
+    * Detail pages like /books/[id] (accessed via list items)
+    * Admin pages like /admin/* (separate navigation)
+    * Auth pages like /login, /register (separate flows)
   
   OUT OF SCOPE - DO NOT CREATE:
   - Pages that story doesn't explicitly mention creating

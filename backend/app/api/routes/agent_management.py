@@ -339,6 +339,7 @@ async def _restore_role_agents(logger, manager, role_type: str, role_class_map) 
     from sqlmodel import Session, select, update
 
     from app.core.db import engine
+    from app.models import Agent, AgentStatus
 
     with Session(engine) as db_session:
         # Reset transient states for this role
@@ -400,6 +401,7 @@ async def _restore_agents(logger, manager, role_class_map) -> None:
     from sqlmodel import Session, select
 
     from app.core.db import engine
+    from app.models import Agent, AgentStatus
 
     with Session(engine) as db_session:
         # Reset transient states

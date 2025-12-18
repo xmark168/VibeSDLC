@@ -169,7 +169,9 @@ async def lifespan(app: FastAPI):
     try:
         await initialize_default_pools()
     except Exception as e:
+        import traceback
         logger.warning(f"⚠️ Failed to initialize agent pools: {e}")
+        logger.debug(f"Traceback: {traceback.format_exc()}")
 
     from app.core.agent import get_agent_monitor
     try:

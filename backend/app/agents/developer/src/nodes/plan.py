@@ -196,6 +196,211 @@ def _auto_fix_dependencies(steps: list) -> list:
     return steps
 
 
+# =====================================================================
+# Tools for Plan Node - Allow LLM to explore codebase
+# =====================================================================
+
+def create_planning_tools(workspace_path: str):
+    """Create tools for LLM to explore workspace during planning."""
+    from langchain_core.tools import tool
+    
+    @tool
+    def grep_file_contents(pattern: str, path: str = "src", file_extension: str = "tsx") -> str:
+        """Search for pattern in files to find existing code.
+        
+        Args:
+            pattern: Text or regex pattern to search for (e.g., "BookCard", "Button")
+            path: Directory to search in relative to workspace (default: src)
+            file_extension: File type to search (tsx, ts, prisma, etc.)
+            
+        Returns:
+            Matching files with line numbers and context, or "No matches found"
+            
+        Example:
+            grep_file_contents("BookCard", "src/components", "tsx")
+            → Shows all files using BookCard component
+        """
+        import subprocess
+        
+        full_path = os.path.join(workspace_path, path)
+        if not os.path.exists(full_path):
+            return f"Directory {path} not found"
+        
+        try:
+            # Map common extensions to ripgrep types
+            type_map = {
+                "tsx": "tsx", "ts": "ts", "js": "js", "jsx": "jsx",
+                "prisma": "txt", "json": "json", "md": "md"
+            }
+            rg_type = type_map.get(file_extension, "txt")
+            
+            result = subprocess.run(
+                ["rg", "--type", rg_type, "-n", "-C", "2", pattern, "."],
+                capture_output=True,
+                text=True,
+                cwd=full_path,
+                timeout=10
+            )
+            
+            if result.stdout:
+                lines = result.stdout.split('\n')[:50]  # Limit to 50 lines
+                return f"Found matches:\n" + '\n'.join(lines)
+            return "No matches found"
+        except subprocess.TimeoutExpired:
+            return "Search timed out"
+        except FileNotFoundError:
+            return "Search tool (rg) not available - skipping search"
+        except Exception as e:
+            return f"Search error: {str(e)}"
+    
+    @tool
+    def find_files_by_pattern(patterns: str, exclude_dirs: str = "node_modules,.next,.git") -> str:
+        """Find files matching glob patterns.
+        
+        Args:
+            patterns: Comma-separated glob patterns (e.g., "**/Card*.tsx,**/*Button*.tsx")
+            exclude_dirs: Comma-separated dirs to exclude (default: node_modules,.next,.git)
+            
+        Returns:
+            List of matching file paths
+            
+        Example:
+            find_files_by_pattern("**/Card*.tsx,**/*List*.tsx")
+            → Lists all Card and List components
+        """
+        import subprocess
+        
+        pattern_list = [p.strip() for p in patterns.split(',')]
+        exclude_list = [d.strip() for d in exclude_dirs.split(',')]
+        
+        try:
+            all_files = []
+            exclude_args = [f"--glob=!{d}/**" for d in exclude_list]
+            
+            for pattern in pattern_list:
+                result = subprocess.run(
+                    ["rg", "--files", "--glob", pattern, *exclude_args],
+                    capture_output=True,
+                    text=True,
+                    cwd=workspace_path,
+                    timeout=10
+                )
+                if result.stdout:
+                    all_files.extend(result.stdout.strip().split('\n'))
+            
+            # Deduplicate and limit
+            unique_files = sorted(set(f for f in all_files if f))[:100]
+            
+            if unique_files:
+                return '\n'.join(unique_files)
+            return "No files found matching patterns"
+        except FileNotFoundError:
+            # Fallback to os.walk if rg not available
+            try:
+                import fnmatch
+                matches = []
+                exclude_set = set(exclude_list)
+                
+                for root, dirs, files in os.walk(workspace_path):
+                    dirs[:] = [d for d in dirs if d not in exclude_set]
+                    for pattern in pattern_list:
+                        for filename in files:
+                            if fnmatch.fnmatch(filename, pattern.split('/')[-1]):
+                                rel_path = os.path.relpath(os.path.join(root, filename), workspace_path)
+                                matches.append(rel_path)
+                                if len(matches) >= 100:
+                                    break
+                
+                return '\n'.join(sorted(set(matches))) if matches else "No files found"
+            except Exception as e:
+                return f"File search error: {e}"
+        except Exception as e:
+            return f"Search error: {str(e)}"
+    
+    @tool
+    def list_directory(path: str = "src") -> str:
+        """List contents of a directory to understand structure.
+        
+        Args:
+            path: Directory path relative to workspace (default: src)
+            
+        Returns:
+            Directory tree structure (max depth 3)
+            
+        Example:
+            list_directory("src/components")
+            → Shows all files in components directory
+        """
+        full_path = os.path.join(workspace_path, path)
+        if not os.path.exists(full_path):
+            return f"Directory {path} not found"
+        
+        try:
+            items = []
+            max_depth = 3
+            max_items = 100
+            
+            for root, dirs, files in os.walk(full_path):
+                level = root.replace(full_path, '').count(os.sep)
+                if level >= max_depth:
+                    dirs[:] = []
+                    continue
+                
+                # Skip hidden and build dirs
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in {'node_modules', '.next', 'dist', 'build'}]
+                
+                indent = '  ' * level
+                rel_root = os.path.relpath(root, full_path)
+                if rel_root != '.':
+                    items.append(f"{indent}{os.path.basename(root)}/")
+                
+                subindent = '  ' * (level + 1)
+                for f in sorted(files):
+                    if not f.startswith('.'):
+                        items.append(f"{subindent}{f}")
+                        if len(items) >= max_items:
+                            break
+                
+                if len(items) >= max_items:
+                    break
+            
+            return '\n'.join(items[:max_items])
+        except Exception as e:
+            return f"Error listing directory: {e}"
+    
+    @tool
+    def read_specific_file(file_path: str, max_lines: int = 50) -> str:
+        """Read contents of a specific file to understand its implementation.
+        
+        Args:
+            file_path: Path relative to workspace (e.g., "src/components/ui/Button.tsx")
+            max_lines: Maximum lines to return (default: 50)
+            
+        Returns:
+            File contents (truncated if too long)
+            
+        Example:
+            read_specific_file("src/components/ui/Button.tsx")
+            → Shows Button component implementation
+        """
+        full_path = os.path.join(workspace_path, file_path)
+        if not os.path.exists(full_path):
+            return f"File {file_path} not found"
+        
+        try:
+            with open(full_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            if len(lines) > max_lines:
+                content = ''.join(lines[:max_lines])
+                return f"{content}\n... ({len(lines) - max_lines} more lines)"
+            return ''.join(lines)
+        except Exception as e:
+            return f"Error reading file: {e}"
+    
+    return [grep_file_contents, find_files_by_pattern, list_directory, read_specific_file]
+
+
 @track_node("plan")
 async def plan(state: DeveloperState, config: dict = None, agent=None) -> DeveloperState:
     """Zero-shot planning with FileRepository."""
@@ -231,17 +436,117 @@ async def plan(state: DeveloperState, config: dict = None, agent=None) -> Develo
 
 Create implementation plan."""
 
-        await story_logger.info("Generating implementation plan...")
-        structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
+        await story_logger.info("Generating implementation plan with exploration tools...")
         
-        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
+        # Create tools for LLM to explore workspace
+        tools = create_planning_tools(workspace_path)
+        
+        # Bind tools to LLM for exploration
+        llm_with_tools = fast_llm.bind_tools(tools)
+        
+        # Get langfuse callbacks from runtime config
         llm_config = _cfg(config, "plan_zero_shot")
         
         import logging
         logger = logging.getLogger(__name__)
         logger.info(f"✓ LANGFUSE: Config for LLM call: callbacks={llm_config.get('callbacks', []) if llm_config else []}")
         
-        result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=input_text)], config=llm_config)
+        # Enhanced prompt to guide tool usage
+        tool_guidance = """
+TOOL USAGE STRATEGY (You have up to 7 exploration rounds):
+
+Available tools:
+1. list_directory(path) - See what's in a folder (ALWAYS START HERE)
+2. find_files_by_pattern(patterns) - Find files by name pattern (e.g., "**/Card*.tsx")
+3. grep_file_contents(pattern, path, file_extension) - Search file contents
+4. read_specific_file(file_path, max_lines) - Read full file
+
+EFFICIENT EXPLORATION WORKFLOW:
+Round 1-2 (Structure): Understand architecture
+  → list_directory("src/app") - See pages structure
+  → list_directory("src/components") - See component organization
+  → find_files_by_pattern("**/api/**/route.ts") - Find all API routes
+
+Round 3-4 (Search): Find relevant existing code
+  → grep_file_contents("BookCard") - Find if component exists
+  → grep_file_contents("prisma.book") - Check database usage patterns
+  → find_files_by_pattern("**/*Card*.tsx") - Find similar components
+
+Round 5-7 (Deep dive): Understand implementation details
+  → read_specific_file("src/components/ui/BookCard.tsx") - See exact implementation
+  → read_specific_file("src/app/api/books/route.ts") - Check API pattern
+  → grep_file_contents("useRouter") - Find navigation patterns
+
+BEST PRACTICES:
+✓ Start broad (list directories) → then narrow (grep/find) → then deep (read files)
+✓ Look for existing patterns to reuse (components, APIs, styles)
+✓ Check for navigation/header before planning new pages
+✓ Stop early if you have enough info (don't use all 7 rounds)
+✗ Don't read entire files if grep can answer your question
+✗ Don't search randomly - have a specific question in mind
+
+If initial context is sufficient, you can skip tools entirely and plan directly.
+"""
+        
+        enhanced_input = input_text + "\n\n" + tool_guidance
+        
+        # ReAct loop: Allow LLM to use tools before generating plan
+        from langchain_core.messages import AIMessage, ToolMessage
+        messages = [SystemMessage(content=system_prompt), HumanMessage(content=enhanced_input)]
+        
+        max_iterations = 7  # Allow thorough exploration for complex stories (LLM usually stops at 2-3)
+        for iteration in range(max_iterations):
+            response = await llm_with_tools.ainvoke(messages, config=llm_config)
+            messages.append(response)
+            
+            # Check if LLM wants to use tools
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                await story_logger.info(f"🔍 Exploring codebase (tool {iteration + 1}/{max_iterations})...")
+                
+                # Execute tool calls
+                for tool_call in response.tool_calls:
+                    tool_name = tool_call.get('name', '')
+                    tool_args = tool_call.get('args', {})
+                    
+                    # Find and execute tool
+                    tool_result = "Tool not found"
+                    for tool in tools:
+                        if tool.name == tool_name:
+                            try:
+                                tool_result = tool.invoke(tool_args)
+                            except Exception as e:
+                                tool_result = f"Tool error: {str(e)}"
+                            break
+                    
+                    # Add tool result to messages
+                    messages.append(ToolMessage(
+                        content=str(tool_result),
+                        tool_call_id=tool_call.get('id', '')
+                    ))
+            else:
+                # No more tools needed - break loop
+                break
+        
+        # Now ask for final structured plan
+        await story_logger.info("Creating structured implementation plan...")
+        
+        # Get final response content
+        final_content = messages[-1].content if isinstance(messages[-1], AIMessage) else ""
+        
+        # Ask for structured output with all gathered context
+        structured_llm = fast_llm.with_structured_output(SimplePlanOutput)
+        
+        plan_request = f"""Based on exploration, create implementation plan:
+
+{final_content}
+
+Story: {state.get('story_title', '')}
+Requirements: {req_text}
+Acceptance: {ac_text}
+
+Output structured plan with steps."""
+        
+        result = await structured_llm.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=plan_request)], config=llm_config)
         flush_langfuse(config)
         
         # FIX #1: Removed post-LLM signal check - handled by _run_graph_with_signal_check()

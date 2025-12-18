@@ -1032,7 +1032,7 @@ async def restart_story_task(
     story.assigned_agent_id = None  # Clear so new agent will be assigned
     story.running_pid = None
     story.running_port = None
-    story.checkpoint_thread_id = None
+    story.checkpoint_thread_id = None  # This clears checkpoint which contains error state
     story.db_container_id = None
     story.db_port = None
     

@@ -514,30 +514,16 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
             if seed_success:
                 await log("Database seed completed", "success")
             else:
-<<<<<<< HEAD
                 # Seed failed - return to ANALYZE_ERROR for fixing
                 error_output = seed_stderr or seed_stdout or "Unknown seed error"
                 await log(f"❌ Database seed FAILED: {error_output[:500]}", "error")
                 await story_logger.message(f"❌ Seed failed - analyzing error...")
                 if run_code_span:
                     run_code_span.end(output={"status": "FAIL", "step": "seed", "error": error_output[:500]})
-=======
-                loop = asyncio.get_event_loop()
-                seed_success, seed_stdout, seed_stderr = await loop.run_in_executor(_executor, _run_seed, workspace_path)
-                if seed_success:
-                    await log("Database seed completed", "success")
-                else:
-                    # Seed failed - return to ANALYZE_ERROR for fixing
-                    error_output = seed_stderr or seed_stdout or "Unknown seed error"
-                    await log(f"Database seed FAILED: {error_output[:500]}", "error")
-                    await story_logger.message(f"Seed failed - analyzing error...")
-                    if run_code_span:
-                        run_code_span.end(output={"status": "FAIL", "step": "seed", "error": error_output[:500]})
->>>>>>> main
-                    return {
-                        **state,
-                        "run_status": "FAIL",
-                        "run_result": {
+                return {
+                    **state,
+                    "run_status": "FAIL",
+                    "run_result": {
                             "status": "FAIL",
                             "step": "seed",
                             "summary": "Database seed failed",
