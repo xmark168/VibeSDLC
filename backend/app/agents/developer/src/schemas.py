@@ -1,8 +1,7 @@
-"""Developer V2 Schemas for LLM Structured Output."""
+"""Developer V2 Schemas"""
 
 from typing import Optional, List, Literal
 from pydantic import BaseModel, Field
-
 
 class PlanStep(BaseModel):
     """Single step in implementation plan."""
@@ -11,14 +10,12 @@ class PlanStep(BaseModel):
     file_path: Optional[str] = None
     action: Literal["create", "modify", "delete", "test", "config", "review"] = "modify"
 
-
 class SimpleStep(BaseModel):
-    """Minimal step schema - reduces output tokens by 70-80%."""
+    """Minimal step schema"""
     file_path: str = Field(description="Target file path")
     action: str = Field(description="'create' or 'modify'")
     task: str = Field(description="What to implement")
     dependencies: List[str] = Field(default=[], description="Files this step needs")
-
 
 class SimplePlanOutput(BaseModel):
     """Optimized plan output."""
@@ -34,7 +31,6 @@ class SimpleReviewOutput(BaseModel):
 class ImplementOutput(BaseModel):
     """LLM output for implement step."""
     content: str = Field(description="Complete file content")
-
 
 class StoryChatResponse(BaseModel):
     """Response for story chat message."""

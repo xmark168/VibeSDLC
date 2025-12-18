@@ -113,7 +113,6 @@ async def review(state: DeveloperState, config: dict = None, agent=None) -> Deve
             HumanMessage(content=input_text)
         ]
         
-        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
         structured_llm = get_llm("review").with_structured_output(SimpleReviewOutput)
         result = await structured_llm.ainvoke(messages, config=_cfg(config, "review"))
         flush_langfuse(config)

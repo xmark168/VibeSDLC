@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from typing import Any, Callable, Dict, List
 
-from app.agents.tester.src.config import MAX_CONCURRENT
+from app.core.agent.llm_factory import MAX_CONCURRENT_TASKS as MAX_CONCURRENT
 
 logger = logging.getLogger(__name__)
 

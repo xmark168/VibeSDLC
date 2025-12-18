@@ -4,19 +4,19 @@ import logging
 from collections import defaultdict
 from typing import Dict, List
 
-from app.agents.developer.src.config import MAX_CONCURRENT
+from app.core.agent.llm_factory import MAX_CONCURRENT_TASKS as MAX_CONCURRENT
 
 logger = logging.getLogger(__name__)
 
 LAYER_PRIORITY = {
     "prisma/schema": 1,
-    "prisma/seed": 4,      # CHANGED: từ 2 → 4 (chạy song song với API)
-    "src/types": 2,        # CHANGED: từ 3 → 2
-    "src/lib": 3,          # CHANGED: từ 4 → 3
-    "src/app/api": 4,      # CHANGED: từ 5 → 4
-    "src/app/actions": 5,  # CHANGED: từ 6 → 5
-    "src/components": 6,   # CHANGED: từ 7 → 6
-    "page.tsx": 7,         # CHANGED: từ 8 → 7
+    "prisma/seed": 4,      
+    "src/types": 2,       
+    "src/lib": 3,        
+    "src/app/api": 4,    
+    "src/app/actions": 5, 
+    "src/components": 6, 
+    "page.tsx": 7,       
 }
 
 
@@ -29,25 +29,20 @@ def get_layer_priority(file_path: str) -> int:
     if "prisma/schema" in fp:
         return 1
     if "seed.ts" in fp:
-        return 4  # CHANGED: từ 2 → 4 (chạy song song với API)
+        return 4  
     if "/types/" in fp or fp.endswith(".d.ts"):
-        return 2  # CHANGED: từ 3 → 2
+        return 2  
     if "/lib/" in fp or "/utils/" in fp:
-        return 3  # CHANGED: từ 4 → 3
+        return 3
     if "/api/" in fp and "route.ts" in fp:
-        return 4  # CHANGED: từ 5 → 4
+        return 4  
     if "/actions/" in fp:
-        return 5  # CHANGED: từ 6 → 5
+        return 5  
     if "/components/" in fp:
-        name = fp.split("/")[-1].lower()
-        if "card" in name or "item" in name:
-            return 6.1  # CHANGED: từ 7.1 → 6.1
-        if "section" in name:
-            return 6.2  # CHANGED: từ 7.2 → 6.2
-        return 6.3  # CHANGED: từ 7.3 → 6.3
+        return 6  # All components same base layer, dependencies determine sub-order
     if "page.tsx" in fp or "page.ts" in fp:
-        return 7  # CHANGED: từ 8 → 7
-    return 5  # CHANGED: từ 6 → 5 (default)
+        return 7  
+    return 5 
 
 
 def group_steps_by_layer(steps: List[Dict]) -> Dict[float, List[Dict]]:

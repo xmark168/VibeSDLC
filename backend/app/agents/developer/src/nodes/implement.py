@@ -16,18 +16,13 @@ from app.agents.developer.src.utils.prompt_utils import format_input_template as
 from app.utils.token_utils import truncate_to_tokens
 from app.agents.developer.src.nodes._llm import implement_llm
 from app.agents.developer.src.skills import SkillRegistry
-from app.agents.developer.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
+from app.core.agent.llm_factory import (
+    MAX_CONCURRENT_TASKS as MAX_CONCURRENT,
+    MAX_DEBUG_REVIEWS_DEVELOPER as MAX_DEBUG_REVIEWS
+)
 from app.utils.git_utils import git_commit_step
 
 logger = logging.getLogger(__name__)
-
-_modified_files: set = set()
-
-def get_modified_files() -> list:
-    return list(_modified_files)
-
-def reset_modified_files():
-    _modified_files.clear()
 
 
 async def git_revert_uncommitted(workspace_path: str) -> bool:
@@ -179,10 +174,6 @@ def _build_debug_summary(state: dict) -> str:
     parts.append("\nDon't repeat mistakes.")
     return "\n".join(parts)
 
-
-
-
-
 def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundled: bool = True) -> str:
     if not skill_ids:
         return ""
@@ -214,7 +205,6 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
     story_logger = StoryLogger.from_state(state, agent).with_node("implement")
     story_id = state.get("story_id", "")
     
-    reset_modified_files()
     current_step, total_steps = state.get("current_step", 0), state.get("total_steps", 0)
     
     # Task update (transient) - show current step
@@ -223,8 +213,15 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
     
     debug_count = state.get("debug_count", 0)
     is_debug = state.get("task_type") == "bug_fix" or debug_count > 0
-    prev_step = state.get("_last_implement_step", -1)
-    review_count = state.get("review_count", 0) if is_debug else (0 if current_step != prev_step else state.get("review_count", 0))
+    
+    # Get current review count from state
+    review_count = state.get("review_count", 0)
+    
+    # Reset review_count when moving to new step (except in debug mode)
+    if not is_debug:
+        prev_step = state.get("_last_implement_step", -1)
+        if current_step != prev_step:
+            review_count = 0  # New step → reset counter
     
     if is_debug and review_count >= MAX_DEBUG_REVIEWS:
         return {**state, "review_count": review_count, "action": "VALIDATE"}
@@ -292,7 +289,6 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
         # Use structured output
-        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
         output = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
@@ -307,9 +303,9 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
             os.makedirs(os.path.dirname(fp), exist_ok=True)
             with open(fp, 'w', encoding='utf-8') as f:
                 f.write(file_content)
-            _modified_files.add(file_path)
-        
-        new_modified = get_modified_files()
+            new_modified = [file_path]
+        else:
+            new_modified = []
         # NOTE: Prisma generate/push/seed are now handled in run_code.py
         # Removed duplicate operations here to avoid 2-3 min waste per implement step
         

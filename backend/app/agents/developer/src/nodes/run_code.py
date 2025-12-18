@@ -78,33 +78,54 @@ _executor = concurrent.futures.ThreadPoolExecutor(max_workers=10, thread_name_pr
 
 
 def _should_skip_seed(workspace_path: str) -> bool:
-    """Check if seed can be skipped (seed.ts unchanged)."""
+    """Check if seed can be skipped (seed.ts AND schema.prisma unchanged)."""
     seed_file = Path(workspace_path) / "prisma" / "seed.ts"
+    schema_file = Path(workspace_path) / "prisma" / "schema.prisma"
     cache_file = Path(workspace_path) / ".seed_cache"
     
     if not seed_file.exists():
         return True  # No seed file, nothing to run
     
     try:
-        current_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
+        # Calculate combined hash of seed.ts and schema.prisma
+        seed_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
+        
+        # Include schema hash if schema exists
+        if schema_file.exists():
+            schema_hash = hashlib.md5(schema_file.read_bytes()).hexdigest()
+            current_hash = f"{seed_hash}:{schema_hash}"
+        else:
+            current_hash = seed_hash
+        
+        # Check cache
         if cache_file.exists():
             cached_hash = cache_file.read_text().strip()
             if cached_hash == current_hash:
-                return True
+                return True  # Both unchanged
     except Exception:
         pass
     
-    return False
+    return False  # Re-run seed (changed or no cache)
 
 
 def _update_seed_cache(workspace_path: str) -> None:
-    """Update seed cache after successful seed."""
+    """Update seed cache after successful seed (combined seed.ts + schema.prisma hash)."""
     seed_file = Path(workspace_path) / "prisma" / "seed.ts"
+    schema_file = Path(workspace_path) / "prisma" / "schema.prisma"
     cache_file = Path(workspace_path) / ".seed_cache"
     
     try:
         if seed_file.exists():
-            current_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
+            # Calculate combined hash
+            seed_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
+            
+            # Include schema hash if schema exists
+            if schema_file.exists():
+                schema_hash = hashlib.md5(schema_file.read_bytes()).hexdigest()
+                current_hash = f"{seed_hash}:{schema_hash}"
+            else:
+                current_hash = seed_hash
+            
             cache_file.write_text(current_hash)
     except Exception:
         pass

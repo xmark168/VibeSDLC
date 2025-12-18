@@ -753,16 +753,16 @@ def _cleanup_story_resources_sync(
         worktree = Path(worktree_path)
         node_modules = worktree / "node_modules"
         if node_modules.exists():
-            _logger.info(f"Deleting node_modules before worktree cleanup...")
+            logger.info(f"Deleting node_modules before worktree cleanup...")
             try:
                 _kill_processes_in_worktree(str(node_modules))
                 time.sleep(0.5)
                 shutil.rmtree(node_modules, ignore_errors=True)
-                _logger.info(f"node_modules deleted")
+                logger.info(f"node_modules deleted")
             except Exception as e:
-                _logger.warning(f"Failed to delete node_modules: {e}")
+                logger.warning(f"Failed to delete node_modules: {e}")
     elif skip_node_modules:
-        _logger.debug(f"Skipping node_modules delete for faster restart")
+        logger.debug(f"Skipping node_modules delete for faster restart")
     
     # Prune first
     if main_workspace and Path(main_workspace).exists():
@@ -817,13 +817,6 @@ async def cleanup_story_resources(
     checkpoint_thread_id: str | None = None,
     skip_node_modules: bool = False,
 ) -> dict:
-    """
-    Async wrapper for cleanup_story_resources_sync.
-    Runs blocking cleanup in thread pool executor.
-    
-    Args:
-        skip_node_modules: If True, skip deleting node_modules for 10x faster restart
-    """
     import asyncio
     from functools import partial
     
@@ -842,9 +835,6 @@ async def cleanup_story_resources(
 
 
 async def _cleanup_and_trigger_agent(
-    worktree_path: str | None,
-    branch_name: str | None,
-    main_workspace: str | None,
     checkpoint_thread_id: str | None,
     story_id: str,
     project_id: str,
@@ -853,15 +843,20 @@ async def _cleanup_and_trigger_agent(
     story_status: str = "InProgress",
 ) -> None:
     """
-    Background task for restart: cleanup ALL resources FIRST, then trigger agent.
+    Background task for restart: cleanup checkpoint ONLY, then trigger agent.
     
-    Order is critical:
-    1. Delete checkpoint - prevent agent from loading stale state with error
-    2. Delete worktree/branch - prevent conflict when agent creates new worktree
-    3. THEN trigger agent - agent starts with clean slate
+    IMPORTANT: Worktree/branch cleanup is now handled by setup_git_worktree (lazy cleanup).
+    This makes restart 10x faster by:
+    - Skipping unnecessary worktree deletion
+    - Reusing node_modules (no re-install needed)  
+    - Cleanup only happens if worktree conflicts (handled by setup)
+    
+    Order:
+    1. Delete checkpoint - prevent agent from loading stale state
+    2. Trigger agent - agent will handle worktree setup (reuse or recreate)
     
     Broadcasts sub_status for smooth UX:
-    - "cleaning" while cleanup in progress
+    - "cleaning" while cleanup checkpoint
     - "starting" when triggering agent
     
     Args:
@@ -881,25 +876,14 @@ async def _cleanup_and_trigger_agent(
         "sub_status": "cleaning",
     }, UUID(project_id))
     
-    # 1. CLEANUP RESOURCES (conditional based on story status)
-    # - InProgress (Developer): Full cleanup - worktree, branch, checkpoint
-    # - Review (Tester): Partial cleanup - only checkpoint, keep worktree for reuse
-    if story_status == "InProgress":
-        results = await cleanup_story_resources(
-            worktree_path=worktree_path,
-            branch_name=branch_name,
-            main_workspace=main_workspace,
-            checkpoint_thread_id=checkpoint_thread_id,
-        )
-    else:
-        # Tester - only cleanup checkpoint, keep worktree
-        results = await cleanup_story_resources(
-            worktree_path=None,
-            branch_name=None,
-            main_workspace=main_workspace,
-            checkpoint_thread_id=checkpoint_thread_id,
-        )
-    _logger.info(f"[restart] Cleanup completed for {story_id} (status={story_status}): {results}")
+    # 1. CLEANUP CHECKPOINT ONLY (not worktree - reuse for fast restart)
+    results = await cleanup_story_resources(
+        worktree_path=None,  # Don't cleanup worktree - let setup handle it
+        branch_name=None,    # Don't cleanup branch - reuse existing
+        main_workspace=None,
+        checkpoint_thread_id=checkpoint_thread_id,
+    )
+    _logger.info(f"[restart] Checkpoint cleanup completed for {story_id} (status={story_status}): {results}")
     
     # Broadcast "starting" sub-status
     await connection_manager.broadcast_to_project({
@@ -1035,9 +1019,7 @@ async def restart_story_task(
         backend_root = Path(__file__).resolve().parent.parent.parent.parent
         main_workspace = str((backend_root / project.project_path).resolve())
     
-    # Capture values before clearing in DB
-    worktree_path = story.worktree_path
-    branch_name = story.branch_name
+    # Capture values for background cleanup (checkpoint only, no worktree cleanup)
     checkpoint_thread_id = story.checkpoint_thread_id
     project_id = story.project_id
     story_title = story.title
@@ -1052,11 +1034,12 @@ async def restart_story_task(
     story.db_container_id = None
     story.db_port = None
     
-    # Only clear worktree for Developer (InProgress), keep for Tester (Review)
-    if story.status == StoryStatus.IN_PROGRESS:
-        story.worktree_path = None
-        story.branch_name = None
-    # else: Keep worktree_path and branch_name for Tester to reuse
+    # IMPORTANT: Keep worktree_path and branch_name for reuse
+    # setup_git_worktree will automatically cleanup if needed (with skip_node_modules)
+    # This makes restart 10x faster by avoiding unnecessary cleanup
+    # story.worktree_path - KEEP (reuse workspace)
+    # story.branch_name - KEEP (reuse branch)
+    
     session.add(story)
     session.commit()
     
@@ -1100,13 +1083,11 @@ async def restart_story_task(
         "old_state": None,
     }, project_id)
     
-    # Schedule background task: cleanup THEN trigger agent
+    # Schedule background task: cleanup checkpoint THEN trigger agent
+    # Note: Worktree cleanup is now lazy (happens in setup_git_worktree if needed)
     async def _run_cleanup_with_error_handling():
         try:
             await _cleanup_and_trigger_agent(
-                worktree_path,
-                branch_name,
-                main_workspace,
                 checkpoint_thread_id,
                 str(story_id),
                 str(project_id),

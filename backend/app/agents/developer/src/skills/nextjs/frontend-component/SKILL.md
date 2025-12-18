@@ -192,6 +192,58 @@ export function BookCard() {
 - onClick, onChange, onSubmit, onHover
 - useRouter, usePathname, useSearchParams
 
+### 1.4 Type Annotations - React 19 + Next.js 16
+
+**Use `React.ReactElement`, NOT `JSX.Element`:**
+
+```tsx
+// ❌ WRONG - JSX namespace not available with new JSX transform
+const renderStars = (rating: number): JSX.Element[] => {
+  return Array.from({ length: 5 }, (_, i) => <Star key={i} />);
+};
+
+// ✅ CORRECT - Use React.ReactElement
+const renderStars = (rating: number): React.ReactElement[] => {
+  return Array.from({ length: 5 }, (_, i) => <Star key={i} />);
+};
+
+// ✅ ALSO CORRECT - Let TypeScript infer (simplest)
+const renderStars = (rating: number) => {
+  return Array.from({ length: 5 }, (_, i) => <Star key={i} />);
+};
+```
+
+**Rules:**
+- With React 19 + Next.js 16 (`jsx: "react-jsx"`), use `React.ReactElement` for JSX type annotations
+- `JSX.Element` requires separate import and is deprecated pattern
+- Best practice: Let TypeScript infer return types when obvious
+- For function params expecting JSX: use `React.ReactNode` or `React.ReactElement`
+
+**Common patterns:**
+```tsx
+// Function returning single element
+const Header = (): React.ReactElement => <h1>Title</h1>;
+
+// Function returning array of elements  
+const renderItems = (items: Item[]): React.ReactElement[] => 
+  items.map(item => <div key={item.id}>{item.name}</div>);
+
+// Component prop accepting JSX
+interface Props {
+  icon: React.ReactElement;  // Single element
+  children: React.ReactNode; // Any renderable content
+}
+```
+
+**TypeScript config context:**
+```json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",  // New transform - JSX namespace not auto-available
+  }
+}
+```
+
 ### 1.5 Event Handler Errors - Server vs Client Components
 
 **Error:** "Event handlers cannot be passed to Client Component props"

@@ -42,7 +42,28 @@ STEP_CONFIG = {
     "default": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 60, "max_tokens": 8192},
 }
 
+# =============================================================================
+# RETRY CONFIGURATION
+# =============================================================================
+
+# LLM retry settings (used in create_llm)
 MAX_RETRIES = 3
+RETRY_BACKOFF_MIN = 1  # seconds
+RETRY_BACKOFF_MAX = 10  # seconds
+
+# Parallel execution limits
+MAX_CONCURRENT_TASKS = 5
+
+# Debug/fix loop limits
+MAX_DEBUG_ATTEMPTS = 3
+MAX_DEBUG_REVIEWS_DEVELOPER = 3
+MAX_DEBUG_REVIEWS_TESTER = 2
+
+# Test generation limits (Tester)
+MAX_SCENARIOS_UNIT = 2
+MAX_SCENARIOS_INTEGRATION = 3
+MAX_REVIEW_CYCLES = 2
+MAX_LBTM_PER_FILE = 2
 
 # =============================================================================
 # TOKEN TRACKING (thread-safe with ContextVar)

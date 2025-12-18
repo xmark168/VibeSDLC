@@ -14,8 +14,7 @@ from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.nodes.helpers import send_message, generate_user_message, get_llm_config as _cfg
 from app.agents.tester.src.schemas import FixStep, ErrorAnalysisOutput
 from app.utils.token_utils import truncate_error_logs
-from app.core.agent.llm_factory import get_llm
-from app.agents.tester.src.config import MAX_DEBUG_ATTEMPTS
+from app.core.agent.llm_factory import get_llm, MAX_DEBUG_ATTEMPTS
 from app.agents.tester.src.nodes.plan import _get_existing_routes
 
 logger = logging.getLogger(__name__)

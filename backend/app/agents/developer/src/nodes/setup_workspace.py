@@ -23,31 +23,25 @@ from app.utils.workspace_utils import (
     _should_skip_prisma_generate,
     _update_prisma_generate_cache,
 )
+from langgraph.types import interrupt
+from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
+from app.agents.developer.src.utils.story_logger import StoryLogger
 
 logger = logging.getLogger(__name__)
 
-
-# =============================================================================
-# Git worktree management - now using shared utilities from app.utils.workspace_utils
-# =============================================================================
-
-# Thread pool for running blocking operations in parallel
-# Increased from 4 to 10 to support more concurrent stories
 _executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="setup_worker")
 
-# Note: Caching helper functions (_should_skip_pnpm_install, etc.) 
-# are now imported from app.utils.workspace_utils
 
 
 def _run_pnpm_install(workspace_path: str) -> bool:
-    """Run pnpm install. Try --frozen-lockfile (60s), fallback to regular (120s)."""
+    """Run pnpm install"""
     if _should_skip_pnpm_install(workspace_path):
         return True
     
     lockfile = Path(workspace_path) / "pnpm-lock.yaml"
     try:
         if lockfile.exists():
-            result = subprocess.run("pnpm install --frozen-lockfile", cwd=workspace_path, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60, shell=True)
+            result = subprocess.run("pnpm install --frozen-lockfile --offline", cwd=workspace_path, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60, shell=True)
             if result.returncode == 0:
                 _update_pnpm_install_cache(workspace_path)
                 return True
@@ -91,7 +85,14 @@ def _run_prisma_generate(workspace_path: str) -> bool:
             _update_prisma_generate_cache(workspace_path)
             return True
         else:
-            logger.warning(f"[setup_workspace] prisma generate failed")
+            # Log detailed error for diagnosis
+            stderr = (result.stderr or '').strip()
+            stdout = (result.stdout or '').strip()
+            logger.warning(
+                f"[setup_workspace] prisma generate failed (exit {result.returncode})\n"
+                f"  STDOUT: {stdout[:300] if stdout else '(empty)'}\n"
+                f"  STDERR: {stderr[:300] if stderr else '(empty)'}"
+            )
             return False
     except subprocess.TimeoutExpired:
         logger.warning("[setup_workspace] prisma generate timed out")
@@ -175,9 +176,7 @@ def _build_project_config(tech_stack: str = "nextjs") -> dict:
 
 async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
     """Setup git workspace/branch for code modification."""
-    from langgraph.types import interrupt
-    from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
-    from app.agents.developer.src.utils.story_logger import StoryLogger
+
     
     # Create story logger for detailed logging to frontend
     story_logger = StoryLogger.from_state(state, agent).with_node("setup_workspace")
@@ -291,8 +290,21 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             
             database_ready = db_result.get("ready", False)
             
+            # Prisma generate is CRITICAL if schema exists - block setup on failure
             if not gen_success:
-                await story_logger.warning("⚠️ Prisma generate failed (non-critical)")
+                await story_logger.error("❌ Prisma client generation failed")
+                return {
+                    **state,
+                    "workspace_path": workspace_path,
+                    "branch_name": branch_name,
+                    "main_workspace": workspace_info.get("main_workspace", workspace_path),
+                    "workspace_ready": False,
+                    "run_status": "error",
+                    "error": "Prisma client generation failed. Ensure @prisma/client is installed and schema.prisma is valid.",
+                    "project_context": project_context,
+                    "agents_md": agents_md,
+                    "skill_registry": skill_registry,
+                }
         
         # Build project config with tech stack
         project_config = _build_project_config(tech_stack)
@@ -301,9 +313,6 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
         if workspace_info.get("workspace_ready"):
             db_status = "DB ready" if database_ready else "No DB"
             await story_logger.info(f"Workspace ready | Branch: {workspace_info.get('branch_name')} | {db_status}")
-            
-            # Set PROCESSING state now that workspace is ready
-            # This was moved from _handle_story_processing to here for accurate state tracking
             if story_id and agent and hasattr(agent, '_update_story_state'):
                 from app.models.base import StoryAgentState
                 await agent._update_story_state(story_id, StoryAgentState.PROCESSING)
@@ -319,14 +328,12 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
             "agents_md": agents_md,
             "project_context": project_context,
             "tech_stack": tech_stack,
-            # skill_registry not stored in state - contains non-serializable Path objects
-            # It's re-loaded on demand in nodes that need it
             "available_skills": skill_registry.get_skill_ids(),
             "project_config": project_config,
         }
         
     except Exception as e:
-        # Re-raise GraphInterrupt - it's expected for pause/cancel
+        
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):
             raise

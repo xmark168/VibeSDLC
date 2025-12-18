@@ -14,17 +14,11 @@ from app.agents.developer.src.nodes import (
 
 
 def route_by_task_type(state: DeveloperState) -> Literal["respond", "setup_workspace"]:
-    """Route based on graph_task_type - no LLM needed.
-    
-    Routes:
-    - message → respond node (reply to @Developer in main chat)
-    - implement_story (default) → setup_workspace (start story implementation)
-    """
+    """Route based on graph_task_type"""
     task_type = state.get("graph_task_type", "implement_story")
     if task_type == "message":
         return "respond"
     return "setup_workspace"
-
 
 def route_after_implement(state: DeveloperState) -> Literal["review", "implement", "run_code"]:
     """Route after implement. Skip review for low complexity."""
@@ -71,7 +65,6 @@ def route_after_setup(state: DeveloperState) -> Literal["plan", "__end__"]:
 def route_after_parallel(state: DeveloperState) -> Literal["run_code", "implement", "pause_checkpoint"]:
     """Route after parallel implement - fallback to sequential if errors."""
     
-    # Handle pause - route to checkpoint node
     if state.get("action") == "PAUSED":
         return "pause_checkpoint"
     
@@ -143,22 +136,17 @@ async def get_postgres_checkpointer() -> AsyncPostgresSaver:
 
 
 class DeveloperGraph:
-    """LangGraph state machine for story-driven code generation.
-    Parallel: setup -> plan -> implement_parallel -> run_code -> END
-    Sequential: setup -> plan -> implement <-> review -> run_code -> END
-    
-    Supports checkpointing for pause/resume functionality.
-    Uses PostgresSaver for persistent checkpoints across restarts.
-    """
+    """LangGraph for Developer V2 agent story implementation."""
     
     def __init__(self, agent=None, parallel=True, checkpointer: Optional[Any] = None):
         self.agent = agent
         self.parallel = parallel
-        self.checkpointer = checkpointer  # Will be set async if None
+        self.checkpointer = checkpointer  
         self._graph_compiled = False
         g = StateGraph(DeveloperState)
-        
-        # Chat/Response nodes
+        # Entrypoint
+        g.set_conditional_entry_point(route_by_task_type)
+        # Chat node
         g.add_node("respond", partial(respond, agent=agent))
         
         # Story implementation nodes
@@ -170,9 +158,6 @@ class DeveloperGraph:
         g.add_node("review", partial(review, agent=agent))
         g.add_node("run_code", partial(run_code, agent=agent))
         g.add_node("analyze_error", partial(analyze_error, agent=agent))
-        
-        # Router is entry point - routes by task type
-        g.set_conditional_entry_point(route_by_task_type)
         
         # Chat nodes go directly to END
         g.add_edge("respond", "__end__")

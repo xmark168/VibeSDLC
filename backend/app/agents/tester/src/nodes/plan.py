@@ -15,8 +15,7 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.nodes.helpers import detect_testing_context, send_message, generate_user_message, get_llm_config as _cfg
 from app.agents.tester.src.schemas import TestPlanStep, TestPlanOutput
-from app.core.agent.llm_factory import get_llm
-from app.agents.tester.src.config import MAX_SCENARIOS_UNIT, MAX_SCENARIOS_INTEGRATION
+from app.core.agent.llm_factory import get_llm, MAX_SCENARIOS_UNIT, MAX_SCENARIOS_INTEGRATION
 from app.agents.tester.src.utils.file_repository import FileRepository
 from app.core.db import engine
 from app.models import Project

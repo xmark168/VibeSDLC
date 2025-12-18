@@ -40,19 +40,7 @@ VIETNAMESE_MAP = {
 
 
 def sanitize_filename(filename: str) -> str:
-    """Sanitize filename for safe storage.
-    
-    - Converts Vietnamese characters to ASCII
-    - Replaces spaces with underscores
-    - Removes special characters
-    - Keeps the file extension
-    
-    Args:
-        filename: Original filename (e.g., "Yêu cầu dự án.docx")
-        
-    Returns:
-        Safe filename (e.g., "Yeu_cau_du_an.docx")
-    """
+    """Sanitize filename for safe storage."""
     if not filename:
         return "unnamed_file"
     

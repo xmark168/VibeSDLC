@@ -1,15 +1,4 @@
 """Project Files Manager - Inspired by MetaGPT's file-based approach.
-
-Manages project files like PRD and user stories.
-All files are stored in the project workspace for version control and team collaboration.
-
-File Structure:
-    projects/{project_id}/
-    ├── docs/
-    │   ├── prd.md              # Product Requirements Document
-    │   └── user-stories.md     # All user stories in one file
-    └── src/
-        └── ... (source code)
 """
 
 from pathlib import Path
@@ -36,19 +25,7 @@ class ProjectFiles:
         self.docs_path.mkdir(parents=True, exist_ok=True)
     
     async def archive_docs(self) -> bool:
-        """Move existing docs to archive folder with timestamp.
-        
-        Used when user chooses to replace project with a new one.
-        Files are moved to docs/archive/{timestamp}/ folder.
-        
-        Structure:
-            docs/archive/20231130_172100/
-            ├── prd.md
-            └── user-stories.md
-        
-        Returns:
-            True if archiving was successful
-        """
+        """Move existing docs to archive folder."""
         # Check if there are any files to archive
         files_to_archive = []
         if self.prd_path.exists():

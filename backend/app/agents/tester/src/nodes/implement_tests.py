@@ -14,11 +14,11 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.nodes.helpers import send_message, generate_user_message
 from app.agents.tester.src.schemas import TestFileOutput
 from app.utils.token_utils import truncate_to_tokens
-from app.core.agent.llm_factory import get_llm
-from app.agents.tester.src.config import (
+from app.core.agent.llm_factory import (
+    get_llm,
     MAX_RETRIES,
-    RETRY_WAIT_MIN as RETRY_DELAY,
-    MAX_CONCURRENT,
+    RETRY_BACKOFF_MIN as RETRY_DELAY,
+    MAX_CONCURRENT_TASKS as MAX_CONCURRENT,
 )
 
 logger = logging.getLogger(__name__)

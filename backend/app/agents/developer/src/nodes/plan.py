@@ -9,6 +9,7 @@ from app.agents.developer.src.nodes._llm import  fast_llm
 from app.agents.developer.src.schemas import SimplePlanOutput
 from app.agents.developer.src.skills.registry import SkillRegistry
 from app.agents.developer.src.skills import get_plan_prompts
+from app.agents.developer.src.utils.story_logger import StoryLogger
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +47,7 @@ class FileRepository:
     
     def _is_important(self, path: str) -> bool:
         """Determine if a file should be fully loaded into context.
-        
-        Includes:
-        - Core infrastructure (prisma, types, config)
-        - Homepage entry point
-        - Critical navigation components (Input, CategoryNavigation)
+
         """
         important_files = [
             'prisma/schema.prisma', 
@@ -58,9 +55,7 @@ class FileRepository:
             'package.json', 
             'src/app/layout.tsx', 
             'src/lib/prisma.ts',
-            'src/app/page.tsx',  # Homepage
-            'src/components/home/Input.tsx',  # Search navigation
-            'src/components/home/CategoryNavigation.tsx',  # Category navigation
+            'src/app/page.tsx',  
         ]
         
         return any(path.endswith(p) for p in important_files)
@@ -150,7 +145,7 @@ def _auto_assign_skills(file_path: str) -> list:
         if "/components/" in fp:
             return ["frontend-component", "frontend-design"]
         if "/app/" in fp:
-            return ["frontend-design"]
+            return ["frontend-component", "frontend-design"]
     return []
 
 
@@ -202,12 +197,10 @@ def _auto_fix_dependencies(steps: list) -> list:
 @track_node("plan")
 async def plan(state: DeveloperState, config: dict = None, agent=None) -> DeveloperState:
     """Zero-shot planning with FileRepository."""
-    # FIX #1: Removed duplicate signal check - handled by _run_graph_with_signal_check()
-    from app.agents.developer.src.utils.story_logger import StoryLogger
+  
     
     config = config or {}  # Ensure config is not None
     story_logger = StoryLogger.from_state(state, agent).with_node("plan")
-    story_id = state.get("story_id", "")
     
     await story_logger.info("Analyzing requirements...")
     workspace_path = state.get("workspace_path", "")
