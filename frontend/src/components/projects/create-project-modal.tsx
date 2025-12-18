@@ -108,9 +108,9 @@ function PersonaSelector({
           className="w-full justify-between h-auto min-h-[40px] py-2"
         >
           {selectedPersona ? (
-            <div className="flex flex-col items-start text-left">
-              <span className="font-medium">{selectedPersona.name}</span>
-              <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+            <div className="flex flex-col items-start text-left flex-1 min-w-0">
+              <span className="font-medium truncate w-full">{selectedPersona.name}</span>
+              <span className="text-xs text-muted-foreground truncate w-full">
                 {selectedPersona.communication_style}
               </span>
             </div>
@@ -237,17 +237,8 @@ export function CreateProjectModal({
     if (!name.trim()) {
       return { isValid: false, error: "Project name is required" }
     }
-    if (name.length < 1 || name.length > 50) {
-      return { isValid: false, error: "Project name must be between 1 and 50 characters" }
-    }
-    if (name.startsWith("-") || name.endsWith("-")) {
-      return { isValid: false, error: "Project name cannot start or end with a hyphen" }
-    }
-    if (name.includes("--")) {
-      return { isValid: false, error: "Project name cannot contain consecutive hyphens" }
-    }
-    if (!/^[a-zA-Z0-9\-_]+$/.test(name)) {
-      return { isValid: false, error: "Project name can only contain letters, numbers, hyphens, and underscores" }
+    if (name.length < 1 || name.length > 100) {
+      return { isValid: false, error: "Project name must be between 1 and 100 characters" }
     }
     return { isValid: true }
   }
@@ -490,15 +481,17 @@ export function CreateProjectModal({
                           key={agentRole.role}
                           className="p-3 rounded-lg border border-border bg-card"
                         >
-                          <div className="flex items-center gap-3">
-                            <div className="text-2xl">{agentRole.icon}</div>
-                            <div className="flex-1">
-                              <h4 className="font-medium text-sm">{agentRole.label}</h4>
-                              <p className="text-xs text-muted-foreground">
-                                {agentRole.description}
-                              </p>
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className="text-2xl shrink-0">{agentRole.icon}</div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-medium text-sm">{agentRole.label}</h4>
+                                <p className="text-xs text-muted-foreground">
+                                  {agentRole.description}
+                                </p>
+                              </div>
                             </div>
-                            <div className="w-48">
+                            <div className="w-full sm:w-56 shrink-0">
                               <PersonaSelector
                                 role={agentRole.role}
                                 selectedPersonaId={selection?.personaId || null}

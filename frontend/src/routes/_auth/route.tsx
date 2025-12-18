@@ -11,13 +11,14 @@ export const Route = createFileRoute("/_auth")({
 
 function RouteComponent() {
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex overflow-hidden">
       {/* Left Side - Animated Agent Circle */}
       <div
         className="relative hidden lg:flex flex-1 items-center justify-center overflow-hidden p-8 lg:p-16"
         style={{
           background:
             "linear-gradient(to right, #ffffff 0%, #f8fafc 20%, #f1f5f9 40%, #eef2f7 60%, #f0f4fa 100%)",
+          willChange: "transform",
         }}
       >
         {/* Animated Background Gradient Blobs */}

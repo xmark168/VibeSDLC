@@ -22,6 +22,8 @@ __pycache__/
 open-swe/
 .idea/
 frontend/src/routeTree.gen.ts
+frontend/.tanstack/
+.tanstack/
 uv.lock
 C:\o_d\fpt\do_an\VibeSDLC\services\ai-agent-service\.env
 .env

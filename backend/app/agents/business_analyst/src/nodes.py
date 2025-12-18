@@ -57,6 +57,10 @@ logger = logging.getLogger(__name__)
 # Token tracking via callback set in base_agent._process_task()
 # =============================================================================
 
+# Retry configuration
+MAX_LLM_RETRIES = 2  # Total 3 attempts (initial + 2 retries)
+RETRY_BACKOFF_BASE = 1.0  # Linear backoff: 1s, 2s
+
 # Step mappings for BA agent
 BA_STEP_MAP = {
     "fast": "router",      # Intent, simple tasks
@@ -82,37 +86,143 @@ async def _invoke_structured(
     schema,
     messages: list,
     config: dict = None,
-    fallback_data: dict = None
+    fallback_data: dict = None,
+    max_retries: int = None
 ) -> dict:
-    """Invoke LLM with structured output, with fallback chain.
+    """Invoke LLM with structured output, with retry and fallback chain.
     
-    Pattern from Developer V2:
-    1. PRIMARY: with_structured_output() - 99% reliable
-    2. FALLBACK: Return fallback_data if provided
+    Strategy:
+    1. PRIMARY: with_structured_output() with retry on validation errors
+    2. FALLBACK: Return fallback_data if all retries fail
     
     Args:
         llm: LLM instance
         schema: Pydantic schema class
         messages: List of messages
         config: Optional config dict for Langfuse
-        fallback_data: Data to return if structured output fails
+        fallback_data: Data to return if all retries fail
+        max_retries: Maximum retry attempts (default: MAX_LLM_RETRIES from config)
     
     Returns:
         Parsed dict from schema
     """
-    try:
-        structured_llm = llm.with_structured_output(schema)
-        if config:
-            result = await structured_llm.ainvoke(messages, config=config)
-        else:
-            result = await structured_llm.ainvoke(messages)
-        return result.model_dump()
-    except Exception as e:
-        logger.warning(f"[BA] Structured output failed: {e}")
-        if fallback_data:
-            logger.info("[BA] Using fallback data")
-            return fallback_data
-        raise
+    import asyncio
+    from pydantic import ValidationError
+    
+    # Use global config if not specified
+    if max_retries is None:
+        max_retries = MAX_LLM_RETRIES
+    
+    last_error = None
+    
+    for attempt in range(max_retries + 1):  # +1 for initial attempt
+        try:
+            structured_llm = llm.with_structured_output(schema)
+            if config:
+                result = await structured_llm.ainvoke(messages, config=config)
+            else:
+                result = await structured_llm.ainvoke(messages)
+            
+            # Check if result is None (LLM failed to return structured output)
+            if result is None:
+                logger.warning(f"[BA] LLM returned None (attempt {attempt + 1}/{max_retries + 1})")
+                last_error = ValueError("LLM returned None")
+                if attempt < max_retries:
+                    wait_time = RETRY_BACKOFF_BASE * (attempt + 1)
+                    logger.info(f"[BA] Retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                # Last attempt failed
+                if fallback_data:
+                    logger.info("[BA] All retries exhausted, using fallback data")
+                    return fallback_data
+                raise last_error
+            
+            # Success - return result
+            return result.model_dump()
+            
+        except ValidationError as e:
+            # Pydantic validation error - LLM returned wrong structure
+            last_error = e
+            logger.warning(f"[BA] Structured output validation failed (attempt {attempt + 1}/{max_retries + 1}): {e}")
+            if attempt < max_retries:
+                wait_time = RETRY_BACKOFF_BASE * (attempt + 1)
+                logger.info(f"[BA] Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+                continue
+            # Last attempt failed
+            if fallback_data:
+                logger.info("[BA] All retries exhausted, using fallback data")
+                return fallback_data
+            raise
+            
+        except Exception as e:
+            # Other errors (network, API, etc.) - let LangChain's auto-retry handle it
+            # Only catch and retry if it's a known retryable error
+            error_str = str(e).lower()
+            is_retryable = any(keyword in error_str for keyword in [
+                "timeout", "connection", "rate limit", "429", "500", "503", "504"
+            ])
+            
+            last_error = e
+            if is_retryable and attempt < max_retries:
+                wait_time = RETRY_BACKOFF_BASE * (attempt + 1)
+                logger.warning(f"[BA] Retryable error (attempt {attempt + 1}/{max_retries + 1}): {e}")
+                logger.info(f"[BA] Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+                continue
+            
+            # Non-retryable error or last attempt
+            logger.warning(f"[BA] LLM call failed: {e}")
+            if fallback_data:
+                logger.info("[BA] Using fallback data")
+                return fallback_data
+            raise
+    
+    # Should never reach here, but just in case
+    if fallback_data:
+        logger.info("[BA] Fallback after all retries")
+        return fallback_data
+    raise last_error or Exception("Unknown error in _invoke_structured")
+
+def _classify_crud_operation(user_message: str) -> tuple:
+    """Classify user message into CRUD operation and confidence.
+    
+    Returns (operation, confidence) where:
+    - operation: "CREATE" | "READ" | "UPDATE" | "DELETE" | "UNKNOWN"
+    - confidence: 0.0-1.0 (how confident we are)
+    
+    Examples:
+    - "xóa epic Notifications" → ("DELETE", 1.0)
+    - "sửa story EPIC-001-US-003" → ("UPDATE", 1.0)
+    - "thêm menu ở homepage" → ("CREATE", 0.9)
+    - "trang about" → ("UNKNOWN", 0.0)
+    """
+    user_msg_lower = user_message.lower()
+    
+    # DELETE - highest priority (most explicit)
+    delete_keywords = ["xóa", "delete", "remove", "bỏ", "loại bỏ", "gỡ bỏ"]
+    if any(kw in user_msg_lower for kw in delete_keywords):
+        return ("DELETE", 1.0)
+    
+    # UPDATE - second priority
+    update_keywords = ["sửa", "edit", "update", "chỉnh", "thay đổi", "modify", "đổi"]
+    if any(kw in user_msg_lower for kw in update_keywords):
+        return ("UPDATE", 1.0)
+    
+    # CREATE - third priority (can be ambiguous with refinement)
+    create_keywords = ["thêm", "add", "tạo", "create", "thêm mới", "bổ sung"]
+    if any(kw in user_msg_lower for kw in create_keywords):
+        # Lower confidence because "thêm" can mean refine existing OR create new
+        return ("CREATE", 0.8)
+    
+    # READ - rarely used in BA context
+    read_keywords = ["xem", "hiển thị", "show", "view", "list"]
+    if any(kw in user_msg_lower for kw in read_keywords):
+        return ("READ", 0.6)
+    
+    return ("UNKNOWN", 0.0)
+
 
 def _extract_intent_keywords(user_message: str) -> list:
     """Extract key intent keywords from user message for matching.
@@ -243,13 +353,17 @@ async def _check_request_clarity(
         if not is_new and has_specific_change:
             return True, [], related
         
-        # CASE 3: Existing feature WITHOUT specific change → notify and ask what to change
+        # CASE 3: Existing feature WITHOUT specific change → notify clearly and ask what to do
         if not is_new and not has_specific_change:
+            # Use LLM-generated questions if available (should include clear notification)
+            if questions:
+                return False, questions, related
+            
+            # Fallback: Clear notification about duplicate feature with ONE simple question
             existing_feature_questions = [
-                f"Tính năng '{related}' đã có trong hệ thống rồi. Bạn muốn bổ sung/thay đổi gì cụ thể?",
-                "Ví dụ: thêm section mới, thay đổi layout, bổ sung thông tin gì?"
+                f"Tính năng '{related}' đã có trong hệ thống rồi. Bạn muốn thay đổi/chỉnh sửa phần nào của tính năng hiện tại?"
             ]
-            return False, questions if questions else existing_feature_questions, related
+            return False, existing_feature_questions, related
         
         return True, [], related
             
@@ -601,9 +715,9 @@ async def analyze_document_content(document_text: str, agent=None) -> dict:
 
 # Fallback messages for document analysis feedback
 _DOC_FALLBACK_MESSAGES = {
-    "complete_requirements": "✅ Tài liệu đầy đủ thông tin! Mình sẽ tạo PRD trực tiếp từ nội dung này.",
-    "partial_requirements": "📝 Đã trích xuất một số thông tin từ tài liệu. Mình cần hỏi thêm vài câu để làm rõ.",
-    "not_requirements": "📄 Đây không phải tài liệu yêu cầu dự án. Bạn muốn mình làm gì với nội dung này?",
+    "complete_requirements": "Tài liệu đầy đủ thông tin! Mình sẽ tạo PRD trực tiếp từ nội dung này.",
+    "partial_requirements": "Đã trích xuất một số thông tin từ tài liệu. Mình cần hỏi thêm vài câu để làm rõ.",
+    "not_requirements": "Đây không phải tài liệu yêu cầu dự án. Bạn muốn mình làm gì với nội dung này?",
 }
 
 
@@ -735,15 +849,26 @@ async def interview_requirements(state: BAState, agent=None) -> dict:
         fallback_data={"questions": []}
     )
     
-    # Convert Pydantic Question objects to dicts
+    # Convert Pydantic Question objects to dicts and enforce multichoice type
     questions = []
     for q in result.get("questions", []):
         if hasattr(q, "model_dump"):
-            questions.append(q.model_dump())
+            q_dict = q.model_dump()
         elif isinstance(q, dict):
-            questions.append(q)
+            q_dict = q
+        else:
+            continue
+        
+        # FORCE multichoice type (LLM sometimes returns "open" despite schema default)
+        if q_dict.get("type") != "multichoice":
+            q_dict["type"] = "multichoice"
+            # If no options, add default ones
+            if not q_dict.get("options"):
+                q_dict["options"] = ["Có", "Không", "Khác (vui lòng mô tả)"]
+        
+        questions.append(q_dict)
     
-    logger.info(f"[BA] Generated {len(questions)} questions")
+    logger.info(f"[BA] Generated {len(questions)} questions (all forced to multichoice)")
     
     # If no questions generated, send fallback message to user
     if not questions and agent:
@@ -1108,15 +1233,34 @@ async def update_prd(state: BAState, agent=None) -> dict:
         return await generate_prd(state, agent)
     
     # ====================================================================================
-    # STEP 1: CHECK CLARITY - Ask clarification if this is a NEW feature or existing without specific change
-    # Skip if we're resuming from a previous clarification (skip_clarity_check=True)
+    # STEP 0: CLASSIFY CRUD OPERATION
     # ====================================================================================
-    if skip_clarity_check:
-        logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
+    crud_operation, crud_confidence = _classify_crud_operation(user_message)
+    logger.info(f"[BA] CRUD classification: {crud_operation} (confidence: {crud_confidence:.2f})")
+    
+    # ====================================================================================
+    # STEP 1: CHECK CLARITY - Ask clarification ONLY for CREATE operations on NEW features
+    # DELETE/UPDATE operations are always clear (user explicitly states what to modify/remove)
+    # ====================================================================================
+    should_skip_clarity = (
+        skip_clarity_check or 
+        crud_operation == "DELETE" or 
+        crud_operation == "UPDATE"
+    )
+    
+    if should_skip_clarity:
+        if crud_operation == "DELETE":
+            logger.info(f"[BA] Skipping clarity check (DELETE operation - always clear)")
+        elif crud_operation == "UPDATE":
+            logger.info(f"[BA] Skipping clarity check (UPDATE operation - always clear)")
+        else:
+            logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
         is_clear = True
         missing_details = []
         related_feature = None
     else:
+        # Only CREATE operations need clarity check
+        logger.info(f"[BA] CREATE operation detected - checking if NEW feature or REFINEMENT of existing")
         is_clear, missing_details, related_feature = await _check_request_clarity(
             user_message, existing_epics, existing_prd, agent
         )
@@ -1127,21 +1271,88 @@ async def update_prd(state: BAState, agent=None) -> dict:
         
         # Build context message
         if related_feature:
+            # EXISTING feature → use simple open question (missing_details is list of strings)
             context_msg = f"Tính năng \"{related_feature}\" đã có trong hệ thống. Mình cần biết thêm chi tiết để cập nhật."
+            batch_questions = [
+                {
+                    "question_text": detail,
+                    "question_type": "open",
+                    "options": None,
+                    "allow_multiple": False,
+                    "context": context_msg if i == 0 else None,
+                }
+                for i, detail in enumerate(missing_details)
+            ]
         else:
+            # NEW feature → generate multichoice questions specific to this feature
+            logger.info(f"[BA] NEW feature detected, generating feature-specific multichoice questions...")
             context_msg = f"Để mình hiểu rõ hơn về \"{user_message}\", bạn cho mình biết thêm nhé!"
-        
-        # Format questions for batch API (use question cards like interview flow)
-        batch_questions = [
-            {
-                "question_text": detail,
-                "question_type": "open",
-                "options": None,
-                "allow_multiple": False,
-                "context": context_msg if i == 0 else None,  # Only add context to first question
-            }
-            for i, detail in enumerate(missing_details)
-        ]
+            
+            # Generate multichoice questions using LLM (specific to the new feature, not general interview)
+            try:
+                system_prompt = _sys_prompt(agent, "generate_feature_questions")
+                user_prompt = _user_prompt(
+                    "generate_feature_questions",
+                    user_message=user_message
+                )
+                
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_prompt)
+                ]
+                
+                result = await _invoke_structured(
+                    llm=_default_llm,
+                    schema=QuestionsOutput,
+                    messages=messages,
+                    config=_cfg(state, "generate_feature_questions"),
+                    fallback_data={"questions": []}
+                )
+                
+                generated_questions = []
+                for q in result.get("questions", []):
+                    if hasattr(q, "model_dump"):
+                        q_dict = q.model_dump()
+                    elif isinstance(q, dict):
+                        q_dict = q
+                    else:
+                        continue
+                    
+                    # Ensure multichoice type
+                    if q_dict.get("type") != "multichoice":
+                        q_dict["type"] = "multichoice"
+                    if not q_dict.get("options"):
+                        q_dict["options"] = ["Có", "Không", "Khác (vui lòng mô tả)"]
+                    
+                    generated_questions.append(q_dict)
+                
+                if generated_questions:
+                    batch_questions = [
+                        {
+                            "question_text": q["text"],
+                            "question_type": q.get("type", "multichoice"),
+                            "options": q.get("options"),
+                            "allow_multiple": q.get("allow_multiple", False),
+                            "context": context_msg if i == 0 else None,
+                        }
+                        for i, q in enumerate(generated_questions)
+                    ]
+                else:
+                    raise ValueError("No questions generated")
+                    
+            except Exception as e:
+                logger.warning(f"[BA] Failed to generate feature-specific questions: {e}, using fallback")
+                # Fallback: use simple open questions
+                batch_questions = [
+                    {
+                        "question_text": detail,
+                        "question_type": "open",
+                        "options": None,
+                        "allow_multiple": False,
+                        "context": context_msg if i == 0 else None,
+                    }
+                    for i, detail in enumerate(missing_details)
+                ]
         
         logger.info(f"[BA] Sending {len(batch_questions)} clarification questions via question cards...")
         
@@ -1424,8 +1635,8 @@ async def extract_stories(state: BAState, agent=None) -> dict:
             return await _extract_stories_single_call(state, agent, prd)
         
         # Use hardcoded messages (LLM-generated templates were unreliable - often mentioned "Phase 2" incorrectly)
-        message = f"🎉 Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé! 📋"
-        approval_message = f"✅ Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+        message = f"Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé!"
+        approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog!"
         
         logger.info(f"[BA] Stories message: {message[:50]}...")
         
@@ -1493,8 +1704,8 @@ async def _extract_stories_single_call(state: BAState, agent, prd: dict) -> dict
     logger.info(f"[BA] Single-call extraction: {total_epics} epics, {total_stories} stories")
     
     # Use hardcoded messages (LLM templates unreliable)
-    message = f"🎉 Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé! 📋"
-    approval_message = f"✅ Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+    message = f"Đã tạo xong {total_stories} User Stories từ {total_epics} Epics! Bạn xem qua và bấm 'Phê duyệt Stories' để thêm vào backlog nhé!"
+    approval_message = f"Đã phê duyệt và thêm {total_epics} Epics, {total_stories} Stories vào backlog!"
     
     return {
         "epics": epics,
@@ -1528,13 +1739,27 @@ async def update_stories(state: BAState, agent=None) -> dict:
     skip_clarity_check = state.get("skip_clarity_check", False)
     
     # ====================================================================================
-    # STEP 1: CHECK FOR EXISTING STORIES FIRST - Before asking clarification
-    # This prevents asking clarification for features that already exist in stories
+    # STEP 0: CLASSIFY CRUD OPERATION - Determine what user wants to do
+    # This simplifies routing and reduces unnecessary checks
     # ====================================================================================
-    if not skip_clarity_check:  # Only check if not resuming from clarification
+    crud_operation, crud_confidence = _classify_crud_operation(user_message)
+    logger.info(f"[BA] CRUD classification: {crud_operation} (confidence: {crud_confidence:.2f})")
+    
+    # ====================================================================================
+    # STEP 1: UNIFIED DUPLICATE DETECTION - Check if feature/story already exists
+    # This combines story-level and epic-level checks into one unified flow
+    # ====================================================================================
+    # SKIP this check for DELETE/UPDATE operations (they are explicit, no need to check duplicates)
+    user_msg_lower = user_message.lower()
+    is_deletion_request = crud_operation == "DELETE"
+    is_update_request = crud_operation == "UPDATE"
+    
+    # For CREATE operations, check if similar functionality already exists
+    # This prevents duplicate stories and helps user refine existing ones
+    if not skip_clarity_check and crud_operation == "CREATE":
         user_keywords = _extract_intent_keywords(user_message)
         
-        # Search for existing stories that might already cover this functionality
+        # LEVEL 1: Check for existing STORIES (most specific)
         matching_stories = []
         for epic in all_epics:
             for story in epic.get("stories", []):
@@ -1548,50 +1773,111 @@ async def update_stories(state: BAState, agent=None) -> dict:
                 if matches >= 2:  # At least 2 keywords match
                     matching_stories.append({
                         "story": story,
+                        "epic_id": epic.get("id"),
+                        "epic_title": epic.get("title"),
                         "epic_domain": epic.get("domain"),
                         "match_score": matches / len(user_keywords) if user_keywords else 0
                     })
         
+        # LEVEL 2: Check for existing EPICS (broader scope)
+        matching_epics = []
+        for epic in all_epics:
+            epic_text = f"{epic.get('title', '')} {epic.get('domain', '')} {epic.get('description', '')}".lower()
+            matches = sum(1 for kw in user_keywords if kw in epic_text)
+            if matches >= 1:  # At least 1 keyword match for epic
+                matching_epics.append({
+                    "epic": epic,
+                    "match_score": matches / len(user_keywords) if user_keywords else 0
+                })
+        
+        # DECISION LOGIC: What to do with matches?
         if matching_stories and agent:
-            # Found existing stories that might cover this functionality
+            # CASE A: Found specific story → Ask user to refine it (most specific)
             matching_stories.sort(key=lambda x: x["match_score"], reverse=True)
             best_match = matching_stories[0]
             story = best_match["story"]
             
-            logger.info(f"[BA] Found existing story that might cover this: {story.get('id')} - {story.get('title')}")
+            logger.info(f"[BA] Found existing story: {story.get('id')} - {story.get('title')} (score: {best_match['match_score']:.2f})")
             
-            # Ask user if they want to update existing story or create new one
+            # SMART MESSAGE: Tell user story exists, ask what to add
             existing_story_msg = (
                 f"🔍 Mình tìm thấy story \"{story.get('title', '')}\" (ID: {story.get('id')}) "
-                f"trong domain {best_match['epic_domain']} có vẻ đã cover chức năng này rồi.\n\n"
-                f"Bạn muốn bổ sung gì vào story này không?"
+                f"trong epic \"{best_match['epic_title']}\" có vẻ đã cover chức năng này rồi.\n\n"
+                f"Bạn muốn bổ sung gì vào story này? (Ví dụ: thêm requirement, acceptance criteria, ...)"
             )
             
             await agent.message_user("response", existing_story_msg)
             
-            # Return early - STOP the flow (waiting for user decision)
+            # Return early - STOP the flow (waiting for user to clarify what to add)
             return {
                 "found_existing_story": True,
                 "existing_story_id": story.get("id"),
                 "existing_story_title": story.get("title"),
+                "existing_epic_id": best_match["epic_id"],
                 "awaiting_user_decision": True,
                 "is_complete": True,
                 "result": {
-                    "summary": "Found existing story - awaiting user decision",
+                    "summary": f"Found existing story '{story.get('title')}' - awaiting user clarification",
                     "task_completed": False
                 }
             }
+        
+        elif matching_epics and agent:
+            # CASE B: Found epic but no specific story → This is REFINEMENT (add to existing epic)
+            matching_epics.sort(key=lambda x: x["match_score"], reverse=True)
+            best_epic = matching_epics[0]["epic"]
+            
+            logger.info(f"[BA] Found existing epic: {best_epic.get('title')} (score: {matching_epics[0]['match_score']:.2f}) - will refine it")
+            
+            # NO NEED TO ASK - This is clearly a refinement of existing epic
+            # Just proceed to add story to this epic (skip clarity check)
+            logger.info(f"[BA] Refinement detected - will add new story to epic '{best_epic.get('title')}'")
+            # Continue to STEP 3 (skip STEP 2 clarity check)
     
     # ====================================================================================
-    # STEP 2: CHECK CLARITY - Ask clarification if this is a NEW feature
-    # Only runs if no existing stories found AND not resuming from clarification
+    # STEP 2: CHECK CLARITY - Ask clarification ONLY for CREATE operations on NEW features
+    # DELETE/UPDATE operations are always clear (user explicitly states what to modify/remove)
     # ====================================================================================
-    if skip_clarity_check:
-        logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
+    # SKIP clarity check for:
+    # 1. DELETE operations (always explicit: "xóa epic X")
+    # 2. UPDATE operations (always explicit: "sửa story Y")
+    # 3. Resuming from previous clarification (skip_clarity_check=True)
+    # 4. Found matching epic in STEP 1 (this is REFINEMENT, not NEW feature)
+    
+    # Check if we found matching epic in STEP 1 (CASE B)
+    found_matching_epic = False
+    if crud_operation == "CREATE" and not skip_clarity_check:
+        user_keywords = _extract_intent_keywords(user_message)
+        for epic in all_epics:
+            epic_text = f"{epic.get('title', '')} {epic.get('domain', '')}".lower()
+            matches = sum(1 for kw in user_keywords if kw in epic_text)
+            if matches >= 1:
+                found_matching_epic = True
+                logger.info(f"[BA] Found matching epic '{epic.get('title')}' - treating as REFINEMENT")
+                break
+    
+    should_skip_clarity = (
+        skip_clarity_check or 
+        crud_operation == "DELETE" or 
+        crud_operation == "UPDATE" or
+        found_matching_epic  # NEW: Skip if found matching epic (REFINEMENT)
+    )
+    
+    if should_skip_clarity:
+        if crud_operation == "DELETE":
+            logger.info(f"[BA] Skipping clarity check (DELETE operation - always clear)")
+        elif crud_operation == "UPDATE":
+            logger.info(f"[BA] Skipping clarity check (UPDATE operation - always clear)")
+        elif found_matching_epic:
+            logger.info(f"[BA] Skipping clarity check (found matching epic - this is REFINEMENT)")
+        else:
+            logger.info(f"[BA] Skipping clarity check (resuming from clarification)")
         is_clear = True
         missing_details = []
         related_feature = None
     else:
+        # Only CREATE operations on COMPLETELY NEW features need clarity check
+        logger.info(f"[BA] CREATE operation on NEW feature - checking for clarification needs")
         is_clear, missing_details, related_feature = await _check_request_clarity(
             user_message, all_epics, existing_prd, agent
         )
@@ -1602,21 +1888,88 @@ async def update_stories(state: BAState, agent=None) -> dict:
         
         # Build context message
         if related_feature:
+            # EXISTING feature → use simple open question (missing_details is list of strings)
             context_msg = f"Tính năng \"{related_feature}\" đã có trong hệ thống. Mình cần biết thêm chi tiết để cập nhật."
+            batch_questions = [
+                {
+                    "question_text": detail,
+                    "question_type": "open",
+                    "options": None,
+                    "allow_multiple": False,
+                    "context": context_msg if i == 0 else None,
+                }
+                for i, detail in enumerate(missing_details)
+            ]
         else:
+            # NEW feature → generate multichoice questions specific to this feature
+            logger.info(f"[BA] NEW feature detected, generating feature-specific multichoice questions...")
             context_msg = f"Để mình hiểu rõ hơn về \"{user_message}\", bạn cho mình biết thêm nhé!"
-        
-        # Format questions for batch API (use question cards like interview flow)
-        batch_questions = [
-            {
-                "question_text": detail,
-                "question_type": "open",
-                "options": None,
-                "allow_multiple": False,
-                "context": context_msg if i == 0 else None,
-            }
-            for i, detail in enumerate(missing_details)
-        ]
+            
+            # Generate multichoice questions using LLM (specific to the new feature, not general interview)
+            try:
+                system_prompt = _sys_prompt(agent, "generate_feature_questions")
+                user_prompt = _user_prompt(
+                    "generate_feature_questions",
+                    user_message=user_message
+                )
+                
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_prompt)
+                ]
+                
+                result = await _invoke_structured(
+                    llm=_default_llm,
+                    schema=QuestionsOutput,
+                    messages=messages,
+                    config=_cfg(state, "generate_feature_questions"),
+                    fallback_data={"questions": []}
+                )
+                
+                generated_questions = []
+                for q in result.get("questions", []):
+                    if hasattr(q, "model_dump"):
+                        q_dict = q.model_dump()
+                    elif isinstance(q, dict):
+                        q_dict = q
+                    else:
+                        continue
+                    
+                    # Ensure multichoice type
+                    if q_dict.get("type") != "multichoice":
+                        q_dict["type"] = "multichoice"
+                    if not q_dict.get("options"):
+                        q_dict["options"] = ["Có", "Không", "Khác (vui lòng mô tả)"]
+                    
+                    generated_questions.append(q_dict)
+                
+                if generated_questions:
+                    batch_questions = [
+                        {
+                            "question_text": q["text"],
+                            "question_type": q.get("type", "multichoice"),
+                            "options": q.get("options"),
+                            "allow_multiple": q.get("allow_multiple", False),
+                            "context": context_msg if i == 0 else None,
+                        }
+                        for i, q in enumerate(generated_questions)
+                    ]
+                else:
+                    raise ValueError("No questions generated")
+                    
+            except Exception as e:
+                logger.warning(f"[BA] Failed to generate feature-specific questions: {e}, using fallback")
+                # Fallback: use simple open questions
+                batch_questions = [
+                    {
+                        "question_text": detail,
+                        "question_type": "open",
+                        "options": None,
+                        "allow_multiple": False,
+                        "context": context_msg if i == 0 else None,
+                    }
+                    for i, detail in enumerate(missing_details)
+                ]
         
         logger.info(f"[BA] Sending {len(batch_questions)} clarification questions via question cards...")
         
@@ -1656,30 +2009,57 @@ async def update_stories(state: BAState, agent=None) -> dict:
     
     # SMART FILTERING: Detect if user mentions specific domain/page
     # If yes, only update that epic (much faster, avoids timeout)
-    relevant_epics = []
-    mentioned_domains = []
-    
-    for epic in all_epics:
-        epic_domain = (epic.get("domain") or "").lower()
-        epic_title = (epic.get("title") or "").lower()
+    # SPECIAL HANDLING FOR DELETION: Find the epic to delete by matching keywords
+    if is_deletion_request:
+        # Extract keywords from user message to find target epic
+        user_keywords = _extract_intent_keywords(user_message)
         
-        # Check if user message mentions this epic's domain or title
-        if epic_domain and epic_domain in user_message_lower:
-            relevant_epics.append(epic)
-            mentioned_domains.append(epic_domain)
-        elif any(keyword in epic_title for keyword in user_message_lower.split() if len(keyword) > 3):
-            # Match significant words (>3 chars) from user message to epic title
-            relevant_epics.append(epic)
-            mentioned_domains.append(epic_domain or "unknown")
-    
-    # If no specific domain mentioned, or too many epics (>5), use ALL epics (general update)
-    # But warn about performance
-    if not relevant_epics or len(relevant_epics) > 5:
-        logger.info(f"[BA] No specific domain detected or too many matches, using ALL {len(all_epics)} epics (may be slow)")
-        epics_to_update = all_epics
+        # Find epic(s) that match the deletion request
+        matching_epics_for_deletion = []
+        for epic in all_epics:
+            epic_text = f"{epic.get('title', '')} {epic.get('domain', '')} {epic.get('description', '')}".lower()
+            matches = sum(1 for kw in user_keywords if kw in epic_text)
+            if matches >= 1:  # At least 1 keyword match
+                matching_epics_for_deletion.append({
+                    "epic": epic,
+                    "match_score": matches / len(user_keywords) if user_keywords else 0
+                })
+        
+        if matching_epics_for_deletion:
+            # Sort by match score and take top matches
+            matching_epics_for_deletion.sort(key=lambda x: x["match_score"], reverse=True)
+            # Only send matched epics to LLM (much smaller payload)
+            epics_to_update = [m["epic"] for m in matching_epics_for_deletion[:3]]  # Max 3 epics
+            logger.info(f"[BA] Deletion request - found {len(epics_to_update)} matching epic(s) to delete: {[e.get('title') for e in epics_to_update]}")
+        else:
+            # No match found, send all epics (fallback)
+            logger.warning(f"[BA] Deletion request - no matching epic found, sending all {len(all_epics)} epics")
+            epics_to_update = all_epics
     else:
-        logger.info(f"[BA] Detected specific domains: {mentioned_domains}. Updating only {len(relevant_epics)} relevant epics (optimization)")
-        epics_to_update = relevant_epics
+        relevant_epics = []
+        mentioned_domains = []
+        
+        for epic in all_epics:
+            epic_domain = (epic.get("domain") or "").lower()
+            epic_title = (epic.get("title") or "").lower()
+            
+            # Check if user message mentions this epic's domain or title
+            if epic_domain and epic_domain in user_message_lower:
+                relevant_epics.append(epic)
+                mentioned_domains.append(epic_domain)
+            elif any(keyword in epic_title for keyword in user_message_lower.split() if len(keyword) > 3):
+                # Match significant words (>3 chars) from user message to epic title
+                relevant_epics.append(epic)
+                mentioned_domains.append(epic_domain or "unknown")
+        
+        # If no specific domain mentioned, or too many epics (>5), use ALL epics (general update)
+        # But warn about performance
+        if not relevant_epics or len(relevant_epics) > 5:
+            logger.info(f"[BA] No specific domain detected or too many matches, using ALL {len(all_epics)} epics (may be slow)")
+            epics_to_update = all_epics
+        else:
+            logger.info(f"[BA] Detected specific domains: {mentioned_domains}. Updating only {len(relevant_epics)} relevant epics (optimization)")
+            epics_to_update = relevant_epics
     
     # Get conversation context for memory
     conversation_context = state.get("conversation_context", "")
@@ -1699,13 +2079,32 @@ async def update_stories(state: BAState, agent=None) -> dict:
         HumanMessage(content=user_prompt)
     ]
     
-    result = await _invoke_structured(
-        llm=_story_llm,
-        schema=FullStoriesOutput,
-        messages=messages,
-        config=_cfg(state, "update_stories"),
-        fallback_data={"epics": epics_to_update, "message_template": "", "approval_template": "", "change_summary": "Không thể cập nhật"}
-    )
+    # Log payload size for debugging
+    total_chars = len(system_prompt) + len(user_prompt)
+    logger.info(f"[BA] Calling LLM for update_stories: {len(epics_to_update)} epics, payload size: {total_chars} chars")
+    
+    # Add timeout wrapper for LLM call
+    import asyncio
+    try:
+        # Set timeout to 120 seconds (2 minutes) for large payloads
+        result = await asyncio.wait_for(
+            _invoke_structured(
+                llm=_story_llm,
+                schema=FullStoriesOutput,
+                messages=messages,
+                config=_cfg(state, "update_stories"),
+                fallback_data={"epics": epics_to_update, "message_template": "", "approval_template": "", "change_summary": "Không thể cập nhật"}
+            ),
+            timeout=120.0  # 2 minutes timeout
+        )
+        logger.info(f"[BA] LLM call completed successfully")
+    except asyncio.TimeoutError:
+        logger.error(f"[BA] LLM call TIMEOUT after 120s! Payload: {len(epics_to_update)} epics, {total_chars} chars")
+        # Use fallback data
+        result = {"epics": epics_to_update, "message_template": "", "approval_template": "", "change_summary": "⚠️ Timeout - không thể cập nhật (payload quá lớn)"}
+    except Exception as e:
+        logger.error(f"[BA] LLM call FAILED: {e}")
+        result = {"epics": epics_to_update, "message_template": "", "approval_template": "", "change_summary": f"⚠️ Lỗi: {str(e)[:100]}"}
     
     # Convert Pydantic Epic objects to dicts
     updated_epics_from_llm = []
@@ -1723,14 +2122,26 @@ async def update_stories(state: BAState, agent=None) -> dict:
         # Build map of updated epics by ID
         updated_map = {epic.get("id"): epic for epic in updated_epics_from_llm}
         
+        # Build set of IDs that were sent to LLM (for deletion detection)
+        sent_epic_ids = {epic.get("id") for epic in epics_to_update}
+        
         # Merge: replace updated epics, keep others unchanged
+        # SPECIAL: If an epic was sent to LLM but NOT in result → it was DELETED
         final_epics = []
         for epic in all_epics:
             epic_id = epic.get("id")
-            if epic_id in updated_map:
-                final_epics.append(updated_map[epic_id])  # Use updated version
+            if epic_id in sent_epic_ids:
+                # This epic was sent to LLM
+                if epic_id in updated_map:
+                    # Epic still exists in result → keep it (might be modified)
+                    final_epics.append(updated_map[epic_id])
+                else:
+                    # Epic was sent but NOT in result → it was DELETED by LLM
+                    logger.info(f"[BA] Epic '{epic.get('title')}' was DELETED by LLM")
+                    # Don't add to final_epics (effectively deleted)
             else:
-                final_epics.append(epic)  # Keep original
+                # Epic was NOT sent to LLM → keep original
+                final_epics.append(epic)
     else:
         # All epics were updated, use result directly
         final_epics = updated_epics_from_llm
@@ -1758,8 +2169,8 @@ async def update_stories(state: BAState, agent=None) -> dict:
     # No more validation needed here - STEP 2 already checked for existing functionality
     # If we reach here, user has confirmed they want to proceed
     # Use hardcoded messages (LLM templates unreliable)
-    message = f"✏️ Đã cập nhật xong! Hiện có {total_stories} Stories trong {total_epics} Epics. Bạn xem qua và bấm 'Phê duyệt Stories' nhé! 📋"
-    approval_message = f"✅ Đã cập nhật và lưu {total_epics} Epics, {total_stories} Stories vào backlog! 🎊"
+    message = f"Đã cập nhật xong! Hiện có {total_stories} Stories trong {total_epics} Epics. Bạn xem qua và bấm 'Phê duyệt Stories' nhé!"
+    approval_message = f"Đã cập nhật và lưu {total_epics} Epics, {total_stories} Stories vào backlog!"
     
     return {
         "epics": final_epics,
@@ -1773,80 +2184,147 @@ async def update_stories(state: BAState, agent=None) -> dict:
 async def edit_single_story(state: BAState, agent=None) -> dict:
     """Node: Edit a SINGLE specific story based on user request.
     
-    This is a FAST targeted update - finds the story by title/ID and applies only the requested change.
+    This is a FAST targeted update - finds the story by ID and applies only the requested change.
     Much faster than update_stories which regenerates everything.
     """
     logger.info(f"[BA] Editing single story (targeted mode)...")
     
-    epics = state.get("epics", [])
-    stories = state.get("stories", [])
+    import re
+    
     user_message = state.get("user_message", "")
-    
-    if not epics and not stories:
-        logger.warning("[BA] No existing stories to edit")
-        return {"error": "No existing stories to edit"}
-    
-    # Step 1: Find the target story from user message
-    # Search by title match or ID match
-    target_story = None
-    target_epic_idx = None
-    target_story_idx = None
     user_msg_lower = user_message.lower()
     
-    # Flatten stories if not already
-    if not stories:
-        stories = []
-        for epic in epics:
-            for story in epic.get("stories", []):
-                story["epic_id"] = epic.get("id")
-                story["epic_title"] = epic.get("title")
-                stories.append(story)
+    # ====================================================================================
+    # STEP 1: Extract story ID or title from user message
+    # ====================================================================================
+    # Try 1: Extract story ID with regex (most reliable)
+    # Pattern: EPIC-XXX-US-YYY or epic-xxx-us-yyy
+    story_id_pattern = r'epic-\d+-us-\d+'
+    id_match = re.search(story_id_pattern, user_msg_lower)
     
-    # Search for story by title or ID - use BEST MATCH strategy
-    best_match_story = None
-    best_match_idx = None
-    best_match_score = 0
+    target_story_id = None
+    search_by_title = False
     
-    for i, story in enumerate(stories):
-        story_title = story.get("title", "").lower()
-        story_id = story.get("id", "").lower()
+    if id_match:
+        target_story_id = id_match.group(0).upper()  # Normalize to uppercase
+        logger.info(f"[BA] Extracted story ID: {target_story_id}")
+    else:
+        # Try 2: Check if user mentioned story title (quoted or after keywords)
+        # Patterns: "sửa story 'title here'" or "xóa story title here"
+        title_patterns = [
+            r"['\"](.+?)['\"]",  # Quoted: "story title" or 'story title'
+            r"(?:story|stories)\s+(.{10,100}?)(?:\s+(?:bỏ|xóa|thêm|sửa|add|remove|delete|change)|$)",  # After "story": "sửa story ABC"
+        ]
         
-        # Check if story ID is mentioned in user message (exact match)
-        if story_id and story_id in user_msg_lower:
-            target_story = story
-            target_story_idx = i
-            logger.info(f"[BA] Found story by ID: {story_id}")
-            break
+        title_match = None
+        for pattern in title_patterns:
+            title_match = re.search(pattern, user_message, re.IGNORECASE)
+            if title_match:
+                break
         
-        # Calculate match score based on KEY WORDS in story title
-        # Focus on unique/distinctive words, not common ones like "want", "administrator"
-        common_words = {"as", "a", "an", "i", "want", "to", "so", "that", "can", "the", "for", "and", "or", "in", "on", "is", "be", "user", "administrator", "customer"}
-        title_words = [w for w in story_title.split() if len(w) > 2 and w not in common_words]
+        if title_match:
+            search_by_title = True
+            title_query = title_match.group(1).strip()
+            logger.info(f"[BA] No ID found, will search by title: '{title_query[:50]}...'")
+        else:
+            # No ID, no clear title → vague request
+            logger.warning(f"[BA] No story ID or title found in message: {user_message[:100]}")
+            logger.info("[BA] Falling back to update_stories for vague request")
+            return await update_stories(state, agent)
+    
+    # ====================================================================================
+    # STEP 2: Load epics from state or artifact
+    # ====================================================================================
+    epics = state.get("epics", [])
+    
+    # If no epics in state, try to load from artifact (same pattern as approve_stories)
+    if not epics and agent:
+        logger.info("[BA] No epics in state, loading from artifact...")
+        try:
+            with Session(engine) as session:
+                service = ArtifactService(session)
+                artifact = service.get_latest_version(
+                    project_id=agent.project_id,
+                    artifact_type=ArtifactType.USER_STORIES
+                )
+                if artifact and artifact.content:
+                    epics = artifact.content.get("epics", [])
+                    logger.info(f"[BA] Loaded {len(epics)} epics from artifact")
+        except Exception as e:
+            logger.warning(f"[BA] Failed to load from artifact: {e}")
+    
+    if not epics:
+        logger.warning("[BA] No existing epics/stories to edit")
+        return {"error": "No existing stories to edit"}
+    
+    # ====================================================================================
+    # STEP 3: Find target story (by ID or title)
+    # ====================================================================================
+    target_story = None
+    target_story_idx = None
+    
+    # Build a flat list of all stories
+    stories = []
+    for epic in epics:
+        for story in epic.get("stories", []):
+            story["epic_id"] = epic.get("id")
+            story["epic_title"] = epic.get("title")
+            stories.append(story)
+    
+    if target_story_id:
+        # Search by ID (exact match)
+        for i, story in enumerate(stories):
+            if story.get("id", "").upper() == target_story_id:
+                target_story = story
+                target_story_idx = i
+                logger.info(f"[BA] Found story by ID: {target_story_id} - {story.get('title')[:50]}...")
+                break
         
-        # Count how many KEY words from title appear in user message
-        match_count = sum(1 for w in title_words if w in user_msg_lower)
+        if not target_story:
+            logger.warning(f"[BA] Story {target_story_id} not found in {len(stories)} existing stories")
+            # Fallback: Let LLM try to find it
+            return await _edit_story_with_llm_search(state, agent, epics, stories)
+    
+    elif search_by_title:
+        # Search by title (fuzzy match with scoring)
+        title_query_lower = title_query.lower()
+        best_match = None
+        best_score = 0
         
-        # Calculate score as percentage of key words matched
-        if title_words:
-            score = match_count / len(title_words)
-            logger.debug(f"[BA] Story '{story_title[:40]}...' score: {score:.2f} ({match_count}/{len(title_words)} key words)")
+        for i, story in enumerate(stories):
+            story_title = story.get("title", "").lower()
             
-            # Keep track of best match
-            if score > best_match_score:
-                best_match_score = score
-                best_match_story = story
-                best_match_idx = i
-    
-    # Use best match if score is good enough (at least 40% key words match)
-    if not target_story and best_match_story and best_match_score >= 0.4:
-        target_story = best_match_story
-        target_story_idx = best_match_idx
-        logger.info(f"[BA] Found story by best title match (score={best_match_score:.2f}): {target_story.get('title')[:50]}...")
-    
-    if not target_story:
-        logger.warning(f"[BA] Could not find target story in message: {user_message[:100]}...")
-        # Fallback: Let LLM try to find it
-        return await _edit_story_with_llm_search(state, agent, epics, stories)
+            # Calculate similarity score
+            # Method 1: Exact substring match (highest priority)
+            if title_query_lower in story_title or story_title in title_query_lower:
+                score = 1.0
+            else:
+                # Method 2: Word overlap (count matching words)
+                query_words = set(title_query_lower.split())
+                title_words = set(story_title.split())
+                common_words = query_words & title_words
+                
+                if len(query_words) > 0:
+                    score = len(common_words) / len(query_words)
+                else:
+                    score = 0
+            
+            if score > best_score:
+                best_score = score
+                best_match = (story, i)
+            
+            # Log top matches for debugging
+            if score >= 0.3:
+                logger.debug(f"[BA] Story '{story_title[:50]}...' similarity: {score:.2f}")
+        
+        # Use best match if score is good enough (>= 50% similarity)
+        if best_match and best_score >= 0.5:
+            target_story, target_story_idx = best_match
+            logger.info(f"[BA] Found story by title (score={best_score:.2f}): {target_story.get('title')[:50]}...")
+        else:
+            logger.warning(f"[BA] No good title match found (best score: {best_score:.2f})")
+            # Fallback: Let LLM try to find it
+            return await _edit_story_with_llm_search(state, agent, epics, stories)
     
     # Step 2: Use LLM to apply the specific change
     logger.info(f"[BA] Applying changes to story: {target_story.get('id')} - {target_story.get('title')[:50]}...")
@@ -1928,7 +2406,7 @@ async def edit_single_story(state: BAState, agent=None) -> dict:
             "stories": stories,
             "change_summary": change_summary,
             "stories_message": message,
-            "stories_approval_message": f"✅ Đã xóa story khỏi backlog!"
+            "stories_approval_message": f"Đã xóa story khỏi backlog!"
         }
     else:
         # UPDATE story (keep it, just modify)
@@ -1944,7 +2422,7 @@ async def edit_single_story(state: BAState, agent=None) -> dict:
                     break
         
         change_summary = result.get("change_summary", "Đã cập nhật story")
-        message = result.get("message", f"✅ Đã cập nhật story '{updated_story.get('title', '')[:50]}...'")
+        message = result.get("message", f"Đã cập nhật story '{updated_story.get('title', '')[:50]}...'")
         
         logger.info(f"[BA] Single story edit complete: {change_summary}")
         
@@ -1953,7 +2431,7 @@ async def edit_single_story(state: BAState, agent=None) -> dict:
             "stories": stories,
             "change_summary": change_summary,
             "stories_message": message,
-            "stories_approval_message": f"✅ Đã lưu thay đổi cho story!"
+            "stories_approval_message": f"Đã lưu thay đổi cho story!"
         }
 
 
@@ -2063,8 +2541,8 @@ async def _apply_edit_to_story(state: BAState, agent, epics: list, stories: list
         "epics": epics,
         "stories": stories,
         "change_summary": result.get("change_summary", "Đã cập nhật"),
-        "stories_message": result.get("message", "✅ Đã cập nhật story!"),
-        "stories_approval_message": "✅ Đã lưu thay đổi!"
+        "stories_message": result.get("message", "Đã cập nhật story!"),
+        "stories_approval_message": "Đã lưu thay đổi!"
     }
 
 
@@ -2255,7 +2733,34 @@ async def approve_stories(state: BAState, agent=None) -> dict:
             
             logger.info(f"[BA] Stories: {len(created_stories)} created, {len(updated_stories)} updated")
             
-            # 3. DELETE stories that are NOT in the new artifact (user deleted them)
+            # 3. DELETE epics that are NOT in the new artifact (user deleted them)
+            deleted_epics = []
+            epics_in_artifact = {e.get("epic_code") for e in epics_data if e.get("epic_code")}
+            
+            for existing_epic in existing_epics_db:
+                epic_code = existing_epic.epic_code
+                if epic_code and epic_code not in epics_in_artifact:
+                    # Epic was in DB but NOT in artifact → User deleted it
+                    logger.info(f"[BA] DELETING epic from DB: {epic_code} (not in artifact)")
+                    # Delete all stories in this epic first
+                    epic_stories = [s for s in existing_stories_db if s.epic_id == existing_epic.id]
+                    for story in epic_stories:
+                        session.delete(story)
+                        logger.debug(f"[BA]   Deleting story {story.story_code} (part of deleted epic)")
+                    # Then delete the epic
+                    session.delete(existing_epic)
+                    deleted_epics.append({
+                        "id": str(existing_epic.id),
+                        "epic_code": epic_code,
+                        "title": existing_epic.title,
+                        "stories_deleted": len(epic_stories),
+                        "action": "deleted"
+                    })
+            
+            if deleted_epics:
+                logger.info(f"[BA] Deleted {len(deleted_epics)} epics from DB (including their stories)")
+            
+            # 4. DELETE stories that are NOT in the new artifact (user deleted them)
             # This handles the case where user says "xóa story X"
             deleted_stories = []
             stories_in_artifact = {s.get("id") for s in stories_data if s.get("id")}
@@ -2307,6 +2812,13 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         actions = []
         
         # Only mention what actually changed
+        if len(created_epics) > 0:
+            actions.append(f"{len(created_epics)} epic thêm mới")
+        if len(updated_epics) > 0:
+            actions.append(f"{len(updated_epics)} epic cập nhật")
+        if len(deleted_epics) > 0:
+            total_stories_in_deleted_epics = sum(e.get("stories_deleted", 0) for e in deleted_epics)
+            actions.append(f"{len(deleted_epics)} epic xóa ({total_stories_in_deleted_epics} stories)")
         if len(created_stories) > 0:
             actions.append(f"{len(created_stories)} story thêm mới")
         if len(updated_stories) > 0:
@@ -2316,10 +2828,10 @@ async def approve_stories(state: BAState, agent=None) -> dict:
         
         if actions:
             # Show only what changed
-            approval_msg = f"✅ Đã cập nhật backlog! {', '.join(actions)}. 🎉"
+            approval_msg = f"Đã cập nhật backlog! {', '.join(actions)}. 🎉"
         else:
             # Nothing changed
-            approval_msg = "✅ Backlog đã được đồng bộ! 🎉"
+            approval_msg = "Backlog đã được đồng bộ! 🎉"
         
         return {
             "stories_approved": True,
@@ -2522,7 +3034,7 @@ async def _save_prd_artifact(state: BAState, agent, project_files) -> dict:
         
         # Fallback message if LLM didn't generate one
         if not prd_message:
-            prd_message = f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé! 📝" if is_update else f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi!"
+            prd_message = f"Mình đã cập nhật PRD theo yêu cầu của bạn rồi nhé!" if is_update else f"Tuyệt vời! 🎉 Mình đã hoàn thành PRD cho dự án '{project_name}' rồi!"
         
         await agent.message_user(
             event_type="response",
@@ -2665,7 +3177,7 @@ async def save_artifacts(state: BAState, agent=None) -> dict:
         result["error"] = error_msg
         await agent.message_user(
             event_type="response",
-            content=f"Hmm, mình gặp chút vấn đề khi tạo stories nè 😅 Bạn thử kiểm tra lại PRD hoặc nhờ mình thử lại nhé!",
+            content=f"Hmm, mình gặp chút vấn đề khi tạo stories nè. Bạn thử kiểm tra lại PRD hoặc nhờ mình thử lại nhé!",
             details={
                 "message_type": "error",
                 "error": error_msg

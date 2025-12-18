@@ -19,11 +19,11 @@ API routes live in the `app/api/` directory:
 ## ⚠️ Prisma Import Pattern - CRITICAL
 
 ```typescript
-// ✅ CORRECT - separate imports
+//  CORRECT - separate imports
 import { Prisma } from '@prisma/client';  // Types/namespace (BookWhereInput, etc.)
 import { prisma } from '@/lib/prisma';     // Instance
 
-// ❌ WRONG - @/lib/prisma doesn't export Prisma namespace
+// WRONG - @/lib/prisma doesn't export Prisma namespace
 import { prisma, Prisma } from '@/lib/prisma';
 ```
 
@@ -44,10 +44,10 @@ import { prisma, Prisma } from '@/lib/prisma';
 - `popularity`, `viewCount`, `soldCount` → Usually not in schema
 
 ```typescript
-// ❌ WRONG - 'featured' doesn't exist in schema
+// WRONG - 'featured' doesn't exist in schema
 where: { featured: true }
 
-// ✅ CORRECT - check schema first, use isFeatured if exists
+//  CORRECT - check schema first, use isFeatured if exists
 where: { isFeatured: true }  // Only if schema has: isFeatured Boolean
 ```
 
@@ -55,11 +55,11 @@ where: { isFeatured: true }  // Only if schema has: isFeatured Boolean
 
 **CRITICAL**: Field names trong `include` PHẢI khớp CHÍNH XÁC với schema:
 
-| Schema định nghĩa | Query sử dụng | ✅/❌ |
+| Schema định nghĩa | Query sử dụng | /|
 |-------------------|---------------|------|
-| `categories Category[]` | `include: { categories: true }` | ✅ |
-| `categories Category[]` | `include: { category: true }` | ❌ WRONG |
-| `category Category` | `include: { category: true }` | ✅ |
+| `categories Category[]` | `include: { categories: true }` |  |
+| `categories Category[]` | `include: { category: true }` | WRONG |
+| `category Category` | `include: { category: true }` |  |
 
 **Rule**: 
 - Many-to-many/One-to-many → **PLURAL** (categories, tags, posts)
@@ -80,13 +80,13 @@ model BookCategory {
 ```
 
 ```typescript
-// ❌ WRONG - books là BookCategory[], không có coverImage
+// WRONG - books là BookCategory[], không có coverImage
 const categories = await prisma.category.findMany({
   include: { books: true }
 });
 categories[0].books[0].coverImage  // ERROR!
 
-// ✅ CORRECT - include nested relation
+//  CORRECT - include nested relation
 const categories = await prisma.category.findMany({
   include: { 
     books: { 
@@ -101,10 +101,10 @@ categories[0].books[0].book.coverImage  // OK
 
 **CRITICAL**: ONLY use fields that EXIST in the Prisma schema.
 
-❌ DON'T invent fields:
+DON'T invent fields:
 - `popularity`, `featuredOrder`, `originalPrice` (common mistakes)
 
-✅ DO:
+ DO:
 - Read `prisma/schema.prisma` in context first
 - Only use fields defined there
 - Use explicit types instead of `any`
@@ -252,10 +252,10 @@ return successResponse(
 **Frontend gửi comma-separated string, API phải parse:**
 
 ```typescript
-// ❌ WRONG - getAll only works with repeated params (?id=1&id=2)
+// WRONG - getAll only works with repeated params (?id=1&id=2)
 const categories = searchParams.getAll('categoryId');
 
-// ✅ CORRECT - parse comma-separated string
+//  CORRECT - parse comma-separated string
 const categories = searchParams.get('categories')?.split(',').filter(Boolean) ?? [];
 const authors = searchParams.get('authors')?.split(',').filter(Boolean) ?? [];
 const sort = searchParams.get('sort') || 'relevance';  // NOT 'sortBy'!
@@ -324,7 +324,7 @@ export async function GET(request: NextRequest) {
 
 **CRITICAL**: Let database do sorting/filtering, NOT JavaScript.
 
-### ❌ WRONG - Fetch all, sort in memory
+### WRONG - Fetch all, sort in memory
 ```typescript
 const books = await prisma.book.findMany({ 
   include: { orderItems: true } 
@@ -334,7 +334,7 @@ const top10 = books
   .slice(0, 10);  // Fetched 1000 books just to get 10!
 ```
 
-### ✅ CORRECT - Use orderBy + take
+###  CORRECT - Use orderBy + take
 ```typescript
 // Option 1: Order by relation count
 const top10 = await prisma.book.findMany({

@@ -280,7 +280,7 @@ Create implementation plan."""
         can_parallel = should_use_parallel(steps)
         
         if steps:
-            await story_logger.message(f"📋 Kế hoạch: {len(steps)} files, {len(layers)} layers")
+            await story_logger.message(f"Kế hoạch: {len(steps)} files, {len(layers)} layers")
         
         return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
     except Exception as e:

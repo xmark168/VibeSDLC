@@ -869,7 +869,7 @@ class Developer(BaseAgent, PausableAgentMixin):
             )
             if checkout_result.returncode != 0:
                 await self._update_merge_status(story_id, "error", "checkout_failed")
-                await log_to_story(story_id, project_id, f"❌ Failed to checkout {base_branch}: {checkout_result.stderr}", "error", "merge")
+                await log_to_story(story_id, project_id, f"Failed to checkout {base_branch}: {checkout_result.stderr}", "error", "merge")
                 return TaskResult(success=False, output=f"Failed to checkout {base_branch}")
             
             from app.utils.git_utils import git_pull
@@ -888,16 +888,16 @@ class Developer(BaseAgent, PausableAgentMixin):
                 if "CONFLICT" in merge_result.stdout or "CONFLICT" in merge_result.stderr:
                     git_merge_abort(main_ws, timeout=10)
                     await self._update_merge_status(story_id, "conflict", "merge_conflict")
-                    await log_to_story(story_id, project_id, f"❌ Merge conflict! Please resolve manually.", "error", "merge")
+                    await log_to_story(story_id, project_id, f"Merge conflict! Please resolve manually.", "error", "merge")
                     return TaskResult(success=False, output=f"Merge conflict. Manual resolution required.")
                 else:
                     error_msg = merge_result.stderr or merge_result.stdout
                     git_merge_abort(main_ws, timeout=10)
                     await self._update_merge_status(story_id, "error", "merge_failed")
-                    await log_to_story(story_id, project_id, f"❌ Merge failed: {error_msg[:200]}", "error", "merge")
+                    await log_to_story(story_id, project_id, f"Merge failed: {error_msg[:200]}", "error", "merge")
                     return TaskResult(success=False, output=f"Merge failed: {error_msg}")
             
-            await log_to_story(story_id, project_id, f"✅ Successfully merged {branch_name} into {base_branch}", "success", "merge")
+            await log_to_story(story_id, project_id, f"Successfully merged {branch_name} into {base_branch}", "success", "merge")
             
             # 5. Cleanup
             await log_to_story(story_id, project_id, f"🧹 Cleaning up worktree and branch...", "info", "merge")
@@ -926,8 +926,8 @@ class Developer(BaseAgent, PausableAgentMixin):
                 "running_port": None,
             }, UUID(project_id))
             
-            await log_to_story(story_id, project_id, f"📋 Story moved to Done", "success", "merge")
-            await log_to_story(story_id, project_id, f"✅ Successfully merged {branch_name} into {base_branch}!", "success", "merge")
+            await log_to_story(story_id, project_id, f"Story moved to Done", "success", "merge")
+            await log_to_story(story_id, project_id, f"Successfully merged {branch_name} into {base_branch}!", "success", "merge")
             
             return TaskResult(
                 success=True,
@@ -941,12 +941,12 @@ class Developer(BaseAgent, PausableAgentMixin):
             
         except subprocess.TimeoutExpired:
             await self._update_merge_status(story_id, "error", "timeout")
-            await log_to_story(story_id, project_id, "❌ Merge operation timed out", "error", "merge")
+            await log_to_story(story_id, project_id, "Merge operation timed out", "error", "merge")
             return TaskResult(success=False, output="Merge operation timed out")
         except Exception as e:
             logger.error(f"[{self.name}] Merge error: {e}")
             await self._update_merge_status(story_id, "error", "exception")
-            await log_to_story(story_id, project_id, f"❌ Merge error: {str(e)[:200]}", "error", "merge")
+            await log_to_story(story_id, project_id, f"Merge error: {str(e)[:200]}", "error", "merge")
             return TaskResult(success=False, output=f"Merge error: {e}")
 
     async def _update_merge_status(self, story_id: str, pr_state: str, merge_status: str):

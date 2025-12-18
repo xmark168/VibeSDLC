@@ -9,10 +9,10 @@ description: Create React/Next.js 16 components. Use when building pages, client
 
 ```tsx
 // File at: src/components/search/SearchBar.tsx
-// ✅ CORRECT
+//  CORRECT
 import { SearchBar } from '@/components/search/SearchBar';
 
-// ❌ WRONG - path doesn't match file location
+// WRONG - path doesn't match file location
 import { SearchBar } from '@/components/SearchBar';
 ```
 
@@ -36,10 +36,10 @@ interface BookCardProps {
   book: Book;  // Expects OBJECT, not individual fields!
 }
 
-// ❌ WRONG - passing individual fields
+// WRONG - passing individual fields
 <BookCard id={book.id} title={book.title} author={book.author} />
 
-// ✅ CORRECT - pass the object
+//  CORRECT - pass the object
 <BookCard book={book} />
 ```
 
@@ -59,13 +59,13 @@ interface FilterPanelProps {
   // NO 'authors' prop - component fetches itself!
 }
 
-// ❌ WRONG - passing data that component fetches itself
+// WRONG - passing data that component fetches itself
 <FilterPanel 
   authors={authorsList}     // ERROR! Prop doesn't exist!
   selectedAuthors={selected}
 />
 
-// ✅ CORRECT - only pass props defined in interface
+//  CORRECT - only pass props defined in interface
 <FilterPanel 
   selectedAuthors={selected}
   onAuthorToggle={handleToggle}
@@ -88,12 +88,12 @@ Before creating ANY component that fetches data, you MUST:
 3. **Then create the component** that calls the API
 
 ```
-❌ WRONG ORDER:
+WRONG ORDER:
 1. Create RelatedCategories.tsx (calls /api/categories/related)
 2. Forget to create /api/categories/related/route.ts
 → Component breaks with 404!
 
-✅ CORRECT ORDER:
+ CORRECT ORDER:
 1. Create /api/categories/related/route.ts FIRST
 2. Then create RelatedCategories.tsx that calls it
 ```
@@ -159,18 +159,18 @@ export function FeaturedBooks() {
 **'use client' MUST be FIRST LINE of file, NEVER inside function!**
 
 ```tsx
-// ❌ WRONG - 'use client' inside function body
+// WRONG - 'use client' inside function body
 function MyComponent() {
   'use client';  // ERROR: Invalid position!
   const router = useRouter();
 }
 
-// ❌ WRONG - using require() instead of import
+// WRONG - using require() instead of import
 function MyComponent() {
   const { useRouter } = require('next/navigation');  // ERROR!
 }
 
-// ❌ WRONG - 'use client' after imports
+// WRONG - 'use client' after imports
 import { useState } from 'react';
 'use client';  // ERROR: Must be first line!
 
@@ -326,7 +326,7 @@ export function KanbanBoard({ initialData }: { initialData: Data[] }) {
 ### 2. Layout - NO header in pages
 Root `layout.tsx` has `<Navigation />`. Pages only have content:
 ```tsx
-// ✅ CORRECT
+//  CORRECT
 export default function Page() {
   return <main className="container mx-auto px-4 py-8">...</main>;
 }
@@ -334,18 +334,18 @@ export default function Page() {
 
 ### 2.1 Container & Text Centering
 ```tsx
-// ❌ WRONG - container not centered
+// WRONG - container not centered
 <div className="container">
 
-// ✅ CORRECT - always add mx-auto + px-4
+//  CORRECT - always add mx-auto + px-4
 <div className="container mx-auto px-4">
 
-// ❌ WRONG - text not centered  
+// WRONG - text not centered  
 <div>
   <span className="inline-block">Title</span>
 </div>
 
-// ✅ CORRECT - parent text-center + child block
+//  CORRECT - parent text-center + child block
 <div className="text-center">
   <span className="block">Title</span>
   <h2>Heading</h2>
@@ -362,11 +362,11 @@ export default function Page() {
 API responses may have undefined nested arrays/objects!
 
 ```tsx
-// ❌ CRASHES at runtime (category.books could be undefined)
+// CRASHES at runtime (category.books could be undefined)
 category.books.filter(b => b.coverImage)
 data.items.map(item => ...)
 
-// ✅ ALWAYS defensive - use ?? [] or ?.
+//  ALWAYS defensive - use ?? [] or ?.
 (category.books ?? []).filter(b => b.coverImage)
 (data?.items ?? []).map(item => ...)
 data?.items?.length ?? 0
@@ -392,7 +392,7 @@ interface ActiveFilter {
   value: string | number | boolean;  // Union type!
 }
 
-// ❌ WRONG - TypeScript error: Type 'string | number | boolean' not assignable to 'string'
+// WRONG - TypeScript error: Type 'string | number | boolean' not assignable to 'string'
 const handleRemoveFilter = (filter: ActiveFilter) => {
   switch (filter.type) {
     case 'category':
@@ -401,7 +401,7 @@ const handleRemoveFilter = (filter: ActiveFilter) => {
   }
 };
 
-// ✅ CORRECT - Cast to expected type
+//  CORRECT - Cast to expected type
 const handleRemoveFilter = (filter: ActiveFilter) => {
   switch (filter.type) {
     case 'category':
@@ -413,7 +413,7 @@ const handleRemoveFilter = (filter: ActiveFilter) => {
   }
 };
 
-// ✅ ALSO CORRECT - Use String() for string conversion
+//  ALSO CORRECT - Use String() for string conversion
 toggleCategory(String(filter.value));
 ```
 
@@ -424,9 +424,9 @@ Check the plan/context for existing page routes before using `router.push()` or 
 
 ```tsx
 // ❌ WRONG - guessing route that doesn't exist
-router.push(`/books?q=${query}`);  // 404 if /books/page.tsx doesn't exist!
+router.push(`/books?search=${query}`);  // 404 if /books/page.tsx doesn't exist!
 
-// ✅ CORRECT - use route from plan
+//  CORRECT - use route from plan
 router.push(`/search?q=${query}`);  // /search/page.tsx exists in plan
 ```
 
@@ -465,12 +465,12 @@ const [state, action, pending] = useActionState(serverAction, null);
 
 All UI components are at `@/components/ui/*`:
 ```tsx
-// ✅ CORRECT
+//  CORRECT
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
-// ❌ WRONG - file doesn't exist!
+// WRONG - file doesn't exist!
 import { Badge } from './badge';
 ```
 

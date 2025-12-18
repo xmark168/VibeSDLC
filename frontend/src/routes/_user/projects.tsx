@@ -159,16 +159,16 @@ function ProjectsPage() {
                     <div className="h-4 w-px bg-border" />
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium">
                       <Crown className="h-3 w-3" />
-                      {planName} Plan
+                      {planName}
                     </div>
                   </>
                 )}
-                {isAtLimit && (
+                {projectLimit !== null && projectLimit !== undefined && projectLimit !== -1 && (
                   <>
                     <div className="h-4 w-px bg-border" />
-                    <Link to="/upgrade">
+                    <Link to="/upgrade" search={{ status: undefined, orderCode: undefined }}>
                       <AttractButton
-                        content="Upgrade for more projects"
+                        content={isAtLimit ? "Upgrade for more projects" : "Upgrade Plan"}
                         icon="crown"
                       />
                     </Link>

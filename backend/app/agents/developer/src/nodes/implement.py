@@ -249,7 +249,7 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
         step_skills = step.get("skills", [])
         
         # Task update (transient) - show file being processed
-        await story_logger.task(f"📝 {action.upper()} {file_path}", progress=(current_step + 1) / len(plan_steps))
+        await story_logger.task(f"{action.upper()} {file_path}", progress=(current_step + 1) / len(plan_steps))
         
         if "frontend-design" in step_skills and "frontend-component" not in step_skills:
             step_skills = step_skills + ["frontend-component"]
@@ -525,7 +525,7 @@ async def implement_parallel(state: DeveloperState, config: dict = None, agent=N
         if all_errors:
             await story_logger.message(f"⚠️ Implemented {len(all_modified)} files with {len(all_errors)} errors")
         else:
-            await story_logger.message(f"✅ Implemented {len(all_modified)} files successfully")
+            await story_logger.message(f"Implemented {len(all_modified)} files successfully")
         
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "current_layer": total_layers, "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:

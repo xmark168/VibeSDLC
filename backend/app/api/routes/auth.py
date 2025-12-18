@@ -173,8 +173,8 @@ def login(
         # Check if user registered via OAuth (no password)
         if user.login_provider and not user.hashed_password:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"This account was registered via {user.login_provider}. Please login with {user.login_provider}.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"This account was registered via {user.login_provider}. Please sign in with {user.login_provider}.",
             )
 
         # Verify password
@@ -188,7 +188,7 @@ def login(
         # if not login_data.email or not login_data.fullname or login_data.password is not None:
         #     raise HTTPException(
         #         status_code=status.HTTP_400_BAD_REQUEST,
-        #         detail="Email và fullname không được để trống, password phải null với provider login"
+        #         detail="Email and fullname are required, password must be null for provider login"
         #     )
 
         # Find or create user with provider login
@@ -211,19 +211,17 @@ def login(
             
             # Assign FREE plan to new OAuth user
             assign_free_plan_to_user(session, user)
-        else:
-            # Check account status for existing OAuth users
-            if not user.is_active:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, 
-                    detail="Account has been deactivated"
-                )
-            
-            if user.is_locked:
-                raise HTTPException(
-                    status_code=status.HTTP_423_LOCKED, 
-                    detail="Account has been locked"
-                )
+
+    # Check account status
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Account has been deactivated"
+        )
+
+    if user.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED, detail="Account has been locked"
+        )
 
     # Check if 2FA is enabled
     if user.two_factor_enabled and user.totp_secret:
@@ -291,19 +289,19 @@ def register(
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Full name cannot be empty and must be maximum 50 characters",
+            detail="Full name is required and must not exceed 50 characters",
         )
 
     if not validate_password(register_data.password):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Password must be at least 8 characters with at least 1 letter and 1 number",
+            detail="Password must be at least 8 characters and contain at least 1 letter and 1 number",
         )
 
     if register_data.password != register_data.confirm_password:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Password confirmation does not match",
+            detail="Passwords do not match",
         )
 
     # Check if email already exists in the system (any provider)
@@ -314,7 +312,7 @@ def register(
         if existing_user.login_provider:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"This email is already registered via {existing_user.login_provider}. Please login with {existing_user.login_provider}."
+                detail=f"This email is already registered via {existing_user.login_provider}. Please sign in with {existing_user.login_provider}."
             )
         else:
             raise HTTPException(
@@ -421,7 +419,7 @@ def confirm_code(
 
     if verification_code_str != confirm_code_str:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid verification code"
         )
 
     # Create user
@@ -521,7 +519,7 @@ def refresh_token(
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token not provided",
+            detail="Refresh token is required",
         )
 
     # Decode and validate refresh token
@@ -627,43 +625,41 @@ def forgot_password(
     # Check if email exists in database
     user_service = UserService(session)
     user = user_service.get_by_email(str(forgot_data.email))
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Email does not exist in the system",
-        )
+    
+    # Security: Always return success message to prevent email enumeration
+    # Only send email if user actually exists
+    if user:
+        # Generate reset token
+        reset_token = secrets.token_urlsafe(32)
 
-    # Generate reset token
-    reset_token = secrets.token_urlsafe(32)
+        # Store token in Redis with email as value
+        token_key = f"password_reset:{reset_token}"
+        if not redis_client.set(token_key, str(forgot_data.email), ttl=900):  # 15 minutes
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Lỗi hệ thống, vui lòng thử lại",
+            )
 
-    # Store token in Redis with email as value
-    token_key = f"password_reset:{reset_token}"
-    if not redis_client.set(token_key, str(forgot_data.email), ttl=900):  # 15 minutes
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="System error, please try again",
-        )
+        # Create reset link
+        reset_link = f"{settings.FRONTEND_HOST}/reset-password?token={reset_token}"
 
-    # Create reset link
-    reset_link = f"{settings.FRONTEND_HOST}/reset-password?token={reset_token}"
-
-    # Send reset password email
-    try:
-        email_data = generate_password_reset_email(
-            email_to=str(forgot_data.email), reset_link=reset_link
-        )
-        send_email(
-            email_to=str(forgot_data.email),
-            subject=email_data.subject,
-            html_content=email_data.html_content,
-        )
-    except Exception:
-        # Clean up Redis data if email fails
-        redis_client.delete(token_key)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unable to send password reset email",
-        )
+        # Send reset password email
+        try:
+            email_data = generate_password_reset_email(
+                email_to=str(forgot_data.email), reset_link=reset_link
+            )
+            send_email(
+                email_to=str(forgot_data.email),
+                subject=email_data.subject,
+                html_content=email_data.html_content,
+            )
+        except Exception:
+            # Clean up Redis data if email fails
+            redis_client.delete(token_key)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Không thể gửi email reset password",
+            )
 
     return ForgotPasswordResponse(
         message="Password reset link has been sent to your email",
@@ -690,7 +686,7 @@ def reset_password(
     # Check password confirmation
     if reset_data.new_password != reset_data.confirm_password:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Password confirmation does not match",
         )
 
@@ -700,7 +696,7 @@ def reset_password(
 
     if not email:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
 

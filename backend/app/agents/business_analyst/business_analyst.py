@@ -194,12 +194,77 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
             logger.debug(f"[{self.name}] No existing PRD: {e}")
             return None
     
-    def _load_existing_epics_and_stories(self) -> tuple[list, list, str]:
-        """Load existing epics and stories from Artifact table (for approval flow).
+    def _load_existing_epics_and_stories(self, epic_ids: list = None) -> tuple[list, list, str]:
+        """Load existing epics and stories from Epic/Story tables (source of truth).
+        
+        Args:
+            epic_ids: Optional list of epic IDs to load (for selective loading)
         
         Returns:
             Tuple of (epics_list, stories_list, approval_message)
         """
+        try:
+            with Session(engine) as session:
+                # Build query for epics
+                query = select(Epic).where(
+                    Epic.project_id == self.project_id,
+                    Epic.epic_status != EpicStatus.DELETED
+                )
+                
+                # Selective loading for performance (e.g., only load epics to delete)
+                if epic_ids:
+                    query = query.where(Epic.id.in_(epic_ids))
+                    logger.info(f"[{self.name}] Loading {len(epic_ids)} specific epic(s) from database")
+                
+                epics = session.exec(query).all()
+                
+                # Load stories for each epic
+                all_stories = []
+                epics_list = []
+                for epic in epics:
+                    stories = session.exec(
+                        select(Story)
+                        .where(Story.epic_id == epic.id)
+                        .where(Story.story_status != StoryStatus.DELETED)
+                    ).all()
+                    
+                    epic_dict = {
+                        "id": epic.epic_code,
+                        "title": epic.title,
+                        "domain": epic.domain or "",
+                        "description": epic.description or "",
+                        "stories": [self._story_to_dict(s) for s in stories]
+                    }
+                    epics_list.append(epic_dict)
+                    all_stories.extend([self._story_to_dict(s) for s in stories])
+                
+                logger.info(f"[{self.name}] Loaded {len(epics_list)} epics with {len(all_stories)} stories from database (real-time)")
+                
+                # Approval message is not stored in database, return empty
+                # (It's generated dynamically when needed)
+                return epics_list, all_stories, ""
+                
+        except Exception as e:
+            logger.warning(f"[{self.name}] Error loading epics/stories from database: {e}", exc_info=True)
+            # Fallback to Artifact if database load fails
+            return self._load_from_artifact_fallback()
+    
+    def _story_to_dict(self, story: Story) -> dict:
+        """Convert Story model to dict for LLM."""
+        return {
+            "id": story.story_code,
+            "epic_id": story.epic.epic_code if story.epic else "",
+            "title": story.title,
+            "description": story.description or "",
+            "requirements": story.requirements or [],
+            "acceptance_criteria": story.acceptance_criteria or [],
+            "priority": story.priority or 2,
+            "story_point": story.story_point or 3,
+            "dependencies": story.dependencies or [],
+        }
+    
+    def _load_from_artifact_fallback(self) -> tuple[list, list, str]:
+        """Fallback: Load from Artifact if database load fails."""
         try:
             with Session(engine) as session:
                 service = ArtifactService(session)
@@ -211,14 +276,12 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
                     content = artifact.content
                     epics = content.get("epics", [])
                     stories = content.get("stories", [])
-                    approval_message = content.get("approval_message", "")  # Load saved approval message
-                    logger.info(f"[{self.name}] Loaded existing epics/stories from artifact {artifact.id}: {len(epics)} epics, {len(stories)} stories")
+                    approval_message = content.get("approval_message", "")
+                    logger.warning(f"[{self.name}] Loaded from Artifact fallback: {len(epics)} epics, {len(stories)} stories")
                     return epics, stories, approval_message
-                else:
-                    logger.info(f"[{self.name}] No USER_STORIES artifact found for project {self.project_id}")
                 return [], [], ""
         except Exception as e:
-            logger.warning(f"[{self.name}] Error loading epics/stories: {e}", exc_info=True)
+            logger.error(f"[{self.name}] Artifact fallback also failed: {e}")
             return [], [], ""
 
     async def handle_task(self, task: TaskContext) -> TaskResult:
@@ -972,7 +1035,7 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
                 logger.warning(f"[{self.name}] No existing PRD found for update")
                 await self.message_user(
                     "response",
-                    "Chưa có PRD nào để cập nhật. Bạn cần tạo PRD trước khi thêm feature mới nhé! 📝\n\nHãy mô tả dự án bạn muốn làm để mình tạo PRD."
+                    "Chưa có PRD nào để cập nhật. Bạn cần tạo PRD trước khi thêm feature mới nhé!\nHãy mô tả dự án bạn muốn làm để mình tạo PRD."
                 )
                 return TaskResult(
                     success=True,
@@ -983,7 +1046,7 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
             # Send acknowledgment
             await self.message_user(
                 "response",
-                f"📝 Đang cập nhật PRD \"{existing_title}\" với feature mới: {feature_description[:50]}..."
+                f"Đang cập nhật PRD \"{existing_title}\" với feature mới: {feature_description[:50]}..."
             )
             await self.message_user("thinking", "Đang cập nhật PRD...")
             
@@ -1041,7 +1104,7 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
             logger.error(f"[{self.name}] Error in UPDATE MODE: {e}", exc_info=True)
             await self.message_user(
                 "response",
-                "Có lỗi xảy ra khi cập nhật PRD. Vui lòng thử lại! 😅"
+                "Có lỗi xảy ra khi cập nhật PRD. Vui lòng thử lại!"
             )
             return TaskResult(
                 success=False,

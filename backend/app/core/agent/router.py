@@ -1219,6 +1219,17 @@ class QuestionAnswerRouter(BaseEventRouter):
             },
             project_id
         )
+        
+        # Broadcast message update so frontend can refetch and show updated answer
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "messages_updated",
+                "reason": "question_answered",
+                "message_id": str(question_id),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            project_id
+        )
 
 
 class BatchAnswersRouter(BaseEventRouter):
@@ -1324,6 +1335,17 @@ class BatchAnswersRouter(BaseEventRouter):
                 "agent_id": str(agent_id),
                 "agent_name": agent_name,
                 "answer_count": len(answers),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            project_id
+        )
+        
+        # Broadcast message update so frontend can refetch and show updated answers
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "messages_updated",
+                "reason": "batch_questions_answered",
+                "batch_id": batch_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
             project_id

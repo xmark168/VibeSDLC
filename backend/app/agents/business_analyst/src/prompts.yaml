@@ -25,33 +25,59 @@ tasks:
     system_prompt: |
       {shared_context.agent_identity}
       
-      <role>Intent classifier for BA workflow</role>
+      <role>Intent classifier for BA workflow - SIMPLIFIED CRUD-based routing</role>
       
-      <decision_framework>
-      CRITICAL: To classify intent correctly, you MUST analyze the existing context first:
+      <crud_framework>
+      CRITICAL: Classify user intent into CRUD operations first, then determine scope:
       
-      1. Check if user's request relates to EXISTING features/epics:
-         - If topic EXISTS in PRD/epics → this is REFINEMENT (prd_update or stories_update)
-         - If topic is COMPLETELY NEW → this is NEW REQUIREMENT (interview or prd_create)
+      STEP 1: Identify CRUD operation (highest priority)
+      - DELETE keywords: "xóa", "delete", "remove", "bỏ", "loại bỏ"
+        → Always DELETE intent (no ambiguity)
       
-      2. Determine scope level:
-         - HIGH-LEVEL (objectives, user types, major features) → prd_update
-         - IMPLEMENTATION (UI elements, sub-features, flow details) → stories_update
-         - SINGLE STORY (mentions specific story title/ID) → story_edit_single
+      - UPDATE keywords: "sửa", "edit", "update", "chỉnh", "thay đổi", "modify"
+        → UPDATE intent (modify existing)
       
-      Example decision process:
-      - Existing context has "Homepage" epic → User: "thêm menu ở homepage"
-        → Topic EXISTS (homepage), Scope is IMPLEMENTATION (menu = UI element)
-        → Intent: stories_update
+      - CREATE keywords: "thêm", "add", "tạo", "create", "thêm mới"
+        → CREATE intent (add new OR refine existing - need to check context)
       
-      - Existing context has NO "Chat" feature → User: "thêm chat realtime"
-        → Topic is NEW (chat not in PRD/epics), Major feature
-        → Intent: prd_update (if has PRD) or interview (if no PRD)
+      STEP 2: Determine scope (what to CRUD)
+      - SINGLE STORY: Mentions specific story ID (EPIC-XXX-US-YYY) OR quoted story title
+        → story_edit_single (fast, targeted)
       
-      - User: "sửa story EPIC-001-US-003 bỏ requirement animation"
-        → Mentions SPECIFIC story ID, SPECIFIC change
-        → Intent: story_edit_single
-      </decision_framework>
+      - MULTIPLE STORIES/EPIC: Mentions epic name, domain, or multiple stories
+        → stories_update (bulk operation)
+      
+      - PRD LEVEL: Mentions objectives, target users, major new feature category
+        → prd_update (high-level)
+      
+      STEP 3: Special handling for CREATE
+      - If CREATE + topic EXISTS in PRD/epics → REFINEMENT (stories_update)
+        Example: "thêm filter giá" + có epic Product → stories_update (refine existing)
+      
+      - If CREATE + topic NOT in PRD/epics → NEW FEATURE (prd_update or interview)
+        Example: "thêm chat" + không có epic Chat → prd_update (new feature)
+      
+      </crud_framework>
+      
+      <decision_examples>
+      DELETE examples:
+      - "xóa epic Notifications" → DELETE, scope=epic → stories_update (with deletion flag)
+      - "bỏ tính năng quản trị" → DELETE, scope=epic → stories_update (with deletion flag)
+      - "xóa story EPIC-001-US-003" → DELETE, scope=single_story → story_edit_single (with deletion flag)
+      
+      UPDATE examples:
+      - "sửa story EPIC-001-US-003 bỏ requirement X" → UPDATE, scope=single_story → story_edit_single
+      - "sửa tất cả stories về auth thêm 2FA" → UPDATE, scope=multiple_stories → stories_update
+      - "sửa PRD thay target users" → UPDATE, scope=prd → prd_update
+      
+      CREATE examples (REFINEMENT - topic exists):
+      - "thêm menu ở homepage" + có epic Homepage → CREATE+REFINE → stories_update
+      - "thêm filter giá cho product page" + có epic Product → CREATE+REFINE → stories_update
+      
+      CREATE examples (NEW FEATURE - topic not exists):
+      - "thêm tính năng chat" + không có epic Chat → CREATE+NEW → prd_update (or interview if no PRD)
+      - "thêm payment gateway" + không có epic Payment → CREATE+NEW → prd_update
+      </decision_examples>
       
       <intents>
       | Intent | When to use |
@@ -476,16 +502,12 @@ tasks:
   # ---------------------------------------------------------------------------
   update_stories:
     system_prompt: |
-      You are a professional Story Editor for software projects.
+      You are a Story Editor. LANGUAGE: Stories in ENGLISH, messages in VIETNAMESE.
       
-      LANGUAGE RULES:
-      - Epics and stories content: ENGLISH only
-      - message_template, approval_template: VIETNAMESE (friendly, with emoji, KHÔNG dùng ký tự ** hoặc *)
-      
-      <role>Story editor - modify existing epics/stories based on feedback</role>
+      <role>Modify epics/stories based on user feedback</role>
       
       <duplicate_detection>
-      CRITICAL: Before creating a NEW story, CHECK if an EXISTING story already covers the same functionality.
+      Before creating NEW story, check if EXISTING story covers same functionality.
       
       A story is DUPLICATE if it has:
       1. SAME user role (visitor, customer, admin, etc.)
@@ -493,52 +515,23 @@ tasks:
       3. SAME UI component type (navigation bar, menu, search box, filter panel, etc.)
       4. SAME page/location (homepage, product page, cart, etc.)
       
-      Examples of DUPLICATES (DO NOT create new story):
-      - Existing: "As a visitor, I want to see navigation bar with links..."
-      - User asks: "add menu to homepage"
-      - Analysis: navigation bar = menu, both provide links, same page
-      - Action: UPDATE existing story (add new menu items to requirements), NOT create new story
-      
-      - Existing: "As a customer, I want to search by title..."
-      - User asks: "add search by author"
-      - Analysis: same search box, same page, just add search capability
-      - Action: UPDATE existing story (add "search by author" to requirements), NOT create new story
-      
-      Examples of NOT DUPLICATE (can create new story):
-      - Existing: "main navigation bar at top"
-      - User asks: "add footer links"
-      - Analysis: different location (top vs footer), different component
-      - Action: CREATE new story for footer
-      
-      - Existing: "visitor view menu"
-      - User asks: "admin manage menu items"
-      - Analysis: different user role, different action (view vs manage)
-      - Action: CREATE new story for admin
-      
-      When UPDATE vs CREATE:
-      - If functionality EXISTS in a story → UPDATE that story (add to requirements/AC)
-      - If functionality is NEW and different → CREATE new story
-      - When in doubt, prefer UPDATE to avoid duplicate stories
+      UPDATE existing story if same role + goal + page. CREATE new if different role/location.
       </duplicate_detection>
       
+      <deletion_handling>
+      DELETE epic: Remove entire epic from output array.
+      DELETE story: Remove from epic.stories array. Remove epic if no stories left.
+      </deletion_handling>
+      
       <rules>
-      1. CHECK FOR DUPLICATES before creating new stories (see above)
-      2. Preserve existing IDs when possible
-      3. Add new stories with sequential IDs (only if truly NEW functionality)
-      4. Update dependencies when relationships change
-      5. Keep INVEST compliance
-      6. If updating existing story, keep its ID and merge new requirements
+      1. Check duplicates before creating. 2. Handle deletions. 3. Preserve IDs. 4. Keep INVEST.
       </rules>
 
     user_prompt: |
-      User feedback: "{user_message}"
+      User: "{user_message}"
+      Epics: {epics}
       
-      Current epics:
-      {epics}
-      
-      IMPORTANT: Before creating any new story, check if an existing story already covers this functionality.
-      If yes, UPDATE that story instead of creating a duplicate.
-      
+      DELETE epic → remove from output. UPDATE story → keep ID, merge requirements.
       Return: epics, change_summary, message_template, approval_template
 
   # ---------------------------------------------------------------------------
@@ -559,13 +552,24 @@ tasks:
       2. If user says "remove X from requirements" - remove ONLY that item
       3. If user says "add X to acceptance criteria" - add ONLY that item
       4. Preserve story ID, epic_id, dependencies unless explicitly changed
-      5. Return the COMPLETE updated story with all fields
+      5. ALWAYS return the COMPLETE updated story with ALL fields populated
       </rules>
+      
+      <deletion_handling>
+      CRITICAL: If user wants to DELETE the story (says "xóa", "delete", "remove"):
+      1. Return the COMPLETE story object with ALL fields as usual
+      2. Set requirements = [] (empty array)
+      3. Set acceptance_criteria = [] (empty array)
+      4. Keep id, epic_id, title, description, priority, story_point, dependencies
+      5. The code will detect empty requirements/acceptance_criteria and delete the story
+      
+      DO NOT return an empty object {}! ALWAYS return full story structure.
+      </deletion_handling>
       
       <output>
       - story_id: ID of the story being edited
       - found: true if story found, false otherwise
-      - updated_story: complete story object with changes applied
+      - updated_story: complete story object with ALL fields (NEVER empty {})
       - change_summary: brief Vietnamese summary of what changed
       - message: friendly Vietnamese response to user
       </output>
@@ -576,7 +580,15 @@ tasks:
       Target story:
       {target_story}
       
-      Apply ONLY the specific changes requested. Return the complete updated story.
+      Apply ONLY the specific changes requested. 
+      
+      IMPORTANT: If user wants to DELETE this story:
+      - Keep ALL fields (id, epic_id, title, description, priority, story_point, dependencies)
+      - Set requirements = []
+      - Set acceptance_criteria = []
+      - This will signal the code to delete the story
+      
+      Return the complete updated story with all fields.
 
   # ---------------------------------------------------------------------------
   # DOMAIN RESEARCH (Follow-up questions)
@@ -798,6 +810,55 @@ tasks:
       6. Khuyến nghị
 
   # ---------------------------------------------------------------------------
+  # GENERATE FEATURE-SPECIFIC QUESTIONS - For new features only
+  # ---------------------------------------------------------------------------
+  generate_feature_questions:
+    system_prompt: |
+      {shared_context.agent_identity}
+      
+      <role>Feature clarification specialist - generate targeted questions for a specific new feature</role>
+      
+      <rules>
+      1. Generate 2-3 MULTICHOICE questions ONLY about the specific feature user mentioned
+      2. DO NOT ask general project questions (target users, business model, etc.)
+      3. Focus on: Who uses THIS feature? What does THIS feature do? What data does THIS feature need?
+      4. Each question MUST have specific options relevant to the feature type
+      5. Always add "Khác (vui lòng mô tả)" as last option
+      6. Use Vietnamese for questions and options
+      </rules>
+      
+      <feature_type_examples>
+      Dashboard/Report features:
+      - "Dashboard này sẽ hiển thị những thông tin gì?"
+      - Options: Số liệu thống kê, Biểu đồ xu hướng, Danh sách công việc, Thông báo, Khác
+      
+      Management features (Quản lý X):
+      - "Người dùng cần quản lý những thông tin gì về X?"
+      - Options: Thêm mới, Chỉnh sửa, Xóa, Tìm kiếm, Lọc, Xuất báo cáo, Khác
+      
+      Notification/Alert features:
+      - "Hệ thống sẽ thông báo về những sự kiện nào?"
+      - Options: Deadline sắp tới, Công việc mới, Thay đổi trạng thái, Nhắc nhở, Khác
+      
+      Communication features (Chat, Comment):
+      - "Tính năng này hỗ trợ những hình thức giao tiếp nào?"
+      - Options: Tin nhắn văn bản, File đính kèm, Emoji/reaction, Thông báo realtime, Khác
+      </feature_type_examples>
+
+    user_prompt: |
+      User wants to add a NEW feature: "{user_message}"
+      
+      Generate 2-3 MULTICHOICE questions to clarify THIS specific feature (not general project questions).
+      
+      Focus on:
+      - Who will use this feature? (if relevant to feature type)
+      - What specific functionality does this feature need?
+      - What information/data should this feature display/handle?
+      
+      Use Vietnamese. Each question MUST have specific options relevant to the feature.
+      Always add "Khác (vui lòng mô tả)" as last option.
+
+  # ---------------------------------------------------------------------------
   # CHECK FEATURE CLARITY - Determine if request is new feature or relates to existing
   # ---------------------------------------------------------------------------
   check_feature_clarity:
@@ -824,13 +885,23 @@ tasks:
       - Yêu cầu liên quan đến feature ĐÃ CÓ NHƯNG không chỉ rõ muốn thay đổi gì
       - Ví dụ: "thêm trang about" + ĐÃ CÓ epic/feature "Trang About"
       - Ví dụ: "thêm homepage" + ĐÃ CÓ epic "Homepage"
-      → Cần hỏi user muốn bổ sung/thay đổi gì cụ thể
+      → Cần THÔNG BÁO feature đã có và hỏi user muốn làm gì (bổ sung, thay đổi, hay tạo mới khác)
+      
+      LƯU Ý QUAN TRỌNG:
+      - Nếu user nói "thêm tính năng X" mà X ĐÃ CÓ trong PRD/Epics → CASE 3 (thông báo trùng)
+      - Nếu user nói "thêm [chi tiết cụ thể] vào X" (ví dụ: thêm filter, thêm button) → CASE 2 (refine)
+      - Nếu user nói "thêm tính năng Y" mà Y CHƯA CÓ → CASE 1 (tính năng mới)
       </decision_logic>
       
       <clarification_questions>
-      Tạo 2-4 câu hỏi clarification bằng tiếng Việt khi:
-      - is_new_feature = TRUE: hỏi về tính năng mới (dành cho ai, làm gì, chức năng gì)
-      - is_new_feature = FALSE và has_specific_change = FALSE: hỏi user muốn bổ sung/thay đổi gì cụ thể cho feature đã có
+      Tạo câu hỏi clarification bằng tiếng Việt:
+      - is_new_feature = TRUE: hỏi về tính năng mới (2-3 câu: dành cho ai, làm gì, chức năng gì)
+      - is_new_feature = FALSE và has_specific_change = FALSE: CHỈ HỎI 1 CÂU duy nhất
+        + "Tính năng '[tên feature]' đã có trong hệ thống rồi. Bạn muốn thay đổi/chỉnh sửa phần nào của tính năng hiện tại?"
+      
+      QUAN TRỌNG: 
+      - Tạo câu hỏi MỞ (open-ended), KHÔNG tạo câu hỏi Yes/No
+      - Với tính năng đã tồn tại, CHỈ trả về 1 câu hỏi duy nhất (không cần hỏi nhiều câu)
       </clarification_questions>
 
     user_prompt: |

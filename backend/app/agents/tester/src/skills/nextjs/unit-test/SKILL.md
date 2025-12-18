@@ -7,10 +7,10 @@ description: Unit tests with Jest + React Testing Library. CRITICAL - Uses Jest 
 
 ## ⚠️ JEST ONLY - NOT Vitest
 ```typescript
-// ✅ Jest globals (no import needed)
+//  Jest globals (no import needed)
 jest.fn(), jest.mock(), jest.clearAllMocks()
 
-// ❌ Vitest (will fail!)
+// Vitest (will fail!)
 import { vi } from 'vitest'  // ERROR!
 ```
 
@@ -25,14 +25,14 @@ import { vi } from 'vitest'  // ERROR!
 | Static (no fetch) | 1 | Renders with props |
 | Async (with fetch) | 2 | Heading + loaded data |
 
-### ❌ DO NOT TEST (will cause failures):
+### DO NOT TEST (will cause failures):
 - Empty state
 - Error state
 - Loading skeletons
 - Each element separately
 - Elements that may not exist
 
-### ✅ Combine multiple assertions in ONE test:
+###  Combine multiple assertions in ONE test:
 ```typescript
 it('renders correctly', async () => {
   // Multiple expects in ONE test = good
@@ -82,7 +82,7 @@ describe('MySection', () => {
     jest.restoreAllMocks();
   });
 
-  // ✅ TEST 1: Renders section correctly (REQUIRED)
+  //  TEST 1: Renders section correctly (REQUIRED)
   it('renders section with heading and content', async () => {
     await act(async () => {
       render(<MySection />);
@@ -98,7 +98,7 @@ describe('MySection', () => {
     expect(screen.getByText(/item 2/i)).toBeInTheDocument();
   });
 
-  // ✅ TEST 2: Links/interactions (OPTIONAL - only if component has links)
+  //  TEST 2: Links/interactions (OPTIONAL - only if component has links)
   it('renders navigation link', async () => {
     await act(async () => {
       render(<MySection />);
@@ -123,32 +123,32 @@ await waitFor(() => { expect(screen.getByText(/data/i)).toBeInTheDocument(); });
 
 ### 2. MULTIPLE ELEMENTS: Use `getAllByText()` or `getByRole()`
 ```typescript
-// ✅ Text appears multiple times
+//  Text appears multiple times
 const elements = screen.getAllByText(/science/i);
 expect(elements.length).toBeGreaterThan(0);
 
-// ✅ Be specific with role
+//  Be specific with role
 expect(screen.getByRole('heading', { name: /science/i })).toBeInTheDocument();
 ```
 
 ### 3. CASE-INSENSITIVE: Always use `/i` flag
 ```typescript
-screen.getByText(/featured books/i);  // ✅
+screen.getByText(/featured books/i);  // 
 screen.getByText('Featured Books');   // ❌
 ```
 
 ### 4. LINKS: Flexible href matching
 ```typescript
-expect(link.getAttribute('href')).toContain('/books');  // ✅
+expect(link.getAttribute('href')).toContain('/books');  // 
 expect(link).toHaveAttribute('href', '/books');         // ❌
 ```
 
 ### 5. ONLY TEST WHAT EXISTS IN SOURCE CODE
 ```typescript
-// ✅ Read source code first
+//  Read source code first
 expect(screen.getByRole('heading')).toBeInTheDocument();
 
-// ❌ Don't assume elements exist
+// Don't assume elements exist
 expect(screen.getByPlaceholderText(/search/i)).toBeInTheDocument(); // May not exist!
 ```
 
@@ -167,7 +167,7 @@ beforeEach(() => {
 
 ---
 
-## 📋 QUERY PRIORITY
+##  QUERY PRIORITY
 
 | Priority | Query | Use Case |
 |----------|-------|----------|
@@ -177,7 +177,7 @@ beforeEach(() => {
 
 ---
 
-## ❌ ANTI-PATTERNS
+## ANTI-PATTERNS
 
 | Don't | Why |
 |-------|-----|

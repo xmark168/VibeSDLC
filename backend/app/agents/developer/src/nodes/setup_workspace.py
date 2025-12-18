@@ -319,7 +319,7 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                 from app.models.base import StoryAgentState
                 await agent._update_story_state(story_id, StoryAgentState.PROCESSING)
             
-            await story_logger.message("✅ Workspace sẵn sàng, bắt đầu phân tích...")
+            await story_logger.message("Workspace sẵn sàng, bắt đầu phân tích...")
         
         return {
             **state,

@@ -15,7 +15,7 @@ from app.core.agent.agent_pool_manager import AgentPoolManager
 from app.api.deps import SessionDep, get_current_user, get_db
 from app.models import Agent, AgentExecution, AgentExecutionStatus, AgentStatus, User
 from app.schemas import (
-    AgentPoolMetricsPublic, AgentPoolPublic, CreatePoolRequest, PoolResponse,
+    AgentPoolMetricsPublic, AgentPoolPublic, AgentsPublic, CreatePoolRequest, PoolResponse,
     SpawnAgentRequest, SystemStatsResponse, TerminateAgentRequest, UpdatePoolConfigRequest,
 )
 from app.services.persona_service import PersonaService
@@ -786,7 +786,7 @@ async def terminate_agent(
     }
 
 
-@router.get("/project/{project_id}")
+@router.get("/project/{project_id}", response_model=AgentsPublic)
 async def get_project_agents(
     project_id: UUID,
     session: SessionDep,
@@ -798,19 +798,28 @@ async def get_project_agents(
         .options(selectinload(Agent.persona_template))
     ).all()
 
-    return [
-        {
-            "id": str(agent.id),
+    # Transform agents to match AgentPublic schema
+    agent_list = []
+    for agent in agents:
+        agent_dict = {
+            "id": agent.id,
+            "project_id": agent.project_id,
             "name": agent.name,
             "human_name": agent.human_name,
             "role_type": agent.role_type,
-            "status": agent.status.value,
-            "project_id": str(agent.project_id),
+            "agent_type": agent.agent_type,
+            "status": agent.status,  # Pass enum directly, not .value
+            "persona_template_id": agent.persona_template_id,
             "persona_avatar": agent.persona_template.avatar if agent.persona_template else None,
-            "created_at": agent.created_at.isoformat(),
+            "personality_traits": agent.personality_traits or [],
+            "communication_style": agent.communication_style,
+            "persona_metadata": agent.persona_metadata,
+            "created_at": agent.created_at,
+            "updated_at": agent.updated_at,
         }
-        for agent in agents
-    ]
+        agent_list.append(agent_dict)
+
+    return AgentsPublic(data=agent_list, count=len(agent_list))
 
 
 # ===== Monitoring Endpoints =====
