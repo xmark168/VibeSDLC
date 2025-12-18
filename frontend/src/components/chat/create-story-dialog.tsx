@@ -432,7 +432,7 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
                     <FileText className="w-4 h-4 mr-2" />
-                    Select .md File
+                    Select .md/.txt File
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
