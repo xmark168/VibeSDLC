@@ -27,129 +27,6 @@ logger = logging.getLogger(__name__)
 # Git worktree management
 # =============================================================================
 
-def _find_handle_exe() -> str | None:
-    """Find handle.exe in common locations."""
-    import os
-    import shutil
-    
-    # Check common install locations
-    locations = [
-        r"C:\Program Files\Sysinternals\handle.exe",
-        r"C:\Windows\System32\handle.exe",
-        r"C:\Sysinternals\handle.exe",
-    ]
-    
-    for path in locations:
-        if os.path.exists(path):
-            return path
-    
-    # Check if it's in PATH
-    if shutil.which("handle.exe"):
-        return "handle.exe"
-    
-    return None
-
-
-def _kill_with_handle_exe(directory: Path, agent_name: str = "Agent") -> bool:
-    """Kill processes using handle.exe with process name filter for faster scanning.
-    
-    Uses -p filter to scan only common workspace-locking processes (node, Code, git, etc.)
-    This makes scanning 5-10x faster by skipping irrelevant processes like chrome, explorer, etc.
-    """
-    handle_exe = _find_handle_exe()
-    if not handle_exe:
-        logger.debug(f"[{agent_name}] handle.exe not found")
-        return False
-    
-    try:
-        # Process filter for common workspace-locking processes
-        # This makes scanning 5-10x faster by skipping irrelevant processes
-        process_filter = "node,Code,git,pnpm,npm,yarn,tsc,webpack,vite,next,turbo"
-        
-        # Run handle.exe with -p filter
-        # Note: handle.exe automatically searches recursively in all subdirectories
-        start_time = time.time()
-        result = subprocess.run(
-            [handle_exe, "-accepteula", "-nobanner", "-p", process_filter, str(directory)],
-            capture_output=True,
-            text=True,
-            timeout=5,  # Reduced from 10s to 5s (filtering makes it much faster)
-            encoding='utf-8',
-            errors='replace'
-        )
-        scan_elapsed = time.time() - start_time
-        
-        if result.returncode != 0:
-            logger.debug(f"[{agent_name}] handle.exe failed: {result.stderr[:200]}")
-            return False
-        
-        # Parse output to extract PIDs
-        # Format: "process.exe    pid: 1234   type: File   C:\path\to\file"
-        import re
-        pids = set()
-        process_names = {}
-        
-        for line in result.stdout.splitlines():
-            # Look for "pid: XXXX" pattern
-            pid_match = re.search(r'pid:\s*(\d+)', line)
-            if pid_match:
-                pid = int(pid_match.group(1))
-                pids.add(pid)
-                
-                # Extract process name (first word on line)
-                name_match = re.match(r'^(\S+)', line.strip())
-                if name_match:
-                    process_names[pid] = name_match.group(1)
-        
-        if not pids:
-            logger.debug(f"[{agent_name}] No processes found by handle.exe (scanned in {scan_elapsed:.1f}s)")
-            return True  # Success - nothing to kill
-        
-        # Kill each process
-        killed_count = 0
-        for pid in pids:
-            proc_name = process_names.get(pid, "unknown")
-            try:
-                kill_result = subprocess.run(
-                    ["taskkill", "/F", "/PID", str(pid)],
-                    capture_output=True,
-                    timeout=3
-                )
-                if kill_result.returncode == 0:
-                    logger.debug(f"[{agent_name}] Killed {proc_name} (PID {pid})")
-                    killed_count += 1
-            except Exception as e:
-                logger.debug(f"[{agent_name}] Failed to kill PID {pid}: {e}")
-        
-        logger.info(f"[{agent_name}] Killed {killed_count}/{len(pids)} processes in {scan_elapsed:.1f}s (via handle.exe -p filter)")
-        return True
-    
-    except subprocess.TimeoutExpired:
-        logger.warning(f"[{agent_name}] handle.exe timed out")
-        return False
-    except Exception as e:
-        logger.warning(f"[{agent_name}] handle.exe error: {e}")
-        return False
-
-
-def _kill_processes_in_directory(directory: Path, agent_name: str = "Agent") -> None:
-    """Kill processes that are locking files in the specified directory (Windows only).
-    
-    Uses handle.exe from Sysinternals Suite for accurate file handle detection.
-    If handle.exe is not available, logs a warning and continues (non-critical).
-    """
-    import platform
-    if platform.system() != "Windows":
-        return
-    
-    # Use handle.exe (most accurate method for Windows)
-    if _kill_with_handle_exe(directory, agent_name):
-        return
-    
-    # handle.exe not available or failed - log warning but continue
-    logger.warning(f"[{agent_name}] handle.exe not available or failed. Install Sysinternals Suite for better performance.")
-
-
 def cleanup_workspace(
     workspace_path: str | Path,
     repo_path: str | Path = None,
@@ -231,108 +108,42 @@ def cleanup_workspace(
         logger.info(f"[{agent_name}] Workspace cleanup completed in {cleanup_elapsed:.1f}s")
         return
     
-    # STEP 3: Kill processes locking files
-    _kill_processes_in_directory(workspace_path, agent_name)
-    
-    # STEP 4: Delete node_modules (much faster without it)
+    # STEP 3: Delete node_modules
     if not skip_node_modules:
         node_modules_path = workspace_path / "node_modules"
         if node_modules_path.exists():
-            logger.info(f"[{agent_name}] Deleting node_modules before workspace cleanup...")
+            logger.info(f"[{agent_name}] Deleting node_modules...")
             try:
-                # Kill processes locking node_modules files
-                _kill_processes_in_directory(node_modules_path, agent_name)
-                time.sleep(1.5)  # Wait for processes to fully terminate
-                
-                # Try Windows-optimized deletion first
-                success = False
-                if platform.system() == "Windows":
-                    success = _fast_delete_node_modules_windows(node_modules_path, agent_name)
-                
-                # Fallback to shutil if Windows method failed or not on Windows
-                if not success:
-                    logger.debug(f"[{agent_name}] Falling back to shutil.rmtree...")
-                    start_time = time.time()
-                    shutil.rmtree(node_modules_path, ignore_errors=True)
-                    elapsed = time.time() - start_time
-                    logger.info(f"[{agent_name}] node_modules deleted in {elapsed:.1f}s (shutil)")
+                start_time = time.time()
+                # NOTE: This is sync function - blocking rmtree unavoidable
+                # Callers should wrap cleanup_workspace() in asyncio.to_thread()
+                shutil.rmtree(node_modules_path, ignore_errors=True)
+                elapsed = time.time() - start_time
                 
                 if not node_modules_path.exists():
-                    logger.info(f"[{agent_name}] node_modules deleted successfully")
+                    logger.info(f"[{agent_name}] node_modules deleted in {elapsed:.1f}s")
                 else:
-                    logger.warning(f"[{agent_name}] node_modules partially deleted, rất lâu")
+                    logger.warning(f"[{agent_name}] node_modules partially deleted")
             except Exception as e:
-                logger.warning(f"[{agent_name}] Failed to pre-delete node_modules: {e}")
+                logger.warning(f"[{agent_name}] Failed to delete node_modules: {e}")
     else:
         logger.debug(f"[{agent_name}] Skipping node_modules delete")
     
-    # STEP 5: Delete workspace directory with retry
+    # STEP 4: Delete workspace directory
     if workspace_path.exists():
-        for attempt in range(3):
-            # Kill processes BEFORE each attempt
-            if attempt == 0 or attempt == 2:
-                _kill_processes_in_directory(workspace_path, agent_name)
-                time.sleep(1.0)  # Wait for process cleanup
-            
-            try:
-                shutil.rmtree(workspace_path)
-                logger.debug(f"[{agent_name}] Workspace deleted on attempt {attempt + 1}")
-                break
-            except Exception as e:
-                if attempt < 2:
-                    # Exponential backoff: 0.5s, 1.0s
-                    time.sleep(0.5 * (2 ** attempt))
-                else:
-                    # Last attempt failed - log but continue
-                    logger.warning(f"[{agent_name}] Failed to remove workspace after 3 attempts: {e}")
+        try:
+            # NOTE: Blocking operation - callers should wrap in asyncio.to_thread()
+            shutil.rmtree(workspace_path)
+            logger.debug(f"[{agent_name}] Workspace deleted")
+        except Exception as e:
+            logger.warning(f"[{agent_name}] Failed to remove workspace: {e}")
     
     # Log cleanup time for performance monitoring
     cleanup_elapsed = time.time() - cleanup_start_time
     logger.info(f"[{agent_name}] Workspace cleanup completed in {cleanup_elapsed:.1f}s")
 
 
-def _fast_delete_node_modules_windows(node_modules_path: Path, agent_name: str = "Agent") -> bool:
-    """Fast deletion of node_modules using Windows native commands.
-    
-    Uses cmd.exe rmdir which is much faster than Python's shutil.rmtree
-    for directories with many small files (typical node_modules structure).
-    
-    Returns True if successful, False otherwise.
-    """
-    import platform
-    if platform.system() != "Windows":
-        return False
-    
-    if not node_modules_path.exists():
-        return True
-    
-    try:
-        start_time = time.time()
-        logger.debug(f"[{agent_name}] Using Windows rmdir for fast deletion...")
-        
-        # Use native Windows command for fast deletion
-        result = subprocess.run(
-            ["cmd.exe", "/c", "rmdir", "/s", "/q", str(node_modules_path)],
-            capture_output=True,
-            timeout=60,
-            text=True
-        )
-        
-        elapsed = time.time() - start_time
-        
-        if result.returncode == 0 or not node_modules_path.exists():
-            logger.info(f"[{agent_name}] node_modules deleted in {elapsed:.1f}s (Windows rmdir)")
-            return True
-        else:
-            logger.debug(f"[{agent_name}] rmdir returned {result.returncode}: {result.stderr[:200]}")
-            return False
-            
-    except subprocess.TimeoutExpired:
-        logger.warning(f"[{agent_name}] Windows rmdir timed out after 60s")
-        return False
-    except Exception as e:
-        logger.debug(f"[{agent_name}] Windows rmdir failed: {e}")
-        return False
+
 
 
 def cleanup_old_worktree(
@@ -435,6 +246,47 @@ def setup_git_worktree(
     # Note: skip_node_modules can be used for faster cleanup if dependencies don't change
     cleanup_old_worktree(main_workspace, branch_name, worktree_path, agent_name, skip_node_modules)
     
+    # ===== CRITICAL FIX: Ensure repository has at least one commit =====
+    # Check if repo has any commits (required for branch creation)
+    has_commits_result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(main_workspace),
+        capture_output=True,
+        timeout=10,
+    )
+    
+    if has_commits_result.returncode != 0:
+        logger.warning(f"[{agent_name}] Repository has no commits, creating initial commit...")
+        
+        # Stage all files
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=str(main_workspace),
+            capture_output=True,
+            timeout=30,
+        )
+        
+        # Create initial commit
+        commit_result = subprocess.run(
+            ["git", "commit", "-m", "Initial commit (auto-created by agent)"],
+            cwd=str(main_workspace),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        
+        if commit_result.returncode == 0:
+            logger.info(f"[{agent_name}] Initial commit created successfully")
+        else:
+            logger.error(f"[{agent_name}] Failed to create initial commit: {commit_result.stderr}")
+            # Cannot proceed without commits - return failure
+            return {
+                "workspace_path": str(main_workspace),
+                "branch_name": branch_name,
+                "main_workspace": str(main_workspace),
+                "workspace_ready": False,
+            }
+    
     # Auto-commit uncommitted files so worktree has them (story type only)
     if worktree_type == "story":
         try:
@@ -482,15 +334,28 @@ def setup_git_worktree(
         timeout=10,
     )
     
-    # Create new branch from current
-    subprocess.run(
+    # ===== FIX: Create new branch with error checking =====
+    branch_result = subprocess.run(
         ["git", "branch", branch_name, current_branch],
         cwd=str(main_workspace),
         capture_output=True,
+        text=True,
         timeout=30,
     )
     
-    # Create worktree
+    if branch_result.returncode != 0:
+        logger.error(f"[{agent_name}] Failed to create branch '{branch_name}': {branch_result.stderr}")
+        # Cannot create worktree without valid branch - return failure with main workspace
+        return {
+            "workspace_path": str(main_workspace),
+            "branch_name": current_branch,  # Use current branch instead
+            "main_workspace": str(main_workspace),
+            "workspace_ready": False,
+        }
+    
+    logger.debug(f"[{agent_name}] Branch '{branch_name}' created from '{current_branch}'")
+    
+    # ===== FIX: Create worktree with better error handling and fallback =====
     worktree_result = subprocess.run(
         ["git", "worktree", "add", str(worktree_path), branch_name],
         cwd=str(main_workspace),
@@ -499,13 +364,36 @@ def setup_git_worktree(
         timeout=60,
     )
     
-    logger.info(f"[{agent_name}] Result: {worktree_result.stdout or worktree_result.stderr}")
+    workspace_ready = False
     
-    workspace_ready = worktree_path.exists() and worktree_path.is_dir()
+    if worktree_result.returncode != 0:
+        logger.warning(f"[{agent_name}] Worktree creation failed: {worktree_result.stderr}")
+        
+        # Try alternative method: create branch and worktree in one command
+        logger.info(f"[{agent_name}] Trying alternative worktree creation method...")
+        alt_result = subprocess.run(
+            ["git", "worktree", "add", "-b", branch_name, str(worktree_path), "HEAD"],
+            cwd=str(main_workspace),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        
+        if alt_result.returncode == 0:
+            logger.info(f"[{agent_name}] Worktree created successfully (alternative method)")
+            workspace_ready = True
+        else:
+            logger.error(f"[{agent_name}] Alternative method also failed: {alt_result.stderr}")
+            logger.warning(f"[{agent_name}] Using main workspace as fallback")
+            worktree_path = main_workspace
+            workspace_ready = False
+    else:
+        logger.info(f"[{agent_name}] Worktree created successfully")
+        workspace_ready = True
     
+    # Final validation
     if not workspace_ready:
-        logger.warning(f"[{agent_name}] Worktree not created, using main workspace")
-        worktree_path = main_workspace
+        workspace_ready = worktree_path.exists() and worktree_path.is_dir()
     
     # Log total setup time for performance monitoring
     setup_elapsed = time.time() - setup_start_time

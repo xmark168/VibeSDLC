@@ -106,8 +106,29 @@ _connection_pool = None
 
 
 async def get_postgres_checkpointer() -> AsyncPostgresSaver:
-    """Get or create a PostgresSaver checkpointer for persistent state."""
+    """Get or create a PostgresSaver checkpointer for persistent state.
+    
+    Includes:
+    - Health check for stale pools
+    - Retry logic with exponential backoff
+    - Timeouts to prevent indefinite hangs
+    - Larger pool size for concurrent agents
+    """
+    import asyncio
+    import logging
     global _postgres_checkpointer, _connection_pool
+    
+    logger = logging.getLogger(__name__)
+    
+    # Health check: Reset if pool is closed/stale
+    if _connection_pool is not None:
+        try:
+            if _connection_pool.closed:
+                logger.warning("[DeveloperGraph] Connection pool is closed, reinitializing...")
+                _postgres_checkpointer = None
+                _connection_pool = None
+        except Exception:
+            pass
     
     if _postgres_checkpointer is None:
         from app.core.config import settings
@@ -118,19 +139,54 @@ async def get_postgres_checkpointer() -> AsyncPostgresSaver:
         if "+psycopg" in db_uri:
             db_uri = db_uri.replace("+psycopg", "")
         
-        # Create async connection pool (required for proper checkpoint saving)
-        _connection_pool = AsyncConnectionPool(
-            conninfo=db_uri,
-            min_size=1,
-            max_size=3,
-            open=False,
-            kwargs={"autocommit": True},
-        )
-        await _connection_pool.open(wait=True)
-        
-        _postgres_checkpointer = AsyncPostgresSaver(_connection_pool)
-        # Create tables if they don't exist
-        await _postgres_checkpointer.setup()
+        # Retry logic with exponential backoff
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"[DeveloperGraph] Creating connection pool (attempt {attempt + 1}/{max_retries})...")
+                
+                # Create async connection pool with larger size and connection timeout
+                _connection_pool = AsyncConnectionPool(
+                    conninfo=db_uri,
+                    min_size=2,  # Increased from 1
+                    max_size=10,  # Increased from 3 for concurrent agents
+                    open=False,
+                    kwargs={
+                        "autocommit": True,
+                        "connect_timeout": 5,  # 5 seconds per connection attempt
+                    },
+                )
+                
+                # Open with timeout to prevent indefinite hang
+                await asyncio.wait_for(
+                    _connection_pool.open(wait=True),
+                    timeout=10.0  # 10 seconds max for pool open
+                )
+                logger.info("[DeveloperGraph] Connection pool opened successfully")
+                
+                _postgres_checkpointer = AsyncPostgresSaver(_connection_pool)
+                # Create tables if they don't exist
+                await _postgres_checkpointer.setup()
+                logger.info("[DeveloperGraph] PostgresSaver initialized successfully")
+                break  # Success!
+                
+            except asyncio.TimeoutError:
+                logger.warning(f"[DeveloperGraph] Connection pool open timeout (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    backoff = 2 ** attempt  # Exponential: 1s, 2s, 4s
+                    logger.info(f"[DeveloperGraph] Retrying in {backoff}s...")
+                    await asyncio.sleep(backoff)
+                else:
+                    raise Exception("Failed to connect to PostgreSQL after 3 retries (timeout)")
+                    
+            except Exception as e:
+                logger.error(f"[DeveloperGraph] PostgresSaver setup failed: {e}")
+                if attempt < max_retries - 1:
+                    backoff = 2 ** attempt
+                    logger.info(f"[DeveloperGraph] Retrying in {backoff}s...")
+                    await asyncio.sleep(backoff)
+                else:
+                    raise
     
     return _postgres_checkpointer
 
@@ -183,7 +239,12 @@ class DeveloperGraph:
         self.graph = None  # Will be compiled with checkpointer
     
     async def setup(self) -> None:
-        """Setup the graph with PostgresSaver checkpointer."""
+        """Setup the graph with PostgresSaver checkpointer.
+        
+        Includes timeout and graceful fallback to MemorySaver if PostgreSQL unavailable.
+        Total timeout: 30 seconds (3 retries × 10s each)
+        """
+        import asyncio
         import logging
         logger = logging.getLogger(__name__)
         
@@ -192,8 +253,15 @@ class DeveloperGraph:
         
         if self.checkpointer is None:
             try:
-                self.checkpointer = await get_postgres_checkpointer()
+                # Add timeout for entire setup (includes retries)
+                self.checkpointer = await asyncio.wait_for(
+                    get_postgres_checkpointer(),
+                    timeout=30.0  # 30 seconds total (3 retries × 10s pool open)
+                )
                 logger.info(f"PostgresSaver setup OK: {type(self.checkpointer).__name__}")
+            except asyncio.TimeoutError:
+                logger.warning("PostgresSaver setup timeout after 30s, using MemorySaver")
+                self.checkpointer = MemorySaver()
             except Exception as e:
                 logger.warning(f"Failed to setup PostgresSaver, using MemorySaver: {e}", exc_info=True)
                 self.checkpointer = MemorySaver()

@@ -39,38 +39,78 @@ async def get_postgres_checkpointer() -> AsyncPostgresSaver:
     """Get or create a PostgresSaver checkpointer for persistent state."""
     global _postgres_checkpointer, _connection_pool
     
-    if _postgres_checkpointer is None:
+    # Health check: Reset if pool is closed/stale
+    if _connection_pool is not None:
         try:
-            from app.core.config import settings
-            import psycopg_pool
-            
-            # Build connection string from settings
-            db_url = str(settings.DATABASE_URL)
-            if db_url.startswith("postgresql+psycopg"):
-                db_url = db_url.replace("postgresql+psycopg", "postgresql")
-            
-            logger.info(f"[BA Graph] Creating PostgresSaver with connection pool...")
-            
-            # Create connection pool
-            _connection_pool = psycopg_pool.AsyncConnectionPool(
-                conninfo=db_url,
-                max_size=5,
-                min_size=1,
-                open=False,
-            )
-            await _connection_pool.open()
-            
-            # Create checkpointer
-            _postgres_checkpointer = AsyncPostgresSaver(_connection_pool)
-            
-            # Setup tables if needed
-            await _postgres_checkpointer.setup()
-            
-            logger.info("[BA Graph] PostgresSaver initialized successfully")
-            
-        except Exception as e:
-            logger.error(f"[BA Graph] Failed to create PostgresSaver: {e}, falling back to MemorySaver")
-            return None
+            if _connection_pool.closed:
+                logger.warning("[BA Graph] Connection pool is closed, reinitializing...")
+                _postgres_checkpointer = None
+                _connection_pool = None
+        except Exception:
+            pass
+    
+    if _postgres_checkpointer is None:
+        from app.core.config import settings
+        import psycopg_pool
+        import asyncio
+        
+        # Build connection string from settings
+        db_url = str(settings.DATABASE_URL)
+        if db_url.startswith("postgresql+psycopg"):
+            db_url = db_url.replace("postgresql+psycopg", "postgresql")
+        
+        # Retry logic with exponential backoff
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"[BA Graph] Creating connection pool (attempt {attempt + 1}/{max_retries})...")
+                
+                # Create connection pool with larger size and timeout
+                _connection_pool = psycopg_pool.AsyncConnectionPool(
+                    conninfo=db_url,
+                    max_size=10,  # Increased from 5
+                    min_size=2,   # Increased from 1
+                    open=False,
+                    kwargs={
+                        "autocommit": True,
+                        "connect_timeout": 5,
+                    },
+                )
+                
+                # Open with timeout to prevent indefinite hang
+                await asyncio.wait_for(
+                    _connection_pool.open(),
+                    timeout=10.0
+                )
+                logger.info("[BA Graph] Connection pool opened successfully")
+                
+                # Create checkpointer
+                _postgres_checkpointer = AsyncPostgresSaver(_connection_pool)
+                
+                # Setup tables if needed
+                await _postgres_checkpointer.setup()
+                logger.info("[BA Graph] PostgresSaver initialized successfully")
+                break
+                
+            except asyncio.TimeoutError:
+                logger.warning(f"[BA Graph] Connection pool open timeout (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    backoff = 2 ** attempt
+                    logger.info(f"[BA Graph] Retrying in {backoff}s...")
+                    await asyncio.sleep(backoff)
+                else:
+                    logger.error("[BA Graph] Failed to connect after 3 retries, falling back to None")
+                    return None
+                    
+            except Exception as e:
+                logger.error(f"[BA Graph] PostgresSaver setup failed: {e}")
+                if attempt < max_retries - 1:
+                    backoff = 2 ** attempt
+                    logger.info(f"[BA Graph] Retrying in {backoff}s...")
+                    await asyncio.sleep(backoff)
+                else:
+                    logger.error(f"[BA Graph] Failed to create PostgresSaver after retries, falling back to None")
+                    return None
     
     return _postgres_checkpointer
 

@@ -756,7 +756,8 @@ def _cleanup_story_resources_sync(
             logger.info(f"Deleting node_modules before worktree cleanup...")
             try:
                 _kill_processes_in_worktree(str(node_modules))
-                time.sleep(0.5)
+                # NOTE: This is sync function - blocking rmtree is unavoidable here
+                # Consider calling this via asyncio.to_thread from async caller
                 shutil.rmtree(node_modules, ignore_errors=True)
                 logger.info(f"node_modules deleted")
             except Exception as e:
@@ -779,11 +780,12 @@ def _cleanup_story_resources_sync(
         if worktree.exists():
             for attempt in range(3):
                 try:
+                    # NOTE: This is sync function - blocking rmtree is unavoidable
                     shutil.rmtree(worktree)
                     break
                 except Exception as e:
                     if attempt < 2:
-                        time.sleep(0.5 * (attempt + 1))
+                        time.sleep(0.1 * (attempt + 1))  # Reduced from 0.5s
                         _kill_processes_in_worktree(worktree_path)
                     elif platform.system() == "Windows":
                         try:
@@ -1155,64 +1157,26 @@ async def start_dev_server(
             "timestamp": datetime.now(timezone.utc).isoformat()
         }, story.project_id)
     
-    is_windows = sys.platform == 'win32'
-    
     # Helper: Kill process by PID
     def kill_process(pid: int, force: bool = False) -> bool:
         try:
-            if is_windows:
-                # Windows: use taskkill
-                cmd = f"taskkill /F /PID {pid} /T" if force else f"taskkill /PID {pid} /T"
-                subprocess.run(cmd, shell=True, capture_output=True)
-            else:
-                import signal
-                os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
+            import signal
+            os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
             return True
         except Exception:
             return False
     
-    # Helper: Kill processes using a directory (Windows)
-    def kill_processes_using_directory(directory: str) -> int:
-        killed = 0
-        if is_windows:
-            try:
-                # Find processes with handles to the directory using handle.exe or PowerShell
-                result = subprocess.run(
-                    f'powershell -Command "Get-Process | Where-Object {{$_.Path -like \'*node*\' -or $_.Path -like \'*pnpm*\'}} | ForEach-Object {{ if ($_.MainModule.FileName -or $_.Path) {{ $_.Id }} }}"',
-                    shell=True, capture_output=True, text=True
-                )
-                for pid_str in result.stdout.strip().split('\n'):
-                    if pid_str.strip().isdigit():
-                        pid = int(pid_str.strip())
-                        if kill_process(pid, force=True):
-                            killed += 1
-            except Exception:
-                pass
-        return killed
-    
     # Helper: Kill process on port
     def kill_process_on_port(port: int) -> bool:
         try:
-            if is_windows:
-                result = subprocess.run(
-                    f'netstat -ano | findstr :{port}',
-                    shell=True, capture_output=True, text=True
-                )
-                for line in result.stdout.strip().split('\n'):
-                    parts = line.split()
-                    if len(parts) >= 5:
-                        pid = int(parts[-1])
-                        kill_process(pid, force=True)
-                        return True
-            else:
-                result = subprocess.run(
-                    f'lsof -ti:{port}',
-                    shell=True, capture_output=True, text=True
-                )
-                if result.stdout.strip():
-                    pid = int(result.stdout.strip())
-                    kill_process(pid, force=True)
-                    return True
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True, text=True
+            )
+            if result.stdout.strip():
+                pid = int(result.stdout.strip())
+                kill_process(pid, force=True)
+                return True
         except Exception:
             pass
         return False
@@ -1221,12 +1185,12 @@ async def start_dev_server(
     if story.running_pid:
         await log_to_story(f"Killing existing dev server (PID: {story.running_pid})...")
         kill_process(story.running_pid, force=True)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.1)  # Reduced from 0.5s - Linux cleanup is fast
     
     if story.running_port:
         await log_to_story(f"Killing any process on port {story.running_port}...")
         kill_process_on_port(story.running_port)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.1)  # Reduced from 0.5s
     
     # Clean up Next.js dev lock file (prevents "is another instance running?" error)
     next_lock = os.path.join(story.worktree_path, ".next", "dev", "lock")
@@ -1244,7 +1208,7 @@ async def start_dev_server(
             return s.getsockname()[1]
     
     # Helper: Wait for port to be ready (async version to not block event loop)
-    async def wait_for_port_async(port: int, timeout: float = 30.0) -> bool:
+    async def wait_for_port_async(port: int, timeout: float = 10.0) -> bool:  # Reduced from 30s to 10s
         import socket
         start = time.time()
         while time.time() - start < timeout:
@@ -1254,7 +1218,7 @@ async def start_dev_server(
                     s.connect(('127.0.0.1', port))
                     return True
             except (socket.error, socket.timeout):
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1.0)  # Increased from 0.5s - reduce CPU usage
         return False
     
     port = find_free_port()
@@ -1267,18 +1231,16 @@ async def start_dev_server(
     for attempt in range(max_attempts):
         try:
             process = subprocess.Popen(
-                f"pnpm dev --port {port}" if is_windows else ["pnpm", "dev", "--port", str(port)],
+                ["pnpm", "dev", "--port", str(port)],
                 cwd=story.worktree_path,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                shell=is_windows,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if is_windows else 0,
                 env={**os.environ, "FORCE_COLOR": "0"},
             )
             
-            # Wait for port to be ready (up to 15 seconds)
+            # Wait for port to be ready (reduced timeout for faster failure detection)
             await log_to_story(f"Waiting for server to be ready...")
-            if await wait_for_port_async(port, timeout=15.0) and process.poll() is None:
+            if await wait_for_port_async(port, timeout=10.0) and process.poll() is None:
                 story.running_port = port
                 story.running_pid = process.pid
                 session.add(story)
@@ -1312,7 +1274,7 @@ async def start_dev_server(
                 killed = kill_processes_using_directory(story.worktree_path)
                 if killed:
                     await log_to_story(f"Killed {killed} processes")
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.2)  # Reduced from 1s - just need brief cleanup
                 
                 # Try new port
                 port = find_free_port()
@@ -1373,33 +1335,24 @@ async def stop_dev_server(
         await log_to_story("No dev server running")
         return {"success": True, "message": "No dev server running"}
     
-    is_windows = sys.platform == 'win32'
-    
     # Sync helper to kill processes (runs in thread pool)
     def _kill_processes_sync(pid: int | None, port: int | None) -> None:
         if pid:
             try:
-                if is_windows:
-                    subprocess.run(f"taskkill /F /PID {pid} /T", shell=True, capture_output=True)
-                else:
-                    import signal
-                    os.kill(pid, signal.SIGTERM)
+                import signal
+                os.kill(pid, signal.SIGTERM)
             except (ProcessLookupError, OSError):
                 pass
         
         if port:
             try:
-                if is_windows:
-                    result = subprocess.run(f'netstat -ano | findstr :{port}', shell=True, capture_output=True, text=True)
-                    for line in result.stdout.strip().split('\n'):
-                        parts = line.split()
-                        if len(parts) >= 5 and parts[-1].isdigit():
-                            subprocess.run(f"taskkill /F /PID {parts[-1]} /T", shell=True, capture_output=True)
-                else:
-                    result = subprocess.run(f'lsof -ti:{port}', shell=True, capture_output=True, text=True)
-                    if result.stdout.strip():
-                        import signal
-                        os.kill(int(result.stdout.strip()), signal.SIGTERM)
+                result = subprocess.run(
+                    ["lsof", "-ti", f":{port}"],
+                    capture_output=True, text=True
+                )
+                if result.stdout.strip():
+                    import signal
+                    os.kill(int(result.stdout.strip()), signal.SIGTERM)
             except Exception:
                 pass
     
@@ -1726,9 +1679,18 @@ async def get_preview_files(
     file_count = 0
     
     try:
-        for root, dirs, filenames in os.walk(workspace_path):
-            # Skip excluded directories
-            dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+        # Run os.walk in thread pool to avoid blocking event loop (can take 1-5s for large projects)
+        def _walk_workspace():
+            result = []
+            for root, dirs, filenames in os.walk(workspace_path):
+                # Skip excluded directories
+                dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+                result.append((root, dirs, filenames))
+            return result
+        
+        walk_results = await asyncio.to_thread(_walk_workspace)
+        
+        for root, dirs, filenames in walk_results:
             
             rel_root = Path(root).relative_to(workspace_path)
             
@@ -1951,7 +1913,7 @@ async def _trigger_merge_task(story_id: str, project_id: str, branch_name: str, 
         from app.kafka.event_schemas import AgentTaskType
         
         # Small delay to ensure DB commit is visible
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.1)  # Reduced from 1s - DB commit is fast
         
         # Route to available Developer agent for merge task
         await route_story_event(

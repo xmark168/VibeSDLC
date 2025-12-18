@@ -30,6 +30,8 @@ class FileRepository:
         if not self.workspace_path or not os.path.exists(self.workspace_path):
             return
         exclude_dirs = {'node_modules', '.next', '.git', '__pycache__', '.prisma'}
+        # NOTE: os.walk can take 1-5s for large projects but _scan() is sync
+        # This is acceptable since it's only called during plan phase
         for root, dirs, files in os.walk(self.workspace_path):
             dirs[:] = [d for d in dirs if d not in exclude_dirs]
             for f in files:

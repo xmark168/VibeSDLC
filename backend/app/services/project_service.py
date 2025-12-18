@@ -274,51 +274,18 @@ class ProjectService:
             project_id: UUID of the project to delete
         """
         import shutil
-        import stat
-        import os
         import time
-        import subprocess
-        import sys
         
-        def force_remove_tree(path: Path, max_retries: int = 3) -> bool:
-            """Force remove directory tree with multiple strategies."""
-            path_str = str(path)
-            
-            # On Windows, use extended path prefix for long paths
-            if sys.platform == 'win32' and not path_str.startswith('\\\\?\\'):
-                path_str = '\\\\?\\' + os.path.abspath(path_str)
-            
-            def remove_readonly(func, fpath, excinfo):
-                """Handle Windows readonly files."""
-                try:
-                    os.chmod(fpath, stat.S_IWRITE | stat.S_IREAD)
-                    func(fpath)
-                except Exception:
-                    pass
-            
-            for attempt in range(max_retries):
-                try:
-                    if path.exists():
-                        shutil.rmtree(path, onerror=remove_readonly)
-                    return True
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        time.sleep(0.5)  # Wait before retry
-                        # On Windows, try using rmdir /s /q as fallback
-                        if sys.platform == 'win32':
-                            try:
-                                subprocess.run(
-                                    ['cmd', '/c', 'rmdir', '/s', '/q', str(path)],
-                                    capture_output=True,
-                                    timeout=60
-                                )
-                                if not path.exists():
-                                    return True
-                            except Exception:
-                                pass
-                    else:
-                        logger.warning(f"Failed to remove {path} after {max_retries} attempts: {e}")
-            return False
+        def force_remove_tree(path: Path) -> bool:
+            """Force remove directory tree."""
+            if not path.exists():
+                return True
+            try:
+                shutil.rmtree(path)
+                return True
+            except Exception as e:
+                logger.warning(f"Failed to remove {path}: {e}")
+                return False
         
         db_project = self.session.get(Project, project_id)
         if not db_project:
@@ -365,13 +332,6 @@ class ProjectService:
             int: Number of worktrees deleted
         """
         import shutil
-        import stat
-        import os
-        
-        def remove_readonly(func, path, excinfo):
-            """Handle Windows readonly files."""
-            os.chmod(path, stat.S_IWRITE)
-            func(path)
         
         db_project = self.session.get(Project, project_id)
         if not db_project or not db_project.project_path:
@@ -391,7 +351,7 @@ class ProjectService:
         for item in parent_dir.iterdir():
             if item.is_dir() and item.name.startswith(f"{project_name}_"):
                 try:
-                    shutil.rmtree(item, onerror=remove_readonly)
+                    shutil.rmtree(item)
                     logger.info(f"Deleted worktree: {item}")
                     deleted_count += 1
                 except Exception as e:

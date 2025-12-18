@@ -7,18 +7,14 @@ the application, particularly for managing dev servers and git operations.
 import asyncio
 import logging
 import os
-import platform
 import shutil
+import signal
 import subprocess
-import sys
-import tempfile
 import time
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
-
-IS_WINDOWS = sys.platform == 'win32'
 
 
 def kill_process(pid: int, force: bool = False) -> bool:
@@ -32,14 +28,9 @@ def kill_process(pid: int, force: bool = False) -> bool:
         True if successful, False otherwise
     """
     try:
-        if IS_WINDOWS:
-            cmd = f"taskkill /F /PID {pid} /T" if force else f"taskkill /PID {pid} /T"
-            subprocess.run(cmd, shell=True, capture_output=True, timeout=10)
-        else:
-            import signal
-            os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
+        os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
         return True
-    except (ProcessLookupError, OSError, subprocess.TimeoutExpired) as e:
+    except (ProcessLookupError, OSError) as e:
         logger.debug(f"Failed to kill process {pid}: {e}")
         return False
 
@@ -54,84 +45,33 @@ def kill_process_on_port(port: int) -> bool:
         True if any process was killed, False otherwise
     """
     try:
-        if IS_WINDOWS:
-            result = subprocess.run(
-                f'netstat -ano | findstr :{port} | findstr LISTENING',
-                shell=True, capture_output=True, text=True, timeout=10
-            )
-            killed_pids = set()
-            for line in result.stdout.strip().split('\n'):
-                parts = line.split()
-                if len(parts) >= 5:
-                    try:
-                        target_pid = int(parts[-1])
-                        if target_pid not in killed_pids:
-                            subprocess.run(
-                                f"taskkill /F /PID {target_pid} /T",
-                                shell=True, capture_output=True, timeout=10
-                            )
-                            killed_pids.add(target_pid)
-                    except ValueError:
-                        pass
-            return bool(killed_pids)
-        else:
-            result = subprocess.run(
-                f'lsof -ti:{port}',
-                shell=True, capture_output=True, text=True, timeout=10
-            )
-            if result.stdout.strip():
-                for pid_str in result.stdout.strip().split('\n'):
-                    try:
-                        os.kill(int(pid_str), 9)
-                    except (ProcessLookupError, ValueError):
-                        pass
-                return True
+        result = subprocess.run(
+            f'lsof -ti:{port}',
+            shell=True, capture_output=True, text=True, timeout=10
+        )
+        if result.stdout.strip():
+            for pid_str in result.stdout.strip().split('\n'):
+                try:
+                    os.kill(int(pid_str), signal.SIGKILL)
+                except (ProcessLookupError, ValueError):
+                    pass
+            return True
     except Exception as e:
         logger.debug(f"Failed to kill process on port {port}: {e}")
     return False
 
 
-def kill_node_processes_in_directory(directory: Path | str) -> int:
-    """Kill node processes that might be locking files in a directory.
-    
-    Windows only - on other platforms this is a no-op.
-    
-    Args:
-        directory: Directory path
-        
-    Returns:
-        Number of processes killed
-    """
-    if not IS_WINDOWS:
-        return 0
-    
-    killed = 0
-    try:
-        # Kill all node.exe processes
-        subprocess.run(
-            ["taskkill", "/F", "/IM", "node.exe"],
-            capture_output=True, timeout=10
-        )
-        killed += 1
-    except Exception:
-        pass
-    
-    return killed
-
-
 def force_remove_directory(
     path: Path | str,
-    max_retries: int = 3,
-    retry_delay: float = 0.5
+    max_retries: int = 2,
+    retry_delay: float = 0.1
 ) -> bool:
-    """Force remove a directory with multiple strategies.
-    
-    Handles Windows-specific issues like locked files and long paths.
+    """Force remove a directory with retries.
     
     Args:
         path: Directory path to remove
-        max_retries: Maximum number of retry attempts
-        retry_delay: Base delay between retries (exponential backoff)
+        max_retries: Maximum number of retry attempts (default: 2)
+        retry_delay: Delay between retries in seconds (default: 0.1)
         
     Returns:
         True if successfully removed, False otherwise
@@ -140,34 +80,16 @@ def force_remove_directory(
     if not path.exists():
         return True
     
-    def remove_readonly(func, fpath, excinfo):
-        """Handle Windows readonly files."""
-        import stat
-        try:
-            os.chmod(fpath, stat.S_IWRITE | stat.S_IREAD)
-            func(fpath)
-        except Exception:
-            pass
-    
     for attempt in range(max_retries):
-        # Aggressive kill processes BEFORE each attempt (not after failure)
-        if attempt == 0 or attempt == max_retries - 1:
-            # Kill on first attempt and last attempt for maximum effectiveness
-            kill_node_processes_in_directory(path)
-            time.sleep(0.3)  # Wait for processes to release file handles
-        
         try:
-            shutil.rmtree(path, onerror=remove_readonly)
+            shutil.rmtree(path)
             if not path.exists():
                 return True
         except Exception as e:
             if attempt < max_retries - 1:
-                # Exponential backoff: 0.2s, 0.4s, 0.8s (faster than linear)
-                time.sleep(retry_delay * (2 ** attempt))
-                continue
-            
-            # All retries exhausted - log but don't block
-            logger.warning(f"Failed to remove directory {path} after {max_retries} attempts: {e}")
+                time.sleep(retry_delay)
+            else:
+                logger.warning(f"Failed to remove directory {path}: {e}")
     
     return not path.exists()
 
@@ -177,7 +99,7 @@ async def run_subprocess_async(
     cwd: str | Path | None = None,
     capture_output: bool = True,
     timeout: int = 60,
-    shell: bool | None = None,
+    shell: bool = False,
     text: bool = True,
     **kwargs
 ) -> subprocess.CompletedProcess:
@@ -188,16 +110,13 @@ async def run_subprocess_async(
         cwd: Working directory
         capture_output: Whether to capture stdout/stderr
         timeout: Timeout in seconds
-        shell: Whether to use shell (defaults to True on Windows for string cmd)
+        shell: Whether to use shell
         text: Whether to decode output as text
         **kwargs: Additional subprocess.run kwargs
         
     Returns:
         CompletedProcess result
     """
-    if shell is None:
-        shell = IS_WINDOWS and isinstance(cmd, str)
-    
     cwd_str = str(cwd) if cwd else None
     
     def _run():

@@ -596,46 +596,20 @@ def _get_workspace_path(project_path: str) -> Path:
 
 
 def kill_processes_using_directory(directory: str) -> int:
-    """Kill all node/pnpm processes. Returns count killed."""
+    """Kill all node/pnpm processes using pkill. Returns count killed."""
     import subprocess
-    import sys
     
     killed = 0
-    is_windows = sys.platform == 'win32'
-    
-    if is_windows:
-        try:
-            CREATE_NO_WINDOW = 0x08000000
-            result = subprocess.run(
-                'powershell -Command "Get-Process | Where-Object {$_.Path -like \'*node*\' -or $_.Path -like \'*pnpm*\'} | ForEach-Object { $_.Id }"',
-                shell=True, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
-            )
-            for pid_str in result.stdout.strip().split('\n'):
-                if pid_str.strip().isdigit():
-                    try:
-                        subprocess.run(f"taskkill /F /PID {pid_str.strip()} /T", shell=True, capture_output=True, creationflags=CREATE_NO_WINDOW)
-                        killed += 1
-                    except:
-                        pass
-        except:
-            pass
-    else:
-        # Unix: find and kill node/pnpm processes
-        try:
-            result = subprocess.run(
-                "ps aux | grep -E '(node|pnpm)' | grep -v grep | awk '{print $2}'",
-                shell=True, capture_output=True, text=True
-            )
-            for pid_str in result.stdout.strip().split('\n'):
-                if pid_str.strip().isdigit():
-                    try:
-                        import os
-                        os.kill(int(pid_str.strip()), 9)
-                        killed += 1
-                    except:
-                        pass
-        except:
-            pass
+    try:
+        # Use pkill to kill node and pnpm processes
+        result = subprocess.run(
+            ["pkill", "-9", "-f", "node|pnpm"],
+            capture_output=True
+        )
+        if result.returncode == 0:
+            killed = 1  # At least one process killed
+    except:
+        pass
     
     return killed
 
@@ -643,57 +617,30 @@ def kill_processes_using_directory(directory: str) -> int:
 def _cleanup_dev_server(workspace_path: Path, port: int = None, pid: int = None) -> None:
     """Clean up dev server processes and lock files."""
     import subprocess
-    import sys
+    import signal
     
-    is_windows = sys.platform == 'win32'
-    
-    # Kill by PID (with tree kill on Windows)
+    # Kill by PID
     if pid:
         try:
-            if is_windows:
-                # /T kills child processes too
-                CREATE_NO_WINDOW = 0x08000000
-                subprocess.run(f"taskkill /F /PID {pid} /T", shell=True, capture_output=True, creationflags=CREATE_NO_WINDOW)
-            else:
-                os.kill(pid, 9)
+            os.kill(pid, signal.SIGKILL)
             logger.info(f"Killed process PID {pid}")
         except Exception as e:
             logger.warning(f"Failed to kill process {pid}: {e}")
     
-    # Kill by port - more aggressive approach
+    # Kill by port using lsof
     if port:
         try:
-            if is_windows:
-                # Find all processes using this port
-                CREATE_NO_WINDOW = 0x08000000
-                result = subprocess.run(
-                    f'netstat -ano | findstr :{port} | findstr LISTENING',
-                    shell=True, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
-                )
-                killed_pids = set()
-                for line in result.stdout.strip().split('\n'):
-                    parts = line.split()
-                    if len(parts) >= 5:
-                        try:
-                            target_pid = int(parts[-1])
-                            if target_pid not in killed_pids:
-                                subprocess.run(f"taskkill /F /PID {target_pid} /T", shell=True, capture_output=True, creationflags=CREATE_NO_WINDOW)
-                                killed_pids.add(target_pid)
-                        except ValueError:
-                            pass
-                if killed_pids:
-                    logger.info(f"Killed processes on port {port}: {killed_pids}")
-            else:
-                result = subprocess.run(
-                    f'lsof -ti:{port}',
-                    shell=True, capture_output=True, text=True
-                )
-                if result.stdout.strip():
-                    for pid_str in result.stdout.strip().split('\n'):
-                        try:
-                            os.kill(int(pid_str), 9)
-                        except:
-                            pass
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True, text=True
+            )
+            if result.stdout.strip():
+                for pid_str in result.stdout.strip().split('\n'):
+                    try:
+                        os.kill(int(pid_str), signal.SIGKILL)
+                        logger.info(f"Killed process on port {port}: PID {pid_str}")
+                    except:
+                        pass
         except Exception as e:
             logger.warning(f"Failed to kill processes on port {port}: {e}")
     
@@ -754,8 +701,6 @@ async def start_project_dev_server(
     if not workspace_path.exists():
         raise HTTPException(status_code=400, detail=f"Project workspace not found: {workspace_path}")
     
-    is_windows = sys.platform == 'win32'
-    
     # Helper: Find free port
     def find_free_port():
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -772,7 +717,7 @@ async def start_project_dev_server(
                     s.connect(('127.0.0.1', port))
                     return True
             except (socket.error, socket.timeout):
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1.0)  # Increased from 0.5s - reduce CPU usage
         return False
     
     # ===== CLEANUP: Always clean up before starting =====
@@ -782,7 +727,7 @@ async def start_project_dev_server(
         port=project.dev_server_port,
         pid=project.dev_server_pid
     )
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.1)  # Reduced from 0.5s
     
     # ===== 0. Ensure next.config.ts has iframe headers =====
     next_config_path = workspace_path / "next.config.ts"
@@ -865,13 +810,11 @@ async def start_project_dev_server(
         # Run in thread to avoid blocking event loop (can take 5+ minutes)
         install_result = await asyncio.to_thread(
             subprocess.run,
-            "pnpm install" if is_windows else ["pnpm", "install"],
+            ["pnpm", "install"],
             cwd=str(workspace_path),
-            shell=is_windows,
             capture_output=True,
             text=True,
-            timeout=300,  # 5 minutes timeout for install
-            creationflags=0x08000000 if is_windows else 0,
+            timeout=120,  # 2 minutes timeout (reduced from 5 min)
         )
         if install_result.returncode != 0:
             await broadcast_log("Failed to install dependencies", "error")
@@ -888,13 +831,11 @@ async def start_project_dev_server(
             # Push schema to database
             db_push_result = await asyncio.to_thread(
                 subprocess.run,
-                "pnpm prisma db push --skip-generate" if is_windows else ["pnpm", "prisma", "db", "push", "--skip-generate"],
+                ["pnpm", "prisma", "db", "push", "--skip-generate"],
                 cwd=str(workspace_path),
-                shell=is_windows,
                 capture_output=True,
                 text=True,
-                timeout=60,
-                creationflags=0x08000000 if is_windows else 0,
+                timeout=45,  # Reduced from 60s
             )
             if db_push_result.returncode == 0:
                 await broadcast_log("Database schema ready", "success")
@@ -908,13 +849,11 @@ async def start_project_dev_server(
             logger.info("Running Prisma generate...")
             generate_result = await asyncio.to_thread(
                 subprocess.run,
-                "pnpm prisma generate" if is_windows else ["pnpm", "prisma", "generate"],
+                ["pnpm", "prisma", "generate"],
                 cwd=str(workspace_path),
-                shell=is_windows,
                 capture_output=True,
                 text=True,
-                timeout=60,
-                creationflags=0x08000000 if is_windows else 0,
+                timeout=45,  # Reduced from 60s
             )
             if generate_result.returncode == 0:
                 await broadcast_log("Prisma client generated", "success")
@@ -944,7 +883,6 @@ async def start_project_dev_server(
                     capture_output=True,
                     text=True,
                     timeout=120,
-                    creationflags=0x08000000 if is_windows else 0,
                 )
                 if seed_result.returncode == 0:
                     await broadcast_log("Database seeded", "success")
@@ -968,13 +906,11 @@ async def start_project_dev_server(
     for attempt in range(max_attempts):
         try:
             process = subprocess.Popen(
-                f"pnpm dev --port {port} --hostname 0.0.0.0" if is_windows else ["pnpm", "dev", "--port", str(port), "--hostname", "0.0.0.0"],
+                ["pnpm", "dev", "--port", str(port), "--hostname", "0.0.0.0"],
                 cwd=str(workspace_path),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
-                shell=is_windows,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if is_windows else 0,
                 env={**os.environ, "FORCE_COLOR": "0"},
             )
             
@@ -982,7 +918,7 @@ async def start_project_dev_server(
             await broadcast_log(f"Waiting for server to be ready on port {port}...")
             logger.info(f"Waiting for dev server on port {port}...")
             
-            if await wait_for_port_async(port, timeout=60.0) and process.poll() is None:
+            if await wait_for_port_async(port, timeout=30.0) and process.poll() is None:  # Reduced from 60s
                 # Store in project
                 project.dev_server_port = port
                 project.dev_server_pid = process.pid
@@ -1020,7 +956,7 @@ async def start_project_dev_server(
                 if killed:
                     await broadcast_log(f"Killed {killed} processes")
                     logger.info(f"Killed {killed} processes")
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.2)  # Reduced from 1s
                 
                 # Try new port
                 port = find_free_port()
@@ -1151,18 +1087,10 @@ def get_project_dev_server_status(
     # Verify process is actually running
     is_running = False
     if project.dev_server_port and project.dev_server_pid:
-        is_windows = sys.platform == 'win32'
         try:
-            if is_windows:
-                CREATE_NO_WINDOW = 0x08000000
-                result = subprocess.run(
-                    f'tasklist /FI "PID eq {project.dev_server_pid}"',
-                    shell=True, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
-                )
-                is_running = str(project.dev_server_pid) in result.stdout
-            else:
-                os.kill(project.dev_server_pid, 0)  # Check if process exists
-                is_running = True
+            import signal
+            os.kill(project.dev_server_pid, 0)  # Check if process exists
+            is_running = True
         except Exception:
             is_running = False
         
@@ -1203,9 +1131,9 @@ async def restart_project_dev_server(
         project_id=project_id
     )
     
-    # Wait a bit for cleanup
+    # Brief wait for cleanup
     import asyncio
-    await asyncio.sleep(1)
+    await asyncio.sleep(0.1)  # Reduced from 1s
     
     # Start again
     return await start_project_dev_server(
@@ -1338,14 +1266,12 @@ async def seed_project_database(
     if not seed_file.exists() and not seed_file_js.exists():
         raise HTTPException(status_code=400, detail="No seed file found (prisma/seed.ts or prisma/seed.js)")
     
-    is_windows = sys.platform == "win32"
-    
-    # Use prisma db seed - works on all platforms
+    # Use prisma db seed
     if seed_file.exists():
-        seed_args = "pnpm prisma db seed"
+        seed_args = ["pnpm", "prisma", "db", "seed"]
     else:
-        seed_args = "node prisma/seed.js"
-    use_shell = True
+        seed_args = ["node", "prisma/seed.js"]
+    use_shell = False
     
     # Broadcast start
     from app.websocket.connection_manager import connection_manager

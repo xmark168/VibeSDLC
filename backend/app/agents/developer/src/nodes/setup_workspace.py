@@ -41,13 +41,21 @@ def _run_pnpm_install(workspace_path: str) -> bool:
     lockfile = Path(workspace_path) / "pnpm-lock.yaml"
     try:
         if lockfile.exists():
-            result = subprocess.run("pnpm install --frozen-lockfile --offline", cwd=workspace_path, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60, shell=True)
+            result = subprocess.run(
+                ["pnpm", "install", "--frozen-lockfile", "--offline"],
+                cwd=workspace_path, capture_output=True, text=True,
+                encoding='utf-8', errors='replace', timeout=60
+            )
             if result.returncode == 0:
                 _update_pnpm_install_cache(workspace_path)
                 return True
             logger.warning(f"[setup_workspace] --frozen-lockfile failed: {result.stderr[:200] if result.stderr else ''}")
         
-        result = subprocess.run("pnpm install", cwd=workspace_path, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120, shell=True)
+        result = subprocess.run(
+            ["pnpm", "install"],
+            cwd=workspace_path, capture_output=True, text=True,
+            encoding='utf-8', errors='replace', timeout=120
+        )
         if result.returncode == 0:
             _update_pnpm_install_cache(workspace_path)
             return True
@@ -72,14 +80,13 @@ def _run_prisma_generate(workspace_path: str) -> bool:
     
     try:
         result = subprocess.run(
-            "pnpm exec prisma generate",
+            ["pnpm", "exec", "prisma", "generate"],
             cwd=workspace_path,
             capture_output=True,
             text=True,
             encoding='utf-8',
             errors='replace',
             timeout=60,
-            shell=True,
         )
         if result.returncode == 0:
             _update_prisma_generate_cache(workspace_path)
@@ -281,30 +288,25 @@ async def setup_workspace(state: DeveloperState, agent=None) -> DeveloperState:
                     "skill_registry": skill_registry,
                 }
             
-            # STEP 2: Run DB + Prisma in PARALLEL (both depend on pnpm install)
-            await story_logger.info("⚡ Starting parallel setup: DB + Prisma...")
-            db_future = loop.run_in_executor(_executor, partial(_start_database, workspace_path, story_id))
-            prisma_future = loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
-            
-            db_result, gen_success = await asyncio.gather(db_future, prisma_future)
+            # STEP 2: Run DB + Prisma SEQUENTIALLY (DB must be ready before Prisma)
+            await story_logger.info("🐘 Starting database...")
+            db_result = await loop.run_in_executor(_executor, partial(_start_database, workspace_path, story_id))
             
             database_ready = db_result.get("ready", False)
+            if database_ready:
+                await story_logger.info("✅ Database ready")
+            else:
+                await story_logger.warning("⚠️ Database not ready, continuing without DB")
             
-            # Prisma generate is CRITICAL if schema exists - block setup on failure
+            await story_logger.info("⚙️ Generating Prisma client...")
+            gen_success = await loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
+            
+            # Prisma generate failure is WARNING not ERROR (can regenerate during build)
             if not gen_success:
-                await story_logger.error("❌ Prisma client generation failed")
-                return {
-                    **state,
-                    "workspace_path": workspace_path,
-                    "branch_name": branch_name,
-                    "main_workspace": workspace_info.get("main_workspace", workspace_path),
-                    "workspace_ready": False,
-                    "run_status": "error",
-                    "error": "Prisma client generation failed. Ensure @prisma/client is installed and schema.prisma is valid.",
-                    "project_context": project_context,
-                    "agents_md": agents_md,
-                    "skill_registry": skill_registry,
-                }
+                await story_logger.warning("⚠️ Prisma client generation failed")
+                await story_logger.info("💡 Will retry during build step")
+            else:
+                await story_logger.info("✅ Prisma client generated")
         
         # Build project config with tech stack
         project_config = _build_project_config(tech_stack)
