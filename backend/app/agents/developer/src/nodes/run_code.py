@@ -77,58 +77,44 @@ def _has_script(workspace_path: str, script_name: str) -> bool:
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=10, thread_name_prefix="runcode_worker")
 
 
-def _should_skip_seed(workspace_path: str) -> bool:
-    """Check if seed can be skipped (seed.ts AND schema.prisma unchanged)."""
-    seed_file = Path(workspace_path) / "prisma" / "seed.ts"
-    schema_file = Path(workspace_path) / "prisma" / "schema.prisma"
-    cache_file = Path(workspace_path) / ".seed_cache"
-    
-    if not seed_file.exists():
-        return True  # No seed file, nothing to run
+# Seed cache disabled - always run seed to ensure fresh data
+# def _should_skip_seed(workspace_path: str) -> bool:
+#     """Check if seed can be skipped (seed.ts AND schema.prisma unchanged)."""
+#     return False  # Always run seed
+
+# def _update_seed_cache(workspace_path: str) -> None:
+#     """Update seed cache after successful seed (combined seed.ts + schema.prisma hash)."""
+#     pass  # Cache disabled
+
+
+def _run_prisma_generate(workspace_path: str) -> bool:
+    """Run prisma generate (blocking). Returns True if successful."""
+    schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
+    if not os.path.exists(schema_path):
+        return True  # No schema, nothing to generate
     
     try:
-        # Calculate combined hash of seed.ts and schema.prisma
-        seed_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
-        
-        # Include schema hash if schema exists
-        if schema_file.exists():
-            schema_hash = hashlib.md5(schema_file.read_bytes()).hexdigest()
-            current_hash = f"{seed_hash}:{schema_hash}"
+        result = subprocess.run(
+            ["pnpm", "exec", "prisma", "generate"],
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=60,
+        )
+        if result.returncode == 0:
+            logger.debug("[run_code] prisma generate successful")
+            return True
         else:
-            current_hash = seed_hash
-        
-        # Check cache
-        if cache_file.exists():
-            cached_hash = cache_file.read_text().strip()
-            if cached_hash == current_hash:
-                return True  # Both unchanged
-    except Exception:
-        pass
-    
-    return False  # Re-run seed (changed or no cache)
-
-
-def _update_seed_cache(workspace_path: str) -> None:
-    """Update seed cache after successful seed (combined seed.ts + schema.prisma hash)."""
-    seed_file = Path(workspace_path) / "prisma" / "seed.ts"
-    schema_file = Path(workspace_path) / "prisma" / "schema.prisma"
-    cache_file = Path(workspace_path) / ".seed_cache"
-    
-    try:
-        if seed_file.exists():
-            # Calculate combined hash
-            seed_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
-            
-            # Include schema hash if schema exists
-            if schema_file.exists():
-                schema_hash = hashlib.md5(schema_file.read_bytes()).hexdigest()
-                current_hash = f"{seed_hash}:{schema_hash}"
-            else:
-                current_hash = seed_hash
-            
-            cache_file.write_text(current_hash)
-    except Exception:
-        pass
+            logger.warning(f"[run_code] prisma generate failed: {result.stderr[:200] if result.stderr else 'unknown'}")
+            return False
+    except subprocess.TimeoutExpired:
+        logger.warning("[run_code] prisma generate timed out")
+        return False
+    except Exception as e:
+        logger.warning(f"[run_code] prisma generate error: {e}")
+        return False
 
 
 def _run_prisma_db_push(workspace_path: str) -> bool:
@@ -163,16 +149,44 @@ def _run_prisma_db_push(workspace_path: str) -> bool:
 
 
 def _run_seed(workspace_path: str) -> Tuple[bool, str, str]:
-    """Run database seed (blocking). Returns (success, stdout, stderr)."""
+    """Run database seed (blocking). Always runs, auto-fixes config.
+    
+    Returns (success, stdout, stderr)
+    """
     seed_file = Path(workspace_path) / "prisma" / "seed.ts"
     
     if not seed_file.exists():
+        logger.debug("[run_code] No seed file, skipping")
         return True, "", ""
     
-    if _should_skip_seed(workspace_path):
-        logger.debug("[run_code] Skipping seed (cached)")
-        return True, "", ""
+    # Auto-fix: Ensure package.json has prisma.seed config
+    package_json_path = Path(workspace_path) / "package.json"
+    if package_json_path.exists():
+        import json
+        try:
+            pkg = json.loads(package_json_path.read_text())
+            
+            # Check if prisma.seed config exists
+            needs_fix = False
+            if "prisma" not in pkg:
+                pkg["prisma"] = {}
+                needs_fix = True
+            
+            if "seed" not in pkg.get("prisma", {}):
+                pkg["prisma"]["seed"] = "tsx prisma/seed.ts"
+                needs_fix = True
+            
+            if needs_fix:
+                # Write back with proper formatting
+                package_json_path.write_text(
+                    json.dumps(pkg, indent=2, ensure_ascii=False) + "\n",
+                    encoding='utf-8'
+                )
+                logger.info("[run_code] Auto-fixed: Added prisma.seed config to package.json")
+        except Exception as e:
+            logger.warning(f"[run_code] Could not check/fix package.json: {e}")
     
+    # Seed cache disabled - always run seed to ensure fresh data
     logger.debug("[run_code] Running database seed...")
     # Use prisma db seed command - handles compiler-options automatically
     success, stdout, stderr = _run_step(
@@ -181,7 +195,6 @@ def _run_seed(workspace_path: str) -> Tuple[bool, str, str]:
     )
     
     if success:
-        _update_seed_cache(workspace_path)
         logger.debug("[run_code] Database seeded successfully")
     else:
         logger.error(f"[run_code] Seed FAILED: {stderr[:500] if stderr else stdout[:500] if stdout else 'unknown'}")
@@ -435,15 +448,42 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         await log(f"Found {len(services)} service(s): {', '.join(service_names)}")
         
         # =====================================================================
-        # Step 0: Prisma DB Push (generate already done in setup_workspace)
+        # Step 0: Prisma Generate + DB Push
         # =====================================================================
         schema_file = Path(workspace_path) / "prisma" / "schema.prisma"
         if schema_file.exists():
-            await log("🗄️ Syncing database schema...")
+            await log("🗄️ Checking Prisma client...")
             
             loop = asyncio.get_event_loop()
             
-            # Only db push - generate already done in setup_workspace
+            # Check if Prisma client needs regeneration
+            client_index = Path(workspace_path) / "node_modules" / ".prisma" / "client" / "index.d.ts"
+            needs_generate = False
+            
+            if not client_index.exists():
+                await log("Prisma client not generated, generating...")
+                needs_generate = True
+            else:
+                # Check if schema is newer than generated client
+                schema_mtime = schema_file.stat().st_mtime
+                client_mtime = client_index.stat().st_mtime
+                
+                if schema_mtime > client_mtime:
+                    await log("Schema changed, regenerating Prisma client...")
+                    needs_generate = True
+            
+            # Regenerate if needed
+            if needs_generate:
+                gen_success = await loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
+                if gen_success:
+                    await log("✅ Prisma client generated")
+                else:
+                    await log("⚠️ Prisma generate failed (continuing anyway)", "warning")
+            else:
+                await log("✅ Prisma client up-to-date")
+            
+            # DB push (sync schema to database)
+            await log("Syncing database schema...")
             push_success = await loop.run_in_executor(_executor, _run_prisma_db_push, workspace_path)
             
             if not push_success:
@@ -468,20 +508,18 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         seed_file = Path(workspace_path) / "prisma" / "seed.ts"
         if seed_file.exists():
             await log("🌱 Running database seed...")
-            if _should_skip_seed(workspace_path):
-                await log("Seed skipped (no changes detected)", "debug")
+            # Always run seed (cache disabled for fresh data)
+            loop = asyncio.get_event_loop()
+            seed_success, seed_stdout, seed_stderr = await loop.run_in_executor(_executor, _run_seed, workspace_path)
+            if seed_success:
+                await log("Database seed completed", "success")
             else:
-                loop = asyncio.get_event_loop()
-                seed_success, seed_stdout, seed_stderr = await loop.run_in_executor(_executor, _run_seed, workspace_path)
-                if seed_success:
-                    await log("Database seed completed", "success")
-                else:
-                    # Seed failed - return to ANALYZE_ERROR for fixing
-                    error_output = seed_stderr or seed_stdout or "Unknown seed error"
-                    await log(f"❌ Database seed FAILED: {error_output[:500]}", "error")
-                    await story_logger.message(f"❌ Seed failed - analyzing error...")
-                    if run_code_span:
-                        run_code_span.end(output={"status": "FAIL", "step": "seed", "error": error_output[:500]})
+                # Seed failed - return to ANALYZE_ERROR for fixing
+                error_output = seed_stderr or seed_stdout or "Unknown seed error"
+                await log(f"❌ Database seed FAILED: {error_output[:500]}", "error")
+                await story_logger.message(f"❌ Seed failed - analyzing error...")
+                if run_code_span:
+                    run_code_span.end(output={"status": "FAIL", "step": "seed", "error": error_output[:500]})
                     return {
                         **state,
                         "run_status": "FAIL",

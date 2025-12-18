@@ -1269,12 +1269,9 @@ async def start_dev_server(
             await log_to_story(f"Attempt {attempt + 1}/{max_attempts} failed: {str(e)}", "warning")
             
             if attempt < max_attempts - 1:
-                # Kill processes using the directory
-                await log_to_story(f"Killing processes using directory...")
-                killed = kill_processes_using_directory(story.worktree_path)
-                if killed:
-                    await log_to_story(f"Killed {killed} processes")
-                await asyncio.sleep(0.2)  # Reduced from 1s - just need brief cleanup
+                # Clean up and retry with new port
+                await log_to_story(f"Cleaning up for retry...")
+                await asyncio.sleep(0.2)
                 
                 # Try new port
                 port = find_free_port()

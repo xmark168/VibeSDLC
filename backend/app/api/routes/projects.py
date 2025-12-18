@@ -595,56 +595,74 @@ def _get_workspace_path(project_path: str) -> Path:
     return workspace_path
 
 
-def kill_processes_using_directory(directory: str) -> int:
-    """Kill all node/pnpm processes using pkill. Returns count killed."""
-    import subprocess
-    
-    killed = 0
-    try:
-        # Use pkill to kill node and pnpm processes
-        result = subprocess.run(
-            ["pkill", "-9", "-f", "node|pnpm"],
-            capture_output=True
-        )
-        if result.returncode == 0:
-            killed = 1  # At least one process killed
-    except:
-        pass
-    
-    return killed
-
-
 def _cleanup_dev_server(workspace_path: Path, port: int = None, pid: int = None) -> None:
-    """Clean up dev server processes and lock files."""
+    """Clean up dev server processes and lock files.
+    
+    SAFETY: Only kills processes by specific PID or port.
+    Does NOT use pkill which could kill all Node processes system-wide.
+    """
     import subprocess
     import signal
+    import time
     
-    # Kill by PID
+    # Kill by PID (graceful then force)
     if pid:
         try:
-            os.kill(pid, signal.SIGKILL)
-            logger.info(f"Killed process PID {pid}")
+            # Try graceful shutdown first
+            os.kill(pid, signal.SIGTERM)
+            logger.info(f"Sent SIGTERM to process PID {pid}")
+            time.sleep(0.5)
+            
+            # Force kill if still alive
+            try:
+                os.kill(pid, signal.SIGKILL)
+                logger.info(f"Force killed process PID {pid}")
+            except ProcessLookupError:
+                logger.debug(f"Process {pid} already terminated")
+        except ProcessLookupError:
+            logger.debug(f"Process {pid} not found")
         except Exception as e:
             logger.warning(f"Failed to kill process {pid}: {e}")
     
-    # Kill by port using lsof
+    # Kill by port using lsof (graceful then force)
     if port:
         try:
+            # Find PIDs using the port
             result = subprocess.run(
                 ["lsof", "-ti", f":{port}"],
-                capture_output=True, text=True
+                capture_output=True, text=True, timeout=5
             )
             if result.stdout.strip():
-                for pid_str in result.stdout.strip().split('\n'):
+                pids = result.stdout.strip().split('\n')
+                
+                # Graceful shutdown first
+                for pid_str in pids:
                     try:
-                        os.kill(int(pid_str), signal.SIGKILL)
-                        logger.info(f"Killed process on port {port}: PID {pid_str}")
+                        pid_int = int(pid_str)
+                        os.kill(pid_int, signal.SIGTERM)
+                        logger.info(f"Sent SIGTERM to process on port {port}: PID {pid_str}")
                     except:
                         pass
+                
+                # Wait for graceful shutdown
+                time.sleep(0.5)
+                
+                # Force kill if still alive
+                result2 = subprocess.run(
+                    ["lsof", "-ti", f":{port}"],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result2.stdout.strip():
+                    for pid_str in result2.stdout.strip().split('\n'):
+                        try:
+                            os.kill(int(pid_str), signal.SIGKILL)
+                            logger.info(f"Force killed process on port {port}: PID {pid_str}")
+                        except:
+                            pass
         except Exception as e:
             logger.warning(f"Failed to kill processes on port {port}: {e}")
     
-    # Always clean up Next.js artifacts
+    # Clean up Next.js artifacts (file cleanup only, NO process killing)
     if workspace_path and workspace_path.exists():
         # Remove lock file
         lock_file = workspace_path / ".next" / "dev" / "lock"
@@ -665,11 +683,10 @@ def _cleanup_dev_server(workspace_path: Path, port: int = None, pid: int = None)
             except Exception:
                 pass
     
-    # Kill all node/pnpm processes using workspace
-    if workspace_path and workspace_path.exists():
-        killed = kill_processes_using_directory(str(workspace_path))
-        if killed > 0:
-            logger.info(f"Killed {killed} node/pnpm processes")
+    # NOTE: Removed kill_processes_using_directory() call - DANGEROUS!
+    # Old code used 'pkill -9 -f node|pnpm' which kills ALL node processes system-wide,
+    # including backend server, other projects, and system tools.
+    # PID and port-based killing is sufficient and safe.
 
 
 @router.post("/{project_id}/dev-server/start")
@@ -950,13 +967,9 @@ async def start_project_dev_server(
             await broadcast_log(f"Attempt {attempt + 1}/{max_attempts} failed: {str(e)}", "warning")
             
             if attempt < max_attempts - 1:
-                # Kill processes using the directory
-                await broadcast_log(f"Killing processes using directory...")
-                killed = kill_processes_using_directory(str(workspace_path))
-                if killed:
-                    await broadcast_log(f"Killed {killed} processes")
-                    logger.info(f"Killed {killed} processes")
-                await asyncio.sleep(0.2)  # Reduced from 1s
+                # Clean up and retry with new port
+                await broadcast_log(f"Cleaning up for retry...")
+                await asyncio.sleep(0.2)
                 
                 # Try new port
                 port = find_free_port()
