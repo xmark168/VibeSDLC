@@ -1,16 +1,16 @@
 /**
  * Server-Sent Events (SSE) hook for real-time pool updates
- * 
+ *
  * Connects to /api/v1/agent-management/pools/events and receives:
  * - pool_stats: Pool statistics updates every 5s
  * - agent_health: Agent health status updates
  * - heartbeat: Connection keepalive
  */
 
-import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { agentQueryKeys } from '@/queries/agents'
-import { OpenAPI } from '@/client'
+import { useQueryClient } from "@tanstack/react-query"
+import { useEffect, useRef, useState } from "react"
+import { OpenAPI } from "@/client"
+import { agentQueryKeys } from "@/queries/agents"
 
 interface PoolStatsEvent {
   pool_name: string
@@ -63,16 +63,19 @@ export function usePoolEventsSSE(options?: {
     }
 
     // Get auth token
-    const token = localStorage.getItem('access_token')
+    const token = localStorage.getItem("access_token")
     if (!token) {
-      setState({ connected: false, error: 'No authentication token', lastUpdate: null })
+      setState({
+        connected: false,
+        error: "No authentication token",
+        lastUpdate: null,
+      })
       return
     }
 
     // Build SSE URL with auth token
-    const baseUrl = OpenAPI.BASE || ''
+    const baseUrl = OpenAPI.BASE || ""
     const url = `${baseUrl}/api/v1/agent-management/pools/events`
-    
 
     const urlWithToken = `${url}?token=${encodeURIComponent(token)}`
 
@@ -81,17 +84,17 @@ export function usePoolEventsSSE(options?: {
     eventSourceRef.current = eventSource
 
     // Handle connection open
-    eventSource.addEventListener('open', () => {
+    eventSource.addEventListener("open", () => {
       setState((prev) => ({ ...prev, connected: true, error: null }))
     })
 
     // Handle 'connected' event
-    eventSource.addEventListener('connected', (event) => {
-      const data = JSON.parse(event.data)
+    eventSource.addEventListener("connected", (event) => {
+      const _data = JSON.parse(event.data)
     })
 
     // Handle 'pool_stats' event
-    eventSource.addEventListener('pool_stats', (event) => {
+    eventSource.addEventListener("pool_stats", (event) => {
       try {
         const stats: PoolStatsEvent[] = JSON.parse(event.data)
 
@@ -104,12 +107,11 @@ export function usePoolEventsSSE(options?: {
         // Invalidate React Query cache to trigger refetch
         queryClient.invalidateQueries({ queryKey: agentQueryKeys.pools() })
         queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
-      } catch (error) {
-      }
+      } catch (_error) {}
     })
 
     // Handle 'agent_health' event
-    eventSource.addEventListener('agent_health', (event) => {
+    eventSource.addEventListener("agent_health", (event) => {
       try {
         const health: AgentHealthEvent[] = JSON.parse(event.data)
 
@@ -118,38 +120,42 @@ export function usePoolEventsSSE(options?: {
 
         // Invalidate health queries
         queryClient.invalidateQueries({ queryKey: agentQueryKeys.health() })
-      } catch (error) {
-      }
+      } catch (_error) {}
     })
 
     // Handle 'heartbeat' event
-    eventSource.addEventListener('heartbeat', (event) => {
+    eventSource.addEventListener("heartbeat", (event) => {
       try {
         const data = JSON.parse(event.data)
         setState((prev) => ({ ...prev, lastUpdate: new Date(data.timestamp) }))
-      } catch (error) {
-      }
+      } catch (_error) {}
     })
 
-    eventSource.addEventListener('error_event', (event) => {
+    eventSource.addEventListener("error_event", (event) => {
       try {
         const data = JSON.parse(event.data)
         setState((prev) => ({ ...prev, error: data.error }))
         options?.onError?.(new Error(data.error))
-      } catch (error) {
-      }
+      } catch (_error) {}
     })
 
     // Handle connection errors
-    eventSource.onerror = (event) => {
-      
+    eventSource.onerror = (_event) => {
       if (eventSource.readyState === EventSource.CLOSED) {
-        setState({ connected: false, error: 'Connection closed', lastUpdate: null })
+        setState({
+          connected: false,
+          error: "Connection closed",
+          lastUpdate: null,
+        })
       } else if (eventSource.readyState === EventSource.CONNECTING) {
-        setState((prev) => ({ ...prev, connected: false, error: 'Reconnecting...' }))
+        setState((prev) => ({
+          ...prev,
+          connected: false,
+          error: "Reconnecting...",
+        }))
       } else {
-        setState((prev) => ({ ...prev, error: 'Connection error' }))
-        options?.onError?.(new Error('SSE connection error'))
+        setState((prev) => ({ ...prev, error: "Connection error" }))
+        options?.onError?.(new Error("SSE connection error"))
       }
     }
 

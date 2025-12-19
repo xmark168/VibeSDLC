@@ -1,9 +1,9 @@
+import { zodResolver } from "@hookform/resolvers/zod"
+import { Loader2 } from "lucide-react"
 import { useEffect } from "react"
 import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import type { UserAdmin, UserAdminCreate } from "@/types/user"
-import { useCreateUser, useUpdateUser } from "@/queries/users"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -22,7 +22,6 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -31,26 +30,32 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Loader2 } from "lucide-react"
+import { useCreateUser, useUpdateUser } from "@/queries/users"
+import type { UserAdmin, UserAdminCreate } from "@/types/user"
 
-const userFormSchema = z.object({
-  username: z.string().max(50).optional().nullable(),
-  full_name: z.string().max(50).optional().nullable(),
-  email: z.string().email("Invalid email address"),
-  password: z.string().optional().or(z.literal("")),
-  confirm_password: z.string().optional().or(z.literal("")),
-  role: z.enum(["admin", "user"]),
-  is_active: z.boolean(),
-}).refine((data) => {
-  // Only validate password match when creating new user
-  if (data.password && data.password.length > 0) {
-    return data.password === data.confirm_password
-  }
-  return true
-}, {
-  message: "Passwords do not match",
-  path: ["confirm_password"],
-})
+const userFormSchema = z
+  .object({
+    username: z.string().max(50).optional().nullable(),
+    full_name: z.string().max(50).optional().nullable(),
+    email: z.string().email("Invalid email address"),
+    password: z.string().optional().or(z.literal("")),
+    confirm_password: z.string().optional().or(z.literal("")),
+    role: z.enum(["admin", "user"]),
+    is_active: z.boolean(),
+  })
+  .refine(
+    (data) => {
+      // Only validate password match when creating new user
+      if (data.password && data.password.length > 0) {
+        return data.password === data.confirm_password
+      }
+      return true
+    },
+    {
+      message: "Passwords do not match",
+      path: ["confirm_password"],
+    },
+  )
 
 type UserFormValues = z.infer<typeof userFormSchema>
 
@@ -61,7 +66,12 @@ interface UserDialogProps {
   onSuccess?: () => void
 }
 
-export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogProps) {
+export function UserDialog({
+  open,
+  onOpenChange,
+  user,
+  onSuccess,
+}: UserDialogProps) {
   const isEditing = !!user
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
@@ -101,13 +111,15 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
         is_active: true,
       })
     }
-  }, [user, form, open])
+  }, [user, form])
 
   const onSubmit = async (data: UserFormValues) => {
     try {
       // Validate password for new users
       if (!isEditing && (!data.password || data.password.length < 6)) {
-        form.setError("password", { message: "Password must be at least 6 characters" })
+        form.setError("password", {
+          message: "Password must be at least 6 characters",
+        })
         return
       }
 
@@ -135,17 +147,20 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
 
       form.reset()
       onSuccess?.()
-    } catch (error) {
-    }
+    } catch (_error) {}
   }
 
   const isLoading = createUser.isPending || updateUser.isPending
-  
+
   // Watch password fields to check if they match
   const password = form.watch("password")
   const confirmPassword = form.watch("confirm_password")
-  const passwordsMatch = !isEditing && password && confirmPassword && password === confirmPassword
-  const isSubmitDisabled = isLoading || (!isEditing && (!password || !confirmPassword || password !== confirmPassword))
+  const _passwordsMatch =
+    !isEditing && password && confirmPassword && password === confirmPassword
+  const isSubmitDisabled =
+    isLoading ||
+    (!isEditing &&
+      (!password || !confirmPassword || password !== confirmPassword))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -300,7 +315,10 @@ export function UserDialog({ open, onOpenChange, user, onSuccess }: UserDialogPr
                       </FormDescription>
                     </div>
                     <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
                     </FormControl>
                   </FormItem>
                 )}

@@ -1,26 +1,22 @@
-import { useEffect, useState } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
-import type { AgentPublic } from "@/client/types.gen"
-import { useAgentActivity } from "@/queries/agents"
 import { formatDistanceToNow } from "date-fns"
 import { vi } from "date-fns/locale"
 import {
-  MessageCircle,
+  Activity,
+  FileCode,
   FileText,
   HelpCircle,
-  FileCode,
   Info,
-  Activity,
+  MessageCircle,
 } from "lucide-react"
+import { useEffect, useState } from "react"
+import type { AgentPublic } from "@/client/types.gen"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { useAgentActivity } from "@/queries/agents"
 
 interface AgentPopupProps {
   agent: AgentPublic | null
@@ -88,10 +84,16 @@ export function AgentPopup({
   onOpenChange,
   onMessage,
 }: AgentPopupProps) {
-  const [activeTab, setActiveTab] = useState<"description" | "activity">("description")
-  
+  const [activeTab, setActiveTab] = useState<"description" | "activity">(
+    "description",
+  )
+
   // Fetch activity data when dialog opens
-  const { data: activity, isLoading, refetch } = useAgentActivity(agent?.id || "", {
+  const {
+    data: activity,
+    isLoading,
+    refetch,
+  } = useAgentActivity(agent?.id || "", {
     enabled: open && !!agent?.id,
   })
 
@@ -111,7 +113,9 @@ export function AgentPopup({
   }
 
   // Get avatar URL - prefer persona_avatar, fallback to generated
-  const avatarUrl = agent.persona_avatar || generateFallbackAvatarUrl(agent.human_name, agent.role_type)
+  const avatarUrl =
+    agent.persona_avatar ||
+    generateFallbackAvatarUrl(agent.human_name, agent.role_type)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -130,28 +134,38 @@ export function AgentPopup({
                 className="w-16 h-16 rounded-2xl shadow-lg ring-2 ring-background object-cover"
                 onError={(e) => {
                   // Fallback if persona_avatar fails to load
-                  e.currentTarget.src = generateFallbackAvatarUrl(agent.human_name, agent.role_type)
+                  e.currentTarget.src = generateFallbackAvatarUrl(
+                    agent.human_name,
+                    agent.role_type,
+                  )
                 }}
               />
               {/* Status dot overlay */}
-              <span 
+              <span
                 className={cn(
                   "absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-background",
-                  getStatusColor(activity?.status || agent.status)
-                )} 
+                  getStatusColor(activity?.status || agent.status),
+                )}
               />
             </div>
-            
+
             <div className="flex-1 min-w-0 pt-0.5">
-              <h3 className="font-semibold text-lg truncate">{agent.human_name}</h3>
-              <p className="text-sm text-muted-foreground">{getRoleDesignation(agent.role_type)}</p>
-              <Badge 
-                variant="outline" 
+              <h3 className="font-semibold text-lg truncate">
+                {agent.human_name}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {getRoleDesignation(agent.role_type)}
+              </p>
+              <Badge
+                variant="outline"
                 className={cn(
                   "mt-2 text-xs capitalize",
-                  (activity?.status || agent.status) === "busy" && "border-yellow-500 text-yellow-600",
-                  (activity?.status || agent.status) === "idle" && "border-green-500 text-green-600",
-                  (activity?.status || agent.status) === "error" && "border-red-500 text-red-600"
+                  (activity?.status || agent.status) === "busy" &&
+                    "border-yellow-500 text-yellow-600",
+                  (activity?.status || agent.status) === "idle" &&
+                    "border-green-500 text-green-600",
+                  (activity?.status || agent.status) === "error" &&
+                    "border-red-500 text-red-600",
                 )}
               >
                 {activity?.status || agent.status}
@@ -168,7 +182,7 @@ export function AgentPopup({
               "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors",
               activeTab === "description"
                 ? "text-primary border-b-2 border-primary"
-                : "text-muted-foreground hover:text-foreground"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             <Info className="w-4 h-4" />
@@ -180,7 +194,7 @@ export function AgentPopup({
               "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors",
               activeTab === "activity"
                 ? "text-primary border-b-2 border-primary"
-                : "text-muted-foreground hover:text-foreground"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             <Activity className="w-4 h-4" />
@@ -193,25 +207,31 @@ export function AgentPopup({
           {activeTab === "description" ? (
             <div className="p-5 space-y-4">
               <div>
-                <p className="text-sm font-medium text-muted-foreground mb-2">About</p>
-              {/* Status Message / Description */}
-              {isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-3/4" />
-                </div>
-              ) : activity?.status_message ? (
-                <p className="text-sm leading-relaxed text-foreground">
-                  {activity.status_message}
+                <p className="text-sm font-medium text-muted-foreground mb-2">
+                  About
                 </p>
-              ) : (
-                <p className="text-sm text-muted-foreground italic">No description available</p>
-              )}
+                {/* Status Message / Description */}
+                {isLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                  </div>
+                ) : activity?.status_message ? (
+                  <p className="text-sm leading-relaxed text-foreground">
+                    {activity.status_message}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">
+                    No description available
+                  </p>
+                )}
               </div>
 
               {/* Skills */}
               <div>
-                <p className="text-sm font-medium text-muted-foreground mb-2">Skills</p>
+                <p className="text-sm font-medium text-muted-foreground mb-2">
+                  Skills
+                </p>
                 {isLoading ? (
                   <div className="flex gap-1.5 flex-wrap">
                     <Skeleton className="h-6 w-16 rounded-full" />
@@ -221,13 +241,19 @@ export function AgentPopup({
                 ) : activity?.skills && activity.skills.length > 0 ? (
                   <div className="flex gap-2 flex-wrap">
                     {activity.skills.map((skill, index) => (
-                      <Badge key={index} variant="secondary" className="text-xs px-2.5 py-0.5">
+                      <Badge
+                        key={index}
+                        variant="secondary"
+                        className="text-xs px-2.5 py-0.5"
+                      >
                         {skill}
                       </Badge>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground italic">No skills listed</p>
+                  <p className="text-sm text-muted-foreground italic">
+                    No skills listed
+                  </p>
                 )}
               </div>
             </div>
@@ -240,17 +266,25 @@ export function AgentPopup({
                   <Skeleton className="h-10 w-full rounded-lg" />
                   <Skeleton className="h-10 w-5/6 rounded-lg" />
                 </div>
-              ) : activity?.recent_activities && activity.recent_activities.length > 0 ? (
+              ) : activity?.recent_activities &&
+                activity.recent_activities.length > 0 ? (
                 <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
                   {activity.recent_activities.map((item) => (
-                    <div 
-                      key={item.id} 
+                    <div
+                      key={item.id}
                       className="flex items-start gap-3 p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                     >
-                      <span className="mt-0.5 flex-shrink-0">{getActivityIcon(item.activity_type)}</span>
-                      <span className="flex-1 min-w-0 text-sm text-foreground line-clamp-2">{item.content}</span>
+                      <span className="mt-0.5 flex-shrink-0">
+                        {getActivityIcon(item.activity_type)}
+                      </span>
+                      <span className="flex-1 min-w-0 text-sm text-foreground line-clamp-2">
+                        {item.content}
+                      </span>
                       <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
-                        {formatDistanceToNow(new Date(item.created_at), { addSuffix: false, locale: vi })}
+                        {formatDistanceToNow(new Date(item.created_at), {
+                          addSuffix: false,
+                          locale: vi,
+                        })}
                       </span>
                     </div>
                   ))}

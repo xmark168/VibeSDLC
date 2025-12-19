@@ -38,7 +38,11 @@ export interface PersonaWithUsageStats extends PersonaTemplate {
   total_agents_created: number
 }
 
-export type RoleType = "team_leader" | "business_analyst" | "developer" | "tester"
+export type RoleType =
+  | "team_leader"
+  | "business_analyst"
+  | "developer"
+  | "tester"
 
 export const roleTypeLabels: Record<RoleType, string> = {
   team_leader: "Team Leader",

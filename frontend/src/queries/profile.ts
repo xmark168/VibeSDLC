@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { getProfile, updateProfile, uploadAvatar, deleteAvatar, getPasswordStatus, changePassword, setPassword } from "@/apis/profile"
+import {
+  changePassword,
+  deleteAvatar,
+  getPasswordStatus,
+  getProfile,
+  setPassword,
+  updateProfile,
+  uploadAvatar,
+} from "@/apis/profile"
 import type { ProfileUpdate } from "@/types/profile"
 
 export const profileKeys = {
@@ -57,8 +65,11 @@ export function usePasswordStatus() {
 
 export function useChangePassword() {
   return useMutation({
-    mutationFn: (data: { current_password: string; new_password: string; confirm_password: string }) =>
-      changePassword(data),
+    mutationFn: (data: {
+      current_password: string
+      new_password: string
+      confirm_password: string
+    }) => changePassword(data),
   })
 }
 
@@ -66,7 +77,8 @@ export function useSetPassword() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (data: { new_password: string; confirm_password: string }) => setPassword(data),
+    mutationFn: (data: { new_password: string; confirm_password: string }) =>
+      setPassword(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: profileKeys.passwordStatus() })
     },

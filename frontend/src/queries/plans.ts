@@ -1,12 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  plansApi,
   type PlanCreate,
-  type PlanUpdate,
   type PlanFilters,
+  type PlanUpdate,
+  plansApi,
 } from "@/apis/plans"
-import { toast } from "@/lib/toast"
 import { parseApiError } from "@/lib/api-error"
+import { toast } from "@/lib/toast"
 
 // ===== Query Keys =====
 export const planQueryKeys = {
@@ -32,9 +32,9 @@ export function usePlans(
     billing_cycle?: string
     is_active?: boolean
     is_featured?: boolean
-    order_by?: 'sort_index' | 'price' | 'created_at' | 'name'
+    order_by?: "sort_index" | "price" | "created_at" | "name"
   },
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean },
 ) {
   return useQuery({
     queryKey: planQueryKeys.list(
@@ -47,7 +47,7 @@ export function usePlans(
         order_by: params?.order_by,
       },
       params?.skip,
-      params?.limit
+      params?.limit,
     ),
     queryFn: () => plansApi.listPlans(params),
     enabled: options?.enabled ?? true,

@@ -1,12 +1,12 @@
-import { OpenAPI } from '@client'
-import { request as __request } from '@client/core/request'
+import { OpenAPI } from "@client"
+import { request as __request } from "@client/core/request"
 import type {
   BacklogItem,
-  KanbanBoard,
   FetchBacklogItemsParams,
-  WIPLimit,
+  KanbanBoard,
   UpdateWIPLimitParams,
-} from '@/types'
+  WIPLimit,
+} from "@/types"
 
 // Re-export types for convenience
 export type {
@@ -23,7 +23,7 @@ export const backlogItemsApi = {
    */
   getKanbanBoard: async (projectId: string): Promise<KanbanBoard> => {
     return __request<KanbanBoard>(OpenAPI, {
-      method: 'GET',
+      method: "GET",
       url: `/api/v1/stories/kanban/${projectId}`,
     })
   },
@@ -31,10 +31,12 @@ export const backlogItemsApi = {
   /**
    * List backlog items with filters
    */
-  list: async (params: FetchBacklogItemsParams): Promise<{ data: BacklogItem[]; count: number }> => {
+  list: async (
+    params: FetchBacklogItemsParams,
+  ): Promise<{ data: BacklogItem[]; count: number }> => {
     return __request<{ data: BacklogItem[]; count: number }>(OpenAPI, {
-      method: 'GET',
-      url: '/api/v1/backlog-items/',
+      method: "GET",
+      url: "/api/v1/backlog-items/",
       query: {
         project_id: params.project_id,
         status: params.status,
@@ -51,7 +53,7 @@ export const backlogItemsApi = {
    */
   get: async (itemId: string): Promise<BacklogItem> => {
     return __request<BacklogItem>(OpenAPI, {
-      method: 'GET',
+      method: "GET",
       url: `/api/v1/backlog-items/${itemId}`,
     })
   },
@@ -61,7 +63,7 @@ export const backlogItemsApi = {
    */
   getWIPLimits: async (projectId: string): Promise<WIPLimit[]> => {
     return __request<WIPLimit[]>(OpenAPI, {
-      method: 'GET',
+      method: "GET",
       url: `/api/v1/projects/${projectId}/wip-limits`,
     })
   },
@@ -72,10 +74,10 @@ export const backlogItemsApi = {
   updateWIPLimit: async (
     projectId: string,
     columnName: string,
-    params: UpdateWIPLimitParams
+    params: UpdateWIPLimitParams,
   ): Promise<WIPLimit> => {
     return __request<WIPLimit>(OpenAPI, {
-      method: 'PUT',
+      method: "PUT",
       url: `/api/v1/projects/${projectId}/wip-limits/${columnName}`,
       body: params,
     })
@@ -87,14 +89,15 @@ export const backlogItemsApi = {
   validateStoryMove: async (
     projectId: string,
     storyId: string,
-    targetStatus: string
+    targetStatus: string,
   ): Promise<{ allowed: boolean; violation: any; warning?: boolean }> => {
-    return __request<{ allowed: boolean; violation: any; warning?: boolean }>(OpenAPI, {
-      method: 'POST',
-      url: `/api/v1/projects/${projectId}/stories/${storyId}/validate-wip`,
-      query: { target_status: targetStatus },
-    })
+    return __request<{ allowed: boolean; violation: any; warning?: boolean }>(
+      OpenAPI,
+      {
+        method: "POST",
+        url: `/api/v1/projects/${projectId}/stories/${storyId}/validate-wip`,
+        query: { target_status: targetStatus },
+      },
+    )
   },
-
 }
-

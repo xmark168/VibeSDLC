@@ -1,14 +1,19 @@
 import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
 import type {
+  FileContentResponse,
   FileNode,
   FileTreeResponse,
-  FileContentResponse,
   GitStatusResponse,
 } from "@/types"
 
 // Re-export types for convenience
-export type { FileNode, FileTreeResponse, FileContentResponse, GitStatusResponse }
+export type {
+  FileNode,
+  FileTreeResponse,
+  FileContentResponse,
+  GitStatusResponse,
+}
 
 // ============= API =============
 
@@ -16,7 +21,11 @@ export const filesApi = {
   /**
    * Get file tree for a project
    */
-  getFileTree: async (projectId: string, depth: number = 15, worktree?: string): Promise<FileTreeResponse> => {
+  getFileTree: async (
+    projectId: string,
+    depth: number = 15,
+    worktree?: string,
+  ): Promise<FileTreeResponse> => {
     return __request<FileTreeResponse>(OpenAPI, {
       method: "GET",
       url: `/api/v1/projects/${projectId}/files/`,
@@ -27,7 +36,12 @@ export const filesApi = {
   /**
    * Lazy load children of a folder
    */
-  getFolderChildren: async (projectId: string, path: string, worktree?: string, depth: number = 1): Promise<FolderChildrenResponse> => {
+  getFolderChildren: async (
+    projectId: string,
+    path: string,
+    worktree?: string,
+    depth: number = 1,
+  ): Promise<FolderChildrenResponse> => {
     return __request<FolderChildrenResponse>(OpenAPI, {
       method: "GET",
       url: `/api/v1/projects/${projectId}/files/children`,
@@ -38,7 +52,11 @@ export const filesApi = {
   /**
    * Get content of a specific file
    */
-  getFileContent: async (projectId: string, path: string, worktree?: string): Promise<FileContentResponse> => {
+  getFileContent: async (
+    projectId: string,
+    path: string,
+    worktree?: string,
+  ): Promise<FileContentResponse> => {
     return __request<FileContentResponse>(OpenAPI, {
       method: "GET",
       url: `/api/v1/projects/${projectId}/files/content`,
@@ -49,7 +67,10 @@ export const filesApi = {
   /**
    * Get git status (modified, added, deleted, untracked files)
    */
-  getGitStatus: async (projectId: string, worktree?: string): Promise<GitStatusResponse> => {
+  getGitStatus: async (
+    projectId: string,
+    worktree?: string,
+  ): Promise<GitStatusResponse> => {
     return __request<GitStatusResponse>(OpenAPI, {
       method: "GET",
       url: `/api/v1/projects/${projectId}/files/git-status`,
@@ -70,7 +91,10 @@ export const filesApi = {
   /**
    * Get git diff for a specific file in story worktree
    */
-  getFileDiff: async (storyId: string, filePath: string): Promise<FileDiffResponse> => {
+  getFileDiff: async (
+    storyId: string,
+    filePath: string,
+  ): Promise<FileDiffResponse> => {
     return __request<FileDiffResponse>(OpenAPI, {
       method: "GET",
       url: `/api/v1/stories/${storyId}/file-diff`,
@@ -109,7 +133,7 @@ export interface BranchesResponse {
 export const getFileDiff = async (
   projectId: string,
   filePath: string,
-  worktree?: string
+  worktree?: string,
 ): Promise<FileDiffResponse> => {
   return __request<FileDiffResponse>(OpenAPI, {
     method: "GET",

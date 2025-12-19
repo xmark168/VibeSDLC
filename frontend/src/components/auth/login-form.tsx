@@ -1,15 +1,15 @@
 import { Link } from "@tanstack/react-router"
 import { motion } from "framer-motion"
+import { Eye, EyeOff, Facebook, Github, Loader2 } from "lucide-react"
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
+import { FaGooglePlusG } from "react-icons/fa6"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import useAuth from "@/hooks/useAuth"
 import { toast } from "@/lib/toast"
-import { Facebook, Github, Loader2, Eye, EyeOff } from "lucide-react"
-import { FaGooglePlusG } from "react-icons/fa6";
 
 const REMEMBER_EMAIL_KEY = "vibeSDLC_remembered_email"
 
@@ -21,9 +21,8 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [oauthLoading, setOauthLoading] = useState<OAuthLoadingProvider>(null)
-  const [oauthError, setOauthError] = useState<string | null>(null)
+  const [_oauthError, setOauthError] = useState<string | null>(null)
   const { loginMutation } = useAuth()
-
 
   useEffect(() => {
     const rememberedEmail = localStorage.getItem(REMEMBER_EMAIL_KEY)
@@ -34,24 +33,28 @@ export function LoginForm() {
 
     // Check for OAuth error in URL
     const params = new URLSearchParams(window.location.search)
-    const error = params.get('error')
+    const error = params.get("error")
     if (error) {
       // Map error codes to user-friendly messages
       const errorMessages: Record<string, string> = {
-        'account_locked': 'Your account has been locked. Please contact support.',
-        'account_deactivated': 'Your account has been deactivated. Please contact support.',
-        'oauth_failed': 'OAuth authentication failed. Please try again.',
+        account_locked: "Your account has been locked. Please contact support.",
+        account_deactivated:
+          "Your account has been deactivated. Please contact support.",
+        oauth_failed: "OAuth authentication failed. Please try again.",
       }
-      setOauthError(errorMessages[error] || 'An error occurred during login. Please try again.')
-      
+      setOauthError(
+        errorMessages[error] ||
+          "An error occurred during login. Please try again.",
+      )
+
       // Clear error from URL without reloading
-      window.history.replaceState({}, '', window.location.pathname)
+      window.history.replaceState({}, "", window.location.pathname)
     }
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (rememberMe) {
       localStorage.setItem(REMEMBER_EMAIL_KEY, email)
     } else {
@@ -68,7 +71,8 @@ export function LoginForm() {
         },
         onError: (error: any) => {
           // handleError already shows toast in useAuth, but we can add more specific message here
-          const errorMessage = error?.body?.detail || "Invalid email or password"
+          const _errorMessage =
+            error?.body?.detail || "Invalid email or password"
           console.error("Login error:", error)
         },
       },
@@ -78,23 +82,22 @@ export function LoginForm() {
   const handleLoginGoogle = () => {
     if (oauthLoading) return
     setOauthLoading("google")
-    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/google`;
-  };
+    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/google`
+  }
 
   const handleLoginGithub = () => {
     if (oauthLoading) return
     setOauthLoading("github")
-    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/github`;
-  };
+    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/github`
+  }
 
   const handleLoginFacebook = () => {
     if (oauthLoading) return
     setOauthLoading("facebook")
-    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/facebook`;
-  };
+    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/facebook`
+  }
 
   const isOAuthDisabled = oauthLoading !== null
-
 
   return (
     <motion.div
@@ -128,7 +131,6 @@ export function LoginForm() {
         transition={{ delay: 0.5 }}
         className="space-y-6"
       >
-
         <div className="relative">
           {/* <div className="relative flex justify-center text-sm"> */}
           <span className="bg-card text-muted-foreground">
@@ -216,7 +218,7 @@ export function LoginForm() {
 
           <div className="relative my-2">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border"></div>
+              <div className="w-full border-t border-border" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
               <span className="bg-card px-2 text-muted-foreground">

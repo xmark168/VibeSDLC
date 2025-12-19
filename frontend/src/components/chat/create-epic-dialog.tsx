@@ -1,11 +1,24 @@
+import { Layers } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Layers } from "lucide-react"
 
 export interface NewEpicData {
   title: string
@@ -32,11 +45,15 @@ const DOMAIN_OPTIONS = [
   { value: "General", label: "General" },
 ]
 
-export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpicDialogProps) {
+export function CreateEpicDialog({
+  open,
+  onOpenChange,
+  onCreateEpic,
+}: CreateEpicDialogProps) {
   const [formData, setFormData] = useState<NewEpicData>({
     title: "",
     description: "",
-    domain: "General"
+    domain: "General",
   })
 
   const handleSubmit = () => {
@@ -54,7 +71,7 @@ export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpi
     setFormData({
       title: "",
       description: "",
-      domain: "General"
+      domain: "General",
     })
   }
 
@@ -81,7 +98,9 @@ export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpi
               id="epic-title"
               placeholder="e.g., User Management, Payment System..."
               value={formData.title}
-              onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, title: e.target.value }))
+              }
               className="h-10"
               autoFocus
             />
@@ -94,7 +113,9 @@ export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpi
             </Label>
             <Select
               value={formData.domain}
-              onValueChange={(value) => setFormData(prev => ({ ...prev, domain: value }))}
+              onValueChange={(value) =>
+                setFormData((prev) => ({ ...prev, domain: value }))
+              }
             >
               <SelectTrigger id="epic-domain" className="h-10">
                 <SelectValue placeholder="Select domain..." />
@@ -118,7 +139,12 @@ export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpi
               id="epic-description"
               placeholder="Describe this Epic in detail..."
               value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  description: e.target.value,
+                }))
+              }
               className="min-h-[80px] resize-none"
             />
           </div>
@@ -134,10 +160,7 @@ export function CreateEpicDialog({ open, onOpenChange, onCreateEpic }: CreateEpi
           >
             Cancel
           </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!formData.title.trim()}
-          >
+          <Button onClick={handleSubmit} disabled={!formData.title.trim()}>
             Create Epic
           </Button>
         </DialogFooter>

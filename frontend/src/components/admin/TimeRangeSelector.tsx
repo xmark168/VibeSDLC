@@ -16,7 +16,11 @@ const timeRangeOptions: { value: TimeRange; label: string }[] = [
   { value: "30d", label: "30D" },
 ]
 
-export function TimeRangeSelector({ value, onChange, className }: TimeRangeSelectorProps) {
+export function TimeRangeSelector({
+  value,
+  onChange,
+  className,
+}: TimeRangeSelectorProps) {
   return (
     <div className={cn("inline-flex rounded-md shadow-sm", className)}>
       {timeRangeOptions.map((option, index) => (
@@ -29,7 +33,7 @@ export function TimeRangeSelector({ value, onChange, className }: TimeRangeSelec
             "rounded-none",
             index === 0 && "rounded-l-md",
             index === timeRangeOptions.length - 1 && "rounded-r-md",
-            value === option.value && "z-10"
+            value === option.value && "z-10",
           )}
         >
           {option.label}

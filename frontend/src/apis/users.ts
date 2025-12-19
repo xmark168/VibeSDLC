@@ -1,12 +1,12 @@
 import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
 import type {
+  BulkUserIds,
   UserAdmin,
   UserAdminCreate,
   UserAdminUpdate,
-  UsersAdminResponse,
   UserStatsResponse,
-  BulkUserIds,
+  UsersAdminResponse,
 } from "@/types/user"
 
 // Re-export types
@@ -28,7 +28,7 @@ export const usersApi = {
     role?: string
     status?: string
     order_by?: string
-    order_dir?: 'asc' | 'desc'
+    order_dir?: "asc" | "desc"
   }): Promise<UsersAdminResponse> => {
     return __request<UsersAdminResponse>(OpenAPI, {
       method: "GET",
@@ -39,8 +39,8 @@ export const usersApi = {
         search: params?.search,
         role: params?.role,
         status: params?.status,
-        order_by: params?.order_by ?? 'created_at',
-        order_dir: params?.order_dir ?? 'desc',
+        order_by: params?.order_by ?? "created_at",
+        order_dir: params?.order_dir ?? "desc",
       },
     })
   },
@@ -63,7 +63,10 @@ export const usersApi = {
   },
 
   // Update user (admin)
-  updateUser: async (userId: string, body: UserAdminUpdate): Promise<UserAdmin> => {
+  updateUser: async (
+    userId: string,
+    body: UserAdminUpdate,
+  ): Promise<UserAdmin> => {
     return __request<UserAdmin>(OpenAPI, {
       method: "PATCH",
       url: `/api/v1/users/admin/${userId}`,
@@ -133,21 +136,25 @@ export const usersApi = {
 
 // Utility functions
 export function getRoleLabel(role: string): string {
-  return role === 'admin' ? 'Admin' : 'User'
+  return role === "admin" ? "Admin" : "User"
 }
 
-export function getRoleVariant(role: string): "default" | "secondary" | "destructive" | "outline" {
-  return role === 'admin' ? 'default' : 'secondary'
+export function getRoleVariant(
+  role: string,
+): "default" | "secondary" | "destructive" | "outline" {
+  return role === "admin" ? "default" : "secondary"
 }
 
 export function getStatusLabel(user: UserAdmin): string {
-  if (user.is_locked) return 'Locked'
-  if (!user.is_active) return 'Inactive'
-  return 'Active'
+  if (user.is_locked) return "Locked"
+  if (!user.is_active) return "Inactive"
+  return "Active"
 }
 
-export function getStatusVariant(user: UserAdmin): "default" | "secondary" | "destructive" | "outline" {
-  if (user.is_locked) return 'destructive'
-  if (!user.is_active) return 'secondary'
-  return 'default'
+export function getStatusVariant(
+  user: UserAdmin,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (user.is_locked) return "destructive"
+  if (!user.is_active) return "secondary"
+  return "default"
 }

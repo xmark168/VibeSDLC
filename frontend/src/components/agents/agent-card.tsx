@@ -1,7 +1,11 @@
+import { Activity, Bot, ChevronRight, Clock } from "lucide-react"
+import {
+  type AgentHealth,
+  type AgentState,
+  generateAgentDisplayName,
+} from "@/apis/agents"
 import { cn } from "@/lib/utils"
 import { AgentStatusBadge, AgentStatusDot } from "./agent-status-badge"
-import { generateAgentDisplayName, type AgentHealth, type AgentState } from "@/apis/agents"
-import { Bot, Clock, Activity, ChevronRight } from "lucide-react"
 
 interface AgentCardProps {
   agent: AgentHealth
@@ -28,7 +32,7 @@ export function AgentCard({
           "flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer",
           "hover:bg-muted/50 transition-colors duration-200",
           "border border-transparent hover:border-border/50",
-          className
+          className,
         )}
       >
         <div className="flex items-center gap-2 min-w-0">
@@ -48,7 +52,7 @@ export function AgentCard({
         "bg-card border border-border/50",
         "shadow-sm transition-all duration-300",
         "hover:shadow-md hover:-translate-y-0.5 hover:border-border",
-        className
+        className,
       )}
     >
       {/* Status indicator line at top */}
@@ -56,7 +60,7 @@ export function AgentCard({
         className={cn(
           "absolute top-0 left-0 right-0 h-1 transition-opacity duration-300",
           getStatusGradient(agent.state),
-          "opacity-60 group-hover:opacity-100"
+          "opacity-60 group-hover:opacity-100",
         )}
       />
 
@@ -66,14 +70,16 @@ export function AgentCard({
           <div
             className={cn(
               "w-8 h-8 rounded-lg flex items-center justify-center",
-              "bg-primary/10 text-primary"
+              "bg-primary/10 text-primary",
             )}
           >
             <Bot className="w-4 h-4" />
           </div>
           <div className="min-w-0">
             <h4 className="text-sm font-semibold truncate">{displayName}</h4>
-            <p className="text-xs text-muted-foreground truncate">{agent.role_name}</p>
+            <p className="text-xs text-muted-foreground truncate">
+              {agent.role_name}
+            </p>
           </div>
         </div>
         <AgentStatusBadge state={agent.state} size="sm" />
@@ -104,7 +110,7 @@ export function AgentCard({
             <div
               className={cn(
                 "h-full rounded-full transition-all duration-500",
-                getSuccessRateBarColor(agent.success_rate)
+                getSuccessRateBarColor(agent.success_rate),
               )}
               style={{ width: `${agent.success_rate * 100}%` }}
             />
@@ -115,7 +121,9 @@ export function AgentCard({
       {/* Pool name if provided */}
       {poolName && (
         <div className="mt-2 pt-2 border-t border-border/50">
-          <span className="text-xs text-muted-foreground">Pool: {poolName}</span>
+          <span className="text-xs text-muted-foreground">
+            Pool: {poolName}
+          </span>
         </div>
       )}
     </div>

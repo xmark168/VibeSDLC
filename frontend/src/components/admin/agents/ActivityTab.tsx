@@ -1,24 +1,30 @@
-import { useState, useEffect, useRef } from "react"
 import { formatDistanceToNow } from "date-fns"
 import {
   Activity,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Loader2,
-  Filter,
-  RefreshCw,
-  Play,
-  Pause,
   AlertTriangle,
-  Zap,
-  User,
+  CheckCircle,
+  Filter,
+  Loader2,
+  Pause,
+  Play,
+  RefreshCw,
   Server,
+  User,
+  XCircle,
+  Zap,
 } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Select,
   SelectContent,
@@ -26,13 +32,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { useAgentExecutions, useSystemStatus } from "@/queries/agents"
 import type { AgentExecutionRecord } from "@/types"
 
 interface ActivityEvent {
   id: string
-  type: "execution_started" | "execution_completed" | "execution_failed" | "agent_spawned" | "agent_terminated" | "system_event"
+  type:
+    | "execution_started"
+    | "execution_completed"
+    | "execution_failed"
+    | "agent_spawned"
+    | "agent_terminated"
+    | "system_event"
   timestamp: string
   agentName: string
   agentType: string
@@ -95,16 +106,25 @@ export function ActivityTab() {
   const [searchTerm, setSearchTerm] = useState("")
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const { data: executions, isLoading, refetch } = useAgentExecutions(
+  const {
+    data: executions,
+    isLoading,
+    refetch,
+  } = useAgentExecutions(
     { limit: 100 },
-    { enabled: true, refetchInterval: autoRefresh ? 5000 : undefined }
+    { enabled: true, refetchInterval: autoRefresh ? 5000 : undefined },
   )
 
-  const { data: systemStatus } = useSystemStatus({ refetchInterval: autoRefresh ? 5000 : undefined })
+  const { data: systemStatus } = useSystemStatus({
+    refetchInterval: autoRefresh ? 5000 : undefined,
+  })
 
   const activities: ActivityEvent[] = (executions || [])
     .map(executionToActivity)
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .sort(
+      (a, b) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    )
 
   const filteredActivities = activities.filter((activity) => {
     if (filter !== "all" && activity.status !== filter) return false
@@ -164,25 +184,35 @@ export function ActivityTab() {
     <div className="space-y-4">
       {/* System Status Banner */}
       {systemStatus && systemStatus.status !== "running" && (
-        <Card className={`border-2 ${
-          systemStatus.status === "paused" ? "border-yellow-500 bg-yellow-50" :
-          systemStatus.status === "maintenance" ? "border-orange-500 bg-orange-50" :
-          "border-red-500 bg-red-50"
-        }`}>
+        <Card
+          className={`border-2 ${
+            systemStatus.status === "paused"
+              ? "border-yellow-500 bg-yellow-50"
+              : systemStatus.status === "maintenance"
+                ? "border-orange-500 bg-orange-50"
+                : "border-red-500 bg-red-50"
+          }`}
+        >
           <CardContent className="py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <AlertTriangle className={`w-5 h-5 ${
-                systemStatus.status === "paused" ? "text-yellow-600" :
-                systemStatus.status === "maintenance" ? "text-orange-600" :
-                "text-red-600"
-              }`} />
+              <AlertTriangle
+                className={`w-5 h-5 ${
+                  systemStatus.status === "paused"
+                    ? "text-yellow-600"
+                    : systemStatus.status === "maintenance"
+                      ? "text-orange-600"
+                      : "text-red-600"
+                }`}
+              />
               <span className="font-medium">
                 System {systemStatus.status.toUpperCase()}
-                {systemStatus.maintenance_message && `: ${systemStatus.maintenance_message}`}
+                {systemStatus.maintenance_message &&
+                  `: ${systemStatus.maintenance_message}`}
               </span>
             </div>
             <Badge variant="outline">
-              {systemStatus.total_agents} agents | {systemStatus.active_pools} pools
+              {systemStatus.total_agents} agents | {systemStatus.active_pools}{" "}
+              pools
             </Badge>
           </CardContent>
         </Card>
@@ -226,7 +256,9 @@ export function ActivityTab() {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Activities</p>
+                <p className="text-sm text-muted-foreground">
+                  Total Activities
+                </p>
                 <p className="text-2xl font-bold">{stats.total}</p>
               </div>
               <Activity className="w-8 h-8 text-muted-foreground/50" />
@@ -238,7 +270,9 @@ export function ActivityTab() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Successful</p>
-                <p className="text-2xl font-bold text-green-600">{stats.success}</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {stats.success}
+                </p>
               </div>
               <CheckCircle className="w-8 h-8 text-green-500/50" />
             </div>
@@ -249,7 +283,9 @@ export function ActivityTab() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Failed</p>
-                <p className="text-2xl font-bold text-red-600">{stats.failed}</p>
+                <p className="text-2xl font-bold text-red-600">
+                  {stats.failed}
+                </p>
               </div>
               <XCircle className="w-8 h-8 text-red-500/50" />
             </div>
@@ -260,7 +296,9 @@ export function ActivityTab() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">In Progress</p>
-                <p className="text-2xl font-bold text-blue-600">{stats.running}</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {stats.running}
+                </p>
               </div>
               <Loader2 className="w-8 h-8 text-blue-500/50 animate-spin" />
             </div>
@@ -326,16 +364,23 @@ export function ActivityTab() {
                   <div
                     key={activity.id}
                     className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
-                      activity.status === "pending" ? "bg-blue-50/50 border-blue-200" :
-                      activity.status === "error" ? "bg-red-50/50 border-red-200" :
-                      activity.status === "success" ? "bg-green-50/50 border-green-200" :
-                      "bg-muted/30"
+                      activity.status === "pending"
+                        ? "bg-blue-50/50 border-blue-200"
+                        : activity.status === "error"
+                          ? "bg-red-50/50 border-red-200"
+                          : activity.status === "success"
+                            ? "bg-green-50/50 border-green-200"
+                            : "bg-muted/30"
                     }`}
                   >
-                    <div className="mt-0.5">{getStatusIcon(activity.status)}</div>
+                    <div className="mt-0.5">
+                      {getStatusIcon(activity.status)}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium">{activity.agentName}</span>
+                        <span className="font-medium">
+                          {activity.agentName}
+                        </span>
                         <Badge variant="outline" className="text-xs">
                           {activity.agentType}
                         </Badge>
@@ -347,24 +392,27 @@ export function ActivityTab() {
                       <p className="text-sm text-muted-foreground mt-1">
                         {activity.message}
                       </p>
-                      {activity.details && (activity.details.tokens || activity.details.llmCalls) && (
-                        <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                          {activity.details.tokens && (
-                            <span className="flex items-center gap-1">
-                              <Zap className="w-3 h-3" />
-                              {activity.details.tokens.toLocaleString()} tokens
-                            </span>
-                          )}
-                          {activity.details.llmCalls && (
-                            <span>
-                              {activity.details.llmCalls} LLM calls
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      {activity.details &&
+                        (activity.details.tokens ||
+                          activity.details.llmCalls) && (
+                          <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                            {activity.details.tokens && (
+                              <span className="flex items-center gap-1">
+                                <Zap className="w-3 h-3" />
+                                {activity.details.tokens.toLocaleString()}{" "}
+                                tokens
+                              </span>
+                            )}
+                            {activity.details.llmCalls && (
+                              <span>{activity.details.llmCalls} LLM calls</span>
+                            )}
+                          </div>
+                        )}
                     </div>
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      {formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(activity.timestamp), {
+                        addSuffix: true,
+                      })}
                     </span>
                   </div>
                 ))}

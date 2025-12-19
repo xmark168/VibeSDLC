@@ -3,6 +3,9 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+
+from app.core.agent.llm_factory import get_llm, create_llm, MODELS
+
 from ..state import BAState
 from ..schemas import (
     IntentOutput,
@@ -14,7 +17,7 @@ from app.core.agent.prompt_utils import (
 )
 
 # Load prompts from YAML 
-PROMPTS = load_prompts_yaml(Path(__file__).parent.parent / "prompts.yaml")
+PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +25,7 @@ from .utils import _invoke_structured, _cfg, _sys_prompt, _user_prompt, _fast_ll
 
 
 def _build_context_summary(features: list, epics: list) -> tuple[str, str]:
-    """Build context summary for intent analysis.
-    
-    Args:
-        features: List of PRD features (dicts with 'name' field)
-        epics: List of epics (dicts with 'title', 'domain', 'stories')
-    
-    Returns:
-        Tuple of (features_context, epics_context)
-    """
+    """Build context summary for intent analysis. """
     # Features context
     features_context = ""
     if features:
@@ -110,13 +105,7 @@ async def analyze_intent(state: BAState, agent=None) -> dict:
 
 
 async def analyze_document_content(document_text: str, agent=None) -> dict:
-    """Analyze uploaded document to extract requirements information.
-    
-    Truncates long documents to avoid token limits.
-    Returns structured analysis with completeness score.
-    """
-    logger.info("[BA] Analyzing document (%d chars)...", len(document_text))
-    
+    """Analyze uploaded document to extract requirements information. """
     # Truncate if too long
     MAX_CHARS = 15000
     if len(document_text) > MAX_CHARS:

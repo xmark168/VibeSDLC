@@ -1,6 +1,6 @@
+import { Minus, TrendingDown, TrendingUp } from "lucide-react"
+import { Line, LineChart, ResponsiveContainer } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { LineChart, Line, ResponsiveContainer } from "recharts"
-import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface MetricCardProps {
@@ -12,7 +12,14 @@ interface MetricCardProps {
   subtitle?: string
 }
 
-export function MetricCard({ title, value, change, trend, icon, subtitle }: MetricCardProps) {
+export function MetricCard({
+  title,
+  value,
+  change,
+  trend,
+  icon,
+  subtitle,
+}: MetricCardProps) {
   const getTrendIcon = () => {
     if (change === undefined || change === 0) {
       return <Minus className="h-4 w-4 text-gray-400" />
@@ -37,10 +44,17 @@ export function MetricCard({ title, value, change, trend, icon, subtitle }: Metr
       </CardHeader>
       <CardContent>
         <div className="text-2xl font-bold">{value}</div>
-        {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
+        {subtitle && (
+          <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
+        )}
         <div className="flex items-center justify-between mt-2">
           {change !== undefined && (
-            <div className={cn("flex items-center text-xs font-medium", getTrendColor())}>
+            <div
+              className={cn(
+                "flex items-center text-xs font-medium",
+                getTrendColor(),
+              )}
+            >
               {getTrendIcon()}
               <span className="ml-1">{Math.abs(change).toFixed(1)}%</span>
             </div>
@@ -52,7 +66,13 @@ export function MetricCard({ title, value, change, trend, icon, subtitle }: Metr
                   <Line
                     type="monotone"
                     dataKey="value"
-                    stroke={change && change > 0 ? "#16a34a" : change && change < 0 ? "#dc2626" : "#6b7280"}
+                    stroke={
+                      change && change > 0
+                        ? "#16a34a"
+                        : change && change < 0
+                          ? "#dc2626"
+                          : "#6b7280"
+                    }
                     strokeWidth={1.5}
                     dot={false}
                   />

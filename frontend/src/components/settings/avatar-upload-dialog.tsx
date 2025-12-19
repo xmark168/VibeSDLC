@@ -1,16 +1,20 @@
-import { useState, useRef, useCallback } from "react"
-import ReactCrop, { type Crop, centerCrop, makeAspectCrop } from "react-image-crop"
+import { useCallback, useRef, useState } from "react"
+import ReactCrop, {
+  type Crop,
+  centerCrop,
+  makeAspectCrop,
+} from "react-image-crop"
 import "react-image-crop/dist/ReactCrop.css"
+import { Loader2, RotateCcw, Upload } from "lucide-react"
+import toast from "react-hot-toast"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Loader2, Upload, RotateCcw } from "lucide-react"
-import toast from "react-hot-toast"
 import { useUploadAvatar } from "@/queries/profile"
 
 interface AvatarUploadDialogProps {
@@ -19,7 +23,11 @@ interface AvatarUploadDialogProps {
   onSuccess?: (avatarUrl: string) => void
 }
 
-function centerAspectCrop(mediaWidth: number, mediaHeight: number, aspect: number) {
+function centerAspectCrop(
+  mediaWidth: number,
+  mediaHeight: number,
+  aspect: number,
+) {
   return centerCrop(
     makeAspectCrop(
       {
@@ -28,14 +36,18 @@ function centerAspectCrop(mediaWidth: number, mediaHeight: number, aspect: numbe
       },
       aspect,
       mediaWidth,
-      mediaHeight
+      mediaHeight,
     ),
     mediaWidth,
-    mediaHeight
+    mediaHeight,
   )
 }
 
-export function AvatarUploadDialog({ open, onOpenChange, onSuccess }: AvatarUploadDialogProps) {
+export function AvatarUploadDialog({
+  open,
+  onOpenChange,
+  onSuccess,
+}: AvatarUploadDialogProps) {
   const [imgSrc, setImgSrc] = useState("")
   const [crop, setCrop] = useState<Crop>()
   const [completedCrop, setCompletedCrop] = useState<Crop>()
@@ -46,7 +58,7 @@ export function AvatarUploadDialog({ open, onOpenChange, onSuccess }: AvatarUplo
   const onSelectFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0]
-      
+
       // Validate file type
       if (!file.type.startsWith("image/")) {
         toast.error("Please select an image file")
@@ -67,10 +79,13 @@ export function AvatarUploadDialog({ open, onOpenChange, onSuccess }: AvatarUplo
     }
   }
 
-  const onImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
-    const { width, height } = e.currentTarget
-    setCrop(centerAspectCrop(width, height, 1))
-  }, [])
+  const onImageLoad = useCallback(
+    (e: React.SyntheticEvent<HTMLImageElement>) => {
+      const { width, height } = e.currentTarget
+      setCrop(centerAspectCrop(width, height, 1))
+    },
+    [],
+  )
 
   const getCroppedImg = useCallback(async (): Promise<Blob | null> => {
     if (!imgRef.current || !completedCrop) return null
@@ -97,15 +112,11 @@ export function AvatarUploadDialog({ open, onOpenChange, onSuccess }: AvatarUplo
       0,
       0,
       outputSize,
-      outputSize
+      outputSize,
     )
 
     return new Promise((resolve) => {
-      canvas.toBlob(
-        (blob) => resolve(blob),
-        "image/jpeg",
-        0.9
-      )
+      canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.9)
     })
   }, [completedCrop])
 

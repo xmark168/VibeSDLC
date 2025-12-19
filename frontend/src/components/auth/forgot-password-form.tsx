@@ -205,7 +205,6 @@ export function ForgotPasswordForm() {
                 "Send verification code"
               )}
             </Button>
-
           </motion.div>
         </form>
       </motion.div>

@@ -1,5 +1,19 @@
-import { X, Eye, Zap, User, MoreVertical, Copy, Edit, Trash2, MoveRight, Link2, Ban, Loader2, Clock, CheckCircle2 } from "lucide-react"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import {
+  Ban,
+  CheckCircle2,
+  Clock,
+  Copy,
+  Edit,
+  Eye,
+  Link2,
+  Loader2,
+  MoreVertical,
+  MoveRight,
+  Trash2,
+  User,
+  Zap,
+} from "lucide-react"
+import { memo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
@@ -11,7 +25,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useState, memo } from "react"
 
 export type KanbanCardData = {
   id: string
@@ -20,7 +33,7 @@ export type KanbanCardData = {
   agentName?: string
   agentAvatar?: string
   taskId?: string
-  story_code?: string  // e.g., "EPIC-001-US-001"
+  story_code?: string // e.g., "EPIC-001-US-001"
   result?: string
   subtasks?: string[]
   branch?: string
@@ -40,22 +53,29 @@ export type KanbanCardData = {
   epic_domain?: string
   acceptance_criteria?: string[]
   requirements?: string[]
-  dependencies?: string[]  // List of story IDs that must be completed before this story
+  dependencies?: string[] // List of story IDs that must be completed before this story
   // Flow metrics
   created_at?: string
   updated_at?: string
-  age_hours?: number  // Age in current status (hours)
+  age_hours?: number // Age in current status (hours)
   // Agent state
-  agent_state?: 'PENDING' | 'PROCESSING' | 'PAUSED' | 'CANCEL_REQUESTED' | 'CANCELED' | 'FINISHED' | null
-  agent_sub_status?: 'queued' | 'cleaning' | 'starting' | null  // Sub-status for PENDING state
+  agent_state?:
+    | "PENDING"
+    | "PROCESSING"
+    | "PAUSED"
+    | "CANCEL_REQUESTED"
+    | "CANCELED"
+    | "FINISHED"
+    | null
+  agent_sub_status?: "queued" | "cleaning" | "starting" | null // Sub-status for PENDING state
   running_port?: number | null
   running_pid?: number | null
   worktree_path?: string | null
   worktree_path_display?: string | null
   branch_name?: string | null
   pr_url?: string | null
-  pr_state?: string | null  // "merging", "merged", "error"
-  merge_status?: string | null  // "not_merged", "merged", "conflict"
+  pr_state?: string | null // "merging", "merged", "error"
+  merge_status?: string | null // "not_merged", "merged", "conflict"
   started_at?: string | null
   // TraDS ============= Kanban Hierarchy: Parent/children relationships
   parent?: KanbanCardData
@@ -90,11 +110,15 @@ function KanbanCardComponent({
   onMove,
   onEdit,
 }: KanbanCardProps) {
-  const [showQuickActions, setShowQuickActions] = useState(false)
-  
+  const [_showQuickActions, _setShowQuickActions] = useState(false)
+
   // Check if card can be dragged based on agent_state
-  const canDrag = !card.agent_state || card.agent_state === 'FINISHED' || card.agent_state === 'CANCELED'
-  const isAgentRunning = card.agent_state === 'PENDING' || card.agent_state === 'PROCESSING'
+  const canDrag =
+    !card.agent_state ||
+    card.agent_state === "FINISHED" ||
+    card.agent_state === "CANCELED"
+  const isAgentRunning =
+    card.agent_state === "PENDING" || card.agent_state === "PROCESSING"
 
   // Get type badge color - Only UserStory on board
   const getTypeBadgeColor = (type?: string) => {
@@ -132,15 +156,19 @@ function KanbanCardComponent({
   // Get age badge color based on age - Modern & Minimal: Softer warning colors
   const getAgeBadgeColor = (hours?: number) => {
     if (!hours) return ""
-    if (hours >= 120) { // 5+ days
+    if (hours >= 120) {
+      // 5+ days
       return "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-red-200/50 dark:border-red-800/50"
-    } else if (hours >= 72) { // 3-5 days
-      return "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300 border-orange-200/50 dark:border-orange-800/50"
-    } else if (hours >= 48) { // 2-3 days
-      return "bg-yellow-50 dark:bg-yellow-950/30 text-yellow-700 dark:text-yellow-300 border-yellow-200/50 dark:border-yellow-800/50"
-    } else {
-      return "bg-slate-50 dark:bg-slate-900/30 text-slate-600 dark:text-slate-400 border-slate-200/50 dark:border-slate-800/50"
     }
+    if (hours >= 72) {
+      // 3-5 days
+      return "bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-300 border-orange-200/50 dark:border-orange-800/50"
+    }
+    if (hours >= 48) {
+      // 2-3 days
+      return "bg-yellow-50 dark:bg-yellow-950/30 text-yellow-700 dark:text-yellow-300 border-yellow-200/50 dark:border-yellow-800/50"
+    }
+    return "bg-slate-50 dark:bg-slate-900/30 text-slate-600 dark:text-slate-400 border-slate-200/50 dark:border-slate-800/50"
   }
 
   return (
@@ -157,9 +185,10 @@ function KanbanCardComponent({
         ${isDragging ? "opacity-50 scale-95" : ""}
         ${!canDrag ? "cursor-not-allowed" : "cursor-grab"}
         ${isAgentRunning ? "ring-2 ring-blue-400/50 dark:ring-blue-500/40" : ""}
-        ${card.isBlocked 
-          ? "bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900/60 hover:border-red-300 dark:hover:border-red-800" 
-          : "bg-card border-border/50 hover:border-border"
+        ${
+          card.isBlocked
+            ? "bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900/60 hover:border-red-300 dark:hover:border-red-800"
+            : "bg-card border-border/50 hover:border-border"
         }
       `}
       title={!canDrag ? `Cannot drag: Agent is ${card.agent_state}` : undefined}
@@ -210,7 +239,10 @@ function KanbanCardComponent({
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
                   {["todo", "inprogress", "review", "done"].map((col) => {
-                    const colName = col === "inprogress" ? "InProgress" : col.charAt(0).toUpperCase() + col.slice(1)
+                    const colName =
+                      col === "inprogress"
+                        ? "InProgress"
+                        : col.charAt(0).toUpperCase() + col.slice(1)
                     return (
                       <DropdownMenuItem
                         key={col}
@@ -259,23 +291,30 @@ function KanbanCardComponent({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             {card.type && (
-              <Badge variant="outline" className={`text-xs font-medium ${getTypeBadgeColor(card.type)}`}>
+              <Badge
+                variant="outline"
+                className={`text-xs font-medium ${getTypeBadgeColor(card.type)}`}
+              >
                 {formatTypeName(card.type)}
               </Badge>
             )}
             {/* Agent State Badge - Show when pending or processing */}
-            {card.agent_state === 'PENDING' && (
-              <Badge 
-                variant="outline" 
+            {card.agent_state === "PENDING" && (
+              <Badge
+                variant="outline"
                 className="text-xs font-medium gap-1 bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700 animate-pulse transition-all duration-300"
-                title={card.agent_sub_status ? `Status: ${card.agent_sub_status}` : 'Queued for processing'}
+                title={
+                  card.agent_sub_status
+                    ? `Status: ${card.agent_sub_status}`
+                    : "Queued for processing"
+                }
               >
-                {card.agent_sub_status === 'cleaning' ? (
+                {card.agent_sub_status === "cleaning" ? (
                   <>
                     <Loader2 className="w-3 h-3 animate-spin" />
                     Cleaning...
                   </>
-                ) : card.agent_sub_status === 'starting' ? (
+                ) : card.agent_sub_status === "starting" ? (
                   <>
                     <Loader2 className="w-3 h-3 animate-spin" />
                     Starting...
@@ -288,33 +327,50 @@ function KanbanCardComponent({
                 )}
               </Badge>
             )}
-            {card.agent_state === 'PROCESSING' && (
-              <Badge variant="outline" className="text-xs font-medium gap-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
+            {card.agent_state === "PROCESSING" && (
+              <Badge
+                variant="outline"
+                className="text-xs font-medium gap-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700"
+              >
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Processing
               </Badge>
             )}
-            {card.agent_state === 'FINISHED' && (
-              <Badge variant="outline" className="text-xs font-medium gap-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700">
+            {card.agent_state === "FINISHED" && (
+              <Badge
+                variant="outline"
+                className="text-xs font-medium gap-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700"
+              >
                 <CheckCircle2 className="w-3 h-3" />
                 Finished
               </Badge>
             )}
             {card.isBlocked && (
-              <Badge variant="outline" className="text-xs font-medium gap-1 bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700" title={`${card.blockedByCount || card.dependencies?.length || 0} dependencies chưa hoàn thành`}>
+              <Badge
+                variant="outline"
+                className="text-xs font-medium gap-1 bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700"
+                title={`${card.blockedByCount || card.dependencies?.length || 0} dependencies chưa hoàn thành`}
+              >
                 <Ban className="w-3 h-3" />
                 Blocked
               </Badge>
             )}
             {card.age_hours !== undefined && formatAge(card.age_hours) && (
-              <Badge variant="outline" className={`text-xs font-medium ${getAgeBadgeColor(card.age_hours)}`} title="Time in current status">
+              <Badge
+                variant="outline"
+                className={`text-xs font-medium ${getAgeBadgeColor(card.age_hours)}`}
+                title="Time in current status"
+              >
                 {formatAge(card.age_hours)}
               </Badge>
             )}
           </div>
           <div className="flex items-center gap-2">
             {card.dependencies && card.dependencies.length > 0 && (
-              <div className={`flex items-center gap-1 text-xs font-medium ${card.isBlocked ? 'text-red-600 dark:text-red-400' : 'text-orange-600 dark:text-orange-400'}`} title={`Depends on: ${card.dependencies.join(', ')}`}>
+              <div
+                className={`flex items-center gap-1 text-xs font-medium ${card.isBlocked ? "text-red-600 dark:text-red-400" : "text-orange-600 dark:text-orange-400"}`}
+                title={`Depends on: ${card.dependencies.join(", ")}`}
+              >
                 <Link2 className="w-3.5 h-3.5" />
                 <span>{card.dependencies.length}</span>
               </div>
@@ -395,15 +451,29 @@ export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
   if (prevProps.card.updated_at !== nextProps.card.updated_at) return false
   // Check blocked state
   if (prevProps.card.isBlocked !== nextProps.card.isBlocked) return false
-  if (prevProps.card.blockedByCount !== nextProps.card.blockedByCount) return false
+  if (prevProps.card.blockedByCount !== nextProps.card.blockedByCount)
+    return false
   // Check agent_state - important for drag-and-drop
   if (prevProps.card.agent_state !== nextProps.card.agent_state) return false
   // Check agent_sub_status - important for showing cleaning/starting progress
-  if (prevProps.card.agent_sub_status !== nextProps.card.agent_sub_status) return false
+  if (prevProps.card.agent_sub_status !== nextProps.card.agent_sub_status)
+    return false
   // Check arrays - important for edit form data sync
-  if (JSON.stringify(prevProps.card.dependencies) !== JSON.stringify(nextProps.card.dependencies)) return false
-  if (JSON.stringify(prevProps.card.acceptance_criteria) !== JSON.stringify(nextProps.card.acceptance_criteria)) return false
-  if (JSON.stringify(prevProps.card.requirements) !== JSON.stringify(nextProps.card.requirements)) return false
+  if (
+    JSON.stringify(prevProps.card.dependencies) !==
+    JSON.stringify(nextProps.card.dependencies)
+  )
+    return false
+  if (
+    JSON.stringify(prevProps.card.acceptance_criteria) !==
+    JSON.stringify(nextProps.card.acceptance_criteria)
+  )
+    return false
+  if (
+    JSON.stringify(prevProps.card.requirements) !==
+    JSON.stringify(nextProps.card.requirements)
+  )
+    return false
 
   // Re-render if dragging state changed
   if (prevProps.isDragging !== nextProps.isDragging) return false
@@ -412,4 +482,4 @@ export const KanbanCard = memo(KanbanCardComponent, (prevProps, nextProps) => {
   return true
 })
 
-KanbanCard.displayName = 'KanbanCard'
+KanbanCard.displayName = "KanbanCard"

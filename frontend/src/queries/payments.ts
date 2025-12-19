@@ -1,30 +1,39 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery } from "@tanstack/react-query"
+import toast from "react-hot-toast"
 import { paymentsApi } from "@/apis/payments"
 import type { CreatePaymentRequest } from "@/types/payment"
-import toast from "react-hot-toast"
 
 // Query Keys
 export const paymentQueryKeys = {
   all: ["payments"] as const,
-  status: (orderId: string) => [...paymentQueryKeys.all, "status", orderId] as const,
-  order: (orderId: string) => [...paymentQueryKeys.all, "order", orderId] as const,
-  history: (params?: any) => [...paymentQueryKeys.all, "history", params] as const,
-  invoice: (orderId: string) => [...paymentQueryKeys.all, "invoice", orderId] as const,
+  status: (orderId: string) =>
+    [...paymentQueryKeys.all, "status", orderId] as const,
+  order: (orderId: string) =>
+    [...paymentQueryKeys.all, "order", orderId] as const,
+  history: (params?: any) =>
+    [...paymentQueryKeys.all, "history", params] as const,
+  invoice: (orderId: string) =>
+    [...paymentQueryKeys.all, "invoice", orderId] as const,
 }
 
 // Create Payment Link Mutation
 export function useCreatePaymentLink() {
   return useMutation({
-    mutationFn: (data: CreatePaymentRequest) => paymentsApi.createPaymentLink(data),
+    mutationFn: (data: CreatePaymentRequest) =>
+      paymentsApi.createPaymentLink(data),
     onError: (error: any) => {
-      const message = error?.body?.detail || error?.message || "Failed to create payment"
+      const message =
+        error?.body?.detail || error?.message || "Failed to create payment"
       toast.error(message)
     },
   })
 }
 
 // Poll Payment Status
-export function usePaymentStatus(orderId: string | null, options?: { enabled?: boolean }) {
+export function usePaymentStatus(
+  orderId: string | null,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: paymentQueryKeys.status(orderId || ""),
     queryFn: () => paymentsApi.getPaymentStatus(orderId!),
@@ -36,7 +45,10 @@ export function usePaymentStatus(orderId: string | null, options?: { enabled?: b
 }
 
 // Get Order Details
-export function useOrder(orderId: string | null, options?: { enabled?: boolean }) {
+export function useOrder(
+  orderId: string | null,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: paymentQueryKeys.order(orderId || ""),
     queryFn: () => paymentsApi.getOrderById(orderId!),
@@ -45,7 +57,10 @@ export function useOrder(orderId: string | null, options?: { enabled?: boolean }
 }
 
 // Get Payment History
-export function usePaymentHistory(params?: { limit?: number; offset?: number }) {
+export function usePaymentHistory(params?: {
+  limit?: number
+  offset?: number
+}) {
   return useQuery({
     queryKey: paymentQueryKeys.history(params),
     queryFn: () => paymentsApi.getPaymentHistory(params),
@@ -53,7 +68,10 @@ export function usePaymentHistory(params?: { limit?: number; offset?: number }) 
 }
 
 // Get Invoice Details
-export function useInvoice(orderId: string | null, options?: { enabled?: boolean }) {
+export function useInvoice(
+  orderId: string | null,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: paymentQueryKeys.invoice(orderId || ""),
     queryFn: () => paymentsApi.getInvoice(orderId!),

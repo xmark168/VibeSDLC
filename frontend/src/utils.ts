@@ -1,7 +1,6 @@
-import type { JSX } from "react"
 import toast from "react-hot-toast"
-import type { ApiError } from "./client"
 import type { ToastMessages } from "@/types"
+import type { ApiError } from "./client"
 
 /**
  * Wraps an async operation with react-hot-toast loading states

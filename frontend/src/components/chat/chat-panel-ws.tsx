@@ -1,72 +1,82 @@
-import type React from "react";
-import { useState, useRef, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { format } from "date-fns";
-import { Button } from "@/components/ui/button";
+import { useQueryClient } from "@tanstack/react-query"
+import { useNavigate } from "@tanstack/react-router"
+import { format } from "date-fns"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  ChevronDown,
-  ChevronUp,
+  ArrowLeft,
+  Check,
   ChevronLeft,
   ChevronRight,
-  ArrowUp,
-  ArrowLeft,
   Copy,
-  Check,
-  X,
-  PanelLeftClose,
-  Loader2,
   Crown,
-  PaperclipIcon,
   FileText,
-} from "lucide-react";
-import { useTheme } from "@/components/provider/theme-provider";
-import { useChatWebSocket } from "@/hooks/useChatWebSocket";
-import { TypingIndicator } from "./TypingIndicator";
-import { useAuth } from "@/hooks/useAuth";
-import { useInfiniteMessages, useCreateMessageWithFile } from "@/queries/messages";
-import { messagesApi } from "@/apis/messages";
-import { AuthorType, type Message } from "@/types/message";
-import { MessageStatusIndicator } from "./message-status-indicator";
-import { BatchQuestionsCard } from "./BatchQuestionsCard";
-import { ConversationOwnerBadge } from "./ConversationOwnerBadge";
-import { AgentHandoffNotification } from "./AgentHandoffNotification";
-import { ArtifactCard } from "./ArtifactCard";
-import { StoriesCreatedCard } from "./StoriesCreatedCard";
-import { StorySuggestionsCard } from "./StorySuggestionsCard";
-import { ApprovalCard } from "./ApprovalCard";
-import { useProjectAgents } from "@/queries/agents";
-import { PromptInput, PromptInputButton, PromptInputSubmit, PromptInputTextarea, PromptInputToolbar, PromptInputTools } from "../ui/shadcn-io/ai/prompt-input";
-import { MentionDropdown, type Agent } from "../ui/mention-dropdown";
+  Loader2,
+  PanelLeftClose,
+  PaperclipIcon,
+  X,
+} from "lucide-react"
+import type React from "react"
+import { useEffect, useRef, useState } from "react"
+import { messagesApi } from "@/apis/messages"
+import { useTheme } from "@/components/provider/theme-provider"
+import { Button } from "@/components/ui/button"
+import { useAuth } from "@/hooks/useAuth"
+import { useChatWebSocket } from "@/hooks/useChatWebSocket"
+import { useProjectAgents } from "@/queries/agents"
+import {
+  useCreateMessageWithFile,
+  useInfiniteMessages,
+} from "@/queries/messages"
+import { AuthorType, type Message } from "@/types/message"
+import { type Agent, MentionDropdown } from "../ui/mention-dropdown"
+import {
+  PromptInput,
+  PromptInputButton,
+  PromptInputSubmit,
+  PromptInputTextarea,
+  PromptInputToolbar,
+  PromptInputTools,
+} from "../ui/shadcn-io/ai/prompt-input"
+import { AgentHandoffNotification } from "./AgentHandoffNotification"
+import { ApprovalCard } from "./ApprovalCard"
+import { ArtifactCard } from "./ArtifactCard"
+import { BatchQuestionsCard } from "./BatchQuestionsCard"
+import { ConversationOwnerBadge } from "./ConversationOwnerBadge"
+import { MessageStatusIndicator } from "./message-status-indicator"
+import { StoriesCreatedCard } from "./StoriesCreatedCard"
+import { StorySuggestionsCard } from "./StorySuggestionsCard"
+import { TypingIndicator } from "./TypingIndicator"
 
 // Default avatars by role type (for fallback when persona_avatar is not available)
 const DEFAULT_AVATARS: Record<string, string> = {
-  team_leader: "https://api.dicebear.com/7.x/avataaars/svg?seed=TeamLeader&backgroundColor=6366f1",
-  business_analyst: "https://api.dicebear.com/7.x/avataaars/svg?seed=BusinessAnalyst&backgroundColor=3b82f6",
-  developer: "https://api.dicebear.com/7.x/avataaars/svg?seed=Developer&backgroundColor=22c55e",
-  tester: "https://api.dicebear.com/7.x/avataaars/svg?seed=Tester&backgroundColor=f59e0b",
-};
+  team_leader:
+    "https://api.dicebear.com/7.x/avataaars/svg?seed=TeamLeader&backgroundColor=6366f1",
+  business_analyst:
+    "https://api.dicebear.com/7.x/avataaars/svg?seed=BusinessAnalyst&backgroundColor=3b82f6",
+  developer:
+    "https://api.dicebear.com/7.x/avataaars/svg?seed=Developer&backgroundColor=22c55e",
+  tester:
+    "https://api.dicebear.com/7.x/avataaars/svg?seed=Tester&backgroundColor=f59e0b",
+}
 
 interface ChatPanelProps {
-  onCollapse: () => void;
-  projectId?: string;
+  onCollapse: () => void
+  projectId?: string
   onSendMessageReady?: (
-    sendFn: (params: { content: string; author_type?: 'user' | 'agent' }) => boolean
-  ) => void;
-  onConnectionChange?: (connected: boolean) => void;
-  onKanbanDataChange?: (data: any) => void;
-  onActiveTabChange?: (tab: string | null) => void;
-  onAgentStatusesChange?: (statuses: Map<string, { status: string; lastUpdate: string }>) => void; // NEW
-  onOpenArtifact?: (artifactId: string) => void;
-  onOpenFile?: (filePath: string) => void;
-  onInsertMentionReady?: (fn: (agentName: string) => void) => void; // Callback to insert @mention
-  onAgentClick?: (agentName: string) => void; // Callback when agent avatar is clicked
+    sendFn: (params: {
+      content: string
+      author_type?: "user" | "agent"
+    }) => boolean,
+  ) => void
+  onConnectionChange?: (connected: boolean) => void
+  onKanbanDataChange?: (data: any) => void
+  onActiveTabChange?: (tab: string | null) => void
+  onAgentStatusesChange?: (
+    statuses: Map<string, { status: string; lastUpdate: string }>,
+  ) => void // NEW
+  onOpenArtifact?: (artifactId: string) => void
+  onOpenFile?: (filePath: string) => void
+  onInsertMentionReady?: (fn: (agentName: string) => void) => void // Callback to insert @mention
+  onAgentClick?: (agentName: string) => void // Callback when agent avatar is clicked
 }
 
 export function ChatPanelWS({
@@ -82,72 +92,95 @@ export function ChatPanelWS({
   onInsertMentionReady,
   onAgentClick,
 }: ChatPanelProps) {
-  const [message, setMessage] = useState("");
-  const [showMentions, setShowMentions] = useState(false);
-  const [mentionSearch, setMentionSearch] = useState("");
-  const [mentionedAgent, setMentionedAgent] = useState<{ id: string; name: string } | null>(null);
-  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
-  const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null);
-  const [pendingApprovalCard, setPendingApprovalCard] = useState<Message | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [activeBatchQuestion, setActiveBatchQuestion] = useState<Message | null>(null);
-  const [batchQuestionInputs, setBatchQuestionInputs] = useState<Map<string, string>>(new Map());
-  const [batchQuestionsAllAnswered, setBatchQuestionsAllAnswered] = useState(false);
-  const [batchCurrentQuestionAnswered, setBatchCurrentQuestionAnswered] = useState(false);
-  const [batchCurrentQuestionIndex, setBatchCurrentQuestionIndex] = useState(0);
-  const [batchTotalQuestions, setBatchTotalQuestions] = useState(0);
-  const batchSubmitFnRef = useRef<(() => Promise<void>) | null>(null);
-  const batchNextFnRef = useRef<(() => void) | null>(null);
-  const batchBackFnRef = useRef<(() => void) | null>(null);
-  const { theme, setTheme } = useTheme();
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const prevMessagesLengthRef = useRef(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [message, setMessage] = useState("")
+  const [showMentions, setShowMentions] = useState(false)
+  const [mentionSearch, setMentionSearch] = useState("")
+  const [mentionedAgent, setMentionedAgent] = useState<{
+    id: string
+    name: string
+  } | null>(null)
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [_isWaitingForResponse, setIsWaitingForResponse] = useState(false)
+  const [pendingQuestion, setPendingQuestion] = useState<Message | null>(null)
+  const [pendingApprovalCard, setPendingApprovalCard] =
+    useState<Message | null>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [activeBatchQuestion, setActiveBatchQuestion] =
+    useState<Message | null>(null)
+  const [batchQuestionInputs, setBatchQuestionInputs] = useState<
+    Map<string, string>
+  >(new Map())
+  const [batchQuestionsAllAnswered, setBatchQuestionsAllAnswered] =
+    useState(false)
+  const [batchCurrentQuestionAnswered, setBatchCurrentQuestionAnswered] =
+    useState(false)
+  const [batchCurrentQuestionIndex, setBatchCurrentQuestionIndex] = useState(0)
+  const [batchTotalQuestions, setBatchTotalQuestions] = useState(0)
+  const batchSubmitFnRef = useRef<(() => Promise<void>) | null>(null)
+  const batchNextFnRef = useRef<(() => void) | null>(null)
+  const batchBackFnRef = useRef<(() => void) | null>(null)
+  const { theme, setTheme } = useTheme()
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const prevMessagesLengthRef = useRef(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Get access token
-  const token = localStorage.getItem("access_token");
+  const token = localStorage.getItem("access_token")
 
   // File upload mutation
-  const { mutateAsync: createMessageWithFile, isPending: isUploading } = useCreateMessageWithFile();
+  const { mutateAsync: createMessageWithFile, isPending: isUploading } =
+    useCreateMessageWithFile()
 
   // Fetch real agents from database
-  const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
-    enabled: !!projectId,
-  });
+  const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(
+    projectId || "",
+    {
+      enabled: !!projectId,
+    },
+  )
 
   // Map role_type to user-friendly designation, icon and color
-  const getRoleInfo = (roleType: string): { role: string; icon: string; color: string } => {
-    const roleMap: Record<string, { role: string; icon: string; color: string }> = {
+  const getRoleInfo = (
+    roleType: string,
+  ): { role: string; icon: string; color: string } => {
+    const roleMap: Record<
+      string,
+      { role: string; icon: string; color: string }
+    > = {
       team_leader: { role: "Team Leader", icon: "👨‍💼", color: "#6366f1" },
-      business_analyst: { role: "Business Analyst", icon: "👩‍💼", color: "#8b5cf6" },
+      business_analyst: {
+        role: "Business Analyst",
+        icon: "👩‍💼",
+        color: "#8b5cf6",
+      },
       developer: { role: "Developer", icon: "👨‍💻", color: "#10b981" },
       tester: { role: "Tester", icon: "🧪", color: "#f59e0b" },
-    };
-    return roleMap[roleType] || { role: roleType, icon: "🤖", color: "#6b7280" };
-  };
+    }
+    return roleMap[roleType] || { role: roleType, icon: "🤖", color: "#6b7280" }
+  }
 
   // Transform database agents to dropdown format
   // Handle both { data: [...] } and direct array response
-  const agentsList = Array.isArray(projectAgents) 
-    ? projectAgents 
-    : (projectAgents?.data || []);
-  
+  const agentsList = Array.isArray(projectAgents)
+    ? projectAgents
+    : projectAgents?.data || []
+
   const AGENTS = agentsList.map((agent) => {
-    const roleInfo = getRoleInfo(agent.role_type);
+    const roleInfo = getRoleInfo(agent.role_type)
     return {
       id: agent.id,
       name: agent.human_name,
       role: roleInfo.role,
       icon: roleInfo.icon,
       color: roleInfo.color,
-      persona_avatar: agent.persona_avatar || DEFAULT_AVATARS[agent.role_type] || null, // Use persona avatar or fallback
-    };
-  });
+      persona_avatar:
+        agent.persona_avatar || DEFAULT_AVATARS[agent.role_type] || null, // Use persona avatar or fallback
+    }
+  })
 
   // Fetch existing messages with infinite scroll
   const {
@@ -156,138 +189,164 @@ export function ChatPanelWS({
     hasNextPage,
     isFetchingNextPage,
     isLoading: isLoadingMessages,
-  } = useInfiniteMessages(projectId || "");
+  } = useInfiniteMessages(projectId || "")
 
   // Flatten all pages into single array of messages
   // API returns messages in DESC order (newest first)
   // We need to reverse to get chronological order (oldest first for display)
   const apiMessages = messagesData?.pages
-    ? messagesData.pages.flatMap(page => page.messages).reverse()
-    : [];
-  const totalMessageCount = messagesData?.pages?.[0]?.totalCount || 0;
+    ? messagesData.pages.flatMap((page) => page.messages).reverse()
+    : []
+  const totalMessageCount = messagesData?.pages?.[0]?.totalCount || 0
 
-  const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
-  const isLoadingMoreRef = useRef(false);
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
+  const isLoadingMoreRef = useRef(false)
 
   useEffect(() => {
-    const trigger = loadMoreTriggerRef.current;
-    const container = messagesContainerRef.current;
-    if (!trigger || !container) return;
+    const trigger = loadMoreTriggerRef.current
+    const container = messagesContainerRef.current
+    if (!trigger || !container) return
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage && !isLoadingMoreRef.current) {
-          isLoadingMoreRef.current = true;
-          
-          const scrollHeightBefore = container.scrollHeight;
-          const scrollTopBefore = container.scrollTop;
-          
+        if (
+          entry.isIntersecting &&
+          hasNextPage &&
+          !isFetchingNextPage &&
+          !isLoadingMoreRef.current
+        ) {
+          isLoadingMoreRef.current = true
+
+          const scrollHeightBefore = container.scrollHeight
+          const scrollTopBefore = container.scrollTop
+
           fetchNextPage().then(() => {
             requestAnimationFrame(() => {
-              const scrollHeightAfter = container.scrollHeight;
-              const heightDiff = scrollHeightAfter - scrollHeightBefore;
-              container.scrollTop = scrollTopBefore + heightDiff;
-              isLoadingMoreRef.current = false;
-              });
-          });
+              const scrollHeightAfter = container.scrollHeight
+              const heightDiff = scrollHeightAfter - scrollHeightBefore
+              container.scrollTop = scrollTopBefore + heightDiff
+              isLoadingMoreRef.current = false
+            })
+          })
         }
       },
-      { 
+      {
         root: container,
         threshold: 0.1,
-        rootMargin: '100px 0px 0px 0px' // Trigger 100px before reaching top
-      }
-    );
+        rootMargin: "100px 0px 0px 0px", // Trigger 100px before reaching top
+      },
+    )
 
-    observer.observe(trigger);
-    return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    observer.observe(trigger)
+    return () => observer.disconnect()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   // WebSocket connection (simplified with 5 message types)
   const {
     isConnected,
     messages: wsMessages,
     agentStatus,
-    agentStatuses: wsAgentStatuses,  // Individual agent statuses from WebSocket
+    agentStatuses: wsAgentStatuses, // Individual agent statuses from WebSocket
     typingAgents,
-    answeredBatchIds,  // Track which batches have been answered
+    answeredBatchIds, // Track which batches have been answered
     conversationOwner,
-    refetchTrigger,  // Trigger for refetching messages (file uploads)
+    refetchTrigger, // Trigger for refetching messages (file uploads)
     sendMessage: wsSendMessage,
     sendQuestionAnswer,
     sendBatchAnswers,
-  } = useChatWebSocket(projectId ?? null, token || '');
+  } = useChatWebSocket(projectId ?? null, token || "")
 
   // Refetch messages when messages_updated event received (file uploads, etc.)
   useEffect(() => {
     if (refetchTrigger > 0) {
-       queryClient.invalidateQueries({ queryKey: ['messages-infinite', projectId] })
+      queryClient.invalidateQueries({
+        queryKey: ["messages-infinite", projectId],
+      })
     }
   }, [refetchTrigger, queryClient, projectId])
 
   // Notify parent when agent statuses change
   useEffect(() => {
     if (onAgentStatusesChange && wsAgentStatuses.size > 0) {
-      onAgentStatusesChange(wsAgentStatuses);
+      onAgentStatusesChange(wsAgentStatuses)
     }
-  }, [wsAgentStatuses, onAgentStatusesChange]);
+  }, [wsAgentStatuses, onAgentStatusesChange])
 
   // Combine existing messages with WebSocket messages
-  const wsMessagesArray = wsMessages || [];
+  const wsMessagesArray = wsMessages || []
 
   // Combine API messages with WebSocket messages (no temp messages anymore)
   const allMessages = [...apiMessages, ...wsMessagesArray]
 
   // Sort by created_at timestamp
   const sortedMessages = allMessages.sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    (a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
   )
 
   // Remove duplicates by ID (simple de-duplication)
   const deduplicatedMessages = sortedMessages.filter(
-    (msg, index, self) => index === self.findIndex(m => m.id === msg.id)
-  );
+    (msg, index, self) => index === self.findIndex((m) => m.id === msg.id),
+  )
 
   // Group batch questions: handle both new format (1 message with all questions) and old format (multiple messages)
   const uniqueMessages = (() => {
-    const processedBatchIds = new Set<string>();
-    const result: Message[] = [];
+    const processedBatchIds = new Set<string>()
+    const result: Message[] = []
 
     for (const msg of deduplicatedMessages) {
       // If this is a batch question
-      if (msg.message_type === 'agent_question_batch' && msg.structured_data?.batch_id) {
-        const batchId = msg.structured_data.batch_id;
-        
+      if (
+        msg.message_type === "agent_question_batch" &&
+        msg.structured_data?.batch_id
+      ) {
+        const batchId = msg.structured_data.batch_id
+
         // Skip if we already processed this batch
         if (processedBatchIds.has(batchId)) {
-          continue;
+          continue
         }
-        processedBatchIds.add(batchId);
+        processedBatchIds.add(batchId)
 
         // NEW FORMAT: structured_data.questions already contains all questions
-        if (msg.structured_data?.questions && Array.isArray(msg.structured_data.questions) && msg.structured_data.questions.length > 0) {
+        if (
+          msg.structured_data?.questions &&
+          Array.isArray(msg.structured_data.questions) &&
+          msg.structured_data.questions.length > 0
+        ) {
           // Use as-is, questions are already in correct format
-          result.push(msg);
-          continue;
+          result.push(msg)
+          continue
         }
 
         // OLD FORMAT: Multiple messages per batch - need to combine them
-        const batchMessages = deduplicatedMessages.filter(
-          m => m.message_type === 'agent_question_batch' && 
-               m.structured_data?.batch_id === batchId
-        ).sort((a, b) => (a.structured_data?.batch_index || 0) - (b.structured_data?.batch_index || 0));
+        const batchMessages = deduplicatedMessages
+          .filter(
+            (m) =>
+              m.message_type === "agent_question_batch" &&
+              m.structured_data?.batch_id === batchId,
+          )
+          .sort(
+            (a, b) =>
+              (a.structured_data?.batch_index || 0) -
+              (b.structured_data?.batch_index || 0),
+          )
 
         // Combine into single message with all questions (from old format where content = question text)
-        const combinedQuestions = batchMessages.map(m => ({
+        const combinedQuestions = batchMessages.map((m) => ({
           question_id: m.structured_data?.question_id,
-          question_text: m.content,  // Old format: content was the question text
-          question_type: m.structured_data?.question_type || 'open',
+          question_text: m.content, // Old format: content was the question text
+          question_type: m.structured_data?.question_type || "open",
           options: m.structured_data?.options,
           allow_multiple: m.structured_data?.allow_multiple || false,
-        }));
+        }))
 
-        const combinedQuestionIds = batchMessages.map(m => m.structured_data?.question_id || m.id);
-        const isAnswered = batchMessages.some(m => m.structured_data?.answered);
+        const combinedQuestionIds = batchMessages.map(
+          (m) => m.structured_data?.question_id || m.id,
+        )
+        const isAnswered = batchMessages.some(
+          (m) => m.structured_data?.answered,
+        )
 
         const combinedMsg: Message = {
           ...batchMessages[0],
@@ -297,58 +356,67 @@ export function ChatPanelWS({
             questions: combinedQuestions,
             question_ids: combinedQuestionIds,
             answered: isAnswered,
-          }
-        };
+          },
+        }
 
-        result.push(combinedMsg);
+        result.push(combinedMsg)
       } else {
         // Non-batch message, add as-is
-        result.push(msg);
+        result.push(msg)
       }
     }
 
-    return result;
-  })();
-  
+    return result
+  })()
+
   // Find the latest PRD card ID (only show actions on the latest one)
   const latestPrdMessageId = (() => {
     const prdMessages = uniqueMessages.filter(
-      msg => msg.structured_data?.message_type === 'prd_created'
+      (msg) => msg.structured_data?.message_type === "prd_created",
     )
     if (prdMessages.length === 0) return null
     // Get the one with latest timestamp
-    const latest = prdMessages.sort((a, b) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    const latest = prdMessages.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     )[0]
     return latest?.id || null
   })()
-  
+
   // Find the latest Stories card ID (only show actions on the latest one)
   const latestStoriesMessageId = (() => {
     const storiesMessages = uniqueMessages.filter(
-      msg => msg.structured_data?.message_type === 'stories_created'
+      (msg) => msg.structured_data?.message_type === "stories_created",
     )
     if (storiesMessages.length === 0) return null
-    const latest = storiesMessages.sort((a, b) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    const latest = storiesMessages.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     )[0]
     return latest?.id || null
   })()
 
   // Check if a PRD/Stories card has been submitted (user sent approve/edit message after it)
-  const isCardSubmitted = (cardMsgId: string, cardType: 'prd' | 'stories'): boolean => {
-    const cardMsgIndex = uniqueMessages.findIndex(m => m.id === cardMsgId)
+  const isCardSubmitted = (
+    cardMsgId: string,
+    cardType: "prd" | "stories",
+  ): boolean => {
+    const cardMsgIndex = uniqueMessages.findIndex((m) => m.id === cardMsgId)
     if (cardMsgIndex === -1) return false
-    
+
     // Look for user messages after this card
     const messagesAfterCard = uniqueMessages.slice(cardMsgIndex + 1)
-    const keywords = cardType === 'prd' 
-      ? ['Approve this PRD', 'Approve PRD', 'Edit PRD']
-      : ['Approve Stories', 'Edit Stories']
-    
-    return messagesAfterCard.some(m => 
-      m.author_type === AuthorType.USER && 
-      keywords.some(kw => m.content?.toLowerCase().includes(kw.toLowerCase()))
+    const keywords =
+      cardType === "prd"
+        ? ["Approve this PRD", "Approve PRD", "Edit PRD"]
+        : ["Approve Stories", "Edit Stories"]
+
+    return messagesAfterCard.some(
+      (m) =>
+        m.author_type === AuthorType.USER &&
+        keywords.some((kw) =>
+          m.content?.toLowerCase().includes(kw.toLowerCase()),
+        ),
     )
   }
 
@@ -356,12 +424,14 @@ export function ChatPanelWS({
   useEffect(() => {
     // Find ALL unanswered questions
     const unansweredQuestions = uniqueMessages.filter(
-      msg => msg.message_type === 'agent_question' && !msg.structured_data?.answered
+      (msg) =>
+        msg.message_type === "agent_question" && !msg.structured_data?.answered,
     )
 
     // Get LATEST by timestamp (most recent)
-    const latestUnanswered = unansweredQuestions.sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    const latestUnanswered = unansweredQuestions.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     )[0]
 
     setPendingQuestion(latestUnanswered || null)
@@ -369,11 +439,13 @@ export function ChatPanelWS({
     // Auto-scroll to question if it appears (only if it's a NEW question)
     if (latestUnanswered && latestUnanswered.id !== pendingQuestion?.id) {
       setTimeout(() => {
-        const element = document.getElementById(`question-${latestUnanswered.id}`)
-        element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        const element = document.getElementById(
+          `question-${latestUnanswered.id}`,
+        )
+        element?.scrollIntoView({ behavior: "smooth", block: "center" })
       }, 100)
     }
-  }, [uniqueMessages])
+  }, [uniqueMessages, pendingQuestion?.id])
 
   // Track previous pending approval card ID to detect changes
   const prevPendingApprovalCardIdRef = useRef<string | null>(null)
@@ -382,26 +454,32 @@ export function ChatPanelWS({
   useEffect(() => {
     // Find unanswered PRD cards (not yet submitted by user)
     const unansweredPrd = uniqueMessages.filter(
-      msg => msg.structured_data?.message_type === 'prd_created' && 
-             msg.structured_data?.file_path &&
-             !isCardSubmitted(msg.id, 'prd')
+      (msg) =>
+        msg.structured_data?.message_type === "prd_created" &&
+        msg.structured_data?.file_path &&
+        !isCardSubmitted(msg.id, "prd"),
     )
-    
+
     // Find unanswered Stories cards (not yet submitted by user)
     const unansweredStories = uniqueMessages.filter(
-      msg => msg.structured_data?.message_type === 'stories_created' && 
-             msg.structured_data?.file_path &&
-             !isCardSubmitted(msg.id, 'stories')
+      (msg) =>
+        msg.structured_data?.message_type === "stories_created" &&
+        msg.structured_data?.file_path &&
+        !isCardSubmitted(msg.id, "stories"),
     )
-    
+
     // Combine and get latest
     const allPendingCards = [...unansweredPrd, ...unansweredStories]
-    const latestPendingCard = allPendingCards.sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    const latestPendingCard = allPendingCards.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     )[0]
 
     // If there's a new pending card (different from previous), reset isNearQuestion
-    if (latestPendingCard && latestPendingCard.id !== prevPendingApprovalCardIdRef.current) {
+    if (
+      latestPendingCard &&
+      latestPendingCard.id !== prevPendingApprovalCardIdRef.current
+    ) {
       setIsNearQuestion(false)
       prevPendingApprovalCardIdRef.current = latestPendingCard.id
     } else if (!latestPendingCard) {
@@ -409,18 +487,20 @@ export function ChatPanelWS({
     }
 
     setPendingApprovalCard(latestPendingCard || null)
-  }, [uniqueMessages])
+  }, [uniqueMessages, isCardSubmitted])
 
   // Detect active batch question (unanswered)
   useEffect(() => {
     const unansweredBatches = uniqueMessages.filter(
-      msg => msg.message_type === 'agent_question_batch' &&
-             !msg.structured_data?.answered &&
-             !answeredBatchIds.has(msg.structured_data?.batch_id || '')
+      (msg) =>
+        msg.message_type === "agent_question_batch" &&
+        !msg.structured_data?.answered &&
+        !answeredBatchIds.has(msg.structured_data?.batch_id || ""),
     )
 
-    const latestBatch = unansweredBatches.sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    const latestBatch = unansweredBatches.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     )[0]
 
     setActiveBatchQuestion(latestBatch || null)
@@ -431,19 +511,29 @@ export function ChatPanelWS({
   useEffect(() => {
     // Find the MOST RECENT stories_approved message (not the first one)
     const approvedMessages = uniqueMessages.filter(
-      msg => msg.structured_data?.message_type === 'stories_approved'
+      (msg) => msg.structured_data?.message_type === "stories_approved",
     )
-    const latestApproved = approvedMessages.length > 0
-      ? approvedMessages.sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        )[0]
-      : null
-    
+    const latestApproved =
+      approvedMessages.length > 0
+        ? approvedMessages.sort(
+            (a, b) =>
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime(),
+          )[0]
+        : null
+
     // Only refresh if it's a NEW approval message we haven't processed yet
-    if (latestApproved && latestApproved.id !== lastApprovedMsgIdRef.current && projectId) {
+    if (
+      latestApproved &&
+      latestApproved.id !== lastApprovedMsgIdRef.current &&
+      projectId
+    ) {
       lastApprovedMsgIdRef.current = latestApproved.id
       // Use refetchQueries for immediate refetch instead of invalidateQueries
-      queryClient.refetchQueries({ queryKey: ['kanban-board', projectId], type: 'active' })
+      queryClient.refetchQueries({
+        queryKey: ["kanban-board", projectId],
+        type: "active",
+      })
     }
   }, [uniqueMessages, projectId, queryClient])
 
@@ -451,18 +541,28 @@ export function ChatPanelWS({
   const lastResetMsgIdRef = useRef<string | null>(null)
   useEffect(() => {
     const resetMessages = uniqueMessages.filter(
-      msg => msg.structured_data?.message_type === 'project_reset'
+      (msg) => msg.structured_data?.message_type === "project_reset",
     )
-    const latestReset = resetMessages.length > 0
-      ? resetMessages.sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        )[0]
-      : null
-    
-    if (latestReset && latestReset.id !== lastResetMsgIdRef.current && projectId) {
-     lastResetMsgIdRef.current = latestReset.id
+    const latestReset =
+      resetMessages.length > 0
+        ? resetMessages.sort(
+            (a, b) =>
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime(),
+          )[0]
+        : null
+
+    if (
+      latestReset &&
+      latestReset.id !== lastResetMsgIdRef.current &&
+      projectId
+    ) {
+      lastResetMsgIdRef.current = latestReset.id
       // Refresh Kanban board to clear deleted stories
-      queryClient.refetchQueries({ queryKey: ['kanban-board', projectId], type: 'active' })
+      queryClient.refetchQueries({
+        queryKey: ["kanban-board", projectId],
+        type: "active",
+      })
     }
   }, [uniqueMessages, projectId, queryClient])
 
@@ -472,7 +572,7 @@ export function ChatPanelWS({
   const forceScrollRef = useRef(false)
   // Track if user is near the question/bottom area (to hide "View Question" button)
   const [isNearQuestion, setIsNearQuestion] = useState(false)
-  
+
   // Detect manual scroll
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -481,9 +581,11 @@ export function ChatPanelWS({
     const handleScroll = () => {
       // Don't update userScrolledUp if we're force scrolling
       if (forceScrollRef.current) return
-      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150
+      const isNearBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight <
+        150
       userScrolledUpRef.current = !isNearBottom
-      
+
       // Update isNearQuestion state for "View Question" button visibility
       // Only update if there's a pending approval card (to avoid unnecessary re-renders)
       if (pendingApprovalCard && !pendingQuestion) {
@@ -491,19 +593,19 @@ export function ChatPanelWS({
       }
     }
 
-    container.addEventListener('scroll', handleScroll)
-    return () => container.removeEventListener('scroll', handleScroll)
+    container.addEventListener("scroll", handleScroll)
+    return () => container.removeEventListener("scroll", handleScroll)
   }, [pendingApprovalCard, pendingQuestion])
 
   // Helper to scroll to bottom
-  const scrollToBottom = (behavior: 'auto' | 'smooth' = 'smooth') => {
+  const scrollToBottom = (behavior: "auto" | "smooth" = "smooth") => {
     const container = messagesContainerRef.current
     if (!container) return
-    
+
     requestAnimationFrame(() => {
       container.scrollTo({
         top: container.scrollHeight,
-        behavior
+        behavior,
       })
       // Reset force scroll after scrolling
       setTimeout(() => {
@@ -519,100 +621,103 @@ export function ChatPanelWS({
     const container = messagesContainerRef.current
     if (!container) return
 
-    const isFirstLoad = prevMessagesLengthRef.current === 0 && uniqueMessages.length > 0
+    const isFirstLoad =
+      prevMessagesLengthRef.current === 0 && uniqueMessages.length > 0
     const hasNewMessages = uniqueMessages.length > prevMessagesLengthRef.current
     const shouldScroll = forceScrollRef.current || !userScrolledUpRef.current
 
     if (isFirstLoad || (hasNewMessages && shouldScroll)) {
-      scrollToBottom(isFirstLoad ? 'auto' : 'smooth')
+      scrollToBottom(isFirstLoad ? "auto" : "smooth")
     }
 
     prevMessagesLengthRef.current = uniqueMessages.length
-  }, [uniqueMessages])
+  }, [uniqueMessages, scrollToBottom])
 
   // Auto-scroll when typing indicator appears
   const typingAgentsCount = typingAgents.size
   const prevTypingCountRef = useRef(0)
-  
+
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
 
     // Only scroll when typing starts (count goes from 0 to >0), not on every update
-    const typingJustStarted = prevTypingCountRef.current === 0 && typingAgentsCount > 0
+    const typingJustStarted =
+      prevTypingCountRef.current === 0 && typingAgentsCount > 0
     prevTypingCountRef.current = typingAgentsCount
     const shouldScroll = forceScrollRef.current || !userScrolledUpRef.current
 
     if (typingJustStarted && shouldScroll) {
       scrollToBottom()
     }
-  }, [typingAgentsCount])
+  }, [typingAgentsCount, scrollToBottom])
 
   // Determine if chat should be blocked
   // Block chat when agent is typing, but ALLOW typing when batch question or single question is active (for answers)
   // Also block when there's a pending approval card (PRD/Stories awaiting approval) without active question
   const isAgentTyping = typingAgents.size > 0
-  const shouldBlockChat = (isAgentTyping && !activeBatchQuestion && !pendingQuestion) || (!!pendingApprovalCard && !pendingQuestion)
+  const shouldBlockChat =
+    (isAgentTyping && !activeBatchQuestion && !pendingQuestion) ||
+    (!!pendingApprovalCard && !pendingQuestion)
 
   // Note: Kanban, activeTab, and agentStatuses features removed for simplicity
 
   const filteredAgents = AGENTS.filter((agent) =>
-    agent.name.toLowerCase().includes(mentionSearch.toLowerCase())
-  );
+    agent.name.toLowerCase().includes(mentionSearch.toLowerCase()),
+  )
 
   const insertMention = (agent: Agent) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+    const textarea = textareaRef.current
+    if (!textarea) return
 
-    const cursorPos = textarea.selectionStart;
-    const textBeforeCursor = message.slice(0, cursorPos);
-    const textAfterCursor = message.slice(cursorPos);
+    const cursorPos = textarea.selectionStart
+    const textBeforeCursor = message.slice(0, cursorPos)
+    const textAfterCursor = message.slice(cursorPos)
 
-    const atIndex = textBeforeCursor.lastIndexOf("@");
-    const newText =
-      textBeforeCursor.slice(0, atIndex) + `@${agent.name} ` + textAfterCursor;
+    const atIndex = textBeforeCursor.lastIndexOf("@")
+    const newText = `${textBeforeCursor.slice(0, atIndex)}@${agent.name} ${textAfterCursor}`
 
-    setMessage(newText);
-    setShowMentions(false);
-    setMentionSearch("");
+    setMessage(newText)
+    setShowMentions(false)
+    setMentionSearch("")
 
     // Store the mentioned agent for routing
-    setMentionedAgent({ id: agent.id, name: agent.name });
+    setMentionedAgent({ id: agent.id, name: agent.name })
 
     setTimeout(() => {
-      const newCursorPos = atIndex + agent.name.length + 2;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-      textarea.focus();
-    }, 0);
-  };
+      const newCursorPos = atIndex + agent.name.length + 2
+      textarea.setSelectionRange(newCursorPos, newCursorPos)
+      textarea.focus()
+    }, 0)
+  }
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-    setMessage(value);
+    const value = e.target.value
+    setMessage(value)
 
-    const cursorPos = e.target.selectionStart;
-    const textBeforeCursor = value.slice(0, cursorPos);
+    const cursorPos = e.target.selectionStart
+    const textBeforeCursor = value.slice(0, cursorPos)
 
-    const atIndex = textBeforeCursor.lastIndexOf("@");
-    const spaceAfterAt = textBeforeCursor.slice(atIndex).indexOf(" ");
+    const atIndex = textBeforeCursor.lastIndexOf("@")
+    const spaceAfterAt = textBeforeCursor.slice(atIndex).indexOf(" ")
 
     if (atIndex !== -1 && spaceAfterAt === -1 && cursorPos - atIndex <= 20) {
-      const searchTerm = textBeforeCursor.slice(atIndex + 1);
-      setMentionSearch(searchTerm);
-      setShowMentions(true);
+      const searchTerm = textBeforeCursor.slice(atIndex + 1)
+      setMentionSearch(searchTerm)
+      setShowMentions(true)
     } else {
-      setShowMentions(false);
+      setShowMentions(false)
     }
-  };
+  }
 
   const handleSend = async (e?: React.FormEvent) => {
-    e?.preventDefault(); // Prevent form submission from navigating
-    if (!message.trim() && !selectedFile) return;
+    e?.preventDefault() // Prevent form submission from navigating
+    if (!message.trim() && !selectedFile) return
     if (!isConnected && !selectedFile) {
-      return;
+      return
     }
 
-    let finalMessage = message.trim();
+    const finalMessage = message.trim()
 
     // BatchQuestionsCard handles question submission now, so no need to check here
 
@@ -623,205 +728,212 @@ export function ChatPanelWS({
           project_id: projectId,
           content: finalMessage || "Analyze this document",
           file: selectedFile,
-        });
-        setSelectedFile(null);
-        setMessage("");
+        })
+        setSelectedFile(null)
+        setMessage("")
         // Force scroll to bottom after sending
-        forceScrollRef.current = true;
-      } catch (error) {
-        alert("Failed to upload file. Please try again.");
+        forceScrollRef.current = true
+      } catch (_error) {
+        alert("Failed to upload file. Please try again.")
       }
-      return;
+      return
     }
 
     // Send via WebSocket with agent routing info if agent was mentioned
-    wsSendMessage(finalMessage, mentionedAgent?.name);
+    wsSendMessage(finalMessage, mentionedAgent?.name)
 
-    setMessage("");
-    setMentionedAgent(null);  // Clear mentioned agent after sending
-    
+    setMessage("")
+    setMentionedAgent(null) // Clear mentioned agent after sending
+
     // Force scroll to bottom after sending
-    forceScrollRef.current = true;
-    
+    forceScrollRef.current = true
+
     // Focus textarea
     setTimeout(() => {
-      textareaRef.current?.focus();
-    }, 100);
-  };
+      textareaRef.current?.focus()
+    }, 100)
+  }
 
   // Reset waiting state when we receive agent messages or agent starts typing/processing
   useEffect(() => {
     if (wsMessagesArray && wsMessagesArray.length > 0) {
-      const lastMessage = wsMessagesArray[wsMessagesArray.length - 1];
+      const lastMessage = wsMessagesArray[wsMessagesArray.length - 1]
       if (lastMessage.author_type === AuthorType.AGENT) {
-        setIsWaitingForResponse(false);
+        setIsWaitingForResponse(false)
       }
     }
-  }, [wsMessagesArray]);
+  }, [wsMessagesArray])
 
   // Reset waiting state when agent status changes
   useEffect(() => {
-    if (agentStatus !== 'idle') {
-      setIsWaitingForResponse(false);
+    if (agentStatus !== "idle") {
+      setIsWaitingForResponse(false)
     }
-  }, [agentStatus]);
+  }, [agentStatus])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // MentionDropdown handles its own keyboard navigation (Arrow, Tab, Enter, Escape)
     // Only handle Enter to send when dropdown is NOT shown
     if (!showMentions && e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault(); // Always prevent default (new line)
+      e.preventDefault() // Always prevent default (new line)
       if (!shouldBlockChat) {
-        handleSend(); // Only send if chat is not blocked
+        handleSend() // Only send if chat is not blocked
       }
     }
-  };
+  }
 
-  const copyToClipboard = async (content: string | undefined, messageId: string) => {
+  const copyToClipboard = async (
+    content: string | undefined,
+    messageId: string,
+  ) => {
     try {
       if (!content) {
-        return;
+        return
       }
-      await navigator.clipboard.writeText(content);
-      setCopiedMessageId(messageId);
-      setTimeout(() => setCopiedMessageId(null), 2000);
-    } catch (err) {
-    }
-  };
+      await navigator.clipboard.writeText(content)
+      setCopiedMessageId(messageId)
+      setTimeout(() => setCopiedMessageId(null), 2000)
+    } catch (_err) {}
+  }
 
   const formatTimestamp = (dateStr: string) => {
     try {
-      const date = new Date(dateStr);
+      const date = new Date(dateStr)
       // Automatically converts UTC to local time and formats
-      return format(date, 'h:mm a \'on\' MMM dd');
+      return format(date, "h:mm a 'on' MMM dd")
       // Output example: "10:30 AM on Nov 25"
-    } catch (error) {
-      return dateStr;
+    } catch (_error) {
+      return dateStr
     }
-  };
+  }
 
   // Helper to get avatar URL by agent name (for typing indicator)
   const getAgentAvatarUrl = (agentName: string): string | null => {
     if (agentsList.length > 0) {
-      const agent = agentsList.find(a => a.human_name === agentName || a.name === agentName);
+      const agent = agentsList.find(
+        (a) => a.human_name === agentName || a.name === agentName,
+      )
       if (agent) {
-        return agent.persona_avatar || DEFAULT_AVATARS[agent.role_type] || null;
+        return agent.persona_avatar || DEFAULT_AVATARS[agent.role_type] || null
       }
     }
-    return null;
-  };
+    return null
+  }
 
   // Helper to get agent status by name
   const getAgentStatus = (agentName: string): string => {
     if (agentsList.length > 0) {
-      const agent = agentsList.find(a => a.human_name === agentName || a.name === agentName);
+      const agent = agentsList.find(
+        (a) => a.human_name === agentName || a.name === agentName,
+      )
       if (agent) {
-        return agent.status || 'idle';
+        return agent.status || "idle"
       }
     }
-    return 'idle';
-  };
+    return "idle"
+  }
 
   const getAgentAvatar = (msg: Message) => {
-    if (msg.author_type === AuthorType.USER) return "👤";
+    if (msg.author_type === AuthorType.USER) return "👤"
     if (msg.author_type === AuthorType.AGENT) {
       // First check if message has persona_avatar directly from API
       if (msg.persona_avatar) {
         return (
-          <img 
-            src={msg.persona_avatar} 
+          <img
+            src={msg.persona_avatar}
             alt={msg.agent_name || "Agent"}
             className="w-8 h-8 rounded-full object-cover"
           />
-        );
+        )
       }
 
       // Fallback: Try to find the agent and get their avatar from agents list
-      const agentName = msg.agent_name || msg.message_metadata?.agent_name;
+      const agentName = msg.agent_name || msg.message_metadata?.agent_name
       if (agentName && agentsList.length > 0) {
-        const agent = agentsList.find(a => a.human_name === agentName || a.name === agentName);
+        const agent = agentsList.find(
+          (a) => a.human_name === agentName || a.name === agentName,
+        )
         if (agent) {
           // Use persona_avatar or role-based default avatar
-          const avatarUrl = agent.persona_avatar || DEFAULT_AVATARS[agent.role_type];
+          const avatarUrl =
+            agent.persona_avatar || DEFAULT_AVATARS[agent.role_type]
           if (avatarUrl) {
             return (
-              <img 
-                src={avatarUrl} 
+              <img
+                src={avatarUrl}
                 alt={agentName}
                 className="w-8 h-8 rounded-full object-cover"
               />
-            );
+            )
           }
         }
       }
-      return "🤖";
+      return "🤖"
     }
-    return "🤖";
-  };
+    return "🤖"
+  }
 
   const getAgentName = (msg: Message) => {
-    if (msg.author_type === AuthorType.USER) return "You";
+    if (msg.author_type === AuthorType.USER) return "You"
     if (msg.author_type === AuthorType.AGENT) {
       // Use specific agent name if available
-      if (msg.agent_name) return msg.agent_name;
+      if (msg.agent_name) return msg.agent_name
       // Check message_metadata for agent_name (from database)
-      if (msg.message_metadata?.agent_name) return msg.message_metadata.agent_name;
-      return "Agent";
+      if (msg.message_metadata?.agent_name)
+        return msg.message_metadata.agent_name
+      return "Agent"
     }
-    return "Agent";
-  };
+    return "Agent"
+  }
 
-  const toggleTheme = () => {
-    const newTheme = theme === "light" ? "dark" : "light";
-    setTheme(newTheme as any);
-  };
+  const _toggleTheme = () => {
+    const newTheme = theme === "light" ? "dark" : "light"
+    setTheme(newTheme as any)
+  }
 
-  const triggerMention = () => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+  const _triggerMention = () => {
+    const textarea = textareaRef.current
+    if (!textarea) return
 
-    const cursorPos = textarea.selectionStart;
-    const newMessage =
-      message.slice(0, cursorPos) + "@" + message.slice(cursorPos);
+    const cursorPos = textarea.selectionStart
+    const newMessage = `${message.slice(0, cursorPos)}@${message.slice(cursorPos)}`
 
-    setMessage(newMessage);
-    setShowMentions(true);
-    setMentionSearch("");
+    setMessage(newMessage)
+    setShowMentions(true)
+    setMentionSearch("")
 
     setTimeout(() => {
-      textarea.focus();
-      const newCursorPos = cursorPos + 1;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-    }, 0);
-  };
+      textarea.focus()
+      const newCursorPos = cursorPos + 1
+      textarea.setSelectionRange(newCursorPos, newCursorPos)
+    }, 0)
+  }
 
   // Notify parent about connection status
   useEffect(() => {
     if (onConnectionChange) {
-      onConnectionChange(isConnected);
+      onConnectionChange(isConnected)
     }
-  }, [isConnected, onConnectionChange]);
+  }, [isConnected, onConnectionChange])
 
   // Expose insertMention function to parent for @mention from agent popup
   useEffect(() => {
     if (onInsertMentionReady) {
       const insertMentionByName = (agentName: string) => {
-        const agent = AGENTS.find(a => a.name === agentName);
+        const agent = AGENTS.find((a) => a.name === agentName)
         if (agent) {
           // Insert @agentName at the start of the message
-          setMessage(`@${agentName} `);
-          setMentionedAgent({ id: agent.id, name: agent.name });
+          setMessage(`@${agentName} `)
+          setMentionedAgent({ id: agent.id, name: agent.name })
           // Focus the textarea
           setTimeout(() => {
-            textareaRef.current?.focus();
-          }, 100);
+            textareaRef.current?.focus()
+          }, 100)
         }
-      };
-      onInsertMentionReady(insertMentionByName);
+      }
+      onInsertMentionReady(insertMentionByName)
     }
-  }, [onInsertMentionReady, AGENTS]);
-
-
+  }, [onInsertMentionReady, AGENTS])
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -879,19 +991,21 @@ export function ChatPanelWS({
       >
         {/* Infinite scroll trigger - loads more messages when visible */}
         <div ref={loadMoreTriggerRef} className="h-1" />
-        
+
         {/* Loading indicator for older messages */}
         {isFetchingNextPage && (
           <div className="flex items-center justify-center py-4">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-sm text-muted-foreground">Loading older messages...</span>
+            <span className="ml-2 text-sm text-muted-foreground">
+              Loading older messages...
+            </span>
           </div>
         )}
-        
+
         {/* Show how many messages loaded / total */}
         {hasNextPage && !isFetchingNextPage && totalMessageCount > 0 && (
           <div className="flex items-center justify-center py-2">
-            <button 
+            <button
               onClick={() => fetchNextPage()}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
@@ -901,7 +1015,7 @@ export function ChatPanelWS({
         )}
 
         {uniqueMessages.map((msg) => {
-          const isUserMessage = msg.author_type === AuthorType.USER;
+          const isUserMessage = msg.author_type === AuthorType.USER
 
           if (isUserMessage) {
             return (
@@ -914,7 +1028,13 @@ export function ChatPanelWS({
                         {msg.attachments.map((att, idx) => (
                           <button
                             key={idx}
-                            onClick={() => messagesApi.downloadAttachment(msg.id, att.filename, idx)}
+                            onClick={() =>
+                              messagesApi.downloadAttachment(
+                                msg.id,
+                                att.filename,
+                                idx,
+                              )
+                            }
                             className="flex items-center gap-3 px-3 py-2.5 bg-muted border border-border rounded-lg w-fit hover:bg-accent transition-colors cursor-pointer"
                             title={`Download ${att.filename}`}
                           >
@@ -936,7 +1056,7 @@ export function ChatPanelWS({
                     {/* Message content */}
                     <div className="rounded-lg px-3 py-2 bg-muted w-fit ml-auto">
                       <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
-                        {msg.content || ''}
+                        {msg.content || ""}
                       </div>
                     </div>
                     <div className="flex items-center justify-end gap-2 px-1">
@@ -944,7 +1064,9 @@ export function ChatPanelWS({
                         {formatTimestamp(msg.created_at)}
                       </span>
                       {/* Message status indicator for user messages */}
-                      {msg.status && <MessageStatusIndicator status={msg.status} />}
+                      {msg.status && (
+                        <MessageStatusIndicator status={msg.status} />
+                      )}
                       <button
                         onClick={() => copyToClipboard(msg.content, msg.id)}
                         className="p-1 rounded hover:bg-accent transition-colors"
@@ -960,57 +1082,73 @@ export function ChatPanelWS({
                   </div>
                 </div>
               </div>
-            );
+            )
           }
 
           // Activity messages are now shown in the execution dialog
           // Skip rendering them here
-          if (msg.message_type === 'activity') {
-            return null;
+          if (msg.message_type === "activity") {
+            return null
           }
 
           // Skip project_reset messages (internal notification for Kanban refresh, not for display)
-          if (msg.structured_data?.message_type === 'project_reset') {
-            return null;
+          if (msg.structured_data?.message_type === "project_reset") {
+            return null
           }
 
           // Agent Handoff Notification
-          if (msg.message_type === 'agent_handoff') {
+          if (msg.message_type === "agent_handoff") {
             return (
               <AgentHandoffNotification
                 key={msg.id}
                 previousAgent={msg.structured_data?.previous_agent_name}
-                newAgent={msg.structured_data?.new_agent_name || ''}
-                reason={msg.structured_data?.reason || ''}
+                newAgent={msg.structured_data?.new_agent_name || ""}
+                reason={msg.structured_data?.reason || ""}
                 timestamp={msg.created_at}
               />
-            );
+            )
           }
 
           // Agent Question Handling - show agent message here, interaction in chat wrapper
-          if (msg.message_type === 'agent_question') {
-            const isActiveQuestion = pendingQuestion?.id === msg.id;
-            const isAnswered = msg.structured_data?.answered || false;
-            const agentStatus = msg.agent_name ? getAgentStatus(msg.agent_name) : 'idle';
+          if (msg.message_type === "agent_question") {
+            const _isActiveQuestion = pendingQuestion?.id === msg.id
+            const isAnswered = msg.structured_data?.answered || false
+            const agentStatus = msg.agent_name
+              ? getAgentStatus(msg.agent_name)
+              : "idle"
 
             return (
-              <div key={msg.id} id={`question-${msg.id}`} className="flex items-start gap-3">
-                <div 
+              <div
+                key={msg.id}
+                id={`question-${msg.id}`}
+                className="flex items-start gap-3"
+              >
+                <div
                   className="relative flex-shrink-0 cursor-pointer"
-                  onClick={() => msg.author_type === AuthorType.AGENT && msg.agent_name && onAgentClick?.(msg.agent_name)}
+                  onClick={() =>
+                    msg.author_type === AuthorType.AGENT &&
+                    msg.agent_name &&
+                    onAgentClick?.(msg.agent_name)
+                  }
                 >
                   <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg bg-muted overflow-hidden hover:ring-2 hover:ring-primary/50 transition-all">
                     {getAgentAvatar(msg)}
                   </div>
                   {msg.author_type === AuthorType.AGENT && (
-                    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${
-                      agentStatus === 'busy' ? 'bg-yellow-500' : agentStatus === 'error' ? 'bg-red-500' : 'bg-green-500'
-                    }`} />
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${
+                        agentStatus === "busy"
+                          ? "bg-yellow-500"
+                          : agentStatus === "error"
+                            ? "bg-red-500"
+                            : "bg-green-500"
+                      }`}
+                    />
                   )}
                 </div>
                 <div className="flex-1">
                   <div className="text-xs font-medium text-muted-foreground mb-2">
-                    {msg.agent_name || 'Agent'}
+                    {msg.agent_name || "Agent"}
                   </div>
                   {/* Show message bubble indicating question or full card if answered */}
                   {!isAnswered ? (
@@ -1022,61 +1160,87 @@ export function ChatPanelWS({
                   ) : (
                     <BatchQuestionsCard
                       batchId={msg.structured_data?.question_id || msg.id}
-                      questions={[{
-                        question_id: msg.structured_data?.question_id,
-                        question_text: msg.content,
-                        question_type: msg.structured_data?.question_type || 'open',
-                        options: msg.structured_data?.options,
-                        allow_multiple: msg.structured_data?.allow_multiple || false,
-                      }]}
+                      questions={[
+                        {
+                          question_id: msg.structured_data?.question_id,
+                          question_text: msg.content,
+                          question_type:
+                            msg.structured_data?.question_type || "open",
+                          options: msg.structured_data?.options,
+                          allow_multiple:
+                            msg.structured_data?.allow_multiple || false,
+                        },
+                      ]}
                       questionIds={[msg.structured_data?.question_id || msg.id]}
                       agentName={msg.agent_name}
                       answered={true}
-                      submittedAnswers={[{
-                        question_id: msg.structured_data?.question_id || msg.id,
-                        answer: msg.structured_data?.user_answer,
-                        selected_options: msg.structured_data?.user_selected_options,
-                      }]}
+                      submittedAnswers={[
+                        {
+                          question_id:
+                            msg.structured_data?.question_id || msg.id,
+                          answer: msg.structured_data?.user_answer,
+                          selected_options:
+                            msg.structured_data?.user_selected_options,
+                        },
+                      ]}
                       chatInputValue=""
                       onSubmit={() => {}}
                     />
                   )}
                 </div>
               </div>
-            );
+            )
           }
 
           // Batch Question Handling - show agent message here, interaction in chat wrapper
-          if (msg.message_type === 'agent_question_batch') {
-            const isActiveBatch = activeBatchQuestion?.id === msg.id;
-            const batchId = msg.structured_data?.batch_id || '';
-            const isAnswered = msg.structured_data?.answered || answeredBatchIds.has(batchId);
-            const agentStatus = msg.agent_name ? getAgentStatus(msg.agent_name) : 'idle';
+          if (msg.message_type === "agent_question_batch") {
+            const _isActiveBatch = activeBatchQuestion?.id === msg.id
+            const batchId = msg.structured_data?.batch_id || ""
+            const isAnswered =
+              msg.structured_data?.answered || answeredBatchIds.has(batchId)
+            const agentStatus = msg.agent_name
+              ? getAgentStatus(msg.agent_name)
+              : "idle"
 
             return (
-              <div key={msg.id} id={`batch-${msg.id}`} className="flex items-start gap-3">
-                <div 
+              <div
+                key={msg.id}
+                id={`batch-${msg.id}`}
+                className="flex items-start gap-3"
+              >
+                <div
                   className="relative flex-shrink-0 cursor-pointer"
-                  onClick={() => msg.author_type === AuthorType.AGENT && msg.agent_name && onAgentClick?.(msg.agent_name)}
+                  onClick={() =>
+                    msg.author_type === AuthorType.AGENT &&
+                    msg.agent_name &&
+                    onAgentClick?.(msg.agent_name)
+                  }
                 >
                   <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg bg-muted overflow-hidden hover:ring-2 hover:ring-primary/50 transition-all">
                     {getAgentAvatar(msg)}
                   </div>
                   {msg.author_type === AuthorType.AGENT && (
-                    <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${
-                      agentStatus === 'busy' ? 'bg-yellow-500' : agentStatus === 'error' ? 'bg-red-500' : 'bg-green-500'
-                    }`} />
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${
+                        agentStatus === "busy"
+                          ? "bg-yellow-500"
+                          : agentStatus === "error"
+                            ? "bg-red-500"
+                            : "bg-green-500"
+                      }`}
+                    />
                   )}
                 </div>
                 <div className="flex-1">
                   <div className="text-xs font-medium text-muted-foreground mb-2">
-                    {msg.agent_name || 'Agent'}
+                    {msg.agent_name || "Agent"}
                   </div>
                   {/* Show message bubble indicating batch questions */}
                   {!isAnswered ? (
                     <div className="rounded-lg px-3 py-2 bg-muted w-fit">
                       <div className="text-sm leading-loose text-foreground">
-                        Đang hỏi {msg.structured_data?.questions?.length || 0} câu hỏi
+                        Đang hỏi {msg.structured_data?.questions?.length || 0}{" "}
+                        câu hỏi
                       </div>
                     </div>
                   ) : (
@@ -1093,23 +1257,41 @@ export function ChatPanelWS({
                   )}
                 </div>
               </div>
-            );
+            )
           }
 
-          const agentStatus = msg.agent_name ? getAgentStatus(msg.agent_name) : 'idle';
+          const agentStatus = msg.agent_name
+            ? getAgentStatus(msg.agent_name)
+            : "idle"
           return (
-            <div key={msg.id} id={`message-${msg.id}`} className="flex items-start gap-3">
-              <div 
-                className={`relative flex-shrink-0 ${msg.author_type === AuthorType.AGENT ? 'cursor-pointer' : ''}`}
-                onClick={() => msg.author_type === AuthorType.AGENT && msg.agent_name && onAgentClick?.(msg.agent_name)}
+            <div
+              key={msg.id}
+              id={`message-${msg.id}`}
+              className="flex items-start gap-3"
+            >
+              <div
+                className={`relative flex-shrink-0 ${msg.author_type === AuthorType.AGENT ? "cursor-pointer" : ""}`}
+                onClick={() =>
+                  msg.author_type === AuthorType.AGENT &&
+                  msg.agent_name &&
+                  onAgentClick?.(msg.agent_name)
+                }
               >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-lg bg-muted overflow-hidden ${msg.author_type === AuthorType.AGENT ? 'hover:ring-2 hover:ring-primary/50 transition-all' : ''}`}>
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-lg bg-muted overflow-hidden ${msg.author_type === AuthorType.AGENT ? "hover:ring-2 hover:ring-primary/50 transition-all" : ""}`}
+                >
                   {getAgentAvatar(msg)}
                 </div>
                 {msg.author_type === AuthorType.AGENT && (
-                  <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${
-                    agentStatus === 'busy' ? 'bg-yellow-500' : agentStatus === 'error' ? 'bg-red-500' : 'bg-green-500'
-                  }`} />
+                  <span
+                    className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background ${
+                      agentStatus === "busy"
+                        ? "bg-yellow-500"
+                        : agentStatus === "error"
+                          ? "bg-red-500"
+                          : "bg-green-500"
+                    }`}
+                  />
                 )}
               </div>
 
@@ -1120,18 +1302,21 @@ export function ChatPanelWS({
                   </span>
 
                   {/* Conversation Owner Badge */}
-                  {msg.author_type === AuthorType.AGENT && conversationOwner && conversationOwner.agentName === msg.agent_name && conversationOwner.status && (
-                    <ConversationOwnerBadge
-                      agentName={msg.agent_name || ''}
-                      isOwner={true}
-                      status={conversationOwner.status}
-                    />
-                  )}
+                  {msg.author_type === AuthorType.AGENT &&
+                    conversationOwner &&
+                    conversationOwner.agentName === msg.agent_name &&
+                    conversationOwner.status && (
+                      <ConversationOwnerBadge
+                        agentName={msg.agent_name || ""}
+                        isOwner={true}
+                        status={conversationOwner.status}
+                      />
+                    )}
                 </div>
 
                 <div className="space-y-1.5">
                   {/* Only show content bubble if there's actual content */}
-                  {msg.content && msg.content.trim() && (
+                  {msg.content?.trim() && (
                     <>
                       <div className="rounded-lg px-3 py-2 bg-muted w-fit">
                         <div className="text-sm leading-loose whitespace-pre-wrap text-foreground">
@@ -1156,152 +1341,197 @@ export function ChatPanelWS({
                       </div>
                     </>
                   )}
-                  
+
                   {/* Show artifact card if message type is artifact_created */}
-                  {msg.message_type === 'artifact_created' && msg.structured_data?.artifact_id && (
-                    <ArtifactCard
-                      artifact={{
-                        artifact_id: msg.structured_data.artifact_id,
-                        artifact_type: msg.structured_data.artifact_type || 'analysis',
-                        title: msg.structured_data.title || 'Artifact',
-                        description: msg.structured_data.description,
-                        version: msg.structured_data.version || 1,
-                        status: msg.structured_data.status || 'draft',
-                        agent_name: msg.structured_data.agent_name || msg.agent_name || getAgentName(msg),
-                      }}
-                      onClick={() => {
-                        if (onOpenArtifact && msg.structured_data?.artifact_id) {
-                          onOpenArtifact(msg.structured_data.artifact_id)
-                        }
-                      }}
-                    />
-                  )}
-                  
+                  {msg.message_type === "artifact_created" &&
+                    msg.structured_data?.artifact_id && (
+                      <ArtifactCard
+                        artifact={{
+                          artifact_id: msg.structured_data.artifact_id,
+                          artifact_type:
+                            msg.structured_data.artifact_type || "analysis",
+                          title: msg.structured_data.title || "Artifact",
+                          description: msg.structured_data.description,
+                          version: msg.structured_data.version || 1,
+                          status: msg.structured_data.status || "draft",
+                          agent_name:
+                            msg.structured_data.agent_name ||
+                            msg.agent_name ||
+                            getAgentName(msg),
+                        }}
+                        onClick={() => {
+                          if (
+                            onOpenArtifact &&
+                            msg.structured_data?.artifact_id
+                          ) {
+                            onOpenArtifact(msg.structured_data.artifact_id)
+                          }
+                        }}
+                      />
+                    )}
+
                   {/* Show PRD created card if structured_data has message_type prd_created */}
-                  {msg.structured_data?.message_type === 'prd_created' && msg.structured_data?.file_path && (
-                    <ApprovalCard
-                      type="prd"
-                      title={msg.structured_data.title || 'PRD'}
-                      status={msg.structured_data.status || 'pending'}
-                      showActions={msg.id === latestPrdMessageId}
-                      submitted={msg.structured_data.submitted === true || isCardSubmitted(msg.id, 'prd')}
-                      onView={() => {
-                        if (onOpenFile) {
-                          onOpenFile(msg.structured_data!.file_path)
+                  {msg.structured_data?.message_type === "prd_created" &&
+                    msg.structured_data?.file_path && (
+                      <ApprovalCard
+                        type="prd"
+                        title={msg.structured_data.title || "PRD"}
+                        status={msg.structured_data.status || "pending"}
+                        showActions={msg.id === latestPrdMessageId}
+                        submitted={
+                          msg.structured_data.submitted === true ||
+                          isCardSubmitted(msg.id, "prd")
                         }
-                        if (onActiveTabChange) {
-                          onActiveTabChange('file')
-                        }
-                      }}
-                      onApprove={() => {
-                        wsSendMessage("Approve this PRD, please create user stories")
-                      }}
-                      onEdit={(feedback) => {
-                        wsSendMessage(`Edit PRD: ${feedback}`)
-                      }}
-                    />
-                  )}
-                  
+                        onView={() => {
+                          if (onOpenFile) {
+                            onOpenFile(msg.structured_data!.file_path)
+                          }
+                          if (onActiveTabChange) {
+                            onActiveTabChange("file")
+                          }
+                        }}
+                        onApprove={() => {
+                          wsSendMessage(
+                            "Approve this PRD, please create user stories",
+                          )
+                        }}
+                        onEdit={(feedback) => {
+                          wsSendMessage(`Edit PRD: ${feedback}`)
+                        }}
+                      />
+                    )}
+
                   {/* Show stories file card if structured_data has message_type stories_created */}
-                  {msg.structured_data?.message_type === 'stories_created' && msg.structured_data?.file_path && (
-                    <ApprovalCard
-                      type="stories"
-                      status={msg.structured_data.status || 'pending'}
-                      showActions={msg.id === latestStoriesMessageId}
-                      submitted={msg.structured_data.submitted === true || isCardSubmitted(msg.id, 'stories')}
-                      onView={() => {
-                        if (onOpenFile) {
-                          onOpenFile(msg.structured_data!.file_path)
+                  {msg.structured_data?.message_type === "stories_created" &&
+                    msg.structured_data?.file_path && (
+                      <ApprovalCard
+                        type="stories"
+                        status={msg.structured_data.status || "pending"}
+                        showActions={msg.id === latestStoriesMessageId}
+                        submitted={
+                          msg.structured_data.submitted === true ||
+                          isCardSubmitted(msg.id, "stories")
                         }
-                        if (onActiveTabChange) {
-                          onActiveTabChange('file')
-                        }
-                      }}
-                      onApprove={() => {
-                        wsSendMessage("Approve Stories")
-                      }}
-                      onEdit={(feedback) => {
-                        wsSendMessage(`Edit Stories: ${feedback}`)
-                      }}
-                    />
-                  )}
-                  
+                        onView={() => {
+                          if (onOpenFile) {
+                            onOpenFile(msg.structured_data!.file_path)
+                          }
+                          if (onActiveTabChange) {
+                            onActiveTabChange("file")
+                          }
+                        }}
+                        onApprove={() => {
+                          wsSendMessage("Approve Stories")
+                        }}
+                        onEdit={(feedback) => {
+                          wsSendMessage(`Edit Stories: ${feedback}`)
+                        }}
+                      />
+                    )}
+
                   {/* Show stories created card if message type is stories_created (legacy) */}
-                  {msg.message_type === 'stories_created' && msg.structured_data?.story_ids && (
-                    <StoriesCreatedCard
-                      stories={{
-                        count: msg.structured_data.count || 0,
-                        story_ids: msg.structured_data.story_ids || [],
-                        prd_artifact_id: msg.structured_data.prd_artifact_id,
-                      }}
-                      projectId={projectId || ''}
-                    />
-                  )}
-                  
+                  {msg.message_type === "stories_created" &&
+                    msg.structured_data?.story_ids && (
+                      <StoriesCreatedCard
+                        stories={{
+                          count: msg.structured_data.count || 0,
+                          story_ids: msg.structured_data.story_ids || [],
+                          prd_artifact_id: msg.structured_data.prd_artifact_id,
+                        }}
+                        projectId={projectId || ""}
+                      />
+                    )}
+
                   {/* Show story review card from BA auto-verify */}
-                  {msg.structured_data?.message_type === 'story_review' && (
+                  {msg.structured_data?.message_type === "story_review" && (
                     <StorySuggestionsCard
-                      storyId={msg.structured_data.story_id || ''}
-                      storyTitle={msg.structured_data.story_title || ''}
+                      storyId={msg.structured_data.story_id || ""}
+                      storyTitle={msg.structured_data.story_title || ""}
                       isDuplicate={msg.structured_data.is_duplicate}
                       duplicateOf={msg.structured_data.duplicate_of}
                       investScore={msg.structured_data.invest_score || 0}
                       investIssues={msg.structured_data.invest_issues || []}
                       suggestedTitle={msg.structured_data.suggested_title}
-                      suggestedAcceptanceCriteria={msg.structured_data.suggested_acceptance_criteria}
-                      suggestedRequirements={msg.structured_data.suggested_requirements}
+                      suggestedAcceptanceCriteria={
+                        msg.structured_data.suggested_acceptance_criteria
+                      }
+                      suggestedRequirements={
+                        msg.structured_data.suggested_requirements
+                      }
                       hasSuggestions={msg.structured_data.has_suggestions}
                       initialActionTaken={msg.structured_data.action_taken}
                       onApplied={async (updatedStory) => {
                         if (projectId) {
                           // Update cache directly with new story data for immediate UI update
                           if (updatedStory) {
-                            queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
-                              if (!oldData?.board) return oldData
-                              // Update story in the appropriate column
-                              const newBoard = { ...oldData.board }
-                              for (const column of Object.keys(newBoard)) {
-                                newBoard[column] = newBoard[column].map((story: any) => 
-                                  story.id === updatedStory.id 
-                                    ? { ...story, title: updatedStory.title, acceptance_criteria: updatedStory.acceptance_criteria, requirements: updatedStory.requirements }
-                                    : story
-                                )
-                              }
-                              return { ...oldData, board: newBoard }
-                            })
+                            queryClient.setQueryData(
+                              ["kanban-board", projectId],
+                              (oldData: any) => {
+                                if (!oldData?.board) return oldData
+                                // Update story in the appropriate column
+                                const newBoard = { ...oldData.board }
+                                for (const column of Object.keys(newBoard)) {
+                                  newBoard[column] = newBoard[column].map(
+                                    (story: any) =>
+                                      story.id === updatedStory.id
+                                        ? {
+                                            ...story,
+                                            title: updatedStory.title,
+                                            acceptance_criteria:
+                                              updatedStory.acceptance_criteria,
+                                            requirements:
+                                              updatedStory.requirements,
+                                          }
+                                        : story,
+                                  )
+                                }
+                                return { ...oldData, board: newBoard }
+                              },
+                            )
                           }
                           // Also refetch to ensure consistency
-                          await queryClient.refetchQueries({ 
-                            queryKey: ['kanban-board', projectId],
-                            type: 'all'
+                          await queryClient.refetchQueries({
+                            queryKey: ["kanban-board", projectId],
+                            type: "all",
                           })
-                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
+                          queryClient.invalidateQueries({
+                            queryKey: ["messages", { project_id: projectId }],
+                          })
                         }
                       }}
                       onKeep={() => {
                         if (projectId) {
-                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
+                          queryClient.invalidateQueries({
+                            queryKey: ["messages", { project_id: projectId }],
+                          })
                         }
                       }}
                       onRemove={async (removedStoryId) => {
                         if (projectId) {
                           // Remove story from cache directly for immediate UI update
                           if (removedStoryId) {
-                            queryClient.setQueryData(['kanban-board', projectId], (oldData: any) => {
-                              if (!oldData?.board) return oldData
-                              const newBoard = { ...oldData.board }
-                              for (const column of Object.keys(newBoard)) {
-                                newBoard[column] = newBoard[column].filter((story: any) => story.id !== removedStoryId)
-                              }
-                               return { ...oldData, board: newBoard }
-                            })
+                            queryClient.setQueryData(
+                              ["kanban-board", projectId],
+                              (oldData: any) => {
+                                if (!oldData?.board) return oldData
+                                const newBoard = { ...oldData.board }
+                                for (const column of Object.keys(newBoard)) {
+                                  newBoard[column] = newBoard[column].filter(
+                                    (story: any) => story.id !== removedStoryId,
+                                  )
+                                }
+                                return { ...oldData, board: newBoard }
+                              },
+                            )
                           }
                           // Also refetch to ensure consistency
-                          await queryClient.refetchQueries({ 
-                            queryKey: ['kanban-board', projectId],
-                            type: 'all'
+                          await queryClient.refetchQueries({
+                            queryKey: ["kanban-board", projectId],
+                            type: "all",
                           })
-                          queryClient.invalidateQueries({ queryKey: ['messages', { project_id: projectId }] })
+                          queryClient.invalidateQueries({
+                            queryKey: ["messages", { project_id: projectId }],
+                          })
                         }
                       }}
                     />
@@ -1309,7 +1539,7 @@ export function ChatPanelWS({
                 </div>
               </div>
             </div>
-          );
+          )
         })}
 
         {/* Typing Indicators*/}
@@ -1324,350 +1554,402 @@ export function ChatPanelWS({
       </div>
 
       {/* Chat Input Area - fixed at bottom */}
-      <div className={`mx-4 mb-4 rounded-2xl flex-shrink-0 ${pendingQuestion || activeBatchQuestion || pendingApprovalCard ? 'border bg-blue-300/20 border-blue-500/20' : ''}`}>
+      <div
+        className={`mx-4 mb-4 rounded-2xl flex-shrink-0 ${pendingQuestion || activeBatchQuestion || pendingApprovalCard ? "border bg-blue-300/20 border-blue-500/20" : ""}`}
+      >
         {/* Pending Notification Banner - only for approval cards (questions now show in card) */}
         {/* Only show "View Question" button when user scrolled up and NOT near the question */}
-        {(pendingApprovalCard && !pendingQuestion) && (() => {
-          const targetMsg = pendingApprovalCard
-          if (!targetMsg) return null
-          
-          const isPrdCard = pendingApprovalCard?.structured_data?.message_type === 'prd_created'
-          const isStoriesCard = pendingApprovalCard?.structured_data?.message_type === 'stories_created'
-          const elementId = `message-${targetMsg.id}`
-          
-          const description = isPrdCard
-            ? `Bạn đã có PRD '${pendingApprovalCard?.structured_data?.title || 'PRD'}' - Vui lòng Approve hoặc Edit`
-            : `Bạn đã có Stories - Vui lòng Approve hoặc Edit`
+        {pendingApprovalCard &&
+          !pendingQuestion &&
+          (() => {
+            const targetMsg = pendingApprovalCard
+            if (!targetMsg) return null
 
-          const scrollToElement = () => {
-            const container = messagesContainerRef.current
-            if (!container) return
-            
-            // Custom smooth scroll with easing
-            const targetScroll = container.scrollHeight
-            const startScroll = container.scrollTop
-            const distance = targetScroll - startScroll
-            const duration = 800 // 800ms for smooth animation
-            let startTime: number | null = null
-            
-            const easeInOutCubic = (t: number): number => {
-              return t < 0.5 
-                ? 4 * t * t * t 
-                : 1 - Math.pow(-2 * t + 2, 3) / 2
-            }
-            
-            const animateScroll = (currentTime: number) => {
-              if (startTime === null) startTime = currentTime
-              const timeElapsed = currentTime - startTime
-              const progress = Math.min(timeElapsed / duration, 1)
-              const easedProgress = easeInOutCubic(progress)
-              
-              container.scrollTop = startScroll + distance * easedProgress
-              
-              if (progress < 1) {
-                requestAnimationFrame(animateScroll)
+            const isPrdCard =
+              pendingApprovalCard?.structured_data?.message_type ===
+              "prd_created"
+            const _isStoriesCard =
+              pendingApprovalCard?.structured_data?.message_type ===
+              "stories_created"
+            const _elementId = `message-${targetMsg.id}`
+
+            const description = isPrdCard
+              ? `Bạn đã có PRD '${pendingApprovalCard?.structured_data?.title || "PRD"}' - Vui lòng Approve hoặc Edit`
+              : `Bạn đã có Stories - Vui lòng Approve hoặc Edit`
+
+            const scrollToElement = () => {
+              const container = messagesContainerRef.current
+              if (!container) return
+
+              // Custom smooth scroll with easing
+              const targetScroll = container.scrollHeight
+              const startScroll = container.scrollTop
+              const distance = targetScroll - startScroll
+              const duration = 800 // 800ms for smooth animation
+              let startTime: number | null = null
+
+              const easeInOutCubic = (t: number): number => {
+                return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
               }
-            }
-            
-            requestAnimationFrame(animateScroll)
-          }
 
-          return (
-            <div 
-              className={`transition-all duration-500 ease-in-out overflow-hidden ${
-                isNearQuestion 
-                  ? 'max-h-0 opacity-0' 
-                  : 'max-h-24 opacity-100'
-              }`}
-            >
-              <div className="px-4 py-3 rounded-t-2xl">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                        {targetMsg.agent_name || 'Agent'} is waiting for your answer
+              const animateScroll = (currentTime: number) => {
+                if (startTime === null) startTime = currentTime
+                const timeElapsed = currentTime - startTime
+                const progress = Math.min(timeElapsed / duration, 1)
+                const easedProgress = easeInOutCubic(progress)
+
+                container.scrollTop = startScroll + distance * easedProgress
+
+                if (progress < 1) {
+                  requestAnimationFrame(animateScroll)
+                }
+              }
+
+              requestAnimationFrame(animateScroll)
+            }
+
+            return (
+              <div
+                className={`transition-all duration-500 ease-in-out overflow-hidden ${
+                  isNearQuestion ? "max-h-0 opacity-0" : "max-h-24 opacity-100"
+                }`}
+              >
+                <div className="px-4 py-3 rounded-t-2xl">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                          {targetMsg.agent_name || "Agent"} is waiting for your
+                          answer
+                        </p>
+                      </div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
+                        {description}
                       </p>
                     </div>
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-1">
-                      {description}
-                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={scrollToElement}
+                      className="text-xs text-blue-600 border-blue-300 hover:bg-blue-100 h-7 px-3"
+                    >
+                      View Question
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={scrollToElement}
-                    className="text-xs text-blue-600 border-blue-300 hover:bg-blue-100 h-7 px-3"
-                  >
-                    View Question
-                  </Button>
                 </div>
               </div>
-            </div>
-          )
-        })()}
+            )
+          })()}
 
         {/* Team Leader Single Question Display - shown above chat input */}
         {pendingQuestion && (
           <div className="">
             <BatchQuestionsCard
-              batchId={pendingQuestion.structured_data?.question_id || pendingQuestion.id}
-              questions={[{
-                question_id: pendingQuestion.structured_data?.question_id,
-                question_text: pendingQuestion.content,
-                question_type: pendingQuestion.structured_data?.question_type || 'open',
-                options: pendingQuestion.structured_data?.options,
-                allow_multiple: pendingQuestion.structured_data?.allow_multiple || false,
-              }]}
-              questionIds={[pendingQuestion.structured_data?.question_id || pendingQuestion.id]}
+              batchId={
+                pendingQuestion.structured_data?.question_id ||
+                pendingQuestion.id
+              }
+              questions={[
+                {
+                  question_id: pendingQuestion.structured_data?.question_id,
+                  question_text: pendingQuestion.content,
+                  question_type:
+                    pendingQuestion.structured_data?.question_type || "open",
+                  options: pendingQuestion.structured_data?.options,
+                  allow_multiple:
+                    pendingQuestion.structured_data?.allow_multiple || false,
+                },
+              ]}
+              questionIds={[
+                pendingQuestion.structured_data?.question_id ||
+                  pendingQuestion.id,
+              ]}
               agentName={pendingQuestion.agent_name}
               answered={false}
               chatInputValue={message}
-              onChatInputUsed={() => setMessage('')}
-              onQuestionChange={(questionId, savedInput) => {
-                setMessage(savedInput);
+              onChatInputUsed={() => setMessage("")}
+              onQuestionChange={(_questionId, savedInput) => {
+                setMessage(savedInput)
               }}
               onAllAnsweredChange={(allAnswered) => {
-                setBatchQuestionsAllAnswered(allAnswered);
+                setBatchQuestionsAllAnswered(allAnswered)
               }}
               onCurrentAnsweredChange={(isAnswered) => {
-                setBatchCurrentQuestionAnswered(isAnswered);
+                setBatchCurrentQuestionAnswered(isAnswered)
               }}
               onSubmit={(answers) => {
-                const answer = answers[0];
+                const answer = answers[0]
                 sendQuestionAnswer(
                   answer.question_id,
                   answer.answer,
-                  answer.selected_options
+                  answer.selected_options,
                 )
                 setPendingQuestion(null) // Hide notification immediately
-                setBatchQuestionsAllAnswered(false);
-                batchSubmitFnRef.current = null;
-                batchNextFnRef.current = null;
-                batchBackFnRef.current = null;
+                setBatchQuestionsAllAnswered(false)
+                batchSubmitFnRef.current = null
+                batchNextFnRef.current = null
+                batchBackFnRef.current = null
               }}
               onSubmitReady={(submitFn) => {
-                batchSubmitFnRef.current = submitFn;
+                batchSubmitFnRef.current = submitFn
               }}
               onNextReady={(nextFn) => {
-                batchNextFnRef.current = nextFn;
+                batchNextFnRef.current = nextFn
               }}
               onBackReady={(backFn) => {
-                batchBackFnRef.current = backFn;
+                batchBackFnRef.current = backFn
               }}
             />
           </div>
         )}
 
         {/* Batch Question Display - shown above chat input */}
-        {activeBatchQuestion && (() => {
-          const totalQuestions = activeBatchQuestion.structured_data?.questions?.length || 0;
-          if (batchTotalQuestions !== totalQuestions) {
-            setBatchTotalQuestions(totalQuestions);
-          }
-          return (
-            <div className="">
-              <BatchQuestionsCard
-                batchId={activeBatchQuestion.structured_data?.batch_id || ''}
-                questions={activeBatchQuestion.structured_data?.questions || []}
-                questionIds={activeBatchQuestion.structured_data?.question_ids || []}
-              agentName={activeBatchQuestion.agent_name}
-              answered={activeBatchQuestion.structured_data?.answered || answeredBatchIds.has(activeBatchQuestion.structured_data?.batch_id || '')}
-              submittedAnswers={activeBatchQuestion.structured_data?.answers || []}
-              chatInputValue={message}
-              onChatInputUsed={() => setMessage('')}
-              onQuestionChange={(questionId, savedInput) => {
-                setMessage(savedInput);
-              }}
-              onAllAnsweredChange={(allAnswered) => {
-                setBatchQuestionsAllAnswered(allAnswered);
-              }}
-              onCurrentAnsweredChange={(isAnswered) => {
-                setBatchCurrentQuestionAnswered(isAnswered);
-              }}
-              onSubmit={(answers) => {
-                sendBatchAnswers(activeBatchQuestion.structured_data!.batch_id!, answers);
-                setActiveBatchQuestion(null);
-                setBatchQuestionsAllAnswered(false);
-                batchSubmitFnRef.current = null;
-                batchNextFnRef.current = null;
-                batchBackFnRef.current = null;
-                setBatchCurrentQuestionIndex(0);
-                setBatchTotalQuestions(0);
-                const batchId = activeBatchQuestion.structured_data?.batch_id || '';
-                const newInputs = new Map(batchQuestionInputs);
-                activeBatchQuestion.structured_data?.question_ids?.forEach((qId: string) => {
-                  newInputs.delete(`${batchId}_${qId}`);
-                });
-                setBatchQuestionInputs(newInputs);
-              }}
-              onSubmitReady={(submitFn) => {
-                batchSubmitFnRef.current = submitFn;
-              }}
-              onNextReady={(nextFn) => {
-                batchNextFnRef.current = nextFn;
-              }}
-              onBackReady={(backFn) => {
-                batchBackFnRef.current = backFn;
-              }}
-              currentQuestionIndex={batchCurrentQuestionIndex}
-              onNavigate={(direction) => {
-                if (direction === 'next') {
-                  setBatchCurrentQuestionIndex(prev => prev + 1);
-                } else {
-                  setBatchCurrentQuestionIndex(prev => prev - 1);
-                }
-              }}
-            />
-          </div>
-        )
-        })()}
-
-        <div className={`p-2 ${pendingQuestion || activeBatchQuestion ? 'pt-3' : ''} relative`}>
-        {showMentions && (
-          <div className="absolute bottom-full left-0 w-full mb-2 z-[9999]" style={{ backgroundColor: 'rgba(255,0,0,0.1)' }}>
-            <MentionDropdown
-              agents={filteredAgents}
-              onSelect={insertMention}
-              onClose={() => setShowMentions(false)}
-            />
-          </div>
-        )}
-
-        {/* Hidden file input */}
-        <input
-          type="file"
-          ref={fileInputRef}
-          className="hidden"
-          accept=".docx,.txt"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) {
-              // Validate size (10MB)
-              if (file.size > 10 * 1024 * 1024) {
-                alert("File too large. Limit: 10MB");
-                e.target.value = "";
-                return;
-              }
-              // Validate extension
-              const fileName = file.name.toLowerCase();
-              const allowedExtensions = ['.docx', '.txt'];
-              const hasValidExt = allowedExtensions.some(ext => fileName.endsWith(ext));
-              if (!hasValidExt) {
-                alert("Only .docx and .txt files are supported");
-                e.target.value = "";
-                return;
-              }
-              setSelectedFile(file);
+        {activeBatchQuestion &&
+          (() => {
+            const totalQuestions =
+              activeBatchQuestion.structured_data?.questions?.length || 0
+            if (batchTotalQuestions !== totalQuestions) {
+              setBatchTotalQuestions(totalQuestions)
             }
-            e.target.value = ""; // Reset to allow selecting same file again
-          }}
-        />
-
-        {/* File preview */}
-        {selectedFile && (
-          <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-muted rounded-lg">
-            {isUploading ? (
-              <Loader2 className="w-4 h-4 text-blue-500 flex-shrink-0 animate-spin" />
-            ) : (
-              <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
-            )}
-            <span className="text-sm truncate flex-1">
-              {isUploading ? "Uploading..." : selectedFile.name}
-            </span>
-            {!isUploading && (
-              <>
-                <span className="text-xs text-muted-foreground">
-                  {(selectedFile.size / 1024).toFixed(1)} KB
-                </span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => setSelectedFile(null)}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* <div className="bg-transparent rounded-4xl p-1 border-0"> */}
-        <PromptInput onSubmit={handleSend}
-        >
-          <PromptInputTextarea
-            ref={textareaRef}
-            value={message}
-            onChange={handleTextareaChange}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              selectedFile
-                ? "Add description for file..."
-                : (pendingQuestion || activeBatchQuestion)
-                  ? "Hoặc gõ câu trả lời khác tại đây..."
-                  : pendingApprovalCard
-                    ? "Vui lòng Approve hoặc Edit trước khi tiếp tục..."
-                    : "Type your message..."
-            }
-          />
-          <PromptInputToolbar>
-            {/* Left side - Back button or Attach file */}
-            <PromptInputTools>
-              {(activeBatchQuestion || pendingQuestion) && batchTotalQuestions > 1 && batchCurrentQuestionIndex > 0 ? (
-                // Back button for multi-question batch (not first question)
-                <PromptInputButton
-                  onClick={() => {
-                    if (batchBackFnRef.current) {
-                      batchBackFnRef.current();
+            return (
+              <div className="">
+                <BatchQuestionsCard
+                  batchId={activeBatchQuestion.structured_data?.batch_id || ""}
+                  questions={
+                    activeBatchQuestion.structured_data?.questions || []
+                  }
+                  questionIds={
+                    activeBatchQuestion.structured_data?.question_ids || []
+                  }
+                  agentName={activeBatchQuestion.agent_name}
+                  answered={
+                    activeBatchQuestion.structured_data?.answered ||
+                    answeredBatchIds.has(
+                      activeBatchQuestion.structured_data?.batch_id || "",
+                    )
+                  }
+                  submittedAnswers={
+                    activeBatchQuestion.structured_data?.answers || []
+                  }
+                  chatInputValue={message}
+                  onChatInputUsed={() => setMessage("")}
+                  onQuestionChange={(_questionId, savedInput) => {
+                    setMessage(savedInput)
+                  }}
+                  onAllAnsweredChange={(allAnswered) => {
+                    setBatchQuestionsAllAnswered(allAnswered)
+                  }}
+                  onCurrentAnsweredChange={(isAnswered) => {
+                    setBatchCurrentQuestionAnswered(isAnswered)
+                  }}
+                  onSubmit={(answers) => {
+                    sendBatchAnswers(
+                      activeBatchQuestion.structured_data!.batch_id!,
+                      answers,
+                    )
+                    setActiveBatchQuestion(null)
+                    setBatchQuestionsAllAnswered(false)
+                    batchSubmitFnRef.current = null
+                    batchNextFnRef.current = null
+                    batchBackFnRef.current = null
+                    setBatchCurrentQuestionIndex(0)
+                    setBatchTotalQuestions(0)
+                    const batchId =
+                      activeBatchQuestion.structured_data?.batch_id || ""
+                    const newInputs = new Map(batchQuestionInputs)
+                    activeBatchQuestion.structured_data?.question_ids?.forEach(
+                      (qId: string) => {
+                        newInputs.delete(`${batchId}_${qId}`)
+                      },
+                    )
+                    setBatchQuestionInputs(newInputs)
+                  }}
+                  onSubmitReady={(submitFn) => {
+                    batchSubmitFnRef.current = submitFn
+                  }}
+                  onNextReady={(nextFn) => {
+                    batchNextFnRef.current = nextFn
+                  }}
+                  onBackReady={(backFn) => {
+                    batchBackFnRef.current = backFn
+                  }}
+                  currentQuestionIndex={batchCurrentQuestionIndex}
+                  onNavigate={(direction) => {
+                    if (direction === "next") {
+                      setBatchCurrentQuestionIndex((prev) => prev + 1)
+                    } else {
+                      setBatchCurrentQuestionIndex((prev) => prev - 1)
                     }
                   }}
-                >
-                  <ChevronLeft size={16} />
-                </PromptInputButton>
-              ) : !pendingQuestion && !activeBatchQuestion ? (
-                // Attach file button for normal chat
-                <PromptInputButton
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading}
-                  className={selectedFile ? "text-blue-500" : ""}
-                >
-                  <PaperclipIcon size={16} />
-                </PromptInputButton>
-              ) : null}
-            </PromptInputTools>
-            
-            {/* Right side - Next button (for non-last question) or Submit button */}
-            {(activeBatchQuestion || pendingQuestion) && batchTotalQuestions > 1 && batchCurrentQuestionIndex < batchTotalQuestions - 1 ? (
-              // Next button for multi-question batch (not last question)
-              <PromptInputButton
-                onClick={() => {
-                  if (batchNextFnRef.current) {
-                    batchNextFnRef.current();
-                  }
-                }}
-                disabled={!batchCurrentQuestionAnswered}
-              >
-                <ChevronRight size={16} />
-              </PromptInputButton>
-            ) : (
-              // Submit button (for normal chat, single question, or last question)
-              <PromptInputSubmit 
-                disabled={
-                  (activeBatchQuestion || pendingQuestion)
-                    ? !batchQuestionsAllAnswered  // For questions: disabled until all answered
-                    : ((!isConnected && !selectedFile) || shouldBlockChat || isUploading || (!message.trim() && !selectedFile))  // For normal chat: original logic
-                }
-                onClick={(activeBatchQuestion || pendingQuestion) && batchSubmitFnRef.current ? async (e) => {
-                  e.preventDefault();
-                  if (batchSubmitFnRef.current) {
-                    await batchSubmitFnRef.current();
-                  }
-                } : undefined}
+                />
+              </div>
+            )
+          })()}
+
+        <div
+          className={`p-2 ${pendingQuestion || activeBatchQuestion ? "pt-3" : ""} relative`}
+        >
+          {showMentions && (
+            <div
+              className="absolute bottom-full left-0 w-full mb-2 z-[9999]"
+              style={{ backgroundColor: "rgba(255,0,0,0.1)" }}
+            >
+              <MentionDropdown
+                agents={filteredAgents}
+                onSelect={insertMention}
+                onClose={() => setShowMentions(false)}
               />
-            )}
-          </PromptInputToolbar>
-        </PromptInput>
-        {/* <div className="flex items-center justify-between pt-3">
+            </div>
+          )}
+
+          {/* Hidden file input */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept=".docx,.txt"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) {
+                // Validate size (10MB)
+                if (file.size > 10 * 1024 * 1024) {
+                  alert("File too large. Limit: 10MB")
+                  e.target.value = ""
+                  return
+                }
+                // Validate extension
+                const fileName = file.name.toLowerCase()
+                const allowedExtensions = [".docx", ".txt"]
+                const hasValidExt = allowedExtensions.some((ext) =>
+                  fileName.endsWith(ext),
+                )
+                if (!hasValidExt) {
+                  alert("Only .docx and .txt files are supported")
+                  e.target.value = ""
+                  return
+                }
+                setSelectedFile(file)
+              }
+              e.target.value = "" // Reset to allow selecting same file again
+            }}
+          />
+
+          {/* File preview */}
+          {selectedFile && (
+            <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-muted rounded-lg">
+              {isUploading ? (
+                <Loader2 className="w-4 h-4 text-blue-500 flex-shrink-0 animate-spin" />
+              ) : (
+                <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
+              )}
+              <span className="text-sm truncate flex-1">
+                {isUploading ? "Uploading..." : selectedFile.name}
+              </span>
+              {!isUploading && (
+                <>
+                  <span className="text-xs text-muted-foreground">
+                    {(selectedFile.size / 1024).toFixed(1)} KB
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => setSelectedFile(null)}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* <div className="bg-transparent rounded-4xl p-1 border-0"> */}
+          <PromptInput onSubmit={handleSend}>
+            <PromptInputTextarea
+              ref={textareaRef}
+              value={message}
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                selectedFile
+                  ? "Add description for file..."
+                  : pendingQuestion || activeBatchQuestion
+                    ? "Hoặc gõ câu trả lời khác tại đây..."
+                    : pendingApprovalCard
+                      ? "Vui lòng Approve hoặc Edit trước khi tiếp tục..."
+                      : "Type your message..."
+              }
+            />
+            <PromptInputToolbar>
+              {/* Left side - Back button or Attach file */}
+              <PromptInputTools>
+                {(activeBatchQuestion || pendingQuestion) &&
+                batchTotalQuestions > 1 &&
+                batchCurrentQuestionIndex > 0 ? (
+                  // Back button for multi-question batch (not first question)
+                  <PromptInputButton
+                    onClick={() => {
+                      if (batchBackFnRef.current) {
+                        batchBackFnRef.current()
+                      }
+                    }}
+                  >
+                    <ChevronLeft size={16} />
+                  </PromptInputButton>
+                ) : !pendingQuestion && !activeBatchQuestion ? (
+                  // Attach file button for normal chat
+                  <PromptInputButton
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className={selectedFile ? "text-blue-500" : ""}
+                  >
+                    <PaperclipIcon size={16} />
+                  </PromptInputButton>
+                ) : null}
+              </PromptInputTools>
+
+              {/* Right side - Next button (for non-last question) or Submit button */}
+              {(activeBatchQuestion || pendingQuestion) &&
+              batchTotalQuestions > 1 &&
+              batchCurrentQuestionIndex < batchTotalQuestions - 1 ? (
+                // Next button for multi-question batch (not last question)
+                <PromptInputButton
+                  onClick={() => {
+                    if (batchNextFnRef.current) {
+                      batchNextFnRef.current()
+                    }
+                  }}
+                  disabled={!batchCurrentQuestionAnswered}
+                >
+                  <ChevronRight size={16} />
+                </PromptInputButton>
+              ) : (
+                // Submit button (for normal chat, single question, or last question)
+                <PromptInputSubmit
+                  disabled={
+                    activeBatchQuestion || pendingQuestion
+                      ? !batchQuestionsAllAnswered // For questions: disabled until all answered
+                      : (!isConnected && !selectedFile) ||
+                        shouldBlockChat ||
+                        isUploading ||
+                        (!message.trim() && !selectedFile) // For normal chat: original logic
+                  }
+                  onClick={
+                    (activeBatchQuestion || pendingQuestion) &&
+                    batchSubmitFnRef.current
+                      ? async (e) => {
+                          e.preventDefault()
+                          if (batchSubmitFnRef.current) {
+                            await batchSubmitFnRef.current()
+                          }
+                        }
+                      : undefined
+                  }
+                />
+              )}
+            </PromptInputToolbar>
+          </PromptInput>
+          {/* <div className="flex items-center justify-between pt-3">
           <div className="flex gap-2">
             <TooltipProvider>
               <Tooltip>
@@ -1709,10 +1991,8 @@ export function ChatPanelWS({
             <ArrowUp className="w-4 h-4" />
           </Button>
         </div> */}
-
         </div>
       </div>
-
     </div>
-  );
+  )
 }

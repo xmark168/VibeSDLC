@@ -1,6 +1,7 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react'
-import { AlertTriangle, RefreshCw } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { AlertTriangle, RefreshCw } from "lucide-react"
+import type React from "react"
+import { Component, type ErrorInfo, type ReactNode } from "react"
+import { Button } from "@/components/ui/button"
 
 interface Props {
   children: ReactNode
@@ -24,7 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
+    console.error("ErrorBoundary caught an error:", error, errorInfo)
     this.props.onError?.(error, errorInfo)
   }
 
@@ -45,7 +46,7 @@ export class ErrorBoundary extends Component<Props, State> {
             Something went wrong
           </h3>
           <p className="text-xs text-muted-foreground mb-4 max-w-xs">
-            {this.state.error?.message || 'An unexpected error occurred'}
+            {this.state.error?.message || "An unexpected error occurred"}
           </p>
           <Button
             variant="outline"
@@ -67,7 +68,7 @@ export class ErrorBoundary extends Component<Props, State> {
 // Functional wrapper for easier use
 export function withErrorBoundary<P extends object>(
   WrappedComponent: React.ComponentType<P>,
-  fallback?: ReactNode
+  fallback?: ReactNode,
 ) {
   return function WithErrorBoundary(props: P) {
     return (

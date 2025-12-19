@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'user'
+export type Role = "admin" | "user"
 
 export interface UserAdmin {
   id: string
@@ -54,7 +54,7 @@ export interface UserFilters {
   role?: string
   status?: string
   order_by?: string
-  order_dir?: 'asc' | 'desc'
+  order_dir?: "asc" | "desc"
 }
 
 export interface BulkUserIds {

@@ -1,32 +1,32 @@
 import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
 import type {
-  PoolResponse,
-  AgentHealth,
-  SystemStats,
-  DashboardData,
-  Alert,
   AgentExecutionRecord,
-  ExecutionFilters,
-  AgentState,
-  SpawnAgentRequest,
-  SpawnAgentResponse,
-  CreatePoolRequest,
+  AgentHealth,
   AgentPoolDB,
   AgentPoolMetrics,
-  UpdatePoolConfigRequest,
-  PoolSuggestion,
-  SystemStatusResponse,
-  EmergencyActionResponse,
-  BulkOperationResponse,
-  AutoScalingRule,
-  AutoScalingRuleCreate,
+  AgentState,
   AgentTemplate,
   AgentTemplateCreate,
   AgentTemplateFromAgent,
   AgentTokenStats,
+  Alert,
+  AutoScalingRule,
+  AutoScalingRuleCreate,
+  BulkOperationResponse,
+  CreatePoolRequest,
+  DashboardData,
+  EmergencyActionResponse,
+  ExecutionFilters,
+  PoolResponse,
+  PoolSuggestion,
   PoolTokenStats,
+  SpawnAgentRequest,
+  SpawnAgentResponse,
+  SystemStats,
+  SystemStatusResponse,
   SystemTokenSummary,
+  UpdatePoolConfigRequest,
 } from "@/types"
 
 // Re-export types for convenience
@@ -77,7 +77,10 @@ export const agentsApi = {
     })
   },
 
-  deletePool: async (poolName: string, graceful: boolean = true): Promise<{ message: string }> => {
+  deletePool: async (
+    poolName: string,
+    graceful: boolean = true,
+  ): Promise<{ message: string }> => {
     return __request<{ message: string }>(OpenAPI, {
       method: "DELETE",
       url: `/api/v1/agents/pools/${poolName}`,
@@ -94,7 +97,11 @@ export const agentsApi = {
     })
   },
 
-  terminateAgent: async (poolName: string, agentId: string, graceful: boolean = true): Promise<{ message: string }> => {
+  terminateAgent: async (
+    poolName: string,
+    agentId: string,
+    graceful: boolean = true,
+  ): Promise<{ message: string }> => {
     return __request<{ message: string }>(OpenAPI, {
       method: "POST",
       url: "/api/v1/agents/terminate",
@@ -106,7 +113,10 @@ export const agentsApi = {
     })
   },
 
-  setAgentIdle: async (agentId: string, poolName: string): Promise<{
+  setAgentIdle: async (
+    agentId: string,
+    poolName: string,
+  ): Promise<{
     message: string
     agent_id: string
     previous_state: string
@@ -127,7 +137,10 @@ export const agentsApi = {
     })
   },
 
-  getAgentHealth: async (agentId: string, poolName: string): Promise<AgentHealth> => {
+  getAgentHealth: async (
+    agentId: string,
+    poolName: string,
+  ): Promise<AgentHealth> => {
     return __request<AgentHealth>(OpenAPI, {
       method: "GET",
       url: `/api/v1/agents/${agentId}/health`,
@@ -158,7 +171,9 @@ export const agentsApi = {
   },
 
   // System Control
-  startMonitoring: async (monitorInterval: number = 30): Promise<{ message: string }> => {
+  startMonitoring: async (
+    monitorInterval: number = 30,
+  ): Promise<{ message: string }> => {
     return __request<{ message: string }>(OpenAPI, {
       method: "POST",
       url: "/api/v1/agents/system/start",
@@ -174,7 +189,9 @@ export const agentsApi = {
   },
 
   // Execution History
-  getExecutions: async (filters?: ExecutionFilters): Promise<AgentExecutionRecord[]> => {
+  getExecutions: async (
+    filters?: ExecutionFilters,
+  ): Promise<AgentExecutionRecord[]> => {
     return __request<AgentExecutionRecord[]>(OpenAPI, {
       method: "GET",
       url: "/api/v1/agents/executions",
@@ -187,12 +204,16 @@ export const agentsApi = {
     })
   },
 
-  getExecutionDetail: async (executionId: string): Promise<AgentExecutionRecord & {
-    error_traceback: string | null
-    result: Record<string, unknown> | null
-    extra_metadata: Record<string, unknown> | null
-    updated_at: string
-  }> => {
+  getExecutionDetail: async (
+    executionId: string,
+  ): Promise<
+    AgentExecutionRecord & {
+      error_traceback: string | null
+      result: Record<string, unknown> | null
+      extra_metadata: Record<string, unknown> | null
+      updated_at: string
+    }
+  > => {
     return __request(OpenAPI, {
       method: "GET",
       url: `/api/v1/agents/executions/${executionId}`,
@@ -295,7 +316,7 @@ export const agentsApi = {
 
   updatePoolConfig: async (
     poolId: string,
-    config: Omit<UpdatePoolConfigRequest, "pool_id">
+    config: Omit<UpdatePoolConfigRequest, "pool_id">,
   ): Promise<AgentPoolDB> => {
     return __request(OpenAPI, {
       method: "PUT",
@@ -305,7 +326,7 @@ export const agentsApi = {
   },
 
   updatePoolPriorities: async (
-    poolPriorities: Array<{ pool_id: string; priority: number }>
+    poolPriorities: Array<{ pool_id: string; priority: number }>,
   ): Promise<AgentPoolDB[]> => {
     return __request(OpenAPI, {
       method: "PUT",
@@ -318,7 +339,7 @@ export const agentsApi = {
     poolId: string,
     startDate?: string,
     endDate?: string,
-    limit: number = 100
+    limit: number = 100,
   ): Promise<AgentPoolMetrics[]> => {
     return __request(OpenAPI, {
       method: "GET",
@@ -333,7 +354,7 @@ export const agentsApi = {
 
   scalePool: async (
     poolName: string,
-    targetAgents: number
+    targetAgents: number,
   ): Promise<{
     message: string
     current_count: number
@@ -378,7 +399,9 @@ export const agentsApi = {
     })
   },
 
-  emergencyStop: async (force: boolean = false): Promise<EmergencyActionResponse> => {
+  emergencyStop: async (
+    force: boolean = false,
+  ): Promise<EmergencyActionResponse> => {
     return __request(OpenAPI, {
       method: "POST",
       url: "/api/v1/agents/system/emergency/stop",
@@ -386,7 +409,9 @@ export const agentsApi = {
     })
   },
 
-  enterMaintenanceMode: async (message: string = "System under maintenance"): Promise<EmergencyActionResponse> => {
+  enterMaintenanceMode: async (
+    message: string = "System under maintenance",
+  ): Promise<EmergencyActionResponse> => {
     return __request(OpenAPI, {
       method: "POST",
       url: "/api/v1/agents/system/emergency/maintenance",
@@ -394,7 +419,9 @@ export const agentsApi = {
     })
   },
 
-  restartPool: async (poolName: string): Promise<{
+  restartPool: async (
+    poolName: string,
+  ): Promise<{
     message: string
     pool_name: string
     agents_terminated: number
@@ -408,7 +435,10 @@ export const agentsApi = {
 
   // ===== Bulk Operations =====
 
-  bulkTerminate: async (agentIds: string[], graceful: boolean = true): Promise<BulkOperationResponse> => {
+  bulkTerminate: async (
+    agentIds: string[],
+    graceful: boolean = true,
+  ): Promise<BulkOperationResponse> => {
     return __request(OpenAPI, {
       method: "POST",
       url: "/api/v1/agents/bulk/terminate",
@@ -453,7 +483,10 @@ export const agentsApi = {
 
   // ===== Auto-scaling Rules =====
 
-  listScalingRules: async (params?: { poolName?: string; enabledOnly?: boolean }): Promise<AutoScalingRule[]> => {
+  listScalingRules: async (params?: {
+    poolName?: string
+    enabledOnly?: boolean
+  }): Promise<AutoScalingRule[]> => {
     return __request(OpenAPI, {
       method: "GET",
       url: "/api/v1/agents/scaling/rules",
@@ -464,7 +497,9 @@ export const agentsApi = {
     })
   },
 
-  createScalingRule: async (rule: AutoScalingRuleCreate): Promise<AutoScalingRule> => {
+  createScalingRule: async (
+    rule: AutoScalingRuleCreate,
+  ): Promise<AutoScalingRule> => {
     return __request(OpenAPI, {
       method: "POST",
       url: "/api/v1/agents/scaling/rules",
@@ -479,7 +514,10 @@ export const agentsApi = {
     })
   },
 
-  updateScalingRule: async (ruleId: string, rule: AutoScalingRuleCreate): Promise<AutoScalingRule> => {
+  updateScalingRule: async (
+    ruleId: string,
+    rule: AutoScalingRuleCreate,
+  ): Promise<AutoScalingRule> => {
     return __request(OpenAPI, {
       method: "PUT",
       url: `/api/v1/agents/scaling/rules/${ruleId}`,
@@ -501,7 +539,9 @@ export const agentsApi = {
     })
   },
 
-  triggerScalingRule: async (ruleId: string): Promise<{
+  triggerScalingRule: async (
+    ruleId: string,
+  ): Promise<{
     message: string
     current_count: number
     target_count: number
@@ -517,7 +557,10 @@ export const agentsApi = {
 
   // ===== Agent Templates =====
 
-  listTemplates: async (params?: { roleType?: string; tag?: string }): Promise<AgentTemplate[]> => {
+  listTemplates: async (params?: {
+    roleType?: string
+    tag?: string
+  }): Promise<AgentTemplate[]> => {
     return __request(OpenAPI, {
       method: "GET",
       url: "/api/v1/agents/templates",
@@ -528,7 +571,9 @@ export const agentsApi = {
     })
   },
 
-  createTemplate: async (template: AgentTemplateCreate): Promise<AgentTemplate> => {
+  createTemplate: async (
+    template: AgentTemplateCreate,
+  ): Promise<AgentTemplate> => {
     return __request(OpenAPI, {
       method: "POST",
       url: "/api/v1/agents/templates",
@@ -536,7 +581,9 @@ export const agentsApi = {
     })
   },
 
-  createTemplateFromAgent: async (request: AgentTemplateFromAgent): Promise<AgentTemplate> => {
+  createTemplateFromAgent: async (
+    request: AgentTemplateFromAgent,
+  ): Promise<AgentTemplate> => {
     return __request(OpenAPI, {
       method: "POST",
       url: "/api/v1/agents/templates/from-agent",
@@ -551,7 +598,10 @@ export const agentsApi = {
     })
   },
 
-  updateTemplate: async (templateId: string, template: AgentTemplateCreate): Promise<AgentTemplate> => {
+  updateTemplate: async (
+    templateId: string,
+    template: AgentTemplateCreate,
+  ): Promise<AgentTemplate> => {
     return __request(OpenAPI, {
       method: "PUT",
       url: `/api/v1/agents/templates/${templateId}`,
@@ -566,11 +616,21 @@ export const agentsApi = {
     })
   },
 
-  spawnFromTemplate: async (templateId: string, projectId: string, count?: number): Promise<{
+  spawnFromTemplate: async (
+    templateId: string,
+    projectId: string,
+    count?: number,
+  ): Promise<{
     message: string
     success_count: number
     failed_count: number
-    results: Array<{ index: number; agent_id?: string; agent_name?: string; status: string; error?: string }>
+    results: Array<{
+      index: number
+      agent_id?: string
+      agent_name?: string
+      status: string
+      error?: string
+    }>
     template: AgentTemplate
   }> => {
     return __request(OpenAPI, {
@@ -580,7 +640,10 @@ export const agentsApi = {
     })
   },
 
-  duplicateTemplate: async (templateId: string, newName: string): Promise<AgentTemplate> => {
+  duplicateTemplate: async (
+    templateId: string,
+    newName: string,
+  ): Promise<AgentTemplate> => {
     return __request(OpenAPI, {
       method: "POST",
       url: `/api/v1/agents/templates/${templateId}/duplicate`,
@@ -589,7 +652,10 @@ export const agentsApi = {
   },
 
   // Agent Activity (for popup)
-  getAgentActivity: async (agentId: string, limit: number = 5): Promise<AgentActivityResponse> => {
+  getAgentActivity: async (
+    agentId: string,
+    limit: number = 5,
+  ): Promise<AgentActivityResponse> => {
     return __request(OpenAPI, {
       method: "GET",
       url: `/api/v1/agents/${agentId}/activity`,
@@ -629,7 +695,10 @@ export const agentsApi = {
     })
   },
 
-  resetDailyTokenStats: async (): Promise<{ message: string; agents_affected: number }> => {
+  resetDailyTokenStats: async (): Promise<{
+    message: string
+    agents_affected: number
+  }> => {
     return __request(OpenAPI, {
       method: "POST",
       url: "/api/v1/agents/stats/token-usage/reset-daily",
@@ -666,7 +735,10 @@ export interface AgentActivityResponse {
  * Generate a friendly display name for an agent
  * Format: Agent-{RolePrefix}-{IdSuffix}
  */
-export function generateAgentDisplayName(agentId: string, roleName: string): string {
+export function generateAgentDisplayName(
+  agentId: string,
+  roleName: string,
+): string {
   const rolePrefix = getRolePrefix(roleName)
   const idSuffix = agentId.slice(0, 4).toUpperCase()
   return `Agent-${rolePrefix}-${idSuffix}`
@@ -674,16 +746,16 @@ export function generateAgentDisplayName(agentId: string, roleName: string): str
 
 function getRolePrefix(roleName: string): string {
   const prefixMap: Record<string, string> = {
-    "TeamLeader": "TL",
+    TeamLeader: "TL",
     "Team Leader": "TL",
-    "team_leader": "TL",
-    "BusinessAnalyst": "BA",
+    team_leader: "TL",
+    BusinessAnalyst: "BA",
     "Business Analyst": "BA",
-    "business_analyst": "BA",
-    "Developer": "DEV",
-    "developer": "DEV",
-    "Tester": "QA",
-    "tester": "QA",
+    business_analyst: "BA",
+    Developer: "DEV",
+    developer: "DEV",
+    Tester: "QA",
+    tester: "QA",
   }
   return prefixMap[roleName] || roleName.slice(0, 2).toUpperCase()
 }
@@ -691,7 +763,9 @@ function getRolePrefix(roleName: string): string {
 /**
  * Get status color variant for badges
  */
-export function getStateVariant(state: AgentState): "default" | "secondary" | "destructive" | "outline" {
+export function getStateVariant(
+  state: AgentState,
+): "default" | "secondary" | "destructive" | "outline" {
   switch (state) {
     case "idle":
       return "default" // Green - ready

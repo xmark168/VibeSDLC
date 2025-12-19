@@ -1,6 +1,12 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Coins, Loader2, Receipt } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Loader2, Receipt, Coins } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface CreditPurchaseDialogProps {
   open: boolean
@@ -21,12 +27,12 @@ export function CreditPurchaseDialog({
   totalPrice,
   currency,
   onConfirm,
-  isProcessing
+  isProcessing,
 }: CreditPurchaseDialogProps) {
   const formatPrice = (amount: number | string, curr: string) => {
-    const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount
-    if (curr === 'VND') {
-      return `${numAmount.toLocaleString('vi-VN')} ₫`
+    const numAmount = typeof amount === "string" ? parseFloat(amount) : amount
+    if (curr === "VND") {
+      return `${numAmount.toLocaleString("vi-VN")} ₫`
     }
     return `$${numAmount.toFixed(2)}`
   }
@@ -53,13 +59,21 @@ export function CreditPurchaseDialog({
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Số lượng credits</span>
-              <span className="font-semibold">{creditAmount.toLocaleString()} credits</span>
+              <span className="text-sm text-muted-foreground">
+                Số lượng credits
+              </span>
+              <span className="font-semibold">
+                {creditAmount.toLocaleString()} credits
+              </span>
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Giá mỗi credit</span>
-              <span className="font-medium">{formatPrice(pricePerCredit, currency)}</span>
+              <span className="text-sm text-muted-foreground">
+                Giá mỗi credit
+              </span>
+              <span className="font-medium">
+                {formatPrice(pricePerCredit, currency)}
+              </span>
             </div>
           </div>
 
@@ -76,7 +90,8 @@ export function CreditPurchaseDialog({
           {/* Info Note */}
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
             <p className="text-xs text-blue-600 dark:text-blue-400">
-              Credits sẽ được thêm vào tài khoản ngay sau khi thanh toán thành công. Credits không có thời hạn sử dụng.
+              Credits sẽ được thêm vào tài khoản ngay sau khi thanh toán thành
+              công. Credits không có thời hạn sử dụng.
             </p>
           </div>
         </div>
@@ -102,7 +117,7 @@ export function CreditPurchaseDialog({
                 Đang xử lý...
               </>
             ) : (
-              'Thanh toán'
+              "Thanh toán"
             )}
           </Button>
         </div>

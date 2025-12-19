@@ -66,5 +66,5 @@ export interface PlanFilters {
   tier?: string
   is_active?: boolean
   is_featured?: boolean
-  order_by?: 'sort_index' | 'price' | 'created_at' | 'name'
+  order_by?: "sort_index" | "price" | "created_at" | "name"
 }

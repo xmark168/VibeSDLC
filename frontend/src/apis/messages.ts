@@ -1,11 +1,10 @@
 import { OpenAPI } from "@client"
 import { request as __request } from "@client/core/request"
 import type {
-  AuthorType,
+  CreateMessageBody,
+  FetchMessagesParams,
   Message,
   MessagesPage,
-  FetchMessagesParams,
-  CreateMessageBody,
   UpdateMessageBody,
 } from "@/types"
 
@@ -27,7 +26,7 @@ export const messagesApi = {
         project_id: params.project_id,
         skip: params.skip ?? 0,
         limit: params.limit ?? 100,
-        order: params.order ?? 'asc',
+        order: params.order ?? "asc",
       },
     })
   },
@@ -38,7 +37,9 @@ export const messagesApi = {
       body,
     })
   },
-  createWithFile: async (params: CreateMessageWithFileParams): Promise<Message> => {
+  createWithFile: async (
+    params: CreateMessageWithFileParams,
+  ): Promise<Message> => {
     const formData = new FormData()
     formData.append("project_id", params.project_id)
     formData.append("content", params.content)
@@ -70,28 +71,38 @@ export const messagesApi = {
       url: `/api/v1/messages/by-project/${project_id}`,
     })
   },
-  getAttachmentDownloadUrl: (messageId: string, attachmentIndex: number = 0): string => {
-    const baseUrl = OpenAPI.BASE || ''
+  getAttachmentDownloadUrl: (
+    messageId: string,
+    attachmentIndex: number = 0,
+  ): string => {
+    const baseUrl = OpenAPI.BASE || ""
     return `${baseUrl}/api/v1/messages/${messageId}/attachments/${attachmentIndex}/download`
   },
-  downloadAttachment: async (messageId: string, filename: string, attachmentIndex: number = 0): Promise<void> => {
+  downloadAttachment: async (
+    messageId: string,
+    filename: string,
+    attachmentIndex: number = 0,
+  ): Promise<void> => {
     const url = `/api/v1/messages/${messageId}/attachments/${attachmentIndex}/download`
     // OpenAPI.TOKEN is an async function, need to call it
-    const token = typeof OpenAPI.TOKEN === 'function' ? await OpenAPI.TOKEN() : OpenAPI.TOKEN
-    const response = await fetch(`${OpenAPI.BASE || ''}${url}`, {
-      method: 'GET',
+    const token =
+      typeof OpenAPI.TOKEN === "function"
+        ? await OpenAPI.TOKEN()
+        : OpenAPI.TOKEN
+    const response = await fetch(`${OpenAPI.BASE || ""}${url}`, {
+      method: "GET",
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     })
-    
+
     if (!response.ok) {
       throw new Error(`Download failed: ${response.statusText}`)
     }
-    
+
     const blob = await response.blob()
     const blobUrl = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
+    const link = document.createElement("a")
     link.href = blobUrl
     link.download = filename
     document.body.appendChild(link)

@@ -1,12 +1,17 @@
-import { useState } from "react"
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  SheetFooter,
-} from "@/components/ui/sheet"
+  Activity,
+  Bot,
+  Calendar,
+  CheckCircle,
+  Clock,
+  Heart,
+  Percent,
+  Power,
+  RefreshCw,
+  XCircle,
+} from "lucide-react"
+import { useState } from "react"
+import { type AgentHealth, generateAgentDisplayName } from "@/apis/agents"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -16,23 +21,18 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { AgentStatusBadge } from "./agent-status-badge"
-import { generateAgentDisplayName, type AgentHealth } from "@/apis/agents"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import { toast } from "@/lib/toast"
 import { useSetAgentIdle, useTerminateAgent } from "@/queries/agents"
 import { useProjects } from "@/queries/projects"
-import {
-  Bot,
-  Clock,
-  Activity,
-  CheckCircle,
-  XCircle,
-  Percent,
-  RefreshCw,
-  Power,
-  Calendar,
-  Heart,
-} from "lucide-react"
-import { toast } from "@/lib/toast"
+import { AgentStatusBadge } from "./agent-status-badge"
 
 interface AgentDetailSheetProps {
   agent: AgentHealth | null
@@ -64,7 +64,7 @@ export function AgentDetailSheet({
         poolName,
       })
       toast.success("Agent set to IDLE state")
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to set agent to IDLE")
     }
   }
@@ -80,14 +80,17 @@ export function AgentDetailSheet({
       })
       toast.success("Agent terminated successfully")
       onOpenChange(false)
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to terminate agent")
     }
   }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[400px] sm:w-[540px] overflow-y-auto">
+      <SheetContent
+        side="right"
+        className="w-[400px] sm:w-[540px] overflow-y-auto"
+      >
         <SheetHeader>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -103,7 +106,9 @@ export function AgentDetailSheet({
         <div className="mt-6 space-y-6">
           {/* Status Section */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-muted-foreground">Status</h4>
+            <h4 className="text-sm font-medium text-muted-foreground">
+              Status
+            </h4>
             <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
               <span className="text-sm">Current State</span>
               <AgentStatusBadge state={agent.state} size="md" />
@@ -113,7 +118,9 @@ export function AgentDetailSheet({
                 <Heart className="w-4 h-4 text-muted-foreground" />
                 <span className="text-sm">Health</span>
               </div>
-              <span className={agent.healthy ? "text-green-500" : "text-red-500"}>
+              <span
+                className={agent.healthy ? "text-green-500" : "text-red-500"}
+              >
                 {agent.healthy ? "Healthy" : "Unhealthy"}
               </span>
             </div>
@@ -123,7 +130,9 @@ export function AgentDetailSheet({
 
           {/* Metrics Section */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-muted-foreground">Metrics</h4>
+            <h4 className="text-sm font-medium text-muted-foreground">
+              Metrics
+            </h4>
             <div className="grid grid-cols-2 gap-3">
               <MetricCard
                 icon={Clock}
@@ -156,7 +165,9 @@ export function AgentDetailSheet({
                 icon={XCircle}
                 label="Failed"
                 value={agent.failed_executions.toString()}
-                valueColor={agent.failed_executions > 0 ? "text-red-500" : undefined}
+                valueColor={
+                  agent.failed_executions > 0 ? "text-red-500" : undefined
+                }
               />
             </div>
           </div>
@@ -165,7 +176,9 @@ export function AgentDetailSheet({
 
           {/* Last Heartbeat */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-muted-foreground">Activity</h4>
+            <h4 className="text-sm font-medium text-muted-foreground">
+              Activity
+            </h4>
             <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-muted-foreground" />
@@ -183,8 +196,13 @@ export function AgentDetailSheet({
 
           {/* Project Assignment */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-muted-foreground">Project Assignment</h4>
-            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+            <h4 className="text-sm font-medium text-muted-foreground">
+              Project Assignment
+            </h4>
+            <Select
+              value={selectedProjectId}
+              onValueChange={setSelectedProjectId}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select a project..." />
               </SelectTrigger>
@@ -205,11 +223,15 @@ export function AgentDetailSheet({
 
           {/* Agent Info */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-muted-foreground">Details</h4>
+            <h4 className="text-sm font-medium text-muted-foreground">
+              Details
+            </h4>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Agent ID</span>
-                <span className="font-mono text-xs">{agent.agent_id.slice(0, 8)}...</span>
+                <span className="font-mono text-xs">
+                  {agent.agent_id.slice(0, 8)}...
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Pool</span>

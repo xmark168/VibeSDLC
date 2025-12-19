@@ -1,17 +1,17 @@
-import { useState } from "react"
-import { 
-  Search, 
-  AlertTriangle, 
-  CheckCircle2, 
-  XCircle,
-  Sparkles,
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
   ChevronDown,
-  Check
+  Search,
+  Sparkles,
+  XCircle,
 } from "lucide-react"
-import { Card } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { useState } from "react"
 import { storiesApi } from "@/apis/stories"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
 import { toast } from "@/lib/toast"
 
 interface InvestIssue {
@@ -38,7 +38,7 @@ interface StorySuggestionsCardProps {
   suggestedAcceptanceCriteria?: string[]
   suggestedRequirements?: string[]
   hasSuggestions?: boolean
-  initialActionTaken?: 'applied' | 'kept' | 'removed' | null
+  initialActionTaken?: "applied" | "kept" | "removed" | null
   onApplied?: (updatedStory?: UpdatedStoryData) => void
   onKeep?: () => void
   onRemove?: (storyId: string) => void
@@ -58,12 +58,14 @@ export function StorySuggestionsCard({
   initialActionTaken = null,
   onApplied,
   onKeep,
-  onRemove
+  onRemove,
 }: StorySuggestionsCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isApplying, setIsApplying] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
-  const [actionTaken, setActionTaken] = useState<'applied' | 'kept' | 'removed' | null>(initialActionTaken)
+  const [actionTaken, setActionTaken] = useState<
+    "applied" | "kept" | "removed" | null
+  >(initialActionTaken)
 
   const getScoreStyle = () => {
     return "from-blue-500/10 to-blue-500/10 border-blue-500/20"
@@ -79,18 +81,18 @@ export function StorySuggestionsCard({
 
   const handleApplySuggestions = async () => {
     if (!hasSuggestions) return
-    
+
     setIsApplying(true)
     try {
-      const result = await storiesApi.reviewAction(storyId, 'apply', {
+      const result = await storiesApi.reviewAction(storyId, "apply", {
         suggested_title: suggestedTitle,
         suggested_acceptance_criteria: suggestedAcceptanceCriteria,
-        suggested_requirements: suggestedRequirements
+        suggested_requirements: suggestedRequirements,
       })
-      setActionTaken('applied')
+      setActionTaken("applied")
       // Pass updated story data to callback for immediate UI update
       onApplied?.(result.story)
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to apply suggestion")
     } finally {
       setIsApplying(false)
@@ -99,10 +101,10 @@ export function StorySuggestionsCard({
 
   const handleKeep = async () => {
     try {
-      await storiesApi.reviewAction(storyId, 'keep')
-      setActionTaken('kept')
+      await storiesApi.reviewAction(storyId, "keep")
+      setActionTaken("kept")
       onKeep?.()
-    } catch (error) {
+    } catch (_error) {
       toast.error("An error occurred")
     }
   }
@@ -110,11 +112,11 @@ export function StorySuggestionsCard({
   const handleRemove = async () => {
     setIsRemoving(true)
     try {
-      await storiesApi.reviewAction(storyId, 'remove')
-      setActionTaken('removed')
+      await storiesApi.reviewAction(storyId, "remove")
+      setActionTaken("removed")
       // Pass storyId for removal from UI
       onRemove?.(storyId)
-    } catch (error) {
+    } catch (_error) {
       toast.error("Failed to remove story")
     } finally {
       setIsRemoving(false)
@@ -136,8 +138,8 @@ export function StorySuggestionsCard({
           </div>
           {/* Only show INVEST score if not duplicate */}
           {!isDuplicate && (
-            <Badge 
-              variant="outline" 
+            <Badge
+              variant="outline"
               className="rounded-full px-3 py-1 border-border font-normal bg-background"
             >
               INVEST: {investScore}/6
@@ -145,13 +147,15 @@ export function StorySuggestionsCard({
           )}
           {/* Expand button - only show if NOT duplicate */}
           {!isDuplicate && (
-            <Button 
+            <Button
               size="icon"
-              variant="outline" 
+              variant="outline"
               className="rounded-full h-8 w-8"
               onClick={() => setIsExpanded(!isExpanded)}
             >
-              <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+              />
             </Button>
           )}
         </div>
@@ -160,7 +164,9 @@ export function StorySuggestionsCard({
         {isDuplicate && duplicateOf && (
           <div className="flex items-center gap-2 text-sm text-yellow-600 dark:text-yellow-400">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-            <span>Duplicate of story <strong>"{duplicateOf}"</strong></span>
+            <span>
+              Duplicate of story <strong>"{duplicateOf}"</strong>
+            </span>
           </div>
         )}
 
@@ -169,9 +175,9 @@ export function StorySuggestionsCard({
           <div className="flex items-center gap-2 text-sm ">
             <Check className="w-4 h-4" />
             <span>
-              {actionTaken === 'applied' && 'Suggestion applied'}
-              {actionTaken === 'kept' && 'Story kept'}
-              {actionTaken === 'removed' && 'Story removed'}
+              {actionTaken === "applied" && "Suggestion applied"}
+              {actionTaken === "kept" && "Story kept"}
+              {actionTaken === "removed" && "Story removed"}
             </span>
           </div>
         )}
@@ -187,7 +193,9 @@ export function StorySuggestionsCard({
                 onClick={handleApplySuggestions}
                 disabled={isApplying || isRemoving}
               >
-                {isApplying ? 'Applying...' : (
+                {isApplying ? (
+                  "Applying..."
+                ) : (
                   <>
                     <Sparkles className="w-3.5 h-3.5 mr-1" />
                     Apply suggestion
@@ -211,7 +219,9 @@ export function StorySuggestionsCard({
               onClick={handleRemove}
               disabled={isApplying || isRemoving}
             >
-              {isRemoving ? 'Removing...' : (
+              {isRemoving ? (
+                "Removing..."
+              ) : (
                 <>
                   <XCircle className="w-3.5 h-3.5 mr-1" />
                   Remove
@@ -236,21 +246,19 @@ export function StorySuggestionsCard({
               {investIssues.length > 0 ? (
                 investIssues.map((issue, idx) => {
                   const codeNames: Record<string, string> = {
-                    'I': 'Independent',
-                    'N': 'Negotiable', 
-                    'V': 'Valuable',
-                    'E': 'Estimable',
-                    'S': 'Small',
-                    'T': 'Testable'
+                    I: "Independent",
+                    N: "Negotiable",
+                    V: "Valuable",
+                    E: "Estimable",
+                    S: "Small",
+                    T: "Testable",
                   }
                   return (
                     <div key={idx} className="space-y-1">
                       <p className="text-sm font-medium pl-4">
                         {issue.code} – {codeNames[issue.code] || issue.code}:
                       </p>
-                      <p className="text-sm pl-8">
-                        - {issue.issue}
-                      </p>
+                      <p className="text-sm pl-8">- {issue.issue}</p>
                     </div>
                   )
                 })
@@ -260,43 +268,61 @@ export function StorySuggestionsCard({
             </div>
 
             {/* 3. Suggestions - Only if available */}
-            {hasSuggestions && (suggestedTitle || (suggestedAcceptanceCriteria && suggestedAcceptanceCriteria.length > 0) || (suggestedRequirements && suggestedRequirements.length > 0)) && (
-              <div className="space-y-2">
-                <p className="text-sm font-bold">Improvement suggestions:</p>
+            {hasSuggestions &&
+              (suggestedTitle ||
+                (suggestedAcceptanceCriteria &&
+                  suggestedAcceptanceCriteria.length > 0) ||
+                (suggestedRequirements &&
+                  suggestedRequirements.length > 0)) && (
+                <div className="space-y-2">
+                  <p className="text-sm font-bold">Improvement suggestions:</p>
 
-                {suggestedTitle && (
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium pl-4">Suggested title:</p>
-                    <p className="text-sm pl-8">- {suggestedTitle}</p>
-                  </div>
-                )}
-
-                {suggestedRequirements && suggestedRequirements.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium pl-4">Suggested requirements:</p>
-                    {suggestedRequirements.map((req, idx) => (
-                      <p key={idx} className="text-sm pl-8">
-                        - {req}
+                  {suggestedTitle && (
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium pl-4">
+                        Suggested title:
                       </p>
-                    ))}
-                  </div>
-                )}
+                      <p className="text-sm pl-8">- {suggestedTitle}</p>
+                    </div>
+                  )}
 
-                {suggestedAcceptanceCriteria && suggestedAcceptanceCriteria.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium pl-4">Suggested acceptance criteria:</p>
-                    {suggestedAcceptanceCriteria.map((ac, idx) => (
-                      <div key={idx} className="text-sm pl-8 space-y-0.5">
-                        <p>- {ac.split('\n')[0]}</p>
-                        {ac.split('\n').slice(1).map((line, lineIdx) => (
-                          <p key={lineIdx} className="pl-4">{line}</p>
+                  {suggestedRequirements &&
+                    suggestedRequirements.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium pl-4">
+                          Suggested requirements:
+                        </p>
+                        {suggestedRequirements.map((req, idx) => (
+                          <p key={idx} className="text-sm pl-8">
+                            - {req}
+                          </p>
                         ))}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+                    )}
+
+                  {suggestedAcceptanceCriteria &&
+                    suggestedAcceptanceCriteria.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium pl-4">
+                          Suggested acceptance criteria:
+                        </p>
+                        {suggestedAcceptanceCriteria.map((ac, idx) => (
+                          <div key={idx} className="text-sm pl-8 space-y-0.5">
+                            <p>- {ac.split("\n")[0]}</p>
+                            {ac
+                              .split("\n")
+                              .slice(1)
+                              .map((line, lineIdx) => (
+                                <p key={lineIdx} className="pl-4">
+                                  {line}
+                                </p>
+                              ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                </div>
+              )}
           </div>
         )}
       </div>

@@ -1,7 +1,7 @@
-import { CheckCircle2, ListTodo, ExternalLink } from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { useNavigate } from "@tanstack/react-router"
+import { CheckCircle2, ExternalLink, ListTodo } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 
 interface StoriesCreatedCardProps {
   stories: {
@@ -12,24 +12,25 @@ interface StoriesCreatedCardProps {
   projectId: string
 }
 
-export function StoriesCreatedCard({ stories, projectId }: StoriesCreatedCardProps) {
+export function StoriesCreatedCard({
+  stories,
+  projectId,
+}: StoriesCreatedCardProps) {
   const navigate = useNavigate()
-  
+
   const handleViewKanban = () => {
     navigate({ to: `/projects/${projectId}/kanban` })
   }
-  
+
   return (
-    <Card 
-      className="my-2 border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20"
-    >
+    <Card className="my-2 border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20">
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
           {/* Icon */}
           <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900">
             <ListTodo className="w-5 h-5 text-purple-600 dark:text-purple-400" />
           </div>
-          
+
           {/* Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -38,15 +39,16 @@ export function StoriesCreatedCard({ stories, projectId }: StoriesCreatedCardPro
                 User Stories Created!
               </h4>
             </div>
-            
+
             <p className="text-sm text-purple-800 dark:text-purple-200 mb-2">
-              {stories.count} user {stories.count === 1 ? 'story' : 'stories'} đã được tạo và thêm vào backlog
+              {stories.count} user {stories.count === 1 ? "story" : "stories"}{" "}
+              đã được tạo và thêm vào backlog
             </p>
-            
+
             <div className="flex items-center gap-2 mb-3">
               <div className="flex -space-x-1">
                 {stories.story_ids.slice(0, 5).map((id, idx) => (
-                  <div 
+                  <div
                     key={id}
                     className="w-6 h-6 rounded-full bg-purple-200 dark:bg-purple-800 border-2 border-white dark:border-gray-900 flex items-center justify-center text-xs font-medium text-purple-700 dark:text-purple-300"
                     title={`Story ${id.substring(0, 8)}`}
@@ -64,16 +66,16 @@ export function StoriesCreatedCard({ stories, projectId }: StoriesCreatedCardPro
                 Status: TODO
               </span>
             </div>
-            
+
             <p className="text-xs text-purple-600 dark:text-purple-400">
               Team Leader sẽ assign stories cho developers
             </p>
           </div>
-          
+
           {/* Actions */}
           <div className="flex flex-col gap-2">
-            <Button 
-              size="sm" 
+            <Button
+              size="sm"
               variant="default"
               className="bg-purple-600 hover:bg-purple-700 text-white"
               onClick={handleViewKanban}

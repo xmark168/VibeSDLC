@@ -1,13 +1,14 @@
 /**
  * Background Tasks Panel
- * 
+ *
  * Displays progress for background tasks (non-interactive agent operations)
  * Shows in a Sheet/Drawer with progress bars for each task
  */
 
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
+import { Check, Loader2, X } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
 import {
   Sheet,
   SheetContent,
@@ -15,9 +16,8 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/sheet'
-import type { BackgroundTask } from '@/types'
-import { Loader2, Check, X } from 'lucide-react'
+} from "@/components/ui/sheet"
+import type { BackgroundTask } from "@/types"
 
 interface BackgroundTasksPanelProps {
   tasks: Map<string, BackgroundTask>
@@ -25,7 +25,9 @@ interface BackgroundTasksPanelProps {
 
 export function BackgroundTasksPanel({ tasks }: BackgroundTasksPanelProps) {
   const taskArray = Array.from(tasks.values())
-  const inProgressCount = taskArray.filter(t => t.status === 'in_progress').length
+  const inProgressCount = taskArray.filter(
+    (t) => t.status === "in_progress",
+  ).length
 
   if (taskArray.length === 0) {
     return null
@@ -47,9 +49,7 @@ export function BackgroundTasksPanel({ tasks }: BackgroundTasksPanelProps) {
       <SheetContent side="right" className="w-[400px] sm:w-[540px]">
         <SheetHeader>
           <SheetTitle>Background Tasks</SheetTitle>
-          <SheetDescription>
-            Tasks running in the background
-          </SheetDescription>
+          <SheetDescription>Tasks running in the background</SheetDescription>
         </SheetHeader>
         <div className="mt-6 space-y-4">
           {taskArray.map((task) => (
@@ -73,15 +73,15 @@ function TaskItem({ task }: TaskItemProps) {
   }[task.status] as typeof Loader2
 
   const statusColor = {
-    in_progress: 'text-blue-500',
-    completed: 'text-green-500',
-    failed: 'text-red-500',
+    in_progress: "text-blue-500",
+    completed: "text-green-500",
+    failed: "text-red-500",
   }[task.status] as string
 
   const statusText = {
-    in_progress: 'In Progress',
-    completed: 'Completed',
-    failed: 'Failed',
+    in_progress: "In Progress",
+    completed: "Completed",
+    failed: "Failed",
   }[task.status] as string
 
   return (
@@ -90,11 +90,11 @@ function TaskItem({ task }: TaskItemProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <StatusIcon
-            className={`h-4 w-4 ${statusColor} ${task.status === 'in_progress' ? 'animate-spin' : ''}`}
+            className={`h-4 w-4 ${statusColor} ${task.status === "in_progress" ? "animate-spin" : ""}`}
           />
           <span className="font-medium text-sm">{task.agent_name}</span>
         </div>
-        <Badge variant={task.status === 'completed' ? 'default' : 'secondary'}>
+        <Badge variant={task.status === "completed" ? "default" : "secondary"}>
           {statusText}
         </Badge>
       </div>

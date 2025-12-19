@@ -6,10 +6,11 @@ export const Route = createFileRoute("/_auth/forgot-password")({
 
 function ForgotPassword() {
   return (
-    <div 
+    <div
       className="w-full lg:w-1/2 flex items-center justify-center p-8"
       style={{
-        background: "linear-gradient(to right, #f0f4fa 0%, #f5f7fa 30%, #ffffff 100%)",
+        background:
+          "linear-gradient(to right, #f0f4fa 0%, #f5f7fa 30%, #ffffff 100%)",
       }}
     >
       <ForgotPasswordForm />

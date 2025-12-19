@@ -1,48 +1,19 @@
-import { useState, useEffect, useRef } from "react"
 import Editor from "@monaco-editor/react"
 import {
+  ChevronDown,
+  ChevronRight,
   File,
+  FilePlus,
   Folder,
   FolderOpen,
-  FilePlus,
   FolderPlus,
-  Trash2,
-  Save,
-  ChevronRight,
-  ChevronDown,
-  RefreshCw,
-  Upload,
   Loader2,
+  RefreshCw,
+  Save,
+  Trash2,
+  Upload,
 } from "lucide-react"
-import type { FileNode } from "@/types/stack"
-import {
-  useBoilerplateTree,
-  useBoilerplateFile,
-  useCreateBoilerplateFile,
-  useUpdateBoilerplateFile,
-  useDeleteBoilerplateFile,
-  useCreateBoilerplateFolder,
-  useDeleteBoilerplateFolder,
-  useUploadBoilerplateFolder,
-} from "@/queries/stacks"
-import { toast } from "@/lib/toast"
-
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-  ContextMenuSeparator,
-} from "@/components/ui/context-menu"
+import { useEffect, useRef, useState } from "react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,8 +24,36 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { toast } from "@/lib/toast"
+import {
+  useBoilerplateFile,
+  useBoilerplateTree,
+  useCreateBoilerplateFile,
+  useCreateBoilerplateFolder,
+  useDeleteBoilerplateFile,
+  useDeleteBoilerplateFolder,
+  useUpdateBoilerplateFile,
+  useUploadBoilerplateFolder,
+} from "@/queries/stacks"
+import type { FileNode } from "@/types/stack"
 
 interface BoilerplateFileExplorerProps {
   stackCode: string
@@ -199,10 +198,16 @@ function TreeNode({
   )
 }
 
-export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerProps) {
+export function BoilerplateFileExplorer({
+  stackCode,
+}: BoilerplateFileExplorerProps) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [selectedType, setSelectedType] = useState<"file" | "folder" | null>(null)
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set([""]))
+  const [selectedType, setSelectedType] = useState<"file" | "folder" | null>(
+    null,
+  )
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
+    new Set([""]),
+  )
   const [editorContent, setEditorContent] = useState<string>("")
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
@@ -213,14 +218,21 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
   const [clearExistingOnUpload, setClearExistingOnUpload] = useState(true)
   const [newItemName, setNewItemName] = useState("")
   const [parentPathForCreate, setParentPathForCreate] = useState("")
-  const [itemToDelete, setItemToDelete] = useState<{ path: string; type: "file" | "folder" } | null>(null)
-  
+  const [itemToDelete, setItemToDelete] = useState<{
+    path: string
+    type: "file" | "folder"
+  } | null>(null)
+
   const folderInputRef = useRef<HTMLInputElement>(null)
 
-  const { data: treeData, refetch: refetchTree, isLoading: isLoadingTree } = useBoilerplateTree(stackCode)
+  const {
+    data: treeData,
+    refetch: refetchTree,
+    isLoading: isLoadingTree,
+  } = useBoilerplateTree(stackCode)
   const { data: fileData, isLoading: isLoadingFile } = useBoilerplateFile(
     stackCode,
-    selectedType === "file" && selectedPath ? selectedPath : ""
+    selectedType === "file" && selectedPath ? selectedPath : "",
   )
 
   const createFile = useCreateBoilerplateFile()
@@ -297,7 +309,9 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
 
   const confirmCreateFile = async () => {
     if (!newItemName.trim()) return
-    const path = parentPathForCreate ? `${parentPathForCreate}/${newItemName}` : newItemName
+    const path = parentPathForCreate
+      ? `${parentPathForCreate}/${newItemName}`
+      : newItemName
     await createFile.mutateAsync({ code: stackCode, path, content: "" })
     setCreateFileDialogOpen(false)
     refetchTree()
@@ -305,7 +319,9 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
 
   const confirmCreateFolder = async () => {
     if (!newItemName.trim()) return
-    const path = parentPathForCreate ? `${parentPathForCreate}/${newItemName}` : newItemName
+    const path = parentPathForCreate
+      ? `${parentPathForCreate}/${newItemName}`
+      : newItemName
     await createFolder.mutateAsync({ code: stackCode, path })
     setCreateFolderDialogOpen(false)
     refetchTree()
@@ -316,7 +332,10 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
     if (itemToDelete.type === "file") {
       await deleteFile.mutateAsync({ code: stackCode, path: itemToDelete.path })
     } else {
-      await deleteFolder.mutateAsync({ code: stackCode, path: itemToDelete.path })
+      await deleteFolder.mutateAsync({
+        code: stackCode,
+        path: itemToDelete.path,
+      })
     }
     if (selectedPath === itemToDelete.path) {
       setSelectedPath(null)
@@ -346,7 +365,7 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
 
     if (rootFolder !== expectedPrefix) {
       toast.error(
-        `Invalid folder name. Expected "${expectedPrefix}", got "${rootFolder}". Please rename your folder and try again.`
+        `Invalid folder name. Expected "${expectedPrefix}", got "${rootFolder}". Please rename your folder and try again.`,
       )
       if (folderInputRef.current) {
         folderInputRef.current.value = ""
@@ -371,7 +390,7 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
         clearExisting: clearExistingOnUpload,
       })
       refetchTree()
-    } catch (error) {
+    } catch (_error) {
       // Error handled by mutation
     }
 
@@ -392,7 +411,7 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [hasUnsavedChanges, selectedPath, selectedType, editorContent])
+  }, [hasUnsavedChanges, selectedPath, selectedType, handleSave])
 
   return (
     <div className="flex h-full rounded-lg overflow-hidden border">
@@ -411,7 +430,9 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
       {/* File Explorer Sidebar */}
       <div className="w-72 border-r flex flex-col bg-muted/30">
         <div className="p-2 border-b flex items-center justify-between">
-          <span className="text-sm font-medium text-muted-foreground">Files</span>
+          <span className="text-sm font-medium text-muted-foreground">
+            Files
+          </span>
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
@@ -459,7 +480,9 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
 
         <div className="flex-1 overflow-auto py-2">
           {isLoadingTree ? (
-            <div className="p-4 text-center text-muted-foreground">Loading...</div>
+            <div className="p-4 text-center text-muted-foreground">
+              Loading...
+            </div>
           ) : treeData?.children?.length === 0 ? (
             <div className="p-4 text-center text-muted-foreground text-sm">
               No files yet. Create your first file or folder.
@@ -543,7 +566,10 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
       </div>
 
       {/* Create File Dialog */}
-      <Dialog open={createFileDialogOpen} onOpenChange={setCreateFileDialogOpen}>
+      <Dialog
+        open={createFileDialogOpen}
+        onOpenChange={setCreateFileDialogOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New File</DialogTitle>
@@ -563,7 +589,10 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateFileDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setCreateFileDialogOpen(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -577,7 +606,10 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
       </Dialog>
 
       {/* Create Folder Dialog */}
-      <Dialog open={createFolderDialogOpen} onOpenChange={setCreateFolderDialogOpen}>
+      <Dialog
+        open={createFolderDialogOpen}
+        onOpenChange={setCreateFolderDialogOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create New Folder</DialogTitle>
@@ -597,7 +629,10 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateFolderDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setCreateFolderDialogOpen(false)}
+            >
               Cancel
             </Button>
             <Button
@@ -619,7 +654,8 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
             </AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete "{itemToDelete?.path}"?
-              {itemToDelete?.type === "folder" && " This will delete all contents inside."}
+              {itemToDelete?.type === "folder" &&
+                " This will delete all contents inside."}
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -645,7 +681,12 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
             <div className="p-4 rounded-lg bg-muted/50 space-y-2">
               <p className="text-sm font-medium">Requirements:</p>
               <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
-                <li>Folder must be named: <code className="text-primary font-mono">{stackCode}-boilerplate</code></li>
+                <li>
+                  Folder must be named:{" "}
+                  <code className="text-primary font-mono">
+                    {stackCode}-boilerplate
+                  </code>
+                </li>
                 <li>Files like node_modules, .next, .git will be skipped</li>
               </ul>
             </div>
@@ -653,7 +694,9 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
               <Checkbox
                 id="clearExisting"
                 checked={clearExistingOnUpload}
-                onCheckedChange={(checked) => setClearExistingOnUpload(checked as boolean)}
+                onCheckedChange={(checked) =>
+                  setClearExistingOnUpload(checked as boolean)
+                }
               />
               <Label htmlFor="clearExisting" className="text-sm">
                 Clear existing files before upload
@@ -661,7 +704,10 @@ export function BoilerplateFileExplorer({ stackCode }: BoilerplateFileExplorerPr
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setUploadDialogOpen(false)}
+            >
               Cancel
             </Button>
             <Button

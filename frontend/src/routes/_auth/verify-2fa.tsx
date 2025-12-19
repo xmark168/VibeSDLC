@@ -1,6 +1,6 @@
-import { createFileRoute, redirect, useNavigate, useSearch } from "@tanstack/react-router"
-import { isLoggedIn } from "@/hooks/useAuth"
+import { createFileRoute, redirect, useSearch } from "@tanstack/react-router"
 import { TwoFactorVerifyForm } from "@/components/auth/two-factor-verify-form"
+import { isLoggedIn } from "@/hooks/useAuth"
 
 export const Route = createFileRoute("/_auth/verify-2fa")({
   component: Verify2FA,
@@ -21,10 +21,11 @@ function Verify2FA() {
   const { token } = useSearch({ from: "/_auth/verify-2fa" })
 
   return (
-    <div 
+    <div
       className="w-full lg:w-1/2 flex items-center justify-center p-8"
       style={{
-        background: "linear-gradient(to right, #f0f4fa 0%, #f5f7fa 30%, #ffffff 100%)",
+        background:
+          "linear-gradient(to right, #f0f4fa 0%, #f5f7fa 30%, #ffffff 100%)",
       }}
     >
       <TwoFactorVerifyForm tempToken={token} />

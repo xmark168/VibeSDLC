@@ -1,9 +1,10 @@
+import { zodResolver } from "@hookform/resolvers/zod"
+import { Loader2, Save } from "lucide-react"
 import { useEffect } from "react"
 import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import type { Plan, PlanCreate } from "@/types/plan"
-import { useCreatePlan, useUpdatePlan } from "@/queries/plans"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -22,8 +23,6 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -32,36 +31,54 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, Save } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { useCreatePlan, useUpdatePlan } from "@/queries/plans"
+import type { Plan } from "@/types/plan"
 
-const planFormSchema = z.object({
-  code: z.string().min(1, "Code is required").max(50),
-  name: z.string().min(1, "Name is required").max(100),
-  description: z.string().optional(),
-  monthly_price: z.coerce.number().min(0, "Monthly price must be positive").optional().nullable(),
-  yearly_discount_percentage: z.coerce.number().min(0).max(100, "Discount must be between 0-100%").optional().nullable(),
-  currency: z.string().default("VND"),
-  monthly_credits: z.coerce.number().int().min(0).optional().nullable(),
-  additional_credit_price: z.coerce.number().int().min(0).optional().nullable(),
-  available_project: z.coerce.number().int().min(0).optional().nullable(),
-  is_active: z.boolean().default(true),
-  tier: z.enum(["free", "pay"]).default("pay"),
-  sort_index: z.coerce.number().int().min(0).default(0),
-  is_featured: z.boolean().default(false),
-  is_custom_price: z.boolean().default(false),
-  features_text: z.string().optional(),
-}).refine(
-  (data) => {
-    if (data.is_custom_price) return true
-    const price = data.monthly_price
-    return typeof price === "number" && !isNaN(price) && price >= 0
-  },
-  {
-    message: "Monthly price is required for non-custom plans (enter 0 for free plans)",
-    path: ["monthly_price"],
-  }
-)
+const planFormSchema = z
+  .object({
+    code: z.string().min(1, "Code is required").max(50),
+    name: z.string().min(1, "Name is required").max(100),
+    description: z.string().optional(),
+    monthly_price: z.coerce
+      .number()
+      .min(0, "Monthly price must be positive")
+      .optional()
+      .nullable(),
+    yearly_discount_percentage: z.coerce
+      .number()
+      .min(0)
+      .max(100, "Discount must be between 0-100%")
+      .optional()
+      .nullable(),
+    currency: z.string().default("VND"),
+    monthly_credits: z.coerce.number().int().min(0).optional().nullable(),
+    additional_credit_price: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .nullable(),
+    available_project: z.coerce.number().int().min(0).optional().nullable(),
+    is_active: z.boolean().default(true),
+    tier: z.enum(["free", "pay"]).default("pay"),
+    sort_index: z.coerce.number().int().min(0).default(0),
+    is_featured: z.boolean().default(false),
+    is_custom_price: z.boolean().default(false),
+    features_text: z.string().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.is_custom_price) return true
+      const price = data.monthly_price
+      return typeof price === "number" && !Number.isNaN(price) && price >= 0
+    },
+    {
+      message:
+        "Monthly price is required for non-custom plans (enter 0 for free plans)",
+      path: ["monthly_price"],
+    },
+  )
 
 type PlanFormValues = z.infer<typeof planFormSchema>
 
@@ -73,7 +90,13 @@ interface PlanDialogProps {
   onSuccess?: () => void
 }
 
-export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }: PlanDialogProps) {
+export function PlanDialog({
+  open,
+  onOpenChange,
+  plan,
+  initialData,
+  onSuccess,
+}: PlanDialogProps) {
   const isEditing = !!plan
   const createPlan = useCreatePlan()
   const updatePlan = useUpdatePlan()
@@ -187,8 +210,7 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
 
       form.reset()
       onSuccess?.()
-    } catch (error) {
-    }
+    } catch (_error) {}
   }
 
   const isLoading = createPlan.isPending || updatePlan.isPending
@@ -197,7 +219,9 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEditing ? "Edit Plan" : "Create New Plan"}</DialogTitle>
+          <DialogTitle>
+            {isEditing ? "Edit Plan" : "Create New Plan"}
+          </DialogTitle>
           <DialogDescription>
             {isEditing
               ? "Update the plan details below."
@@ -234,7 +258,10 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                       <FormItem className="space-y-2">
                         <FormLabel>Plan Name *</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="e.g., Professional Plan" />
+                          <Input
+                            {...field}
+                            placeholder="e.g., Professional Plan"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -248,7 +275,12 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                     <FormItem>
                       <FormLabel>Description</FormLabel>
                       <FormControl>
-                        <Textarea {...field} placeholder="Describe what this plan offers..." className="resize-none" rows={2} />
+                        <Textarea
+                          {...field}
+                          placeholder="Describe what this plan offers..."
+                          className="resize-none"
+                          rows={2}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -275,8 +307,14 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                             type="number"
                             min="0"
                             placeholder="0"
-                            value={field.value == null ? "" : String(field.value)}
-                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
+                            value={
+                              field.value == null ? "" : String(field.value)
+                            }
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value ? Number(e.target.value) : null,
+                              )
+                            }
                           />
                         </FormControl>
                         <FormMessage />
@@ -295,8 +333,14 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                             min="0"
                             max="100"
                             placeholder="0"
-                            value={field.value == null ? "" : String(field.value)}
-                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
+                            value={
+                              field.value == null ? "" : String(field.value)
+                            }
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value ? Number(e.target.value) : null,
+                              )
+                            }
                           />
                         </FormControl>
                         <FormMessage />
@@ -309,7 +353,10 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                     render={({ field }) => (
                       <FormItem className="space-y-2">
                         <FormLabel>Currency</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue />
@@ -326,19 +373,30 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                     )}
                   />
                 </div>
-                {form.watch("monthly_price") != null && form.watch("yearly_discount_percentage") != null && (
-                  <p className="text-sm text-green-500">
-                    Yearly price: {(() => {
-                      const monthly = form.watch("monthly_price")
-                      const discount = form.watch("yearly_discount_percentage")
-                      if (typeof monthly === "number" && typeof discount === "number") {
-                        const yearlyPrice = Math.round(monthly * 12 * (1 - discount / 100))
-                        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(yearlyPrice)
-                      }
-                      return "0 ₫"
-                    })()}
-                  </p>
-                )}
+                {form.watch("monthly_price") != null &&
+                  form.watch("yearly_discount_percentage") != null && (
+                    <p className="text-sm text-green-500">
+                      Yearly price: {(() => {
+                        const monthly = form.watch("monthly_price")
+                        const discount = form.watch(
+                          "yearly_discount_percentage",
+                        )
+                        if (
+                          typeof monthly === "number" &&
+                          typeof discount === "number"
+                        ) {
+                          const yearlyPrice = Math.round(
+                            monthly * 12 * (1 - discount / 100),
+                          )
+                          return new Intl.NumberFormat("vi-VN", {
+                            style: "currency",
+                            currency: "VND",
+                          }).format(yearlyPrice)
+                        }
+                        return "0 ₫"
+                      })()}
+                    </p>
+                  )}
               </CardContent>
             </Card>
 
@@ -360,8 +418,14 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                             type="number"
                             min="0"
                             placeholder="1000"
-                            value={field.value == null ? "" : String(field.value)}
-                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
+                            value={
+                              field.value == null ? "" : String(field.value)
+                            }
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value ? Number(e.target.value) : null,
+                              )
+                            }
                           />
                         </FormControl>
                         <FormMessage />
@@ -379,8 +443,14 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                             type="number"
                             min="0"
                             placeholder="10000"
-                            value={field.value == null ? "" : String(field.value)}
-                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
+                            value={
+                              field.value == null ? "" : String(field.value)
+                            }
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value ? Number(e.target.value) : null,
+                              )
+                            }
                           />
                         </FormControl>
                         <FormMessage />
@@ -398,8 +468,14 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                             type="number"
                             min="0"
                             placeholder="10"
-                            value={field.value == null ? "" : String(field.value)}
-                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : null)}
+                            value={
+                              field.value == null ? "" : String(field.value)
+                            }
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value ? Number(e.target.value) : null,
+                              )
+                            }
                           />
                         </FormControl>
                         <FormMessage />
@@ -414,7 +490,12 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                     <FormItem>
                       <FormLabel>Features Text</FormLabel>
                       <FormControl>
-                        <Textarea {...field} placeholder="List plan features..." className="resize-none" rows={2} />
+                        <Textarea
+                          {...field}
+                          placeholder="List plan features..."
+                          className="resize-none"
+                          rows={2}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -436,7 +517,10 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                     render={({ field }) => (
                       <FormItem className="space-y-2">
                         <FormLabel>Tier</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue />
@@ -462,8 +546,14 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                             type="number"
                             min="0"
                             placeholder="0"
-                            value={field.value == null ? "" : String(field.value)}
-                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : 0)}
+                            value={
+                              field.value == null ? "" : String(field.value)
+                            }
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.value ? Number(e.target.value) : 0,
+                              )
+                            }
                           />
                         </FormControl>
                         <FormMessage />
@@ -479,10 +569,15 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                       <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
                         <div className="space-y-0.5">
                           <FormLabel>Active</FormLabel>
-                          <FormDescription className="text-xs">Enable plan</FormDescription>
+                          <FormDescription className="text-xs">
+                            Enable plan
+                          </FormDescription>
                         </div>
                         <FormControl>
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
                         </FormControl>
                       </FormItem>
                     )}
@@ -494,10 +589,15 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                       <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
                         <div className="space-y-0.5">
                           <FormLabel>Featured</FormLabel>
-                          <FormDescription className="text-xs">Highlight plan</FormDescription>
+                          <FormDescription className="text-xs">
+                            Highlight plan
+                          </FormDescription>
                         </div>
                         <FormControl>
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
                         </FormControl>
                       </FormItem>
                     )}
@@ -509,10 +609,15 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
                       <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
                         <div className="space-y-0.5">
                           <FormLabel>Custom</FormLabel>
-                          <FormDescription className="text-xs">Show "Custom"</FormDescription>
+                          <FormDescription className="text-xs">
+                            Show "Custom"
+                          </FormDescription>
                         </div>
                         <FormControl>
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
                         </FormControl>
                       </FormItem>
                     )}
@@ -522,7 +627,12 @@ export function PlanDialog({ open, onOpenChange, plan, initialData, onSuccess }:
             </Card>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isLoading}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isLoading}
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={isLoading}>

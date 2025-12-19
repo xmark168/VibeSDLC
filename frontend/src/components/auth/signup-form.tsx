@@ -3,11 +3,11 @@ import { motion } from "framer-motion"
 import { Check, Eye, EyeOff, Facebook, Github, Loader2, X } from "lucide-react"
 import type React from "react"
 import { useState } from "react"
+import { FaGooglePlusG } from "react-icons/fa6"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import useAuth from "@/hooks/useAuth"
-import { FaGooglePlusG } from "react-icons/fa6"
 
 type OAuthLoadingProvider = "google" | "github" | "facebook" | null
 
@@ -38,20 +38,20 @@ export function SignUpForm() {
   const handleLoginGoogle = () => {
     if (oauthLoading) return
     setOauthLoading("google")
-    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/google`;
-  };
+    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/google`
+  }
 
   const handleLoginGithub = () => {
     if (oauthLoading) return
     setOauthLoading("github")
-    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/github`;
-  };
+    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/github`
+  }
 
   const handleLoginFacebook = () => {
     if (oauthLoading) return
     setOauthLoading("facebook")
-    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/facebook`;
-  };
+    window.location.href = `${import.meta.env.VITE_API_URL}/api/v1/auth/facebook`
+  }
 
   const isOAuthDisabled = oauthLoading !== null
   const passwordRequirements = [
@@ -301,10 +301,11 @@ export function SignUpForm() {
                 onChange={(e) =>
                   setFormData({ ...formData, confirmPassword: e.target.value })
                 }
-                className={`h-12 bg-secondary/50 border-border text-base pr-10 ${formData.confirmPassword && !passwordsMatch
-                  ? "border-red-500"
-                  : ""
-                  } ${formData.confirmPassword && passwordsMatch ? "border-green-500" : ""}`}
+                className={`h-12 bg-secondary/50 border-border text-base pr-10 ${
+                  formData.confirmPassword && !passwordsMatch
+                    ? "border-red-500"
+                    : ""
+                } ${formData.confirmPassword && passwordsMatch ? "border-green-500" : ""}`}
                 required
               />
               <button

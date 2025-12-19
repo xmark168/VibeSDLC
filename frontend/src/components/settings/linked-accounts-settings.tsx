@@ -1,4 +1,9 @@
+import { format } from "date-fns"
+import { AlertTriangle, Check, Link2, Loader2, Unlink } from "lucide-react"
 import { useState } from "react"
+import toast from "react-hot-toast"
+import { FaFacebook, FaGithub, FaGoogle } from "react-icons/fa"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -11,22 +16,21 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog"
 import {
-  Alert,
-  AlertDescription,
-} from "@/components/ui/alert"
-import { useLinkedAccounts, useUnlinkAccount, useInitiateLink } from "@/queries/linked-accounts"
-import type { OAuthProvider, LinkedAccount } from "@/types/linked-account"
-import { Link2, Unlink, Loader2, AlertTriangle, Check } from "lucide-react"
-import { FaGoogle, FaGithub, FaFacebook } from "react-icons/fa"
-import toast from "react-hot-toast"
-import { format } from "date-fns"
+  useInitiateLink,
+  useLinkedAccounts,
+  useUnlinkAccount,
+} from "@/queries/linked-accounts"
+import type { LinkedAccount, OAuthProvider } from "@/types/linked-account"
 
-const providerConfig: Record<OAuthProvider, { name: string; icon: React.ReactNode; color: string }> = {
+const providerConfig: Record<
+  OAuthProvider,
+  { name: string; icon: React.ReactNode; color: string }
+> = {
   google: {
     name: "Google",
     icon: <FaGoogle className="w-5 h-5" />,
@@ -49,8 +53,11 @@ export function LinkedAccountsSettings() {
   const unlinkMutation = useUnlinkAccount()
   const initiateLinkMutation = useInitiateLink()
   const [unlinkDialogOpen, setUnlinkDialogOpen] = useState(false)
-  const [selectedProvider, setSelectedProvider] = useState<OAuthProvider | null>(null)
-  const [linkingProvider, setLinkingProvider] = useState<OAuthProvider | null>(null)
+  const [selectedProvider, setSelectedProvider] =
+    useState<OAuthProvider | null>(null)
+  const [linkingProvider, setLinkingProvider] = useState<OAuthProvider | null>(
+    null,
+  )
 
   const handleLink = (provider: OAuthProvider) => {
     setLinkingProvider(provider)
@@ -76,7 +83,8 @@ export function LinkedAccountsSettings() {
   }
 
   const linkedProviders = data?.linked_accounts || []
-  const availableProviders = (data?.available_providers || []) as OAuthProvider[]
+  const availableProviders = (data?.available_providers ||
+    []) as OAuthProvider[]
 
   if (isLoading) {
     return (
@@ -120,7 +128,8 @@ export function LinkedAccountsSettings() {
                       {account.provider_email}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Linked {format(new Date(account.created_at), "MMM d, yyyy")}
+                      Linked{" "}
+                      {format(new Date(account.created_at), "MMM d, yyyy")}
                     </p>
                   </div>
                 </div>
@@ -147,10 +156,16 @@ export function LinkedAccountsSettings() {
                 className="flex items-center justify-between p-4 border border-dashed rounded-lg"
               >
                 <div className="flex items-center gap-3">
-                  <div className={`${config.color} opacity-50`}>{config.icon}</div>
+                  <div className={`${config.color} opacity-50`}>
+                    {config.icon}
+                  </div>
                   <div>
-                    <p className="font-medium text-muted-foreground">{config.name}</p>
-                    <p className="text-sm text-muted-foreground">Not connected</p>
+                    <p className="font-medium text-muted-foreground">
+                      {config.name}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Not connected
+                    </p>
                   </div>
                 </div>
                 <Button
@@ -185,17 +200,22 @@ export function LinkedAccountsSettings() {
             <DialogTitle>Unlink Account</DialogTitle>
             <DialogDescription>
               Are you sure you want to unlink your{" "}
-              {selectedProvider && providerConfig[selectedProvider]?.name} account?
+              {selectedProvider && providerConfig[selectedProvider]?.name}{" "}
+              account?
             </DialogDescription>
           </DialogHeader>
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              You will no longer be able to sign in using this provider unless you link it again.
+              You will no longer be able to sign in using this provider unless
+              you link it again.
             </AlertDescription>
           </Alert>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setUnlinkDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setUnlinkDialogOpen(false)}
+            >
               Cancel
             </Button>
             <Button

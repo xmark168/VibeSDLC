@@ -1,5 +1,7 @@
-import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Loader2 } from "lucide-react"
+import { useState } from "react"
+import { projectsApi } from "@/apis/projects"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -19,8 +21,6 @@ import {
 } from "@/components/ui/select"
 import { toast } from "@/lib/toast"
 import { useSpawnAgent } from "@/queries/agents"
-import { useQuery } from "@tanstack/react-query"
-import { projectsApi } from "@/apis/projects"
 
 interface SpawnAgentDialogProps {
   open: boolean
@@ -35,7 +35,11 @@ const roleTypes = [
   { value: "business_analyst", label: "Business Analyst" },
 ]
 
-export function SpawnAgentDialog({ open, onOpenChange, poolName }: SpawnAgentDialogProps) {
+export function SpawnAgentDialog({
+  open,
+  onOpenChange,
+  poolName,
+}: SpawnAgentDialogProps) {
   const [projectId, setProjectId] = useState("")
   const [roleType, setRoleType] = useState("")
 
@@ -117,7 +121,9 @@ export function SpawnAgentDialog({ open, onOpenChange, poolName }: SpawnAgentDia
             Cancel
           </Button>
           <Button onClick={handleSpawn} disabled={spawnAgent.isPending}>
-            {spawnAgent.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            {spawnAgent.isPending && (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            )}
             Spawn Agent
           </Button>
         </DialogFooter>

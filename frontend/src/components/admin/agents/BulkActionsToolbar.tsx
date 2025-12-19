@@ -1,15 +1,13 @@
-import { useState } from "react"
 import {
-  Trash2,
-  Clock,
-  RefreshCcw,
-  X,
-  Loader2,
-  CheckCircle,
   AlertTriangle,
+  CheckCircle,
+  Clock,
+  Loader2,
+  RefreshCcw,
+  Trash2,
+  X,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { useState } from "react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,8 +18,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { toast } from "@/lib/toast"
-import { useBulkTerminate, useBulkSetIdle, useBulkRestart } from "@/queries/agents"
+import {
+  useBulkRestart,
+  useBulkSetIdle,
+  useBulkTerminate,
+} from "@/queries/agents"
 
 interface BulkActionsToolbarProps {
   selectedIds: string[]
@@ -37,12 +41,13 @@ export function BulkActionsToolbar({
   onActionComplete,
 }: BulkActionsToolbarProps) {
   const [confirmAction, setConfirmAction] = useState<BulkAction>(null)
-  
+
   const bulkTerminate = useBulkTerminate()
   const bulkSetIdle = useBulkSetIdle()
   const bulkRestart = useBulkRestart()
 
-  const isLoading = bulkTerminate.isPending || bulkSetIdle.isPending || bulkRestart.isPending
+  const isLoading =
+    bulkTerminate.isPending || bulkSetIdle.isPending || bulkRestart.isPending
 
   const handleAction = async (action: BulkAction) => {
     if (!action) return
@@ -51,25 +56,34 @@ export function BulkActionsToolbar({
       let result
       switch (action) {
         case "terminate":
-          result = await bulkTerminate.mutateAsync({ agentIds: selectedIds, graceful: true })
-          toast.success(`${result.message} (${result.success_count} succeeded, ${result.failed_count} failed)`)
+          result = await bulkTerminate.mutateAsync({
+            agentIds: selectedIds,
+            graceful: true,
+          })
+          toast.success(
+            `${result.message} (${result.success_count} succeeded, ${result.failed_count} failed)`,
+          )
           break
         case "set-idle":
           result = await bulkSetIdle.mutateAsync(selectedIds)
-          toast.success(`${result.message} (${result.success_count} succeeded, ${result.failed_count} failed)`)
+          toast.success(
+            `${result.message} (${result.success_count} succeeded, ${result.failed_count} failed)`,
+          )
           break
         case "restart":
           result = await bulkRestart.mutateAsync(selectedIds)
-          toast.success(`${result.message} (${result.success_count} succeeded, ${result.failed_count} failed)`)
+          toast.success(
+            `${result.message} (${result.success_count} succeeded, ${result.failed_count} failed)`,
+          )
           break
       }
-      
+
       onClearSelection()
       onActionComplete?.()
     } catch (error: any) {
       toast.error(`Bulk ${action} failed: ${error.message}`)
     }
-    
+
     setConfirmAction(null)
   }
 
@@ -137,7 +151,10 @@ export function BulkActionsToolbar({
       </div>
 
       {/* Confirmation Dialog */}
-      <AlertDialog open={!!confirmAction} onOpenChange={() => setConfirmAction(null)}>
+      <AlertDialog
+        open={!!confirmAction}
+        onOpenChange={() => setConfirmAction(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
@@ -146,25 +163,29 @@ export function BulkActionsToolbar({
               ) : (
                 <CheckCircle className="w-5 h-5 text-primary" />
               )}
-              Confirm Bulk {confirmAction?.replace("-", " ").replace(/^\w/, c => c.toUpperCase())}
+              Confirm Bulk{" "}
+              {confirmAction
+                ?.replace("-", " ")
+                .replace(/^\w/, (c) => c.toUpperCase())}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmAction === "terminate" && (
                 <>
-                  Are you sure you want to terminate <strong>{selectedIds.length}</strong> agents?
-                  This action cannot be undone.
+                  Are you sure you want to terminate{" "}
+                  <strong>{selectedIds.length}</strong> agents? This action
+                  cannot be undone.
                 </>
               )}
               {confirmAction === "set-idle" && (
                 <>
-                  Set <strong>{selectedIds.length}</strong> agents to idle state?
-                  They will stop current work and become available.
+                  Set <strong>{selectedIds.length}</strong> agents to idle
+                  state? They will stop current work and become available.
                 </>
               )}
               {confirmAction === "restart" && (
                 <>
-                  Restart <strong>{selectedIds.length}</strong> agents?
-                  Each agent will be terminated and respawned.
+                  Restart <strong>{selectedIds.length}</strong> agents? Each
+                  agent will be terminated and respawned.
                 </>
               )}
             </AlertDialogDescription>
@@ -174,7 +195,11 @@ export function BulkActionsToolbar({
             <AlertDialogAction
               onClick={() => handleAction(confirmAction)}
               disabled={isLoading}
-              className={confirmAction === "terminate" ? "bg-destructive hover:bg-destructive/90" : ""}
+              className={
+                confirmAction === "terminate"
+                  ? "bg-destructive hover:bg-destructive/90"
+                  : ""
+              }
             >
               {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Confirm

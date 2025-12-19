@@ -1,27 +1,31 @@
 import {
+  AlertCircle,
   ChevronDown,
   ChevronRight,
+  Circle,
   File,
   Folder,
   FolderOpen,
-  Loader2,
-  AlertCircle,
-  RefreshCw,
   GitBranch,
-  Circle,
   GitCompare,
+  Loader2,
+  RefreshCw,
 } from "lucide-react"
-import { useState, useEffect } from "react"
-import { cn } from "@/lib/utils"
-import { filesApi, type FileNode, type GitStatusResponse, type BranchesResponse, type Worktree } from "@/apis/files"
+import { useEffect, useState } from "react"
+import {
+  type BranchesResponse,
+  type FileNode,
+  filesApi,
+  type GitStatusResponse,
+} from "@/apis/files"
 import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select"
+import { cn } from "@/lib/utils"
 
 interface FileExplorerProps {
   projectId?: string
@@ -50,10 +54,12 @@ export function FileExplorer({
 
   // Git status state
   const [gitStatus, setGitStatus] = useState<GitStatusResponse | null>(null)
-  
+
   // Branch/worktree state
   const [branches, setBranches] = useState<BranchesResponse | null>(null)
-  const [selectedWorktree, setSelectedWorktree] = useState<string | null>(initialWorktree || null)
+  const [selectedWorktree, setSelectedWorktree] = useState<string | null>(
+    initialWorktree || null,
+  )
 
   useEffect(() => {
     if (initialWorktree) {
@@ -73,36 +79,45 @@ export function FileExplorer({
       setBranches(null)
       setSelectedWorktree(null)
     }
-  }, [projectId, selectedWorktree])
+  }, [projectId, fetchBranches, fetchFileTree, fetchGitStatus])
 
   // Listen for WebSocket branch_changed events
   useEffect(() => {
     if (!projectId) return
-    
+
     const handleBranchChanged = (event: CustomEvent) => {
       if (event.detail.project_id === projectId) {
-        setBranches(prev => prev ? { ...prev, current: event.detail.branch } : null)
+        setBranches((prev) =>
+          prev ? { ...prev, current: event.detail.branch } : null,
+        )
         fetchFileTree()
         fetchGitStatus()
       }
     }
-    
-    window.addEventListener('branch-changed', handleBranchChanged as EventListener)
-    return () => window.removeEventListener('branch-changed', handleBranchChanged as EventListener)
-  }, [projectId])
+
+    window.addEventListener(
+      "branch-changed",
+      handleBranchChanged as EventListener,
+    )
+    return () =>
+      window.removeEventListener(
+        "branch-changed",
+        handleBranchChanged as EventListener,
+      )
+  }, [projectId, fetchFileTree, fetchGitStatus])
 
   // Poll git status every 5 seconds when tab is visible
   useEffect(() => {
     if (!projectId) return
 
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === "visible") {
         fetchGitStatus()
       }
     }, 5000)
 
     return () => clearInterval(interval)
-  }, [projectId])
+  }, [projectId, fetchGitStatus])
 
   const fetchFileTree = async () => {
     if (!projectId) return
@@ -111,13 +126,20 @@ export function FileExplorer({
     setError(null)
 
     try {
-      const response = await filesApi.getFileTree(projectId, 5, selectedWorktree || undefined)
+      const response = await filesApi.getFileTree(
+        projectId,
+        5,
+        selectedWorktree || undefined,
+      )
 
       // Convert root node children to array (or use root if it has children)
       if (response.root.children) {
         setFileTree(response.root.children)
         // Auto-expand first folder
-        if (response.root.children.length > 0 && response.root.children[0].type === "folder") {
+        if (
+          response.root.children.length > 0 &&
+          response.root.children[0].type === "folder"
+        ) {
           setExpandedFolders(new Set([response.root.children[0].path]))
         }
       } else {
@@ -134,10 +156,12 @@ export function FileExplorer({
     if (!projectId) return
 
     try {
-      const response = await filesApi.getGitStatus(projectId, selectedWorktree || undefined)
+      const response = await filesApi.getGitStatus(
+        projectId,
+        selectedWorktree || undefined,
+      )
       setGitStatus(response)
-    } catch (err: any) {
-    }
+    } catch (_err: any) {}
   }
 
   const fetchBranches = async () => {
@@ -146,8 +170,7 @@ export function FileExplorer({
     try {
       const response = await filesApi.getBranches(projectId)
       setBranches(response)
-    } catch (err: any) {
-    }
+    } catch (_err: any) {}
   }
 
   const toggleFolder = async (path: string, node: FileNode) => {
@@ -158,7 +181,7 @@ export function FileExplorer({
     } else {
       newExpanded.add(path)
       setExpandedFolders(newExpanded)
-      
+
       // Lazy load children if not already loaded
       if (node.children === null || node.children === undefined) {
         await loadFolderChildren(path, node)
@@ -167,19 +190,24 @@ export function FileExplorer({
   }
 
   // Lazy load folder children
-  const loadFolderChildren = async (path: string, node: FileNode) => {
+  const loadFolderChildren = async (path: string, _node: FileNode) => {
     if (!projectId) return
-    
-    setLoadingFolders(prev => new Set(prev).add(path))
-    
+
+    setLoadingFolders((prev) => new Set(prev).add(path))
+
     try {
-      const response = await filesApi.getFolderChildren(projectId, path, selectedWorktree || undefined, 2)
-      
+      const response = await filesApi.getFolderChildren(
+        projectId,
+        path,
+        selectedWorktree || undefined,
+        2,
+      )
+
       // Update the tree with loaded children
-      setFileTree(prev => updateNodeChildren(prev, path, response.children))
-    } catch (err) {
+      setFileTree((prev) => updateNodeChildren(prev, path, response.children))
+    } catch (_err) {
     } finally {
-      setLoadingFolders(prev => {
+      setLoadingFolders((prev) => {
         const next = new Set(prev)
         next.delete(path)
         return next
@@ -188,13 +216,20 @@ export function FileExplorer({
   }
 
   // Helper to update node children in tree
-  const updateNodeChildren = (nodes: FileNode[], targetPath: string, children: FileNode[]): FileNode[] => {
-    return nodes.map(node => {
+  const updateNodeChildren = (
+    nodes: FileNode[],
+    targetPath: string,
+    children: FileNode[],
+  ): FileNode[] => {
+    return nodes.map((node) => {
       if (node.path === targetPath) {
         return { ...node, children }
       }
       if (node.children && node.type === "folder") {
-        return { ...node, children: updateNodeChildren(node.children, targetPath, children) }
+        return {
+          ...node,
+          children: updateNodeChildren(node.children, targetPath, children),
+        }
       }
       return node
     })
@@ -203,26 +238,28 @@ export function FileExplorer({
   // Get git status for a file
   const getFileChangeType = (filePath: string): string | null => {
     if (!gitStatus?.is_git_repo) return null
-    
+
     // Check if file path matches (support both full path and relative path)
     const matchPath = (files: string[] | undefined, path: string) => {
       if (!files || files.length === 0) return false
       // Normalize path separators
-      const normalizedPath = path.replace(/\\/g, '/')
-      return files.some(f => {
-        const normalizedF = f.replace(/\\/g, '/')
-        return normalizedF === normalizedPath || 
-               normalizedPath.endsWith('/' + normalizedF) || 
-               normalizedF.endsWith('/' + normalizedPath) ||
-               normalizedPath.endsWith(normalizedF) ||
-               normalizedF.endsWith(normalizedPath)
+      const normalizedPath = path.replace(/\\/g, "/")
+      return files.some((f) => {
+        const normalizedF = f.replace(/\\/g, "/")
+        return (
+          normalizedF === normalizedPath ||
+          normalizedPath.endsWith(`/${normalizedF}`) ||
+          normalizedF.endsWith(`/${normalizedPath}`) ||
+          normalizedPath.endsWith(normalizedF) ||
+          normalizedF.endsWith(normalizedPath)
+        )
       })
     }
-    
-    if (matchPath(gitStatus.modified_files, filePath)) return 'M'
-    if (matchPath(gitStatus.staged_files, filePath)) return 'A'
-    if (matchPath(gitStatus.untracked_files, filePath)) return 'U'
-    
+
+    if (matchPath(gitStatus.modified_files, filePath)) return "M"
+    if (matchPath(gitStatus.staged_files, filePath)) return "A"
+    if (matchPath(gitStatus.untracked_files, filePath)) return "U"
+
     return null
   }
 
@@ -231,17 +268,20 @@ export function FileExplorer({
     if (!changeType) return null
 
     const indicators: Record<string, { color: string; label: string }> = {
-      'M': { color: 'text-yellow-500', label: 'Modified' },
-      'A': { color: 'text-green-500', label: 'Added' },
-      'D': { color: 'text-red-500', label: 'Deleted' },
-      'R': { color: 'text-blue-500', label: 'Renamed' },
-      'U': { color: 'text-gray-500', label: 'Untracked' },
+      M: { color: "text-yellow-500", label: "Modified" },
+      A: { color: "text-green-500", label: "Added" },
+      D: { color: "text-red-500", label: "Deleted" },
+      R: { color: "text-blue-500", label: "Renamed" },
+      U: { color: "text-gray-500", label: "Untracked" },
     }
 
-    const indicator = indicators[changeType] || { color: 'text-gray-400', label: changeType }
+    const indicator = indicators[changeType] || {
+      color: "text-gray-400",
+      label: changeType,
+    }
     return (
       <Circle
-        className={cn('w-2 h-2 fill-current', indicator.color)}
+        className={cn("w-2 h-2 fill-current", indicator.color)}
         title={indicator.label}
       />
     )
@@ -284,7 +324,7 @@ export function FileExplorer({
     }
 
     const changeType = getFileChangeType(node.path)
-    
+
     return (
       <div
         key={node.path}
@@ -347,7 +387,9 @@ export function FileExplorer({
         <div className="flex flex-col items-center gap-3 text-center">
           <AlertCircle className="w-8 h-8 text-destructive" />
           <div>
-            <p className="text-sm font-medium text-foreground">Failed to load files</p>
+            <p className="text-sm font-medium text-foreground">
+              Failed to load files
+            </p>
             <p className="text-xs text-muted-foreground mt-1">{error}</p>
           </div>
           <Button
@@ -390,10 +432,10 @@ export function FileExplorer({
   }
 
   // Get current worktree info
-  const currentWorktree = selectedWorktree 
-    ? branches?.worktrees.find(w => w.path === selectedWorktree)
-    : branches?.worktrees.find(w => w.branch === branches.current)
-  
+  const currentWorktree = selectedWorktree
+    ? branches?.worktrees.find((w) => w.path === selectedWorktree)
+    : branches?.worktrees.find((w) => w.branch === branches.current)
+
   const currentBranch = currentWorktree?.branch || branches?.current
 
   return (
@@ -401,8 +443,8 @@ export function FileExplorer({
       {/* Worktree/Branch selector */}
       {branches && branches.worktrees.length > 0 && (
         <div className="px-2 py-2 border-b border-border">
-          <Select 
-            value={selectedWorktree || branches.worktrees[0]?.path || ""} 
+          <Select
+            value={selectedWorktree || branches.worktrees[0]?.path || ""}
             onValueChange={(path) => {
               setSelectedWorktree(path)
               onWorktreeChange?.(path)
@@ -411,7 +453,9 @@ export function FileExplorer({
             <SelectTrigger className="h-8 text-xs">
               <div className="flex items-center gap-2">
                 <GitBranch className="w-3.5 h-3.5 flex-shrink-0" />
-                <span className="truncate">{currentBranch || "Select branch"}</span>
+                <span className="truncate">
+                  {currentBranch || "Select branch"}
+                </span>
               </div>
             </SelectTrigger>
             <SelectContent>
@@ -424,9 +468,9 @@ export function FileExplorer({
           </Select>
         </div>
       )}
-      
+
       {/* Simple branch indicator when no worktrees */}
-      {branches && branches.current && branches.worktrees.length === 0 && (
+      {branches?.current && branches.worktrees.length === 0 && (
         <div className="px-3 py-2 border-b border-border">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <GitBranch className="w-3.5 h-3.5" />
@@ -436,7 +480,7 @@ export function FileExplorer({
           </div>
         </div>
       )}
-      
+
       {/* File tree */}
       <div className="flex-1 overflow-y-auto py-2">
         {fileTree.map((node) => renderNode(node))}

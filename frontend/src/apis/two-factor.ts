@@ -1,17 +1,17 @@
 import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
 import type {
-  TwoFactorSetupResponse,
-  TwoFactorVerifySetupRequest,
-  TwoFactorVerifySetupResponse,
+  TwoFactorBackupCodesResponse,
   TwoFactorDisableRequest,
   TwoFactorDisableResponse,
   TwoFactorRequestDisableRequest,
   TwoFactorRequestDisableResponse,
+  TwoFactorSetupResponse,
+  TwoFactorStatusResponse,
   TwoFactorVerifyRequest,
   TwoFactorVerifyResponse,
-  TwoFactorStatusResponse,
-  TwoFactorBackupCodesResponse,
+  TwoFactorVerifySetupRequest,
+  TwoFactorVerifySetupResponse,
 } from "@/types/two-factor"
 
 export async function get2FAStatus(): Promise<TwoFactorStatusResponse> {
@@ -29,7 +29,7 @@ export async function setup2FA(): Promise<TwoFactorSetupResponse> {
 }
 
 export async function verifySetup2FA(
-  data: TwoFactorVerifySetupRequest
+  data: TwoFactorVerifySetupRequest,
 ): Promise<TwoFactorVerifySetupResponse> {
   return __request<TwoFactorVerifySetupResponse>(OpenAPI, {
     method: "POST",
@@ -39,7 +39,7 @@ export async function verifySetup2FA(
 }
 
 export async function requestDisable2FA(
-  data: TwoFactorRequestDisableRequest
+  data: TwoFactorRequestDisableRequest,
 ): Promise<TwoFactorRequestDisableResponse> {
   return __request<TwoFactorRequestDisableResponse>(OpenAPI, {
     method: "POST",
@@ -49,7 +49,7 @@ export async function requestDisable2FA(
 }
 
 export async function disable2FA(
-  data: TwoFactorDisableRequest
+  data: TwoFactorDisableRequest,
 ): Promise<TwoFactorDisableResponse> {
   return __request<TwoFactorDisableResponse>(OpenAPI, {
     method: "POST",
@@ -59,7 +59,7 @@ export async function disable2FA(
 }
 
 export async function verify2FALogin(
-  data: TwoFactorVerifyRequest
+  data: TwoFactorVerifyRequest,
 ): Promise<TwoFactorVerifyResponse> {
   return __request<TwoFactorVerifyResponse>(OpenAPI, {
     method: "POST",

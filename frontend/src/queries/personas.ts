@@ -1,15 +1,17 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { personasApi } from "@/apis/personas"
-import type { PersonaCreate, PersonaUpdate } from "@/types/persona"
 import { toast } from "@/lib/toast"
+import type { PersonaCreate, PersonaUpdate } from "@/types/persona"
 
 export const personaQueryKeys = {
   all: ["personas"] as const,
   lists: () => [...personaQueryKeys.all, "list"] as const,
   list: (filters?: { role_type?: string; is_active?: boolean }) =>
     [...personaQueryKeys.lists(), filters] as const,
-  byRole: (roleType: string) => [...personaQueryKeys.all, "by-role", roleType] as const,
-  withStats: (roleType?: string) => [...personaQueryKeys.all, "with-stats", roleType] as const,
+  byRole: (roleType: string) =>
+    [...personaQueryKeys.all, "by-role", roleType] as const,
+  withStats: (roleType?: string) =>
+    [...personaQueryKeys.all, "with-stats", roleType] as const,
   detail: (id: string) => [...personaQueryKeys.all, "detail", id] as const,
 }
 
@@ -26,7 +28,10 @@ export function usePersonas(params?: {
   })
 }
 
-export function usePersonasByRole(roleType: string, options?: { enabled?: boolean }) {
+export function usePersonasByRole(
+  roleType: string,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: personaQueryKeys.byRole(roleType),
     queryFn: () => personasApi.getPersonasByRole(roleType),
@@ -60,7 +65,9 @@ export function useCreatePersona() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: personaQueryKeys.lists() })
       queryClient.invalidateQueries({ queryKey: personaQueryKeys.withStats() })
-      queryClient.invalidateQueries({ queryKey: personaQueryKeys.byRole(data.role_type) })
+      queryClient.invalidateQueries({
+        queryKey: personaQueryKeys.byRole(data.role_type),
+      })
       toast.success(`Persona "${data.name}" created successfully`)
     },
     onError: (error: any) => {
@@ -73,13 +80,22 @@ export function useUpdatePersona() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ personaId, data }: { personaId: string; data: PersonaUpdate }) =>
-      personasApi.updatePersona(personaId, data),
+    mutationFn: ({
+      personaId,
+      data,
+    }: {
+      personaId: string
+      data: PersonaUpdate
+    }) => personasApi.updatePersona(personaId, data),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: personaQueryKeys.lists() })
       queryClient.invalidateQueries({ queryKey: personaQueryKeys.withStats() })
-      queryClient.invalidateQueries({ queryKey: personaQueryKeys.detail(data.id) })
-      queryClient.invalidateQueries({ queryKey: personaQueryKeys.byRole(data.role_type) })
+      queryClient.invalidateQueries({
+        queryKey: personaQueryKeys.detail(data.id),
+      })
+      queryClient.invalidateQueries({
+        queryKey: personaQueryKeys.byRole(data.role_type),
+      })
       toast.success(`Persona "${data.name}" updated successfully`)
     },
     onError: (error: any) => {
@@ -92,8 +108,13 @@ export function useDeletePersona() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ personaId, hardDelete }: { personaId: string; hardDelete?: boolean }) =>
-      personasApi.deletePersona(personaId, hardDelete),
+    mutationFn: ({
+      personaId,
+      hardDelete,
+    }: {
+      personaId: string
+      hardDelete?: boolean
+    }) => personasApi.deletePersona(personaId, hardDelete),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: personaQueryKeys.lists() })
       queryClient.invalidateQueries({ queryKey: personaQueryKeys.withStats() })
@@ -113,8 +134,12 @@ export function useActivatePersona() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: personaQueryKeys.lists() })
       queryClient.invalidateQueries({ queryKey: personaQueryKeys.withStats() })
-      queryClient.invalidateQueries({ queryKey: personaQueryKeys.detail(data.id) })
-      queryClient.invalidateQueries({ queryKey: personaQueryKeys.byRole(data.role_type) })
+      queryClient.invalidateQueries({
+        queryKey: personaQueryKeys.detail(data.id),
+      })
+      queryClient.invalidateQueries({
+        queryKey: personaQueryKeys.byRole(data.role_type),
+      })
       toast.success(`Persona "${data.name}" activated`)
     },
     onError: (error: any) => {

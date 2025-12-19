@@ -1,21 +1,26 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { toast } from "@/lib/toast"
-import { parseApiError } from "@/lib/api-error"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { stacksApi } from "@/apis/stacks"
+import { parseApiError } from "@/lib/api-error"
+import { toast } from "@/lib/toast"
 import type { TechStackCreate, TechStackUpdate } from "@/types/stack"
 
 export const stackQueryKeys = {
   all: ["stacks"] as const,
   lists: () => [...stackQueryKeys.all, "list"] as const,
-  list: (params?: Record<string, unknown>) => [...stackQueryKeys.lists(), params] as const,
+  list: (params?: Record<string, unknown>) =>
+    [...stackQueryKeys.lists(), params] as const,
   details: () => [...stackQueryKeys.all, "detail"] as const,
   detail: (id: string) => [...stackQueryKeys.details(), id] as const,
   byCode: (code: string) => [...stackQueryKeys.all, "code", code] as const,
   availableSkills: () => [...stackQueryKeys.all, "available-skills"] as const,
-  skillTree: (code: string) => [...stackQueryKeys.all, "skill-tree", code] as const,
-  skillFile: (code: string, path: string) => [...stackQueryKeys.all, "skill-file", code, path] as const,
-  boilerplateTree: (code: string) => [...stackQueryKeys.all, "boilerplate-tree", code] as const,
-  boilerplateFile: (code: string, path: string) => [...stackQueryKeys.all, "boilerplate-file", code, path] as const,
+  skillTree: (code: string) =>
+    [...stackQueryKeys.all, "skill-tree", code] as const,
+  skillFile: (code: string, path: string) =>
+    [...stackQueryKeys.all, "skill-file", code, path] as const,
+  boilerplateTree: (code: string) =>
+    [...stackQueryKeys.all, "boilerplate-tree", code] as const,
+  boilerplateFile: (code: string, path: string) =>
+    [...stackQueryKeys.all, "boilerplate-file", code, path] as const,
 }
 
 export function useStacks(params?: {
@@ -72,11 +77,18 @@ export function useUpdateStack() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ stackId, data }: { stackId: string; data: TechStackUpdate }) =>
-      stacksApi.updateStack(stackId, data),
+    mutationFn: ({
+      stackId,
+      data,
+    }: {
+      stackId: string
+      data: TechStackUpdate
+    }) => stacksApi.updateStack(stackId, data),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: stackQueryKeys.lists() })
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.detail(data.id) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.detail(data.id),
+      })
       toast.success(`Stack "${data.name}" updated successfully`)
     },
     onError: (error: any) => {
@@ -89,8 +101,13 @@ export function useDeleteStack() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ stackId, deleteFiles }: { stackId: string; deleteFiles?: boolean }) =>
-      stacksApi.deleteStack(stackId, deleteFiles),
+    mutationFn: ({
+      stackId,
+      deleteFiles,
+    }: {
+      stackId: string
+      deleteFiles?: boolean
+    }) => stacksApi.deleteStack(stackId, deleteFiles),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: stackQueryKeys.lists() })
       toast.success("Stack deleted successfully")
@@ -122,10 +139,19 @@ export function useCreateSkillFile() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ code, path, content }: { code: string; path: string; content?: string }) =>
-      stacksApi.createSkillFile(code, path, content),
+    mutationFn: ({
+      code,
+      path,
+      content,
+    }: {
+      code: string
+      path: string
+      content?: string
+    }) => stacksApi.createSkillFile(code, path, content),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.skillTree(variables.code) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.skillTree(variables.code),
+      })
       toast.success("File created successfully")
     },
     onError: (error: any) => {
@@ -138,10 +164,19 @@ export function useUpdateSkillFile() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ code, path, content }: { code: string; path: string; content: string }) =>
-      stacksApi.updateSkillFile(code, path, content),
+    mutationFn: ({
+      code,
+      path,
+      content,
+    }: {
+      code: string
+      path: string
+      content: string
+    }) => stacksApi.updateSkillFile(code, path, content),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.skillFile(variables.code, variables.path) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.skillFile(variables.code, variables.path),
+      })
       toast.success("File saved successfully")
     },
     onError: (error: any) => {
@@ -157,7 +192,9 @@ export function useDeleteSkillFile() {
     mutationFn: ({ code, path }: { code: string; path: string }) =>
       stacksApi.deleteSkillFile(code, path),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.skillTree(variables.code) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.skillTree(variables.code),
+      })
       toast.success("File deleted successfully")
     },
     onError: (error: any) => {
@@ -173,7 +210,9 @@ export function useCreateSkillFolder() {
     mutationFn: ({ code, path }: { code: string; path: string }) =>
       stacksApi.createSkillFolder(code, path),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.skillTree(variables.code) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.skillTree(variables.code),
+      })
       toast.success("Folder created successfully")
     },
     onError: (error: any) => {
@@ -189,7 +228,9 @@ export function useDeleteSkillFolder() {
     mutationFn: ({ code, path }: { code: string; path: string }) =>
       stacksApi.deleteSkillFolder(code, path),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.skillTree(variables.code) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.skillTree(variables.code),
+      })
       toast.success("Folder deleted successfully")
     },
     onError: (error: any) => {
@@ -219,10 +260,19 @@ export function useCreateBoilerplateFile() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ code, path, content }: { code: string; path: string; content?: string }) =>
-      stacksApi.createBoilerplateFile(code, path, content),
+    mutationFn: ({
+      code,
+      path,
+      content,
+    }: {
+      code: string
+      path: string
+      content?: string
+    }) => stacksApi.createBoilerplateFile(code, path, content),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.boilerplateTree(variables.code) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.boilerplateTree(variables.code),
+      })
       toast.success("File created successfully")
     },
     onError: (error: any) => {
@@ -235,10 +285,22 @@ export function useUpdateBoilerplateFile() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ code, path, content }: { code: string; path: string; content: string }) =>
-      stacksApi.updateBoilerplateFile(code, path, content),
+    mutationFn: ({
+      code,
+      path,
+      content,
+    }: {
+      code: string
+      path: string
+      content: string
+    }) => stacksApi.updateBoilerplateFile(code, path, content),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.boilerplateFile(variables.code, variables.path) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.boilerplateFile(
+          variables.code,
+          variables.path,
+        ),
+      })
       toast.success("File saved successfully")
     },
     onError: (error: any) => {
@@ -254,7 +316,9 @@ export function useDeleteBoilerplateFile() {
     mutationFn: ({ code, path }: { code: string; path: string }) =>
       stacksApi.deleteBoilerplateFile(code, path),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.boilerplateTree(variables.code) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.boilerplateTree(variables.code),
+      })
       toast.success("File deleted successfully")
     },
     onError: (error: any) => {
@@ -270,7 +334,9 @@ export function useCreateBoilerplateFolder() {
     mutationFn: ({ code, path }: { code: string; path: string }) =>
       stacksApi.createBoilerplateFolder(code, path),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.boilerplateTree(variables.code) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.boilerplateTree(variables.code),
+      })
       toast.success("Folder created successfully")
     },
     onError: (error: any) => {
@@ -286,7 +352,9 @@ export function useDeleteBoilerplateFolder() {
     mutationFn: ({ code, path }: { code: string; path: string }) =>
       stacksApi.deleteBoilerplateFolder(code, path),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.boilerplateTree(variables.code) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.boilerplateTree(variables.code),
+      })
       toast.success("Folder deleted successfully")
     },
     onError: (error: any) => {
@@ -311,7 +379,9 @@ export function useUploadBoilerplateFolder() {
       clearExisting?: boolean
     }) => stacksApi.uploadBoilerplateFolder(code, files, paths, clearExisting),
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: stackQueryKeys.boilerplateTree(variables.code) })
+      queryClient.invalidateQueries({
+        queryKey: stackQueryKeys.boilerplateTree(variables.code),
+      })
       toast.success(`Uploaded ${data.uploaded} files (${data.skipped} skipped)`)
     },
     onError: (error: any) => {

@@ -1,20 +1,59 @@
-import { useState, useEffect, useRef } from "react"
+import {
+  Check,
+  ChevronsUpDown,
+  ClipboardPaste,
+  FileText,
+  Flag,
+  Layers,
+  Plus,
+  Upload,
+  X,
+  Zap,
+} from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { storiesApi } from "@/apis/stories"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/badge"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Zap, Flag, X, ChevronsUpDown, Check, Layers, Plus, Upload, FileText, ClipboardPaste } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { storiesApi } from "@/apis/stories"
+import type { Story, StoryFormData } from "@/types"
 import { CreateEpicDialog, type NewEpicData } from "./create-epic-dialog"
-import type { StoryFormData, Story } from "@/types"
 
 export type { StoryFormData }
 
@@ -50,10 +89,17 @@ const getDefaultFormData = (): StoryFormData => ({
   acceptance_criteria: [],
   requirements: [],
   dependencies: [],
-  epic_id: undefined
+  epic_id: undefined,
 })
 
-export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateStory, projectId, editingStory }: CreateStoryDialogProps) {
+export function CreateStoryDialog({
+  open,
+  onOpenChange,
+  onCreateStory,
+  onUpdateStory,
+  projectId,
+  editingStory,
+}: CreateStoryDialogProps) {
   const isEditMode = !!editingStory
 
   const [formData, setFormData] = useState<StoryFormData>(getDefaultFormData())
@@ -63,7 +109,9 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
   const [dependencyPopoverOpen, setDependencyPopoverOpen] = useState(false)
   const [epicPopoverOpen, setEpicPopoverOpen] = useState(false)
   const [existingStories, setExistingStories] = useState<Story[]>([])
-  const [availableEpics, setAvailableEpics] = useState<{ id: string; code?: string; title: string }[]>([])
+  const [availableEpics, setAvailableEpics] = useState<
+    { id: string; code?: string; title: string }[]
+  >([])
   const [loadingStories, setLoadingStories] = useState(false)
   const [loadingEpics, setLoadingEpics] = useState(false)
   const [showCreateEpicDialog, setShowCreateEpicDialog] = useState(false)
@@ -73,91 +121,117 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Parse markdown story format
-  const parseMarkdownStory = (markdown: string): Partial<StoryFormData> & { dependency_codes?: string[]; epic_code?: string } => {
-    const result: Partial<StoryFormData> & { dependency_codes?: string[]; epic_code?: string } = {}
-    
+  const parseMarkdownStory = (
+    markdown: string,
+  ): Partial<StoryFormData> & {
+    dependency_codes?: string[]
+    epic_code?: string
+  } => {
+    const result: Partial<StoryFormData> & {
+      dependency_codes?: string[]
+      epic_code?: string
+    } = {}
+
     // Extract title from ### Title section
     const titleMatch = markdown.match(/###\s*Title\s*\n([\s\S]*?)(?=###|$)/i)
     if (titleMatch) {
       result.title = titleMatch[1].trim()
     }
-    
+
     // Extract epic code from ### Epic section
     const epicMatch = markdown.match(/###\s*Epic\s*\n([\s\S]*?)(?=###|$)/i)
     if (epicMatch) {
       result.epic_code = epicMatch[1].trim()
     }
-    
+
     // Extract story point from ### Story points section
-    const storyPointMatch = markdown.match(/###\s*Story\s*points?\s*\n([\s\S]*?)(?=###|$)/i)
+    const storyPointMatch = markdown.match(
+      /###\s*Story\s*points?\s*\n([\s\S]*?)(?=###|$)/i,
+    )
     if (storyPointMatch) {
-      const point = parseInt(storyPointMatch[1].trim())
+      const point = parseInt(storyPointMatch[1].trim(), 10)
       if ([1, 2, 3, 5, 8, 13].includes(point)) {
         result.story_point = point
       }
     }
-    
+
     // Extract priority from ### Priority section
-    const priorityMatch = markdown.match(/###\s*Priority\s*\n([\s\S]*?)(?=###|$)/i)
+    const priorityMatch = markdown.match(
+      /###\s*Priority\s*\n([\s\S]*?)(?=###|$)/i,
+    )
     if (priorityMatch) {
       const priorityText = priorityMatch[1].trim().toLowerCase()
-      if (priorityText.includes('high') || priorityText.includes('must')) {
-        result.priority = 'High'
-      } else if (priorityText.includes('medium') || priorityText.includes('should')) {
-        result.priority = 'Medium'
-      } else if (priorityText.includes('low') || priorityText.includes('nice')) {
-        result.priority = 'Low'
+      if (priorityText.includes("high") || priorityText.includes("must")) {
+        result.priority = "High"
+      } else if (
+        priorityText.includes("medium") ||
+        priorityText.includes("should")
+      ) {
+        result.priority = "Medium"
+      } else if (
+        priorityText.includes("low") ||
+        priorityText.includes("nice")
+      ) {
+        result.priority = "Low"
       }
     }
-    
+
     // Extract description from ### Description section
-    const descriptionMatch = markdown.match(/###\s*Description\s*\n([\s\S]*?)(?=###|$)/i)
+    const descriptionMatch = markdown.match(
+      /###\s*Description\s*\n([\s\S]*?)(?=###|$)/i,
+    )
     if (descriptionMatch) {
       result.description = descriptionMatch[1].trim()
     }
-    
+
     // Extract requirements from ### Requirements section
-    const requirementsMatch = markdown.match(/###\s*Requirements\s*\n([\s\S]*?)(?=###|$)/i)
+    const requirementsMatch = markdown.match(
+      /###\s*Requirements\s*\n([\s\S]*?)(?=###|$)/i,
+    )
     if (requirementsMatch) {
       const requirementsText = requirementsMatch[1]
       const requirements = requirementsText
-        .split('\n')
-        .filter(line => line.trim().startsWith('-'))
-        .map(line => line.replace(/^-\s*/, '').trim())
-        .filter(line => line.length > 0)
+        .split("\n")
+        .filter((line) => line.trim().startsWith("-"))
+        .map((line) => line.replace(/^-\s*/, "").trim())
+        .filter((line) => line.length > 0)
       if (requirements.length > 0) {
         result.requirements = requirements
       }
     }
-    
+
     // Extract acceptance criteria from ### Acceptance Criteria section
-    const criteriaMatch = markdown.match(/###\s*Acceptance\s*Criteria\s*\n([\s\S]*?)(?=###|$)/i)
+    const criteriaMatch = markdown.match(
+      /###\s*Acceptance\s*Criteria\s*\n([\s\S]*?)(?=###|$)/i,
+    )
     if (criteriaMatch) {
       const criteriaText = criteriaMatch[1]
       const criteria = criteriaText
-        .split('\n')
-        .filter(line => line.trim().startsWith('-'))
-        .map(line => line.replace(/^-\s*/, '').trim())
-        .filter(line => line.length > 0)
+        .split("\n")
+        .filter((line) => line.trim().startsWith("-"))
+        .map((line) => line.replace(/^-\s*/, "").trim())
+        .filter((line) => line.length > 0)
       if (criteria.length > 0) {
         result.acceptance_criteria = criteria
       }
     }
-    
+
     // Extract dependencies from ### Dependencies section
-    const dependenciesMatch = markdown.match(/###\s*Dependencies\s*\n([\s\S]*?)(?=###|$)/i)
+    const dependenciesMatch = markdown.match(
+      /###\s*Dependencies\s*\n([\s\S]*?)(?=###|$)/i,
+    )
     if (dependenciesMatch) {
       const dependenciesText = dependenciesMatch[1]
       const codes = dependenciesText
-        .split('\n')
-        .filter(line => line.trim().startsWith('-'))
-        .map(line => line.replace(/^-\s*/, '').trim())
-        .filter(line => line.length > 0)
+        .split("\n")
+        .filter((line) => line.trim().startsWith("-"))
+        .map((line) => line.replace(/^-\s*/, "").trim())
+        .filter((line) => line.length > 0)
       if (codes.length > 0) {
         result.dependency_codes = codes
       }
     }
-    
+
     return result
   }
 
@@ -165,7 +239,7 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
   const matchDependencyCodesToIds = (codes: string[]): string[] => {
     const matchedIds: string[] = []
     for (const code of codes) {
-      const story = existingStories.find(s => s.story_code === code)
+      const story = existingStories.find((s) => s.story_code === code)
       if (story) {
         matchedIds.push(story.id)
       }
@@ -175,34 +249,36 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
 
   // Match epic code to epic ID
   const matchEpicCodeToId = (code: string): string | undefined => {
-    const epic = availableEpics.find(e => e.code === code)
+    const epic = availableEpics.find((e) => e.code === code)
     return epic?.id
   }
 
   // Handle import from pasted text
   const handleImportFromText = () => {
     if (!importText.trim()) return
-    
+
     const parsed = parseMarkdownStory(importText)
-    const dependencyIds = parsed.dependency_codes 
+    const dependencyIds = parsed.dependency_codes
       ? matchDependencyCodesToIds(parsed.dependency_codes)
       : []
-    const epicId = parsed.epic_code 
+    const epicId = parsed.epic_code
       ? matchEpicCodeToId(parsed.epic_code)
       : undefined
-    
-    setFormData(prev => ({
+
+    setFormData((prev) => ({
       ...prev,
       title: parsed.title || prev.title,
       description: parsed.description || prev.description,
       requirements: parsed.requirements || prev.requirements,
-      acceptance_criteria: parsed.acceptance_criteria || prev.acceptance_criteria,
-      dependencies: dependencyIds.length > 0 ? dependencyIds : prev.dependencies,
+      acceptance_criteria:
+        parsed.acceptance_criteria || prev.acceptance_criteria,
+      dependencies:
+        dependencyIds.length > 0 ? dependencyIds : prev.dependencies,
       epic_id: epicId || prev.epic_id,
       story_point: parsed.story_point || prev.story_point,
-      priority: parsed.priority || prev.priority
+      priority: parsed.priority || prev.priority,
     }))
-    
+
     setShowImportDialog(false)
     setImportText("")
   }
@@ -211,34 +287,36 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    
+
     const reader = new FileReader()
     reader.onload = (e) => {
       const content = e.target?.result as string
       if (content) {
         const parsed = parseMarkdownStory(content)
-        const dependencyIds = parsed.dependency_codes 
+        const dependencyIds = parsed.dependency_codes
           ? matchDependencyCodesToIds(parsed.dependency_codes)
           : []
-        const epicId = parsed.epic_code 
+        const epicId = parsed.epic_code
           ? matchEpicCodeToId(parsed.epic_code)
           : undefined
-        
-        setFormData(prev => ({
+
+        setFormData((prev) => ({
           ...prev,
           title: parsed.title || prev.title,
           description: parsed.description || prev.description,
           requirements: parsed.requirements || prev.requirements,
-          acceptance_criteria: parsed.acceptance_criteria || prev.acceptance_criteria,
-          dependencies: dependencyIds.length > 0 ? dependencyIds : prev.dependencies,
+          acceptance_criteria:
+            parsed.acceptance_criteria || prev.acceptance_criteria,
+          dependencies:
+            dependencyIds.length > 0 ? dependencyIds : prev.dependencies,
           epic_id: epicId || prev.epic_id,
           story_point: parsed.story_point || prev.story_point,
-          priority: parsed.priority || prev.priority
+          priority: parsed.priority || prev.priority,
         }))
       }
     }
     reader.readAsText(file)
-    
+
     // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
@@ -251,18 +329,20 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
       const priorityMap: Record<number, "High" | "Medium" | "Low"> = {
         1: "High",
         2: "Medium",
-        3: "Low"
+        3: "Low",
       }
       setFormData({
         title: editingStory.title,
         description: editingStory.description || "",
         type: editingStory.type,
         story_point: editingStory.story_point || 1,
-        priority: editingStory.priority ? priorityMap[editingStory.priority] || "Medium" : "Medium",
+        priority: editingStory.priority
+          ? priorityMap[editingStory.priority] || "Medium"
+          : "Medium",
         acceptance_criteria: editingStory.acceptance_criteria || [],
         requirements: editingStory.requirements || [],
         dependencies: editingStory.dependencies || [],
-        epic_id: editingStory.epic_id
+        epic_id: editingStory.epic_id,
       })
     } else if (open && !editingStory) {
       setFormData(getDefaultFormData())
@@ -274,26 +354,30 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
     if (open && projectId) {
       // Load stories for dependencies
       setLoadingStories(true)
-      storiesApi.list(projectId, { limit: 100 })
-        .then(result => {
+      storiesApi
+        .list(projectId, { limit: 100 })
+        .then((result) => {
           setExistingStories(result.data || [])
         })
-        .catch(err => {
+        .catch((_err) => {
           setExistingStories([])
         })
         .finally(() => setLoadingStories(false))
-      
+
       // Load epics directly from API
       setLoadingEpics(true)
-      storiesApi.listEpics(projectId)
-        .then(result => {
-          setAvailableEpics((result.data || []).map(epic => ({
-            id: epic.id,
-            code: epic.epic_code,
-            title: epic.title
-          })))
+      storiesApi
+        .listEpics(projectId)
+        .then((result) => {
+          setAvailableEpics(
+            (result.data || []).map((epic) => ({
+              id: epic.id,
+              code: epic.epic_code,
+              title: epic.title,
+            })),
+          )
         })
-        .catch(err => {
+        .catch((_err) => {
           setAvailableEpics([])
         })
         .finally(() => setLoadingEpics(false))
@@ -308,15 +392,15 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
 
     // Include new epic data if creating new epic
     const submitData = newEpicData
-      ? { 
-          ...formData, 
+      ? {
+          ...formData,
           new_epic_title: newEpicData.title,
           new_epic_domain: newEpicData.domain,
           new_epic_description: newEpicData.description,
-          epic_id: undefined 
+          epic_id: undefined,
         }
       : formData
-    
+
     if (isEditMode && editingStory && onUpdateStory) {
       onUpdateStory(editingStory.id, submitData)
     } else {
@@ -336,7 +420,7 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
       acceptance_criteria: [],
       requirements: [],
       dependencies: [],
-      epic_id: undefined
+      epic_id: undefined,
     })
     setCurrentCriteria("")
     setCurrentRequirement("")
@@ -347,65 +431,70 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
 
   const handleCreateEpic = (epicData: NewEpicData) => {
     setNewEpicData(epicData)
-    setFormData(prev => ({ ...prev, epic_id: undefined }))
+    setFormData((prev) => ({ ...prev, epic_id: undefined }))
   }
 
   const handleAddCriteria = () => {
     if (currentCriteria.trim()) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        acceptance_criteria: [...prev.acceptance_criteria, currentCriteria.trim()]
+        acceptance_criteria: [
+          ...prev.acceptance_criteria,
+          currentCriteria.trim(),
+        ],
       }))
       setCurrentCriteria("")
     }
   }
 
   const handleRemoveCriteria = (index: number) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      acceptance_criteria: prev.acceptance_criteria.filter((_, i) => i !== index)
+      acceptance_criteria: prev.acceptance_criteria.filter(
+        (_, i) => i !== index,
+      ),
     }))
   }
 
   const handleAddRequirement = () => {
     if (currentRequirement.trim()) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        requirements: [...prev.requirements, currentRequirement.trim()]
+        requirements: [...prev.requirements, currentRequirement.trim()],
       }))
       setCurrentRequirement("")
     }
   }
 
   const handleRemoveRequirement = (index: number) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      requirements: prev.requirements.filter((_, i) => i !== index)
+      requirements: prev.requirements.filter((_, i) => i !== index),
     }))
   }
 
   const handleToggleDependency = (storyId: string) => {
-    setFormData(prev => {
+    setFormData((prev) => {
       const isSelected = prev.dependencies.includes(storyId)
       return {
         ...prev,
-        dependencies: isSelected 
-          ? prev.dependencies.filter(id => id !== storyId)
-          : [...prev.dependencies, storyId]
+        dependencies: isSelected
+          ? prev.dependencies.filter((id) => id !== storyId)
+          : [...prev.dependencies, storyId],
       }
     })
   }
 
   const handleRemoveDependency = (storyId: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      dependencies: prev.dependencies.filter(id => id !== storyId)
+      dependencies: prev.dependencies.filter((id) => id !== storyId),
     }))
   }
 
   // Get story title by ID for display
   const getStoryTitle = (storyId: string) => {
-    const story = existingStories.find(s => s.id === storyId)
+    const story = existingStories.find((s) => s.id === storyId)
     return story?.title || storyId
   }
 
@@ -430,7 +519,9 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
                     <ClipboardPaste className="w-4 h-4 mr-2" />
                     Paste Text
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                  <DropdownMenuItem
+                    onClick={() => fileInputRef.current?.click()}
+                  >
                     <FileText className="w-4 h-4 mr-2" />
                     Select .md/.txt File
                   </DropdownMenuItem>
@@ -439,10 +530,9 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
             )}
           </div>
           <DialogDescription>
-            {isEditMode 
+            {isEditMode
               ? "Update the story details below"
-              : "Fill in the details below to create a new story on the Kanban board"
-            }
+              : "Fill in the details below to create a new story on the Kanban board"}
           </DialogDescription>
         </DialogHeader>
 
@@ -467,7 +557,9 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
               id="title"
               placeholder="As a [role], I want [feature] so that [benefit]"
               value={formData.title}
-              onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, title: e.target.value }))
+              }
               className="h-10"
             />
           </div>
@@ -481,7 +573,12 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
               id="description"
               placeholder="Detailed description of the story..."
               value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  description: e.target.value,
+                }))
+              }
               className="min-h-[100px] resize-none"
             />
           </div>
@@ -492,16 +589,23 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
               <Layers className="w-3.5 h-3.5" />
               Epic
             </Label>
-            
+
             {/* Show new epic info if created */}
             {newEpicData ? (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
-                <Badge variant="outline" className="font-mono text-xs bg-primary/10">
+                <Badge
+                  variant="outline"
+                  className="font-mono text-xs bg-primary/10"
+                >
                   NEW
                 </Badge>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{newEpicData.title}</p>
-                  <p className="text-xs text-muted-foreground">{newEpicData.domain}</p>
+                  <p className="text-sm font-medium truncate">
+                    {newEpicData.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {newEpicData.domain}
+                  </p>
                 </div>
                 <Button
                   type="button"
@@ -527,13 +631,22 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
                       "Loading epics..."
                     ) : formData.epic_id ? (
                       <span className="flex items-center gap-2">
-                        {availableEpics.find(e => e.id === formData.epic_id)?.code && (
-                          <Badge variant="outline" className="font-mono text-xs">
-                            {availableEpics.find(e => e.id === formData.epic_id)?.code}
+                        {availableEpics.find((e) => e.id === formData.epic_id)
+                          ?.code && (
+                          <Badge
+                            variant="outline"
+                            className="font-mono text-xs"
+                          >
+                            {
+                              availableEpics.find(
+                                (e) => e.id === formData.epic_id,
+                              )?.code
+                            }
                           </Badge>
                         )}
                         <span className="truncate">
-                          {availableEpics.find(e => e.id === formData.epic_id)?.title || "Select epic..."}
+                          {availableEpics.find((e) => e.id === formData.epic_id)
+                            ?.title || "Select epic..."}
                         </span>
                       </span>
                     ) : (
@@ -560,14 +673,17 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
                           <Plus className="mr-2 h-4 w-4 flex-shrink-0" />
                           <span className="font-medium">Tạo Epic mới...</span>
                         </CommandItem>
-                        
+
                         <Separator className="my-1" />
-                        
+
                         {/* None option */}
                         <CommandItem
                           value="none"
                           onSelect={() => {
-                            setFormData(prev => ({ ...prev, epic_id: undefined }))
+                            setFormData((prev) => ({
+                              ...prev,
+                              epic_id: undefined,
+                            }))
                             setEpicPopoverOpen(false)
                           }}
                           className="cursor-pointer"
@@ -575,19 +691,22 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
                           <Check
                             className={cn(
                               "mr-2 h-4 w-4 flex-shrink-0",
-                              !formData.epic_id ? "opacity-100" : "opacity-0"
+                              !formData.epic_id ? "opacity-100" : "opacity-0",
                             )}
                           />
                           <span className="text-muted-foreground">No Epic</span>
                         </CommandItem>
-                        
+
                         {/* Existing epics */}
                         {availableEpics.map((epic) => (
                           <CommandItem
                             key={epic.id}
                             value={epic.title}
                             onSelect={() => {
-                              setFormData(prev => ({ ...prev, epic_id: epic.id }))
+                              setFormData((prev) => ({
+                                ...prev,
+                                epic_id: epic.id,
+                              }))
                               setNewEpicData(null)
                               setEpicPopoverOpen(false)
                             }}
@@ -596,12 +715,17 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
                             <Check
                               className={cn(
                                 "mr-2 h-4 w-4 flex-shrink-0",
-                                formData.epic_id === epic.id ? "opacity-100" : "opacity-0"
+                                formData.epic_id === epic.id
+                                  ? "opacity-100"
+                                  : "opacity-0",
                               )}
                             />
                             <div className="flex items-center gap-2">
                               {epic.code && (
-                                <Badge variant="outline" className="font-mono text-xs">
+                                <Badge
+                                  variant="outline"
+                                  className="font-mono text-xs"
+                                >
                                   {epic.code}
                                 </Badge>
                               )}
@@ -621,16 +745,21 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
           <div className="grid grid-cols-2 gap-4">
             {/* Story Points */}
             <div className="space-y-2">
-              <Label htmlFor="story_point" className="text-sm font-semibold flex items-center gap-1.5">
+              <Label
+                htmlFor="story_point"
+                className="text-sm font-semibold flex items-center gap-1.5"
+              >
                 <Zap className="w-3.5 h-3.5" />
                 Story Points
               </Label>
               <Select
                 value={formData.story_point?.toString()}
-                onValueChange={(value) => setFormData(prev => ({
-                  ...prev,
-                  story_point: parseInt(value)
-                }))}
+                onValueChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    story_point: parseInt(value, 10),
+                  }))
+                }
               >
                 <SelectTrigger id="story_point" className="h-10">
                   <SelectValue placeholder="Not estimated" />
@@ -641,21 +770,26 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
                   <SelectItem value="3">3 - M (Medium)</SelectItem>
                   <SelectItem value="5">5 - L (Large)</SelectItem>
                   <SelectItem value="8">8 - XL (Extra Large)</SelectItem>
-                  <SelectItem value="13">13 - XXL (Too large - split!)</SelectItem>
+                  <SelectItem value="13">
+                    13 - XXL (Too large - split!)
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             {/* Priority */}
             <div className="space-y-2">
-              <Label htmlFor="priority" className="text-sm font-semibold flex items-center gap-1.5">
+              <Label
+                htmlFor="priority"
+                className="text-sm font-semibold flex items-center gap-1.5"
+              >
                 <Flag className="w-3.5 h-3.5" />
                 Priority
               </Label>
               <Select
                 value={formData.priority || "Medium"}
                 onValueChange={(value: "High" | "Medium" | "Low") =>
-                  setFormData(prev => ({ ...prev, priority: value }))
+                  setFormData((prev) => ({ ...prev, priority: value }))
                 }
               >
                 <SelectTrigger id="priority" className="h-10">
@@ -685,7 +819,9 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
                     <span className="text-xs font-semibold text-muted-foreground mt-0.5">
                       {index + 1}.
                     </span>
-                    <span className="flex-1 text-sm text-foreground">{criteria}</span>
+                    <span className="flex-1 text-sm text-foreground">
+                      {criteria}
+                    </span>
                     <button
                       type="button"
                       onClick={() => handleRemoveCriteria(index)}
@@ -739,7 +875,9 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
                     <span className="text-xs font-semibold text-muted-foreground mt-0.5">
                       {index + 1}.
                     </span>
-                    <span className="flex-1 text-sm text-foreground">{requirement}</span>
+                    <span className="flex-1 text-sm text-foreground">
+                      {requirement}
+                    </span>
                     <button
                       type="button"
                       onClick={() => handleRemoveRequirement(index)}
@@ -810,7 +948,10 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
             )}
 
             {/* Story selector */}
-            <Popover open={dependencyPopoverOpen} onOpenChange={setDependencyPopoverOpen}>
+            <Popover
+              open={dependencyPopoverOpen}
+              onOpenChange={setDependencyPopoverOpen}
+            >
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
@@ -819,13 +960,11 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
                   className="w-full justify-between h-9 text-sm font-normal"
                   disabled={loadingStories || existingStories.length === 0}
                 >
-                  {loadingStories ? (
-                    "Loading stories..."
-                  ) : existingStories.length === 0 ? (
-                    "No stories available"
-                  ) : (
-                    "Select dependencies..."
-                  )}
+                  {loadingStories
+                    ? "Loading stories..."
+                    : existingStories.length === 0
+                      ? "No stories available"
+                      : "Select dependencies..."}
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
@@ -845,13 +984,16 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
                           <Check
                             className={cn(
                               "mr-2 h-4 w-4 flex-shrink-0",
-                              formData.dependencies.includes(story.id) ? "opacity-100" : "opacity-0"
+                              formData.dependencies.includes(story.id)
+                                ? "opacity-100"
+                                : "opacity-0",
                             )}
                           />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm truncate">{story.title}</p>
                             <p className="text-xs text-muted-foreground">
-                              {story.story_code && `${story.story_code} • `}{story.type} • {story.status}
+                              {story.story_code && `${story.story_code} • `}
+                              {story.type} • {story.status}
                             </p>
                           </div>
                         </CommandItem>
@@ -868,9 +1010,7 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
 
         {/* Actions */}
         <div className="flex items-center justify-between">
-          <div className="text-xs text-muted-foreground">
-            * Required fields
-          </div>
+          <div className="text-xs text-muted-foreground">* Required fields</div>
           <div className="flex gap-2">
             <Button
               variant="ghost"
@@ -906,7 +1046,8 @@ export function CreateStoryDialog({ open, onOpenChange, onCreateStory, onUpdateS
           <DialogHeader>
             <DialogTitle>Import Story from Markdown</DialogTitle>
             <DialogDescription>
-              Paste your story in markdown format below. Use ### sections for each field.
+              Paste your story in markdown format below. Use ### sections for
+              each field.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

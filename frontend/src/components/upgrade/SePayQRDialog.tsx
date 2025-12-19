@@ -1,17 +1,24 @@
-import { useState, useEffect, useCallback } from "react"
+import {
+  CheckCircle,
+  Clock,
+  Copy,
+  Loader2,
+  RefreshCw,
+  XCircle,
+} from "lucide-react"
+import { useCallback, useEffect, useState } from "react"
+import { formatPrice } from "@/apis/plans"
+import { sepayApi } from "@/apis/sepay"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Loader2, CheckCircle, XCircle, Clock, Copy, RefreshCw } from "lucide-react"
-import { sepayApi } from "@/apis/sepay"
-import type { SePayQRResponse, SePayStatusResponse } from "@/types/sepay"
 import { toast } from "@/lib/toast"
-import { formatPrice } from "@/apis/plans"
+import type { SePayQRResponse, SePayStatusResponse } from "@/types/sepay"
 
 interface SePayQRDialogProps {
   open: boolean
@@ -40,11 +47,14 @@ export function SePayQRDialog({
     const fetchQRImage = async () => {
       try {
         const token = localStorage.getItem("access_token")
-        const response = await fetch(`${import.meta.env.VITE_API_URL}${qrData.qr_url}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL}${qrData.qr_url}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           },
-        })
+        )
 
         if (response.ok) {
           const blob = await response.blob()
@@ -64,7 +74,7 @@ export function SePayQRDialog({
         URL.revokeObjectURL(qrImageUrl)
       }
     }
-  }, [qrData?.qr_url])
+  }, [qrData?.qr_url, qrData, qrImageUrl])
 
   // Reset state when qrData changes (new payment) or dialog closes
   useEffect(() => {
@@ -73,7 +83,7 @@ export function SePayQRDialog({
       setStatus(null)
       setIsPolling(false)
     }
-  }, [qrData?.order_id])
+  }, [qrData?.order_id, qrData])
 
   // Reset state when dialog closes
   useEffect(() => {
@@ -86,11 +96,11 @@ export function SePayQRDialog({
 
   const checkPaymentStatus = useCallback(async () => {
     if (!qrData) return
-    
+
     try {
       const result = await sepayApi.checkStatus(qrData.order_id)
       setStatus(result)
-      
+
       if (result.status === "paid") {
         setIsPolling(false)
         toast.success("Payment successful!")
@@ -98,25 +108,24 @@ export function SePayQRDialog({
         setIsPolling(false)
         toast.error("Order has expired")
       }
-    } catch (error) {
-    }
-  }, [qrData, onSuccess])
+    } catch (_error) {}
+  }, [qrData])
 
   // Calculate time left
   useEffect(() => {
     if (!qrData?.expires_at) return
-    
+
     const updateTimeLeft = () => {
       const expiresAt = new Date(qrData.expires_at).getTime()
       const now = Date.now()
       const diff = Math.max(0, Math.floor((expiresAt - now) / 1000))
       setTimeLeft(diff)
-      
+
       if (diff === 0) {
         setIsPolling(false)
       }
     }
-    
+
     updateTimeLeft()
     const interval = setInterval(updateTimeLeft, 1000)
     return () => clearInterval(interval)
@@ -124,17 +133,22 @@ export function SePayQRDialog({
 
   // Poll for payment status every 5 seconds
   useEffect(() => {
-    if (!open || !qrData || status?.status === "paid" || status?.status === "expired") {
+    if (
+      !open ||
+      !qrData ||
+      status?.status === "paid" ||
+      status?.status === "expired"
+    ) {
       setIsPolling(false)
       return
     }
-    
+
     setIsPolling(true)
     const interval = setInterval(checkPaymentStatus, 5000)
-    
+
     // Initial check
     checkPaymentStatus()
-    
+
     return () => {
       clearInterval(interval)
       setIsPolling(false)
@@ -145,8 +159,7 @@ export function SePayQRDialog({
     if (qrData) {
       try {
         await sepayApi.cancelPayment(qrData.order_id)
-      } catch (error) {
-      }
+      } catch (_error) {}
     }
     onCancel()
   }
@@ -207,7 +220,9 @@ export function SePayQRDialog({
             <p className="text-2xl font-bold text-primary">
               {formatPrice(qrData.amount)}
             </p>
-            <p className="text-sm text-muted-foreground">{qrData.description}</p>
+            <p className="text-sm text-muted-foreground">
+              {qrData.description}
+            </p>
           </div>
 
           {/* Transaction Code */}
@@ -223,7 +238,9 @@ export function SePayQRDialog({
             {isPolling && status?.status === "pending" && (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                <span className="text-muted-foreground">Waiting for payment...</span>
+                <span className="text-muted-foreground">
+                  Waiting for payment...
+                </span>
               </>
             )}
             {status?.status === "paid" && (
@@ -260,10 +277,18 @@ export function SePayQRDialog({
         <div className="flex gap-2">
           {status?.status === "pending" && (
             <>
-              <Button variant="outline" className="flex-1" onClick={handleCancel}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={handleCancel}
+              >
                 Cancel
               </Button>
-              <Button variant="outline" className="flex-1" onClick={checkPaymentStatus}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={checkPaymentStatus}
+              >
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Check
               </Button>
@@ -275,7 +300,11 @@ export function SePayQRDialog({
             </Button>
           )}
           {status?.status === "expired" && (
-            <Button variant="outline" className="w-full" onClick={() => onOpenChange(false)}>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => onOpenChange(false)}
+            >
               Close
             </Button>
           )}

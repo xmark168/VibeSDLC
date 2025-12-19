@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { requireRole } from "@/utils/auth"
-import { PersonasTab } from "@/components/admin/agents"
 import { AdminLayout } from "@/components/admin/AdminLayout"
+import { PersonasTab } from "@/components/admin/agents"
+import { requireRole } from "@/utils/auth"
 
 export const Route = createFileRoute("/admin/personas")({
   beforeLoad: async () => {

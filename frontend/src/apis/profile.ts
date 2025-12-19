@@ -1,6 +1,12 @@
 import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
-import type { Profile, ProfileUpdate, AvatarUploadResponse, PasswordStatusResponse, PasswordChangeResponse } from "@/types/profile"
+import type {
+  AvatarUploadResponse,
+  PasswordChangeResponse,
+  PasswordStatusResponse,
+  Profile,
+  ProfileUpdate,
+} from "@/types/profile"
 
 export async function getProfile(): Promise<Profile> {
   return __request<Profile>(OpenAPI, {
@@ -22,7 +28,7 @@ export async function uploadAvatar(file: Blob): Promise<AvatarUploadResponse> {
   formData.append("file", file, "avatar.jpg")
 
   const token = localStorage.getItem("access_token")
-  
+
   const response = await fetch(`${OpenAPI.BASE}/api/v1/profile/avatar`, {
     method: "POST",
     headers: {
@@ -39,7 +45,10 @@ export async function uploadAvatar(file: Blob): Promise<AvatarUploadResponse> {
   return response.json()
 }
 
-export async function deleteAvatar(): Promise<{ message: string; avatar_url: string }> {
+export async function deleteAvatar(): Promise<{
+  message: string
+  avatar_url: string
+}> {
   return __request(OpenAPI, {
     method: "DELETE",
     url: "/api/v1/profile/avatar",

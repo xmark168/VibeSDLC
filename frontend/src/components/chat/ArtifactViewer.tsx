@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Check, X, Download, Copy, Loader2 } from 'lucide-react'
-import type { Artifact } from '@/apis/artifacts'
-import { artifactsApi } from '@/apis/artifacts'
+import { Check, Copy, Download, Loader2, X } from "lucide-react"
+import { useState } from "react"
+import type { Artifact } from "@/apis/artifacts"
+import { artifactsApi } from "@/apis/artifacts"
+import { Button } from "@/components/ui/button"
 import { toast } from "@/lib/toast"
 
 interface ArtifactViewerProps {
@@ -11,16 +11,16 @@ interface ArtifactViewerProps {
 }
 
 export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
-  const [activeTab, setActiveTab] = useState<'preview' | 'json'>('preview')
+  const [activeTab, setActiveTab] = useState<"preview" | "json">("preview")
   const [isUpdating, setIsUpdating] = useState(false)
 
   const handleApprove = async () => {
     setIsUpdating(true)
     try {
-      await artifactsApi.updateArtifactStatus(artifact.id, 'approved')
-      toast.success('Artifact approved')
-    } catch (error) {
-      toast.error('Failed to approve artifact')
+      await artifactsApi.updateArtifactStatus(artifact.id, "approved")
+      toast.success("Artifact approved")
+    } catch (_error) {
+      toast.error("Failed to approve artifact")
     } finally {
       setIsUpdating(false)
     }
@@ -29,10 +29,10 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
   const handleReject = async () => {
     setIsUpdating(true)
     try {
-      await artifactsApi.updateArtifactStatus(artifact.id, 'rejected')
-      toast.success('Artifact rejected')
-    } catch (error) {
-      toast.error('Failed to reject artifact')
+      await artifactsApi.updateArtifactStatus(artifact.id, "rejected")
+      toast.success("Artifact rejected")
+    } catch (_error) {
+      toast.error("Failed to reject artifact")
     } finally {
       setIsUpdating(false)
     }
@@ -41,21 +41,21 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
   const handleCopy = () => {
     const content = JSON.stringify(artifact.content, null, 2)
     navigator.clipboard.writeText(content)
-    toast.success('Copied to clipboard')
+    toast.success("Copied to clipboard")
   }
 
   const handleDownload = () => {
     const content = JSON.stringify(artifact.content, null, 2)
-    const blob = new Blob([content], { type: 'application/json' })
+    const blob = new Blob([content], { type: "application/json" })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
+    const a = document.createElement("a")
     a.href = url
-    a.download = `${artifact.title.replace(/\s+/g, '_')}_v${artifact.version}.json`
+    a.download = `${artifact.title.replace(/\s+/g, "_")}_v${artifact.version}.json`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-    toast.success('Downloaded')
+    toast.success("Downloaded")
   }
 
   const renderPreview = () => {
@@ -63,8 +63,8 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
 
     // Render based on artifact type
     switch (artifact.artifact_type) {
-      case 'analysis':
-      case 'prd':
+      case "analysis":
+      case "prd":
         return (
           <div className="p-6 space-y-6">
             {content.title && (
@@ -76,7 +76,9 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
             {content.overview && (
               <div>
                 <h3 className="text-lg font-semibold mb-2">Overview</h3>
-                <p className="text-sm text-muted-foreground">{content.overview}</p>
+                <p className="text-sm text-muted-foreground">
+                  {content.overview}
+                </p>
               </div>
             )}
 
@@ -85,7 +87,9 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
                 <h3 className="text-lg font-semibold mb-2">Goals</h3>
                 <ul className="list-disc list-inside space-y-1">
                   {content.goals.map((goal: string, i: number) => (
-                    <li key={i} className="text-sm">{goal}</li>
+                    <li key={i} className="text-sm">
+                      {goal}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -103,13 +107,19 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
                         </span>
                         <h4 className="font-semibold text-sm">{req.title}</h4>
                       </div>
-                      <p className="text-sm text-muted-foreground">{req.description}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {req.description}
+                      </p>
                       <div className="flex gap-2 mt-2">
-                        <span className={`text-xs px-2 py-0.5 rounded ${
-                          req.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
-                          req.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' :
-                          'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                        }`}>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded ${
+                            req.priority === "high"
+                              ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
+                              : req.priority === "medium"
+                                ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+                                : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                          }`}
+                        >
                           {req.priority}
                         </span>
                         <span className="text-xs px-2 py-0.5 rounded bg-muted">
@@ -127,7 +137,12 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
                 <h3 className="text-lg font-semibold mb-2">Risks</h3>
                 <ul className="list-disc list-inside space-y-1">
                   {content.risks.map((risk: string, i: number) => (
-                    <li key={i} className="text-sm text-red-600 dark:text-red-400">{risk}</li>
+                    <li
+                      key={i}
+                      className="text-sm text-red-600 dark:text-red-400"
+                    >
+                      {risk}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -138,7 +153,9 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
                 <h3 className="text-lg font-semibold mb-2">Next Steps</h3>
                 <ol className="list-decimal list-inside space-y-1">
                   {content.next_steps.map((step: string, i: number) => (
-                    <li key={i} className="text-sm">{step}</li>
+                    <li key={i} className="text-sm">
+                      {step}
+                    </li>
                   ))}
                 </ol>
               </div>
@@ -173,7 +190,8 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
         <div>
           <h3 className="font-semibold">{artifact.title}</h3>
           <p className="text-xs text-muted-foreground">
-            Version {artifact.version} • {artifact.artifact_type} • by {artifact.agent_name}
+            Version {artifact.version} • {artifact.artifact_type} • by{" "}
+            {artifact.agent_name}
           </p>
         </div>
 
@@ -182,26 +200,26 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
           <div className="flex gap-1 mr-4">
             <Button
               size="sm"
-              variant={activeTab === 'preview' ? 'default' : 'ghost'}
-              onClick={() => setActiveTab('preview')}
+              variant={activeTab === "preview" ? "default" : "ghost"}
+              onClick={() => setActiveTab("preview")}
             >
               Preview
             </Button>
             <Button
               size="sm"
-              variant={activeTab === 'json' ? 'default' : 'ghost'}
-              onClick={() => setActiveTab('json')}
+              variant={activeTab === "json" ? "default" : "ghost"}
+              onClick={() => setActiveTab("json")}
             >
               JSON
             </Button>
           </div>
 
           {/* Actions */}
-          {artifact.status === 'draft' && (
+          {artifact.status === "draft" && (
             <>
-              <Button 
-                size="sm" 
-                variant="outline" 
+              <Button
+                size="sm"
+                variant="outline"
                 onClick={handleApprove}
                 disabled={isUpdating}
               >
@@ -212,9 +230,9 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
                 )}
                 Approve
               </Button>
-              <Button 
-                size="sm" 
-                variant="outline" 
+              <Button
+                size="sm"
+                variant="outline"
                 onClick={handleReject}
                 disabled={isUpdating}
               >
@@ -241,7 +259,7 @@ export function ArtifactViewer({ artifact, onClose }: ArtifactViewerProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {activeTab === 'preview' ? (
+        {activeTab === "preview" ? (
           renderPreview()
         ) : (
           <pre className="p-4 text-xs overflow-auto">

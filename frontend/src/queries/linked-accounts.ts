@@ -1,10 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   getLinkedAccounts,
-  unlinkAccount,
   initiateLink,
+  unlinkAccount,
 } from "@/apis/linked-accounts"
-import type { UnlinkAccountRequest, OAuthProvider } from "@/types/linked-account"
+import type {
+  OAuthProvider,
+  UnlinkAccountRequest,
+} from "@/types/linked-account"
 
 export const linkedAccountKeys = {
   all: ["linked-accounts"] as const,

@@ -2,16 +2,18 @@ import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
 import type {
   CreatePaymentRequest,
-  PaymentLinkResponse,
-  PaymentStatusResponse,
+  InvoiceDetail,
   Order,
   PaymentHistory,
-  InvoiceDetail
+  PaymentLinkResponse,
+  PaymentStatusResponse,
 } from "@/types/payment"
 
 export const paymentsApi = {
   // Create payment link
-  createPaymentLink: async (body: CreatePaymentRequest): Promise<PaymentLinkResponse> => {
+  createPaymentLink: async (
+    body: CreatePaymentRequest,
+  ): Promise<PaymentLinkResponse> => {
     return __request<PaymentLinkResponse>(OpenAPI, {
       method: "POST",
       url: "/api/v1/payments/create",
@@ -20,7 +22,9 @@ export const paymentsApi = {
   },
 
   // Purchase credits
-  purchaseCredits: async (credit_amount: number): Promise<PaymentLinkResponse> => {
+  purchaseCredits: async (
+    credit_amount: number,
+  ): Promise<PaymentLinkResponse> => {
     return __request<PaymentLinkResponse>(OpenAPI, {
       method: "POST",
       url: "/api/v1/payments/credits/purchase",
@@ -45,7 +49,10 @@ export const paymentsApi = {
   },
 
   // Get payment history
-  getPaymentHistory: async (params?: { limit?: number; offset?: number }): Promise<PaymentHistory> => {
+  getPaymentHistory: async (params?: {
+    limit?: number
+    offset?: number
+  }): Promise<PaymentHistory> => {
     return __request<PaymentHistory>(OpenAPI, {
       method: "GET",
       url: "/api/v1/payments/history",
@@ -62,8 +69,14 @@ export const paymentsApi = {
   },
 
   // Manually sync payment status with PayOS using orderCode (for local dev)
-  syncPaymentStatusByCode: async (orderCode: number): Promise<{ message: string; status: string; subscription_id?: string }> => {
-    return __request<{ message: string; status: string; subscription_id?: string }>(OpenAPI, {
+  syncPaymentStatusByCode: async (
+    orderCode: number,
+  ): Promise<{ message: string; status: string; subscription_id?: string }> => {
+    return __request<{
+      message: string
+      status: string
+      subscription_id?: string
+    }>(OpenAPI, {
       method: "POST",
       url: `/api/v1/payments/sync-status-by-code/${orderCode}`,
     })

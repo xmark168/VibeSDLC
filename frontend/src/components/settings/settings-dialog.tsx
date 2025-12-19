@@ -1,29 +1,43 @@
-import { useState, useEffect } from "react"
-import { User, CreditCard, LogOut, Pencil, Info, Sun, Moon, Monitor, AlertTriangle, ShieldCheck, Camera, Check, X, Loader2 } from "lucide-react"
+import { useQueryClient } from "@tanstack/react-query"
+import { format } from "date-fns"
+import {
+  AlertTriangle,
+  Camera,
+  Check,
+  CreditCard,
+  Info,
+  Loader2,
+  LogOut,
+  Monitor,
+  Moon,
+  Pencil,
+  ShieldCheck,
+  Sun,
+  User,
+  X,
+} from "lucide-react"
+import { useEffect, useState } from "react"
+import toast from "react-hot-toast"
+import { subscriptionApi } from "@/apis/subscription"
+import { useTheme } from "@/components/provider/theme-provider"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
-import { useAppStore } from "@/stores/auth-store"
 import useAuth from "@/hooks/useAuth"
-import { useTheme } from "@/components/provider/theme-provider"
 import { cn } from "@/lib/utils"
-import { useCurrentSubscription } from "@/queries/subscription"
-import { subscriptionApi } from "@/apis/subscription"
-import { TwoFactorSettings } from "./two-factor-settings"
-import { LinkedAccountsSettings } from "./linked-accounts-settings"
-import { AvatarUploadDialog } from "./avatar-upload-dialog"
-import { PasswordSettings } from "./password-settings"
 import { useProfile, useUpdateProfile } from "@/queries/profile"
-import { format } from "date-fns"
-import { useQueryClient } from "@tanstack/react-query"
-import toast from "react-hot-toast"
+import { useCurrentSubscription } from "@/queries/subscription"
+import { useAppStore } from "@/stores/auth-store"
+import { AvatarUploadDialog } from "./avatar-upload-dialog"
+import { LinkedAccountsSettings } from "./linked-accounts-settings"
+import { PasswordSettings } from "./password-settings"
+import { TwoFactorSettings } from "./two-factor-settings"
 
 const DEFAULT_AVATAR = "https://github.com/shadcn.png"
 
@@ -35,8 +49,14 @@ interface SettingsDialogProps {
 
 type SettingsTab = "profile" | "security" | "billing" | "theme"
 
-export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialogProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>(defaultTab || "profile")
+export function SettingsDialog({
+  open,
+  onOpenChange,
+  defaultTab,
+}: SettingsDialogProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    defaultTab || "profile",
+  )
 
   // Update active tab when defaultTab changes
   useEffect(() => {
@@ -52,13 +72,15 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
   const user = useAppStore((state) => state.user)
   const { logout } = useAuth()
   const { theme, setTheme } = useTheme()
-  const { data: subscriptionData, isLoading: subscriptionLoading } = useCurrentSubscription()
+  const { data: subscriptionData, isLoading: subscriptionLoading } =
+    useCurrentSubscription()
   const { data: profile, isLoading: profileLoading } = useProfile()
   const updateProfileMutation = useUpdateProfile()
   const queryClient = useQueryClient()
 
   // Get avatar URL with fallback
-  const avatarUrl = import.meta.env.VITE_API_URL + profile?.avatar_url || DEFAULT_AVATAR
+  const avatarUrl =
+    import.meta.env.VITE_API_URL + profile?.avatar_url || DEFAULT_AVATAR
 
   const handleLogout = () => {
     logout.mutate()
@@ -96,22 +118,22 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
       const result = await subscriptionApi.cancelSubscription()
 
       // Invalidate subscription query to refetch
-      queryClient.invalidateQueries({ queryKey: ['subscription', 'current'] })
+      queryClient.invalidateQueries({ queryKey: ["subscription", "current"] })
 
       toast.success(result.message, {
         duration: 5000,
         style: {
-          background: '#1e293b',
-          color: '#fff',
-          border: '1px solid #334155',
+          background: "#1e293b",
+          color: "#fff",
+          border: "1px solid #334155",
         },
       })
     } catch (error: any) {
-      toast.error(error?.body?.detail || 'Failed to cancel subscription', {
+      toast.error(error?.body?.detail || "Failed to cancel subscription", {
         style: {
-          background: '#1e293b',
-          color: '#fff',
-          border: '1px solid #334155',
+          background: "#1e293b",
+          color: "#fff",
+          border: "1px solid #334155",
         },
       })
     } finally {
@@ -130,29 +152,35 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
 
   // Get current plan name and credit info
   const currentPlanName = subscriptionData?.subscription?.plan?.name || "Free"
-  
+
   // Subscription credits (from plan, with expiry)
   const subTotalCredits = subscriptionData?.credit_wallet?.total_credits || 0
   const subUsedCredits = subscriptionData?.credit_wallet?.used_credits || 0
-  const subRemainingCredits = subscriptionData?.credit_wallet?.remaining_credits || 0
-  
+  const subRemainingCredits =
+    subscriptionData?.credit_wallet?.remaining_credits || 0
+
   // Purchased credits (permanent, no expiry)
-  const purchasedTotalCredits = subscriptionData?.purchased_wallet?.total_credits || 0
-  const purchasedUsedCredits = subscriptionData?.purchased_wallet?.used_credits || 0
-  const purchasedRemainingCredits = subscriptionData?.purchased_wallet?.remaining_credits || 0
-  
+  const purchasedTotalCredits =
+    subscriptionData?.purchased_wallet?.total_credits || 0
+  const purchasedUsedCredits =
+    subscriptionData?.purchased_wallet?.used_credits || 0
+  const purchasedRemainingCredits =
+    subscriptionData?.purchased_wallet?.remaining_credits || 0
+
   // Total credits
   const totalCredits = subTotalCredits + purchasedTotalCredits
-  const usedCredits = subUsedCredits + purchasedUsedCredits
+  const _usedCredits = subUsedCredits + purchasedUsedCredits
   const remainingCredits = subRemainingCredits + purchasedRemainingCredits
-  const creditPercentage = totalCredits > 0 ? (remainingCredits / totalCredits) * 100 : 0
+  const creditPercentage =
+    totalCredits > 0 ? (remainingCredits / totalCredits) * 100 : 0
 
   // Format period end date
   const periodEnd = subscriptionData?.credit_wallet?.period_end
-    ? format(new Date(subscriptionData.credit_wallet.period_end), 'MMM dd')
+    ? format(new Date(subscriptionData.credit_wallet.period_end), "MMM dd")
     : null
 
-  const isPaidSubscription = subscriptionData?.subscription && currentPlanName !== "Free"
+  const _isPaidSubscription =
+    subscriptionData?.subscription && currentPlanName !== "Free"
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -171,7 +199,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                   "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
                   activeTab === "profile"
                     ? "bg-secondary text-foreground"
-                    : "text-muted-foreground hover:bg-secondary/50"
+                    : "text-muted-foreground hover:bg-secondary/50",
                 )}
               >
                 <User className="h-4 w-4" />
@@ -184,7 +212,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                   "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
                   activeTab === "security"
                     ? "bg-secondary text-foreground"
-                    : "text-muted-foreground hover:bg-secondary/50"
+                    : "text-muted-foreground hover:bg-secondary/50",
                 )}
               >
                 <ShieldCheck className="h-4 w-4" />
@@ -197,7 +225,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                   "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
                   activeTab === "billing"
                     ? "bg-secondary text-foreground"
-                    : "text-muted-foreground hover:bg-secondary/50"
+                    : "text-muted-foreground hover:bg-secondary/50",
                 )}
               >
                 <CreditCard className="h-4 w-4" />
@@ -210,7 +238,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                   "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
                   activeTab === "theme"
                     ? "bg-secondary text-foreground"
-                    : "text-muted-foreground hover:bg-secondary/50"
+                    : "text-muted-foreground hover:bg-secondary/50",
                 )}
               >
                 <Sun className="h-4 w-4" />
@@ -232,9 +260,14 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                   <h3 className="text-base font-normal">Avatar</h3>
                   <div className="relative group">
                     <Avatar className="h-20 w-20 ring-2 ring-primary/20">
-                      <AvatarImage src={avatarUrl} alt={profile?.full_name || "User"} />
+                      <AvatarImage
+                        src={avatarUrl}
+                        alt={profile?.full_name || "User"}
+                      />
                       <AvatarFallback className="bg-[var(--gradient-primary)] text-white text-2xl font-semibold">
-                        {getInitials(profile?.full_name || user?.full_name || "")}
+                        {getInitials(
+                          profile?.full_name || user?.full_name || "",
+                        )}
                       </AvatarFallback>
                     </Avatar>
                     <button
@@ -287,8 +320,15 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                     </div>
                   ) : (
                     <div className="flex items-center gap-3">
-                      <span className="text-base">{profile?.full_name || user?.full_name || ""}</span>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleStartEditName}>
+                      <span className="text-base">
+                        {profile?.full_name || user?.full_name || ""}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={handleStartEditName}
+                      >
                         <Pencil className="h-4 w-4" />
                       </Button>
                     </div>
@@ -341,7 +381,9 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                   <div className="px-8 pb-6 pt-2">
                     {subscriptionLoading ? (
                       <div className="bg-secondary/30 rounded-lg p-6 flex items-center justify-center">
-                        <p className="text-sm text-muted-foreground">Loading...</p>
+                        <p className="text-sm text-muted-foreground">
+                          Loading...
+                        </p>
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -349,11 +391,14 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                         <div className="bg-secondary/30 rounded-lg p-6">
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
-                              <h3 className="text-base font-medium">Total Credits</h3>
+                              <h3 className="text-base font-medium">
+                                Total Credits
+                              </h3>
                               <Info className="h-4 w-4 text-muted-foreground" />
                             </div>
                             <span className="text-sm font-medium">
-                              {remainingCredits.toLocaleString()} / {totalCredits.toLocaleString()}
+                              {remainingCredits.toLocaleString()} /{" "}
+                              {totalCredits.toLocaleString()}
                             </span>
                           </div>
 
@@ -366,14 +411,19 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                                     style={{ width: `${creditPercentage}%` }}
                                   />
                                 </div>
-                                <span className="text-sm font-medium">{remainingCredits.toLocaleString()} left</span>
+                                <span className="text-sm font-medium">
+                                  {remainingCredits.toLocaleString()} left
+                                </span>
                               </div>
                             </div>
                           )}
 
                           <div className="pt-4 border-t border-border/50">
                             <p className="text-sm text-muted-foreground">
-                              Current plan: <span className="font-semibold text-foreground">{currentPlanName}</span>
+                              Current plan:{" "}
+                              <span className="font-semibold text-foreground">
+                                {currentPlanName}
+                              </span>
                             </p>
                           </div>
                         </div>
@@ -385,7 +435,9 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                             {subTotalCredits > 0 && (
                               <div className="bg-secondary/20 rounded-lg p-4 border border-border/50">
                                 <div className="flex items-center gap-2 mb-2">
-                                  <h4 className="text-sm font-medium">Plan Credits</h4>
+                                  <h4 className="text-sm font-medium">
+                                    Plan Credits
+                                  </h4>
                                 </div>
                                 <p className="text-2xl font-semibold mb-1">
                                   {subRemainingCredits.toLocaleString()}
@@ -405,7 +457,9 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                             {purchasedTotalCredits > 0 && (
                               <div className="bg-secondary/20 rounded-lg p-4 border border-border/50">
                                 <div className="flex items-center gap-2 mb-2">
-                                  <h4 className="text-sm font-medium">Purchased Credits</h4>
+                                  <h4 className="text-sm font-medium">
+                                    Purchased Credits
+                                  </h4>
                                 </div>
                                 <p className="text-2xl font-semibold mb-1">
                                   {purchasedRemainingCredits.toLocaleString()}
@@ -427,9 +481,10 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                   {/* Action Buttons */}
                   <div className="px-8 py-6">
                     {/* FREE plan: Only show Upgrade button */}
-                    {(!subscriptionData?.subscription || currentPlanName === "Free") && (
+                    {(!subscriptionData?.subscription ||
+                      currentPlanName === "Free") && (
                       <Button
-                        onClick={() => window.open('/upgrade', '_blank')}
+                        onClick={() => window.open("/upgrade", "_blank")}
                         className="w-full h-12 text-base bg-primary hover:bg-primary/90"
                       >
                         Upgrade Plan
@@ -437,28 +492,31 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                     )}
 
                     {/* Paid subscription: Show both Cancel and Upgrade buttons */}
-                    {subscriptionData?.subscription && currentPlanName !== "Free" && (
-                      <div className="flex gap-3">
-                        {/* Cancel button on the left */}
-                        <Button
-                          variant="outline"
-                          onClick={() => setShowCancelDialog(true)}
-                          disabled={isCanceling}
-                          className="flex-1 h-12 text-base border-destructive/50 text-destructive hover:bg-destructive/10"
-                        >
-                          <AlertTriangle className="h-4 w-4 mr-2" />
-                          {isCanceling ? "Canceling..." : "Cancel Subscription"}
-                        </Button>
+                    {subscriptionData?.subscription &&
+                      currentPlanName !== "Free" && (
+                        <div className="flex gap-3">
+                          {/* Cancel button on the left */}
+                          <Button
+                            variant="outline"
+                            onClick={() => setShowCancelDialog(true)}
+                            disabled={isCanceling}
+                            className="flex-1 h-12 text-base border-destructive/50 text-destructive hover:bg-destructive/10"
+                          >
+                            <AlertTriangle className="h-4 w-4 mr-2" />
+                            {isCanceling
+                              ? "Canceling..."
+                              : "Cancel Subscription"}
+                          </Button>
 
-                        {/* Upgrade button on the right */}
-                        <Button
-                          onClick={() => window.open('/upgrade', '_blank')}
-                          className="flex-1 h-12 text-base bg-primary hover:bg-primary/90"
-                        >
-                          Upgrade Plan
-                        </Button>
-                      </div>
-                    )}
+                          {/* Upgrade button on the right */}
+                          <Button
+                            onClick={() => window.open("/upgrade", "_blank")}
+                            className="flex-1 h-12 text-base bg-primary hover:bg-primary/90"
+                          >
+                            Upgrade Plan
+                          </Button>
+                        </div>
+                      )}
                   </div>
                 </div>
               </div>
@@ -482,7 +540,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                         "flex flex-col items-center gap-3 p-4 rounded-lg border-2 transition-all",
                         theme === "light"
                           ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/50"
+                          : "border-border hover:border-primary/50",
                       )}
                     >
                       <div className="w-full h-24 rounded-md bg-white border flex items-center justify-center">
@@ -498,7 +556,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                         "flex flex-col items-center gap-3 p-4 rounded-lg border-2 transition-all",
                         theme === "dark"
                           ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/50"
+                          : "border-border hover:border-primary/50",
                       )}
                     >
                       <div className="w-full h-24 rounded-md bg-slate-900 border flex items-center justify-center">
@@ -514,7 +572,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                         "flex flex-col items-center gap-3 p-4 rounded-lg border-2 transition-all",
                         theme === "system"
                           ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/50"
+                          : "border-border hover:border-primary/50",
                       )}
                     >
                       <div className="w-full h-24 rounded-md bg-gradient-to-r from-white to-slate-900 border flex items-center justify-center">
@@ -527,8 +585,7 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
                   <p className="text-xs text-muted-foreground mt-4">
                     {theme === "system"
                       ? "Automatically switch between light and dark mode based on your system preference"
-                      : `Currently using ${theme} theme`
-                    }
+                      : `Currently using ${theme} theme`}
                   </p>
                 </div>
               </div>
@@ -548,7 +605,8 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Are you sure you want to cancel your subscription? The plan will remain active until the end of the current period.
+              Are you sure you want to cancel your subscription? The plan will
+              remain active until the end of the current period.
             </p>
             <div className="flex gap-3 justify-end">
               <Button
@@ -581,4 +639,3 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
     </Dialog>
   )
 }
-

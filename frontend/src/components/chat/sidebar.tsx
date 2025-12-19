@@ -1,17 +1,16 @@
+import { useQuery } from "@tanstack/react-query"
+import { useNavigate } from "@tanstack/react-router"
 import {
   ArrowLeft,
   ChevronDown,
   ChevronRight,
   PanelLeftClose,
-  PanelRightClose,
   Plus,
   Sparkles,
 } from "lucide-react"
 import { useState } from "react"
-import { useNavigate } from "@tanstack/react-router"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { useQuery } from "@tanstack/react-query"
 import { getUserSubscription } from "@/queries/subscription"
 
 interface SidebarProps {
@@ -19,10 +18,7 @@ interface SidebarProps {
   onToggle: () => void
 }
 
-export function Sidebar({
-  collapsed,
-  onToggle,
-}: SidebarProps) {
+export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const [myChatsExpanded, setMyChatsExpanded] = useState(true)
   const navigate = useNavigate()
 
@@ -32,15 +28,19 @@ export function Sidebar({
   })
 
   // Calculate total credits from both wallets
-  const subRemainingCredits = subscriptionData?.credit_wallet?.remaining_credits || 0
-  const purchasedRemainingCredits = subscriptionData?.purchased_wallet?.remaining_credits || 0
+  const subRemainingCredits =
+    subscriptionData?.credit_wallet?.remaining_credits || 0
+  const purchasedRemainingCredits =
+    subscriptionData?.purchased_wallet?.remaining_credits || 0
   const totalRemainingCredits = subRemainingCredits + purchasedRemainingCredits
 
   const subTotalCredits = subscriptionData?.credit_wallet?.total_credits || 0
-  const purchasedTotalCredits = subscriptionData?.purchased_wallet?.total_credits || 0
+  const purchasedTotalCredits =
+    subscriptionData?.purchased_wallet?.total_credits || 0
   const totalCredits = subTotalCredits + purchasedTotalCredits
 
-  const creditPercentage = totalCredits > 0 ? (totalRemainingCredits / totalCredits) * 100 : 0
+  const creditPercentage =
+    totalCredits > 0 ? (totalRemainingCredits / totalCredits) * 100 : 0
 
   const handleBackToProjects = () => {
     navigate({ to: "/projects" })
@@ -50,7 +50,7 @@ export function Sidebar({
     <div
       className={cn(
         "flex flex-col bg-sidebar transition-all duration-300 ease-in-out h-full",
-        !collapsed ? "w-[280px] relative" : "w-0 overflow-hidden"
+        !collapsed ? "w-[280px] relative" : "w-0 overflow-hidden",
       )}
     >
       <div className="flex items-center justify-between p-4">
@@ -107,8 +107,6 @@ export function Sidebar({
             <ChevronRight className="w-4 h-4" />
           )}
         </button>
-
-        
       </div>
 
       <div className="p-3">

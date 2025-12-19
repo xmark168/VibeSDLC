@@ -1,9 +1,15 @@
 // Backlog and Kanban-related types
 
-export type StoryAgentState = 'PENDING' | 'PROCESSING' | 'PAUSED' | 'CANCEL_REQUESTED' | 'CANCELED' | 'FINISHED'
+export type StoryAgentState =
+  | "PENDING"
+  | "PROCESSING"
+  | "PAUSED"
+  | "CANCEL_REQUESTED"
+  | "CANCELED"
+  | "FINISHED"
 
 // Sub-status for PENDING state to show progress during restart
-export type PendingSubStatus = 'queued' | 'cleaning' | 'starting' | null
+export type PendingSubStatus = "queued" | "cleaning" | "starting" | null
 
 export interface BacklogItem {
   id: string
@@ -24,7 +30,7 @@ export interface BacklogItem {
   children?: BacklogItem[]
   // Agent tracking
   agent_state?: StoryAgentState | null
-  agent_sub_status?: PendingSubStatus  // Sub-status for PENDING state
+  agent_sub_status?: PendingSubStatus // Sub-status for PENDING state
   assigned_agent_id?: string | null
   branch_name?: string | null
   worktree_path?: string | null
@@ -45,7 +51,7 @@ export interface KanbanBoard {
     Backlog: BacklogItem[]
     Todo: BacklogItem[]
     InProgress: BacklogItem[]
-    Doing: BacklogItem[]  // Legacy alias for InProgress
+    Doing: BacklogItem[] // Legacy alias for InProgress
     Review: BacklogItem[]
     Done: BacklogItem[]
     Archived: BacklogItem[]
@@ -53,7 +59,7 @@ export interface KanbanBoard {
   wip_limits?: {
     [key: string]: {
       wip_limit: number
-      limit_type: 'hard' | 'soft'
+      limit_type: "hard" | "soft"
     }
   }
 }
@@ -72,12 +78,12 @@ export interface WIPLimit {
   project_id: string
   column_name: string
   wip_limit: number
-  limit_type: 'hard' | 'soft'
+  limit_type: "hard" | "soft"
 }
 
 export interface UpdateWIPLimitParams {
   wip_limit: number
-  limit_type: 'hard' | 'soft'
+  limit_type: "hard" | "soft"
 }
 
 export interface StoryFormData {

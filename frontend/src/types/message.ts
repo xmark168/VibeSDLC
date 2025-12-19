@@ -3,7 +3,7 @@ export enum AuthorType {
   AGENT = "agent",
 }
 
-export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'failed'
+export type MessageStatus = "pending" | "sent" | "delivered" | "failed"
 
 // Structured data interfaces for message cards
 export interface ArtifactData {
@@ -25,14 +25,14 @@ export interface StoriesCreatedData {
 export interface AgentQuestionData {
   question_id: string
   question_text: string
-  question_type: 'open' | 'multichoice'
+  question_type: "open" | "multichoice"
   options?: string[]
   allow_multiple?: boolean
   context?: any
 }
 
 export interface MessageAttachment {
-  type: 'document'
+  type: "document"
   filename: string
   file_path: string
   file_size: number
@@ -46,13 +46,13 @@ export type Message = {
   author_type: AuthorType
   user_id?: string
   agent_id?: string
-  agent_name?: string    // "Team Leader" | "Business Analyst" | "Developer" | "Tester"
+  agent_name?: string // "Team Leader" | "Business Analyst" | "Developer" | "Tester"
   persona_avatar?: string // Agent's persona avatar URL
   content: string
-  message_type?: string  // "text" | "artifact_created" (PRD, analysis, etc.) | "stories_created" | "agent_question" | "document_upload" | etc.
-  structured_data?: ArtifactData | StoriesCreatedData | AgentQuestionData | any  // JSON data for cards/previews
+  message_type?: string // "text" | "artifact_created" (PRD, analysis, etc.) | "stories_created" | "agent_question" | "document_upload" | etc.
+  structured_data?: ArtifactData | StoriesCreatedData | AgentQuestionData | any // JSON data for cards/previews
   message_metadata?: any // Message metadata (agent_name, preview_id, incomplete_flag, etc.)
-  attachments?: MessageAttachment[]  // File attachments (for document uploads)
+  attachments?: MessageAttachment[] // File attachments (for document uploads)
   created_at: string
   updated_at: string
   status?: MessageStatus // Message delivery status (for user messages)
