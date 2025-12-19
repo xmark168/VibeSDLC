@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any
 from collections import Counter
 
-router = APIRouter()
+router = APIRouter(prefix="/credits", tags=["credits"])
 
 
 class CreditActivityItem(BaseModel):
@@ -42,8 +42,12 @@ def get_user_credit_activities(
     session: SessionDep,
     limit: int = Query(default=20, le=100),
     offset: int = Query(default=0, ge=0),
+    project_id: str | None = Query(default=None, description="Filter by project ID"),
 ) -> Any:
     """Get user's credit activities with token details.
+    
+    Args:
+        project_id: Optional project ID to filter activities
     
     Returns:
     - Paginated activity list
@@ -53,16 +57,39 @@ def get_user_credit_activities(
     statement = (
         select(CreditActivity)
         .where(CreditActivity.user_id == current_user.id)
+    )
+    
+    # Add project filter if provided
+    if project_id:
+        from uuid import UUID
+        try:
+            project_uuid = UUID(project_id)
+            statement = statement.where(CreditActivity.project_id == project_uuid)
+        except (ValueError, AttributeError):
+            pass  # Invalid UUID, skip filter
+    
+    statement = (
+        statement
         .order_by(col(CreditActivity.created_at).desc())
         .offset(offset)
         .limit(limit)
     )
     activities = session.exec(statement).all()
     
-    # Get total count
+    # Get total count with same filters
     count_statement = select(func.count()).select_from(CreditActivity).where(
         CreditActivity.user_id == current_user.id
     )
+    
+    # Apply project filter to count as well
+    if project_id:
+        from uuid import UUID
+        try:
+            project_uuid = UUID(project_id)
+            count_statement = count_statement.where(CreditActivity.project_id == project_uuid)
+        except (ValueError, AttributeError):
+            pass
+    
     total = session.exec(count_statement).one()
     
     # Format items with related data

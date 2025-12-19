@@ -5,7 +5,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2, ChevronsRight, Download, FileText, Search, Filter, CheckCircle2, AlertCircle, Info, XCircle, Activity } from "lucide-react"
+import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2, ChevronsRight, Download, FileText, Search, Filter, CheckCircle2, AlertCircle, Info, XCircle, Activity, Coins } from "lucide-react"
 import { KanbanBoard } from "./kanban-board"
 import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
@@ -17,6 +17,7 @@ import { useProjectAgents } from "@/queries/agents"
 import { useQueryClient } from "@tanstack/react-query"
 import type { AgentPublic } from "@/client/types.gen"
 import { filesApi } from "@/apis/files"
+import { TokenUsagePanel } from "../workspace/token-usage-panel"
 import {
   useRive,
   Layout,
@@ -27,7 +28,7 @@ import {
   useViewModelInstanceNumber,
   useViewModelInstanceTrigger,
 } from "@rive-app/react-webgl2";
-type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
+type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings" | "usage"
 interface Tab {
   id: string
   view: WorkspaceView
@@ -201,6 +202,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
     { id: "tab-2", view: "kanban", label: "Kanban" },
     { id: "tab-3", view: "file", label: "File" },
     { id: "tab-4", view: "loggings", label: "Loggings" },
+    { id: "tab-5", view: "usage", label: "Usage" },
   ])
   const [activeTabId, setActiveTabId] = useState("tab-1")
 
@@ -212,6 +214,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         'app-preview': 'tab-1',
         'file': 'tab-3',
         'loggings': 'tab-4',
+        'usage': 'tab-5',
       }
       const targetTabId = tabMap[wsActiveTab]
       if (targetTabId) {
@@ -399,6 +402,8 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
         return <Code2 className="w-3.5 h-3.5" />
       case "loggings":
         return <ScrollText className="w-3.5 h-3.5" />
+      case "usage":
+        return <Coins className="w-3.5 h-3.5" />
       default:
         return <Globe className="w-3.5 h-3.5" />
     }
@@ -648,6 +653,8 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
             </div>
           </div>
         )
+      case "usage":
+        return <TokenUsagePanel projectId={projectId} />
       default:
         return null
     }

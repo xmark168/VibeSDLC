@@ -121,6 +121,11 @@ export function useChatWebSocket(
       case 'connected':
         break
       
+      case 'ping':
+        // Reply to server ping with pong to keep connection alive
+        sendJsonMessage({ type: 'pong', timestamp: msg.timestamp })
+        break
+      
       case 'messages_updated':
         handleMessagesUpdated()
         break
@@ -210,6 +215,10 @@ export function useChatWebSocket(
       
       case 'dev_server_log':
         handleDevServerLog(msg)
+        break
+      
+      case 'credit_update':
+        handleCreditUpdate(msg)
         break
       
       default:
@@ -679,6 +688,16 @@ export function useChatWebSocket(
         status: msg.status,
       }
     }))
+  }
+  
+  const handleCreditUpdate = (msg: any) => {
+    // Dispatch custom event for components to listen
+    window.dispatchEvent(new CustomEvent('credit_updated', {
+      detail: msg.data
+    }))
+    
+    // Log for debugging
+    console.log('💰 Credit updated:', msg.data)
   }
   
   const handleQuestionAnswerReceived = (msg: any) => {    

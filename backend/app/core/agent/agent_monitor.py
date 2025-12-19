@@ -1,25 +1,25 @@
 """
 Agent monitoring system.
 """
-
 import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-
+from sqlmodel import Session
+from app.core.db import engine
+from app.services.pool_service import PoolService
+from app.models import PoolType
+from app.core.agent.agent_pool_manager import AgentPoolManager
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class AgentMonitor:
-    """
-    Monitoring coordinator for agent system.
-    """
-
+    """Monitoring coordinator for agent system."""
     def __init__(
         self,
-        manager_registry: Dict[str, Any],  # Dict[str, AgentPoolManager]
+        manager_registry: Dict[str, Any],  
         monitor_interval: int = 30,
     ):
         self.manager_registry = manager_registry
@@ -28,7 +28,7 @@ class AgentMonitor:
         self._task: Optional[asyncio.Task] = None
         self.started_at = datetime.now(timezone.utc)
         
-        logger.info(f"AgentMonitor initialized with {len(manager_registry)} pools")
+        logger.info(f"Agent moniroting system initialized with {len(manager_registry)} pools")
 
     async def start(self, monitor_interval: Optional[int] = None) -> bool:
         """
@@ -52,8 +52,7 @@ class AgentMonitor:
             return False
 
     async def stop(self) -> bool:
-        """Stop the monitoring system.
-        """
+        """Stop the monitoring system."""
         if not self.running:
             return True
         
@@ -78,11 +77,7 @@ class AgentMonitor:
             return False
 
     async def get_system_stats(self) -> Dict[str, Any]:
-        """Get aggregated system-wide statistics.
-        
-        Returns:
-            Dictionary with system statistics
-        """
+        """Get aggregated system-wide statistics.        """
         total_agents = 0
         total_busy = 0
         total_idle = 0
@@ -239,18 +234,8 @@ class AgentMonitor:
             if should_create_new_pool(manager, threshold):
                 await self._create_overflow_pool(pool_name, manager)
 
-    async def _create_overflow_pool(self, source_pool: str, source_manager: Any) -> None:
-        """Create an overflow pool when source pool is overloaded.
-        
-        Args:
-            source_pool: Name of the overloaded pool
-            source_manager: Manager of the overloaded pool
-        """
-        from sqlmodel import Session
-        from app.core.db import engine
-        from app.services.pool_service import PoolService
-        from app.models import PoolType
-        from app.core.agent.agent_pool_manager import AgentPoolManager
+    async def _create_overflow_pool(self) -> None:
+        """Create an overflow pool when source pool is overloaded."""
         
         # Count existing overflow pools
         overflow_count = len([p for p in self.manager_registry.keys() if "overflow" in p])

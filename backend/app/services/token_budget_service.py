@@ -114,6 +114,52 @@ class TokenBudgetManager:
         from app.models import User
         user = self.session.get(User, user_id)
         return user and user.role == Role.ADMIN
+
+    def _check_user_credits(self, user_id: UUID, estimated_tokens: int) -> Tuple[bool, str]:
+        """Check if user has sufficient credits for estimated token usage.
+        
+        Args:
+            user_id: User UUID
+            estimated_tokens: Estimated tokens for the request
+            
+        Returns:
+            Tuple of (allowed, reason)
+        """
+        try:
+            from app.services.credit_service import CreditService
+            
+            # Calculate estimated credits needed
+            estimated_credits = (estimated_tokens + TOKENS_PER_CREDIT - 1) // TOKENS_PER_CREDIT
+            
+            credit_service = CreditService(self.session)
+            remaining_credits = credit_service.get_remaining_credits(user_id)
+            
+            logger.debug(
+                f"[CREDIT_CHECK] user={user_id}, "
+                f"estimated_tokens={estimated_tokens:,}, "
+                f"estimated_credits={estimated_credits}, "
+                f"remaining_credits={remaining_credits}"
+            )
+            
+            if remaining_credits < estimated_credits:
+                logger.warning(
+                    f"[CREDIT_CHECK] REJECTED - user={user_id}: "
+                    f"insufficient credits ({remaining_credits} < {estimated_credits} required) "
+                    f"for {estimated_tokens:,} tokens"
+                )
+                return False, (
+                    f"Insufficient credits. "
+                    f"Required: ~{estimated_credits} credits ({estimated_tokens:,} tokens). "
+                    f"Available: {remaining_credits} credits. "
+                    f"Please purchase more credits to continue."
+                )
+            
+            logger.debug(f"[CREDIT_CHECK] APPROVED - user={user_id}: {remaining_credits} credits available")
+            return True, ""
+        except Exception as e:
+            logger.error(f"[CREDIT_CHECK] ERROR for user {user_id}: {e}", exc_info=True)
+            # Fail open to avoid blocking on errors
+            return True, ""
         
     async def check_budget(
         self, 
@@ -121,11 +167,12 @@ class TokenBudgetManager:
         estimated_tokens: int,
         user_id: Optional[UUID] = None
     ) -> Tuple[bool, str]:
-        """Check if project has budget for estimated token usage.
+        """Check if project has budget AND user has credits for estimated token usage.
         
         Args:
             project_id: Project UUID
             estimated_tokens: Estimated tokens for the request
+            user_id: Optional user ID for credit check
             
         Returns:
             Tuple of (allowed, reason):
@@ -133,10 +180,16 @@ class TokenBudgetManager:
             - (False, reason) if request should be rejected
         """
         try:
-            # Admin bypass - skip budget checks
+            # Admin bypass - skip all checks
             if user_id and self._is_admin(user_id):
                 logger.debug(f"Admin user {user_id} bypassing budget check")
                 return True, ""
+            
+            # Check user credits first (before project budget)
+            if user_id:
+                credit_ok, credit_reason = self._check_user_credits(user_id, estimated_tokens)
+                if not credit_ok:
+                    return False, credit_reason
             
             budget = await self._get_budget(project_id)
             
@@ -176,7 +229,8 @@ class TokenBudgetManager:
     async def check_and_reserve(
         self,
         project_id: UUID,
-        estimated_tokens: int
+        estimated_tokens: int,
+        user_id: Optional[UUID] = None
     ) -> Tuple[bool, str]:
         """Atomic check and reserve tokens (thread-safe).
         
@@ -186,6 +240,7 @@ class TokenBudgetManager:
         Args:
             project_id: Project UUID
             estimated_tokens: Estimated tokens to reserve
+            user_id: Optional user ID for credit check
             
         Returns:
             Tuple of (allowed, reason)
@@ -199,7 +254,7 @@ class TokenBudgetManager:
         lock = _budget_locks[project_id]
         
         async with lock:
-            allowed, reason = await self.check_budget(project_id, estimated_tokens)
+            allowed, reason = await self.check_budget(project_id, estimated_tokens, user_id=user_id)
             
             if allowed:
                 # Pre-reserve tokens to prevent concurrent over-allocation

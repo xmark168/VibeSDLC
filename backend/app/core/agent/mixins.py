@@ -27,21 +27,7 @@ class StoryStoppedException(Exception):
 
 
 class PausableAgentMixin:
-    """Mixin providing pause/resume/cancel functionality for agents.
-    
-    This mixin assumes the parent class has:
-    - self.agent_id: UUID
-    - self.check_signal(story_id: str) -> Optional[str]
-    - self.clear_signal(story_id: str) -> None
-    - self.consume_signal(story_id: str) -> Optional[str]
-    - self.name: str (for logging)
-    
-    Usage:
-        class MyAgent(BaseAgent, PausableAgentMixin):
-            def __init__(self, ...):
-                super().__init__(...)
-                self.init_pausable_mixin()
-    """
+    """Mixin providing pause/resume/cancel functionality for agents."""
     
     def init_pausable_mixin(self):
         """Initialize mixin state. Call this in agent __init__."""

@@ -445,6 +445,36 @@ class Developer(BaseAgent, PausableAgentMixin):
                 "configurable": {"thread_id": thread_id},
                 "callbacks": [langfuse_handler] if langfuse_handler else [],
             }
+            
+            # Clear old checkpoints if starting fresh (not resuming)
+            if not is_resume:
+                try:
+                    logger.info(f"[{self.name}] Clearing old checkpoints for thread {thread_id}")
+                    # Delete all checkpoint data for this thread_id
+                    # Must delete in order: checkpoint_writes -> checkpoint_blobs -> checkpoints (due to foreign keys)
+                    from app.core.db import engine
+                    from sqlalchemy import text
+                    with engine.connect() as conn:
+                        # Delete checkpoint_writes first
+                        conn.execute(
+                            text("DELETE FROM checkpoint_writes WHERE thread_id = :thread_id"),
+                            {"thread_id": thread_id}
+                        )
+                        # Delete checkpoint_blobs
+                        conn.execute(
+                            text("DELETE FROM checkpoint_blobs WHERE thread_id = :thread_id"),
+                            {"thread_id": thread_id}
+                        )
+                        # Delete checkpoints
+                        result = conn.execute(
+                            text("DELETE FROM checkpoints WHERE thread_id = :thread_id"),
+                            {"thread_id": thread_id}
+                        )
+                        conn.commit()
+                        logger.info(f"[{self.name}] Deleted {result.rowcount} old checkpoints and related data")
+                except Exception as e:
+                    logger.warning(f"[{self.name}] Failed to clear old checkpoints: {e}")
+                    # Continue anyway - worst case is we resume from old state
 
             # Check if resuming from pause
             if is_resume:
