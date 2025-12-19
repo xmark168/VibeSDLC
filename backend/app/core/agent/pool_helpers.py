@@ -38,19 +38,7 @@ async def create_pool_for_role(
     max_agents: int = 50,
     created_by: Optional[UUID] = None,
 ) -> Optional[AgentPool]:
-    """
-    Create a new role-specific pool in DB.
-    
-    Args:
-        session: Database session
-        role_type: Agent role type (e.g., "developer", "tester")
-        pool_type: FREE or PAID
-        max_agents: Maximum agents in pool
-        created_by: User ID who created the pool
-    
-    Returns:
-        Created AgentPool or None if failed
-    """
+    """Create a new role-specific pool in DB."""
     pool_service = PoolService(session)
     
     # Check if pool already exists

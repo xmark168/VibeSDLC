@@ -3,6 +3,7 @@ import logging.handlers
 import sys
 from pathlib import Path
 from app.core.config import settings
+from app.core.config import logging_settings
 
 
 def setup_logging() -> None:
@@ -25,8 +26,8 @@ def setup_logging() -> None:
 
     file_handler = logging.handlers.RotatingFileHandler(
         filename=log_dir / "app.log",
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5,
+        maxBytes=logging_settings.MAX_BYTES,
+        backupCount=logging_settings.BACKUP_COUNT,
         encoding="utf-8",
     )
     file_handler.setLevel(log_level)
@@ -35,8 +36,8 @@ def setup_logging() -> None:
 
     error_handler = logging.handlers.RotatingFileHandler(
         filename=log_dir / "error.log",
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5,
+        maxBytes=logging_settings.MAX_BYTES,
+        backupCount=logging_settings.BACKUP_COUNT,
         encoding="utf-8",
     )
     error_handler.setLevel(logging.ERROR)

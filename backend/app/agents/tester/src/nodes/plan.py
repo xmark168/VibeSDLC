@@ -15,7 +15,8 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.nodes.helpers import detect_testing_context, send_message, generate_user_message, get_llm_config as _cfg
 from app.agents.tester.src.schemas import TestPlanStep, TestPlanOutput
-from app.core.agent.llm_factory import get_llm, MAX_SCENARIOS_UNIT, MAX_SCENARIOS_INTEGRATION
+from app.core.agent.llm_factory import get_llm
+from app.core.config import llm_settings
 from app.agents.tester.src.utils.file_repository import FileRepository
 from app.core.db import engine
 from app.models import Project
@@ -663,9 +664,9 @@ async def plan_tests(state: TesterState, config: dict = None, agent=None) -> dic
                     descriptions.append(desc)
             
             # Deduplicate - limit scenarios by test type (from config)
-            # Integration: MAX_SCENARIOS_INTEGRATION (branch coverage)
-            # Unit: MAX_SCENARIOS_UNIT (render correctness)
-            max_scenarios = MAX_SCENARIOS_UNIT if test_type == "unit" else MAX_SCENARIOS_INTEGRATION
+            # Integration: llm_settings.MAX_SCENARIOS_INTEGRATION (branch coverage)
+            # Unit: llm_settings.MAX_SCENARIOS_UNIT (render correctness)
+            max_scenarios = llm_settings.MAX_SCENARIOS_UNIT if test_type == "unit" else llm_settings.MAX_SCENARIOS_INTEGRATION
             all_scenarios = list(dict.fromkeys(all_scenarios))[:max_scenarios]
             all_dependencies = list(dict.fromkeys(all_dependencies))
             

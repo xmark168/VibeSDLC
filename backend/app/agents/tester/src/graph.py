@@ -53,10 +53,10 @@ async def get_postgres_checkpointer() -> AsyncPostgresSaver:
             pass
     
     if _postgres_checkpointer is None:
-        from app.core.config import settings
+        from app.core.config import settings, database_settings
         from psycopg_pool import AsyncConnectionPool
         
-        db_uri = str(settings.SQLALCHEMY_DATABASE_URI)
+        db_uri = str(database_settings.SQLALCHEMY_DATABASE_URI)
         if "+psycopg" in db_uri:
             db_uri = db_uri.replace("+psycopg", "")
         

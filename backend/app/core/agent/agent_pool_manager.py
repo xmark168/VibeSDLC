@@ -4,10 +4,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Type
 from uuid import UUID
 
-from sqlmodel import Session, select, update
+from sqlmodel import Session, select
 
 from app.core.agent.base_agent import BaseAgent
-from app.models import Agent as AgentModel, AgentStatus, AgentPool, PoolType
+from app.models import Agent as AgentModel, AgentStatus, AgentPool
 from app.core.db import engine
 from app.services.pool_service import PoolService
 
@@ -51,11 +51,7 @@ class AgentPoolManager:
         )
 
     async def start(self) -> bool:
-        """Start the pool manager.
-
-        Returns:
-            True if started successfully
-        """
+        """Start the pool manager."""
         try:
             # Start health monitor
             self._monitor_task = asyncio.create_task(self._monitor_loop())
@@ -190,17 +186,9 @@ class AgentPoolManager:
             return False
 
     async def terminate_agent(self, agent_id: UUID, graceful: bool = True) -> bool:
-        """Terminate an agent.
-
-        Args:
-            agent_id: Agent UUID
-            graceful: If True, wait for agent to finish current task
-
-        Returns:
-            True if terminated successfully
-        """
+        """Terminate an agent."""
         agent = self.agents.get(agent_id)
-        if not agent:
+        if self.has_agent(agent_id):
             logger.warning(f"Agent {agent_id} not found in pool '{self.pool_name}'")
             return False
 
@@ -231,51 +219,21 @@ class AgentPoolManager:
             return False
 
     def has_agent(self, agent_id: UUID) -> bool:
-        """Check if agent exists in pool.
-
-        Args:
-            agent_id: Agent UUID
-
-        Returns:
-            True if agent exists, False otherwise
-        """
+        """Check if agent exists in pool."""
         return agent_id in self.agents
 
     def get_agent(self, agent_id: UUID) -> Optional[BaseAgent]:
-        """Get agent by ID.
-
-        Args:
-            agent_id: Agent UUID
-
-        Returns:
-            Agent instance or None if not found
-        """
+        """Get agent by ID"""
         return self.agents.get(agent_id)
 
     def get_all_agents(self) -> List[BaseAgent]:
-        """Get all agents in pool.
-
-        Returns:
-            List of agent instances
-        """
+        """Get all agents in pool."""
         return list(self.agents.values())
 
     # ===== Story Signal Management =====
 
     def signal_agent(self, agent_id: UUID, story_id: str, signal: str) -> bool:
-        """Send signal directly to an agent for a story.
-        
-        This is O(1) - no Kafka, no DB poll needed.
-        Agent ID comes from story.assigned_agent_id in DB.
-        
-        Args:
-            agent_id: Agent UUID (from story.assigned_agent_id)
-            story_id: Story UUID string
-            signal: Signal type ('cancel', 'pause')
-            
-        Returns:
-            True if signal was delivered to agent
-        """
+        """Send signal directly to an agent for a story."""
         logger.info(f"[Pool] [SIGNAL] signal_agent called: agent={agent_id}, story={story_id[:8]}, signal={signal}")
         logger.info(f"[Pool] [SIGNAL] Current agents in pool: {list(self.agents.keys())}")
         
@@ -297,21 +255,13 @@ class AgentPoolManager:
 
     @property
     def is_running(self) -> bool:
-        """Check if pool manager is running.
-
-        Returns:
-            True if running
-        """
+        """Check if pool manager is running."""
         return self._is_running
 
     # ===== Statistics =====
 
     async def get_stats(self) -> Dict[str, Any]:
-        """Get comprehensive pool statistics.
-
-        Returns:
-            Statistics dictionary
-        """
+        """Get comprehensive pool statistics."""
         from sqlalchemy import func
         from app.models import AgentExecution, AgentExecutionStatus
         
@@ -407,11 +357,7 @@ class AgentPoolManager:
     # ===== Background Tasks =====
 
     async def _monitor_loop(self) -> None:
-        """Health check monitor loop with stale state detection.
-
-        Periodically checks agent health and terminates unhealthy agents.
-        Also detects and resets agents stuck in busy state with no tasks.
-        """
+        """Health check monitor loop with stale state detection."""
         logger.info(f"Health monitor started for pool '{self.pool_name}'")
 
         while not self._shutdown_event.is_set():
@@ -473,41 +419,3 @@ class AgentPoolManager:
 
         logger.info(f"Health monitor stopped for pool '{self.pool_name}'")
 
-
-# ===== Migration Helper =====
-
-async def migrate_to_agent_pool_manager(
-    old_manager_registry: Dict[str, Any],
-    use_new_manager: bool = False,
-) -> Dict[str, AgentPoolManager]:
-    """Helper to migrate from old multiprocessing manager to new in-memory manager.
-
-    Args:
-        old_manager_registry: Existing manager registry
-        use_new_manager: If True, create new managers
-
-    Returns:
-        New manager registry
-    """
-    if not use_new_manager:
-        return {}
-
-    registry: Dict[str, AgentPoolManager] = {}
-
-    logger.info("Migrating to agent pool managers...")
-
-    # Create universal pool
-    pool_name = "universal_pool"
-    manager = AgentPoolManager(
-        pool_name=pool_name,
-        max_agents=100,  # Higher limit since no process overhead
-        health_check_interval=60,
-    )
-
-    if await manager.start():
-        registry[pool_name] = manager
-        logger.info(f"✓ Created agent pool manager: {pool_name}")
-    else:
-        logger.error(f"✗ Failed to create agent pool manager: {pool_name}")
-
-    return registry

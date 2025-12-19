@@ -10,6 +10,8 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.outputs import LLMResult
 
+from app.core.config import llm_settings
+
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -43,27 +45,20 @@ STEP_CONFIG = {
 }
 
 # =============================================================================
-# RETRY CONFIGURATION
+# RETRY CONFIGURATION (moved to llm_settings in config.py)
 # =============================================================================
-
-# LLM retry settings (used in create_llm)
-MAX_RETRIES = 3
-RETRY_BACKOFF_MIN = 1  # seconds
-RETRY_BACKOFF_MAX = 10  # seconds
-
-# Parallel execution limits
-MAX_CONCURRENT_TASKS = 10
-
-# Debug/fix loop limits
-MAX_DEBUG_ATTEMPTS = 3
-MAX_DEBUG_REVIEWS_DEVELOPER = 3
-MAX_DEBUG_REVIEWS_TESTER = 2
-
-# Test generation limits (Tester)
-MAX_SCENARIOS_UNIT = 2
-MAX_SCENARIOS_INTEGRATION = 3
-MAX_REVIEW_CYCLES = 2
-MAX_LBTM_PER_FILE = 2
+# These constants are now available via llm_settings:
+# - llm_settings.MAX_RETRIES
+# - llm_settings.RETRY_BACKOFF_MIN
+# - llm_settings.RETRY_BACKOFF_MAX
+# - llm_settings.MAX_CONCURRENT_TASKS
+# - llm_settings.MAX_DEBUG_ATTEMPTS
+# - llm_settings.MAX_DEBUG_REVIEWS_DEVELOPER
+# - llm_settings.MAX_DEBUG_REVIEWS_TESTER
+# - llm_settings.MAX_SCENARIOS_UNIT
+# - llm_settings.MAX_SCENARIOS_INTEGRATION
+# - llm_settings.MAX_REVIEW_CYCLES
+# - llm_settings.MAX_LBTM_PER_FILE
 
 # =============================================================================
 # TOKEN TRACKING (thread-safe with ContextVar)
@@ -130,22 +125,32 @@ _token_callback = TokenTrackingCallback()
 
 def create_llm(
     model: str,
-    temperature: float = 0.2,
-    max_tokens: int = 8192,
-    timeout: int = 60,
-    max_retries: int = MAX_RETRIES,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    timeout: int | None = None,
+    max_retries: int | None = None,
     track_tokens: bool = True,
 ) -> BaseChatModel:
     """Create ChatAnthropic instance.
     
     Args:
         model: Model name
-        temperature: Sampling temperature
-        max_tokens: Max tokens in response
-        timeout: Request timeout
-        max_retries: Retry attempts
+        temperature: Sampling temperature (defaults to llm_settings.DEFAULT_TEMPERATURE)
+        max_tokens: Max tokens in response (defaults to llm_settings.DEFAULT_MAX_TOKENS)
+        timeout: Request timeout (defaults to llm_settings.DEFAULT_TIMEOUT)
+        max_retries: Retry attempts (defaults to llm_settings.MAX_RETRIES)
         track_tokens: Whether to inject token tracking callback
     """
+    # Apply defaults from settings
+    if temperature is None:
+        temperature = llm_settings.DEFAULT_TEMPERATURE
+    if max_tokens is None:
+        max_tokens = llm_settings.DEFAULT_MAX_TOKENS
+    if timeout is None:
+        timeout = llm_settings.DEFAULT_TIMEOUT
+    if max_retries is None:
+        max_retries = llm_settings.MAX_RETRIES
+    
     from app.core.config import settings
     
     callbacks = [_token_callback] if track_tokens else None
@@ -156,8 +161,8 @@ def create_llm(
         max_tokens=max_tokens,
         timeout=timeout,
         max_retries=max_retries,
-        base_url=settings.ANTHROPIC_API_BASE,
-        api_key=settings.ANTHROPIC_API_KEY,
+        base_url=llm_settings.API_BASE or settings.ANTHROPIC_API_BASE,
+        api_key=llm_settings.API_KEY or settings.ANTHROPIC_API_KEY,
         callbacks=callbacks,
     )
 

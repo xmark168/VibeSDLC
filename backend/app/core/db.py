@@ -2,7 +2,7 @@ import logging
 
 from sqlmodel import Session, create_engine, select
 
-from app.core.config import settings
+from app.core.config import settings, database_settings
 from app.models import Plan, Role, TechStack, User
 from app.schemas import UserCreate
 from app.services import UserService
@@ -10,12 +10,12 @@ from app.services import UserService
 logger = logging.getLogger(__name__)
 
 # Main engine for FastAPI master process
-engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
+engine = create_engine(str(database_settings.SQLALCHEMY_DATABASE_URI))
 
 
 def get_worker_engine(pool_size: int = 5, max_overflow: int = 10):
     return create_engine(
-        str(settings.SQLALCHEMY_DATABASE_URI),
+        str(database_settings.SQLALCHEMY_DATABASE_URI),
         pool_size=pool_size,
         max_overflow=max_overflow,
         pool_pre_ping=True,

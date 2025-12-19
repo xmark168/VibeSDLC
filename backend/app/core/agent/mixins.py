@@ -1,6 +1,4 @@
-"""Agent mixins for reusable functionality.
-
-Mixins provide common patterns that can be mixed into agent classes.
+"""Agent mixins for stateful agent in story proccess
 """
 import asyncio
 import logging
@@ -16,9 +14,7 @@ from app.models.base import StoryAgentState
 logger = logging.getLogger(__name__)
 
 
-class StoryStoppedException(Exception):
-    """Raised when story processing should stop (pause/cancel)."""
-    
+class StoryStoppedException(Exception):    
     def __init__(self, story_id: str, state: StoryAgentState, message: str = ""):
         self.story_id = story_id
         self.state = state

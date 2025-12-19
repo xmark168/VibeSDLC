@@ -19,12 +19,12 @@ class MinIOService:
     def __init__(self):
         """Initialize MinIO client."""
         self.client = Minio(
-            endpoint=minio_settings.MINIO_ENDPOINT,
-            access_key=minio_settings.MINIO_ACCESS_KEY,
-            secret_key=minio_settings.MINIO_SECRET_KEY,
-            secure=minio_settings.MINIO_SECURE,
+            endpoint=minio_settings.ENDPOINT,
+            access_key=minio_settings.ACCESS_KEY,
+            secret_key=minio_settings.SECRET_KEY,
+            secure=minio_settings.SECURE,
         )
-        self.bucket_name = minio_settings.MINIO_BUCKET_NAME
+        self.bucket_name = minio_settings.BUCKET_NAME
         self._ensure_bucket_exists()
     
     def _ensure_bucket_exists(self):
@@ -117,12 +117,12 @@ class MinIOService:
         # URL-encode the object name for proper URL formatting
         encoded_name = quote(object_name, safe='/')
         
-        if minio_settings.MINIO_SECURE:
+        if minio_settings.SECURE:
             protocol = "https"
         else:
             protocol = "http"
         
-        return f"{protocol}://{minio_settings.MINIO_ENDPOINT}/{self.bucket_name}/{encoded_name}"
+        return f"{protocol}://{minio_settings.ENDPOINT}/{self.bucket_name}/{encoded_name}"
     
     def get_presigned_url(
         self,

@@ -6,15 +6,16 @@ from typing import List, Dict, Any, Set
 from confluent_kafka.admin import AdminClient, NewTopic
 
 from app.core.config import settings
+from app.core.config import kafka_settings
 from app.kafka.event_schemas import KafkaTopics
 
 
 logger = logging.getLogger(__name__)
 
 # Timeouts optimized for fast startup
-LIST_TOPICS_TIMEOUT = 2.0  # seconds
-CREATE_TOPICS_TIMEOUT = 5  # seconds
-FUTURE_RESULT_TIMEOUT = 5  # seconds
+# Moved to kafka_settings  # seconds
+# Moved to kafka_settings  # seconds
+# Moved to kafka_settings  # seconds
 
 
 class TopicConfig:
@@ -28,28 +29,28 @@ class TopicConfig:
     }
     
     # Default partition counts
-    HIGH_TRAFFIC_PARTITIONS = 6
-    DEFAULT_PARTITIONS = 3
+    # Moved to kafka_settings
+    # Moved to kafka_settings
     
     # Default replication factor (set to 1 for development, increase for production)
-    REPLICATION_FACTOR = 1
+    # Moved to kafka_settings
     
     # Default retention (7 days in milliseconds)
-    DEFAULT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+    # Moved to kafka_settings
 
 
 def _get_admin_config() -> dict:
     """Build Kafka admin client configuration."""
     admin_config = {
-        "bootstrap.servers": settings.KAFKA_BOOTSTRAP_SERVERS
+        "bootstrap.servers": kafka_settings.BOOTSTRAP_SERVERS
     }
     
-    if settings.KAFKA_SECURITY_PROTOCOL != "PLAINTEXT":
+    if kafka_settings.SECURITY_PROTOCOL != "PLAINTEXT":
         admin_config.update({
-            "security.protocol": settings.KAFKA_SECURITY_PROTOCOL,
-            "sasl.mechanism": settings.KAFKA_SASL_MECHANISM,
-            "sasl.username": settings.KAFKA_SASL_USERNAME,
-            "sasl.password": settings.KAFKA_SASL_PASSWORD,
+            "security.protocol": kafka_settings.SECURITY_PROTOCOL,
+            "sasl.mechanism": kafka_settings.SASL_MECHANISM,
+            "sasl.username": kafka_settings.SASL_USERNAME,
+            "sasl.password": kafka_settings.SASL_PASSWORD,
         })
     
     return admin_config
@@ -60,17 +61,17 @@ def _build_new_topic(topic_name: str) -> NewTopic:
     topic_enum = next((t for t in KafkaTopics if t.value == topic_name), None)
     
     num_partitions = (
-        TopicConfig.HIGH_TRAFFIC_PARTITIONS
+        kafka_settings.HIGH_TRAFFIC_PARTITIONS
         if topic_enum and topic_enum in TopicConfig.HIGH_TRAFFIC_TOPICS
-        else TopicConfig.DEFAULT_PARTITIONS
+        else kafka_settings.DEFAULT_PARTITIONS
     )
     
     return NewTopic(
         topic=topic_name,
         num_partitions=num_partitions,
-        replication_factor=TopicConfig.REPLICATION_FACTOR,
+        replication_factor=kafka_settings.REPLICATION_FACTOR,
         config={
-            "retention.ms": str(TopicConfig.DEFAULT_RETENTION_MS),
+            "retention.ms": str(kafka_settings.DEFAULT_RETENTION_MS),
             "cleanup.policy": "delete",
             "compression.type": "lz4",
         }
@@ -90,14 +91,14 @@ async def _create_topics_background(admin_config: dict, missing_topics: Set[str]
             admin_client = AdminClient(admin_config)
             topics_to_create = [_build_new_topic(t) for t in missing_topics]
             
-            fs = admin_client.create_topics(topics_to_create, operation_timeout=CREATE_TOPICS_TIMEOUT)
+            fs = admin_client.create_topics(topics_to_create, operation_timeout=kafka_settings.CREATE_TOPICS_TIMEOUT)
             
             created = 0
             failed = 0
             
             for topic_name, future in fs.items():
                 try:
-                    future.result(timeout=FUTURE_RESULT_TIMEOUT)
+                    future.result(timeout=kafka_settings.FUTURE_RESULT_TIMEOUT)
                     logger.info(f"  ✓ Created topic: {topic_name}")
                     created += 1
                 except Exception as e:
@@ -141,7 +142,7 @@ async def ensure_kafka_topics() -> bool:
         admin_client = AdminClient(admin_config)
         
         # Quick check with short timeout
-        metadata = admin_client.list_topics(timeout=LIST_TOPICS_TIMEOUT)
+        metadata = admin_client.list_topics(timeout=kafka_settings.LIST_TOPICS_TIMEOUT)
         existing_topics = set(metadata.topics.keys())
         
         logger.info(f"Found {len(existing_topics)} existing topics")
@@ -196,11 +197,11 @@ def get_topic_info() -> Dict[str, Any]:
         info["topics"].append({
             "name": topic.value,
             "partitions": (
-                TopicConfig.HIGH_TRAFFIC_PARTITIONS
+                kafka_settings.HIGH_TRAFFIC_PARTITIONS
                 if is_high_traffic
-                else TopicConfig.DEFAULT_PARTITIONS
+                else kafka_settings.DEFAULT_PARTITIONS
             ),
-            "replication_factor": TopicConfig.REPLICATION_FACTOR,
+            "replication_factor": kafka_settings.REPLICATION_FACTOR,
             "high_traffic": is_high_traffic,
         })
     

@@ -16,9 +16,6 @@ class AgentPoolService:
     @staticmethod
     def get_role_class_map() -> Dict[str, Type]:
         """Get role class mapping with lazy imports.
-        
-        Returns:
-            Dictionary mapping role names to agent classes
         """
         from app.agents.business_analyst import BusinessAnalyst
         from app.agents.developer import Developer
@@ -88,15 +85,8 @@ class AgentPoolService:
     @staticmethod
     def find_pool_for_agent(agent_id: UUID) -> Optional[AgentPoolManager]:
         """Find which pool contains the given agent.
-        
         Searches all pools to find the agent. Use this when you need to
         send signals to a specific agent but don't know which pool it's in.
-        
-        Args:
-            agent_id: Agent UUID to find
-            
-        Returns:
-            AgentPoolManager containing the agent, or None if not found
         """
         registry = get_pool_registry()
         for pool_name, manager in registry.items():
@@ -109,9 +99,5 @@ class AgentPoolService:
 
     @staticmethod
     def ensure_role_class_map() -> Dict[str, Type]:
-        """Ensure role class map is loaded (convenience method).
-        
-        Returns:
-            Dictionary mapping role names to agent classes
-        """
+        """Ensure role class map is loaded (convenience method)."""
         return AgentPoolService.get_role_class_map()

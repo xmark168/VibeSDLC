@@ -1,3 +1,4 @@
+from app.core.config import router_settings
 """Central Message Router for dispatching tasks to agents.
 """
 
@@ -121,9 +122,9 @@ class UserMessageRouter(BaseEventRouter):
 
     MENTION_PATTERN = re.compile(r"@(\w+)")
     
-    CONTEXT_TIMEOUT_ONLINE_MINUTES = 7   # User online (WebSocket active)
-    CONTEXT_TIMEOUT_OFFLINE_MINUTES = 15  # User offline
-    GRACE_PERIOD_SECONDS = 120  # Grace period after disconnect
+    # Moved to router_settings   # User online (WebSocket active)
+    # Moved to router_settings  # User offline
+    # Moved to router_settings  # Grace period after disconnect
 
     def should_handle(self, event: BaseKafkaEvent | Dict[str, Any]) -> bool:
         """Check if event is a user message."""
@@ -211,7 +212,7 @@ class UserMessageRouter(BaseEventRouter):
         - Grace period: Uses online timeout if disconnected < 2 minutes ago
         """
         if project.websocket_connected:
-            return self.CONTEXT_TIMEOUT_ONLINE_MINUTES
+            return self.router_settings.CONTEXT_TIMEOUT_ONLINE_MINUTES
         
         if project.websocket_last_seen:
             websocket_last_seen = project.websocket_last_seen
@@ -220,10 +221,10 @@ class UserMessageRouter(BaseEventRouter):
             
             offline_duration = datetime.now(timezone.utc) - websocket_last_seen
             
-            if offline_duration.total_seconds() < self.GRACE_PERIOD_SECONDS:
-                return self.CONTEXT_TIMEOUT_ONLINE_MINUTES
+            if offline_duration.total_seconds() < self.router_settings.GRACE_PERIOD_SECONDS:
+                return self.router_settings.CONTEXT_TIMEOUT_ONLINE_MINUTES
         
-        return self.CONTEXT_TIMEOUT_OFFLINE_MINUTES
+        return self.router_settings.CONTEXT_TIMEOUT_OFFLINE_MINUTES
 
     async def _route_with_mention(
         self, event_dict: Dict[str, Any], mentioned_name: str, project_id: UUID
@@ -1562,7 +1563,6 @@ class MessageRouterService(BaseKafkaConsumer):
             QuestionAnswerRouter(producer),
             BatchAnswersRouter(producer),
             DelegationRouter(producer),
-            AgentCollaborationRouter(producer),
         ]
 
         self.logger.info(f"Initialized {len(self.routers)} routers")

@@ -18,7 +18,7 @@ from app.websocket.handlers import (
     TaskHandler,
     AgentEventsHandler,
 )
-from app.core.config import settings
+from app.core.config import settings, database_settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class WebSocketKafkaBridge:
     def __init__(self):
         self.consumer: Optional[EventHandlerConsumer] = None
         self.running = False
-        self.engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
+        self.engine = create_engine(str(database_settings.SQLALCHEMY_DATABASE_URI))
         
         # Initialize handlers
         # Agent events handler for all agent events

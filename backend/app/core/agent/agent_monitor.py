@@ -66,18 +66,13 @@ class AgentMonitor:
                 except asyncio.CancelledError:
                     pass
             
-            logger.info("AgentMonitor stopped")
+            logger.info("[SYSTEM] Agent moniroting stopped!")
             return True
-            
-        except asyncio.CancelledError:
-            logger.info("AgentMonitor stop cancelled")
-            return False
         except Exception as e:
-            logger.error(f"Error stopping AgentMonitor: {e}", exc_info=True)
             return False
 
     async def get_system_stats(self) -> Dict[str, Any]:
-        """Get aggregated system-wide statistics.        """
+        """Get aggregated system-wide statistics"""
         total_agents = 0
         total_busy = 0
         total_idle = 0

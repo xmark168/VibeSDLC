@@ -977,15 +977,7 @@ class BaseAgent(ABC):
         new_state: str,
         progress_message: Optional[str] = None,
     ) -> None:
-        """Update agent execution state on a story.
-        
-        Args:
-            story_id: UUID of the story
-            new_state: New state ("pending", "processing", "canceled", "finished")
-            progress_message: Optional progress message to display
-            
-        Raises:
-            ValueError: If story not found or invalid state
+        """Update agent execution state on a story.     
         """
         from sqlmodel import Session
         from app.core.db import engine
@@ -1039,28 +1031,7 @@ class BaseAgent(ABC):
         delegation_message: str,
         priority: str = "high"
     ) -> "TaskResult":
-        """Delegate task to an agent by role (Router will select specific agent).
-        
-        This is the simplified delegation API - agents just specify the target role,
-        and Router handles finding the best available agent, updating context, etc.
-        
-        Args:
-            task: Original task context to delegate
-            target_role: Target agent role (business_analyst, developer, tester, architect)
-            delegation_message: Message to show user about delegation
-            priority: Task priority (default: "high")
-            
-        Returns:
-            TaskResult indicating delegation initiated
-            
-        Example:
-            # Delegate to Business Analyst
-            return await self.delegate_to_role(
-                task=task,
-                target_role="business_analyst",
-                delegation_message="Tôi đã chuyển cho @BusinessAnalyst để phân tích! 📊"
-            )
-        """
+        """Delegate task to an agent by role (Router will select specific agent)."""
         try:
             producer = await self._get_producer()
             
@@ -1089,7 +1060,7 @@ class BaseAgent(ABC):
                         
             return TaskResult(
                 success=True,
-                output="",  # Empty output - message already sent above
+                output="", 
                 structured_data={
                     "delegation_to_role": target_role,
                     "delegation_status": "pending"
@@ -1109,14 +1080,7 @@ class BaseAgent(ABC):
     # =========================================================================
 
     def receive_signal(self, story_id: str, signal: str) -> None:
-        """Receive signal from pool manager.
-        
-        Called by AgentPoolManager.signal_agent() - direct push, no polling.
-        
-        Args:
-            story_id: Story UUID string
-            signal: Signal type ('cancel', 'pause')
-        """
+        """Receive signal from pool manager."""
         self._pending_signals[story_id] = signal
         logger.info(f"[{self.name}] Received signal '{signal}' for story {story_id[:8]}...")
 
@@ -1414,26 +1378,13 @@ class BaseAgent(ABC):
         self._llm_call_count = 0
     
     def track_llm_usage(self, tokens: int, calls: int = 1) -> None:
-        """Track LLM token usage for current execution.
-        
-        Call this after each LLM invoke to accumulate usage stats.
-        
-        Args:
-            tokens: Number of tokens used
-            calls: Number of LLM calls (default 1)
-        """
+        """Track LLM token usage for current execution."""
         self._total_tokens += tokens
         self._llm_call_count += calls
         logger.debug(f"[{self.name}] LLM usage: +{tokens} tokens, +{calls} calls (total: {self._total_tokens} tokens, {self._llm_call_count} calls)")
 
     async def start(self) -> bool:
-        """Start the agent's Kafka consumer and task queue worker.
-
-        Called during agent initialization.
-        
-        Returns:
-            True if started successfully, False otherwise
-        """
+        """Start the agent's Kafka consumer and task queue worker."""
         from app.core.agent.base_agent_consumer import BaseAgentInstanceConsumer
 
         try:
@@ -1441,8 +1392,7 @@ class BaseAgent(ABC):
             self._queue_running = True
             self._queue_worker_task = asyncio.create_task(self._task_queue_worker())
             
-            # Create consumer with wrapper that calls our handle_task
-            # Skip old messages to start fresh on each restart
+         
             self._consumer = AgentTaskConsumer(self)
             await self._consumer.start(seek_to_end=True)
 

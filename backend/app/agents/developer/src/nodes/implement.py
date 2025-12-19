@@ -16,11 +16,11 @@ from app.agents.developer.src.utils.prompt_utils import format_input_template as
 from app.utils.token_utils import truncate_to_tokens
 from app.core.agent.llm_factory import get_llm
 from app.agents.developer.src.skills import SkillRegistry
-from app.core.agent.llm_factory import (
-    MAX_CONCURRENT_TASKS as MAX_CONCURRENT,
-    MAX_DEBUG_REVIEWS_DEVELOPER as MAX_DEBUG_REVIEWS
-)
+from app.core.config import llm_settings
 from app.utils.git_utils import git_commit_step
+
+MAX_CONCURRENT = llm_settings.MAX_CONCURRENT_TASKS
+MAX_DEBUG_REVIEWS = llm_settings.MAX_DEBUG_REVIEWS_DEVELOPER
 
 logger = logging.getLogger(__name__)
 

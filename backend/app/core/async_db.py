@@ -3,6 +3,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import TypeVar, Callable, Any, ParamSpec
+from app.core.config import database_settings
 
 from sqlmodel import Session
 from app.core.db import engine
@@ -10,7 +11,7 @@ from app.core.db import engine
 T = TypeVar('T')
 P = ParamSpec('P')
 
-_db_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="db_worker")
+_db_executor = ThreadPoolExecutor(max_workers=database_settings.DB_EXECUTOR_MAX_WORKERS, thread_name_prefix="db_worker")
 
 
 async def run_in_thread(func: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:

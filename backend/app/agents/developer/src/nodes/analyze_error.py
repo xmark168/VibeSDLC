@@ -6,7 +6,8 @@ from typing import List
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.schemas import ParsedError, ErrorAnalysisOutput
-from app.core.agent.llm_factory import MAX_DEBUG_ATTEMPTS, get_llm
+from app.core.agent.llm_factory import get_llm
+from app.core.config import llm_settings
 from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
 from app.agents.developer.src.utils.prompt_utils import build_system_prompt as _build_system_prompt
 from app.agents.developer.src.skills import SkillRegistry
@@ -124,8 +125,8 @@ async def analyze_error(state: DeveloperState, config: dict = None, agent=None) 
                 if auto_fixed:
                     return {**state, "action": "VALIDATE", "run_status": None, "error_analysis": {"auto_fixed": True, "fix_strategy": error_analysis["fix_strategy"]}}
         
-        if debug_count >= MAX_DEBUG_ATTEMPTS:
-            return {**state, "action": "RESPOND", "error": f"Max debug attempts ({MAX_DEBUG_ATTEMPTS}) reached"}
+        if debug_count >= llm_settings.MAX_DEBUG_ATTEMPTS:
+            return {**state, "action": "RESPOND", "error": f"Max debug attempts ({llm_settings.MAX_DEBUG_ATTEMPTS}) reached"}
         
         if not error_logs:
             return {**state, "action": "RESPOND"}
@@ -157,7 +158,7 @@ async def analyze_error(state: DeveloperState, config: dict = None, agent=None) 
 {', '.join(files_modified) if files_modified else 'None'}
 {history}
 
-## Debug Attempt: {debug_count + 1}/{MAX_DEBUG_ATTEMPTS}
+## Debug Attempt: {debug_count + 1}/{llm_settings.MAX_DEBUG_ATTEMPTS}
 
 Analyze the error and provide fix steps."""
 

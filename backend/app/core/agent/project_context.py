@@ -1,3 +1,4 @@
+from app.core.config import project_context_settings
 """Shared Project Context Cache with Rolling Summarization."""
 
 import asyncio
@@ -20,10 +21,10 @@ PREF_LABELS = {
 }
 
 # Kanban cache TTL (seconds) - shorter than preferences since board changes more often
-KANBAN_CACHE_TTL = 30
+# Moved to project_context_settings
 
 # Summarization settings
-SUMMARY_THRESHOLD = 5  # Summarize when memory has N messages, then clear them
+# Moved to project_context_settings  # Summarize when memory has N messages, then clear them
 
 
 class ProjectContext:
@@ -31,7 +32,7 @@ class ProjectContext:
     
     Summarization flow:
     1. Messages accumulate in self.memory
-    2. When len(memory) >= SUMMARY_THRESHOLD, summarize and CLEAR those messages
+    2. When len(memory) >= project_context_settings.SUMMARY_THRESHOLD, summarize and CLEAR those messages
     3. format_memory() returns: summary + remaining messages
     """
     
@@ -122,10 +123,10 @@ class ProjectContext:
     
     async def maybe_summarize(self):
         """Check and create summary if enough messages, then clear them."""
-        if len(self.memory) >= SUMMARY_THRESHOLD:
+        if len(self.memory) >= project_context_settings.SUMMARY_THRESHOLD:
             async with self._summary_lock:
                 # Double-check after acquiring lock
-                if len(self.memory) >= SUMMARY_THRESHOLD:
+                if len(self.memory) >= project_context_settings.SUMMARY_THRESHOLD:
                     await self._create_summary()
     
     async def _create_summary(self):
@@ -134,8 +135,8 @@ class ProjectContext:
             from langchain_openai import ChatOpenAI
             from langchain_core.messages import HumanMessage, SystemMessage
             
-            # Take first SUMMARY_THRESHOLD messages to summarize
-            messages_to_summarize = self.memory[:SUMMARY_THRESHOLD]
+            # Take first project_context_settings.SUMMARY_THRESHOLD messages to summarize
+            messages_to_summarize = self.memory[:project_context_settings.SUMMARY_THRESHOLD]
             
             if not messages_to_summarize:
                 return
@@ -173,9 +174,9 @@ Write 2-4 sentences maximum."""
             self._summary = response.content.strip()
             
             # CLEAR summarized messages from memory
-            self.memory = self.memory[SUMMARY_THRESHOLD:]
+            self.memory = self.memory[project_context_settings.SUMMARY_THRESHOLD:]
             
-            logger.info(f"[ProjectContext] Created summary, cleared {SUMMARY_THRESHOLD} messages. Summary: {self._summary[:100]}...")
+            logger.info(f"[ProjectContext] Created summary, cleared {project_context_settings.SUMMARY_THRESHOLD} messages. Summary: {self._summary[:100]}...")
             
         except Exception as e:
             logger.warning(f"[ProjectContext] Summarization failed: {e}")
@@ -200,7 +201,7 @@ Write 2-4 sentences maximum."""
             (board_state, flow_metrics, wip_available)
         """
         now = time.time()
-        if now - self._kanban_loaded_at > KANBAN_CACHE_TTL:
+        if now - self._kanban_loaded_at > project_context_settings.KANBAN_CACHE_TTL:
             self._load_kanban_context()
         
         return (
