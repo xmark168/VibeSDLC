@@ -158,6 +158,37 @@ def _build_dependencies_context(dependencies_content: dict, step_dependencies: l
     return f"<pre_loaded_context>\n{chr(10).join(parts)}\n</pre_loaded_context>" if parts else ""
 
 
+def _build_project_structure_context(state: dict) -> str:
+    """Build project structure context for implement prompt.
+    
+    Returns file tree, component imports, and API routes to help agent:
+    - Avoid duplicate components
+    - Use correct import paths
+    - Know existing API routes
+    - Understand project organization
+    """
+    project_structure = state.get("project_structure", "")
+    
+    # If already saved in state (from plan node), use it
+    if project_structure:
+        return truncate_to_tokens(project_structure, 2000)
+    
+    # Otherwise, build on-the-fly from workspace
+    workspace_path = state.get("workspace_path", "")
+    if not workspace_path or not os.path.exists(workspace_path):
+        return ""
+    
+    from app.agents.developer.src.nodes.plan import FileRepository
+    
+    try:
+        repo = FileRepository(workspace_path)
+        context = repo.to_context()
+        return truncate_to_tokens(context, 2000)
+    except Exception as e:
+        logger.warning(f"[implement] Failed to build project structure: {e}")
+        return ""
+
+
 def _build_debug_summary(state: dict) -> str:
     debug_count, review_count = state.get("debug_count", 0), state.get("review_count", 0)
     if debug_count == 0 and review_count == 0:
@@ -257,8 +288,36 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
         skill_registry = state.get("skill_registry") or SkillRegistry.load(tech_stack)
         skills_content = _preload_skills(skill_registry, step_skills)
         
-        deps_context = _build_dependencies_context(state.get("dependencies_content", {}), step_deps, workspace_path, file_path)
-        context_parts = [deps_context] if deps_context else []
+        # Optimization: Skip heavy context for seed files (only need schema.prisma)
+        is_seed_file = file_path and "seed.ts" in file_path.lower()
+        
+        if is_seed_file:
+            # Seed files only need schema.prisma as dependency
+            deps_context = _build_dependencies_context(
+                state.get("dependencies_content", {}), 
+                ["prisma/schema.prisma"],
+                workspace_path, 
+                file_path
+            )
+            project_structure = ""
+            logic_analysis = ""
+        else:
+            # Original logic for non-seed files
+            deps_context = _build_dependencies_context(
+                state.get("dependencies_content", {}), 
+                step_deps, 
+                workspace_path, 
+                file_path
+            )
+            project_structure = _build_project_structure_context(state)
+            logic_analysis = state.get("logic_analysis", "")
+        
+        # Combine: project structure first, then dependencies
+        context_parts = []
+        if project_structure:
+            context_parts.append(project_structure)
+        if deps_context:
+            context_parts.append(deps_context)
         
         feedback = ""
         if state.get("review_feedback"):
@@ -284,7 +343,9 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
                 except:
                     pass
         
-        input_text = _format_input_template("implement_step", step_number=current_step + 1, total_steps=len(plan_steps), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files=_build_modified_files_context(state.get("files_modified", [])), related_context=truncate_to_tokens("\n\n".join(context_parts), 4000), feedback_section=feedback, logic_analysis="", legacy_code=legacy_code, debug_logs=state.get("error", "")[:2000] if state.get("error") else "")
+        # Note: logic_analysis already set above based on is_seed_file condition
+        
+        input_text = _format_input_template("implement_step", step_number=current_step + 1, total_steps=len(plan_steps), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files=_build_modified_files_context(state.get("files_modified", [])), related_context=truncate_to_tokens("\n\n".join(context_parts), 4000), feedback_section=feedback, logic_analysis=logic_analysis, legacy_code=legacy_code, debug_logs=state.get("error", "")[:2000] if state.get("error") else "")
         
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
@@ -353,8 +414,32 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
             step_skills = step_skills + ["frontend-component"]
         
         skills_content = _preload_skills(skill_registry, step_skills)
+        
+        # Optimization: Skip heavy context for seed files (only need schema.prisma)
+        is_seed_file = file_path and "seed.ts" in file_path.lower()
+        
+        if is_seed_file:
+            deps_ctx = _build_dependencies_context(
+                deps_content, 
+                ["prisma/schema.prisma"], 
+                workspace_path, 
+                file_path
+            )
+            project_structure = ""
+            logic_analysis = ""
+        else:
+            deps_ctx = _build_dependencies_context(
+                deps_content, 
+                step.get("dependencies", []), 
+                workspace_path, 
+                file_path
+            )
+            project_structure = _build_project_structure_context(state)
+            logic_analysis = state.get("logic_analysis", "")
+        
         context_parts = []
-        deps_ctx = _build_dependencies_context(deps_content, step.get("dependencies", []), workspace_path, file_path)
+        if project_structure:
+            context_parts.append(project_structure)
         if deps_ctx:
             context_parts.append(deps_ctx)
         if created_components:
@@ -373,7 +458,9 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
                 except:
                     pass
         
-        input_text = _format_input_template("implement_step", step_number=step.get("order", 1), total_steps=state.get("total_steps", 1), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files="", related_context="\n\n".join(context_parts), feedback_section="", logic_analysis="", legacy_code=legacy, debug_logs="")
+        # Note: logic_analysis already set above based on is_seed_file condition
+        
+        input_text = _format_input_template("implement_step", step_number=step.get("order", 1), total_steps=state.get("total_steps", 1), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files="", related_context="\n\n".join(context_parts), feedback_section="", logic_analysis=logic_analysis, legacy_code=legacy, debug_logs="")
         
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
@@ -466,12 +553,21 @@ async def implement_parallel(state: DeveloperState, config: dict = None, agent=N
                         }
             
             layer_steps = layers[layer_num]
-            is_parallel = len(layer_steps) > 1 and layer_num >= 4  # CHANGED: từ 5 → 4
+            # Never parallel for seed layer (3.5)
+            is_parallel = (
+                len(layer_steps) > 1 
+                and layer_num >= 4 
+                and layer_num != 3.5  # Force sequential for seed
+            )
             
             # Log layer progress
             files_list = ", ".join([s.get("file_path", "").split("/")[-1] for s in layer_steps[:3]])
             more = f" +{len(layer_steps)-3}" if len(layer_steps) > 3 else ""
             await story_logger.info(f"📂 Layer {layer_idx}/{total_layers}: {files_list}{more}")
+            
+            # Special message for seed layer
+            if layer_num == 3.5:
+                await story_logger.info("🌱 Generating seed data (may take 2-3 minutes)...")
             
             if is_parallel:
                 results = await run_layer_parallel(layer_steps, lambda s, c=created_components: _implement_single_step(s, state, skill_registry, workspace_path, deps_content, c, config), state, MAX_CONCURRENT)
@@ -492,14 +588,17 @@ async def implement_parallel(state: DeveloperState, config: dict = None, agent=N
                     with open(sp, 'r', encoding='utf-8') as f:
                         deps_content["prisma/schema.prisma"] = f.read()
             elif layer_num == 2:
-                # Layer 2: Types (was layer 3)
+                # Layer 2: Types
                 tp = os.path.join(workspace_path, "src/types/index.ts")
                 if os.path.exists(tp):
                     with open(tp, 'r', encoding='utf-8') as f:
                         deps_content["src/types/index.ts"] = f.read()
+            elif layer_num == 3.5:
+                # Layer 3.5: Seed layer completed
+                await story_logger.info("✅ Seed data generated")
             elif layer_num >= 4:
-                # Layer 4+: API/Components (was layer 5+)
-                # Seed.ts is now in layer 4 and runs in parallel with API routes
+                # Layer 4+: API/Components
+                # Update created components for import hints
                 for r in results:
                     fp = r.get("file_path", "")
                     if fp and fp.endswith(".tsx"):

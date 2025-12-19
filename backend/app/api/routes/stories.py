@@ -1246,6 +1246,10 @@ async def start_dev_server(
                 session.add(story)
                 session.commit()
                 
+                # Update .env with actual dev server port
+                from app.agents.developer.src.utils.db_container import update_env_file
+                update_env_file(story.worktree_path, str(story_id), dev_port=port)
+                
                 await log_to_story(f"Dev server started on port {port} (PID: {process.pid})", "success")
                 
                 # Broadcast state change via WebSocket

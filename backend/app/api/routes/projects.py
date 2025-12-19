@@ -942,6 +942,10 @@ async def start_project_dev_server(
                 session.add(project)
                 session.commit()
                 
+                # Update .env with actual dev server port
+                from app.agents.developer.src.utils.db_container import update_env_file
+                update_env_file(str(workspace_path), dev_port=port)
+                
                 logger.info(f"Dev server started on port {port} (PID: {process.pid})")
                 await broadcast_log(f"Server ready on port {port}", "success")
                 

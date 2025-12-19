@@ -80,13 +80,30 @@ system_prompt: |
   CRITICAL FOR NAVIGATION: Components using router.push()/Link MUST include target page in dependencies
   - Example: SearchBar → dependencies = ["src/app/search/page.tsx"]
   
+  CRITICAL FOR CART/CHECKOUT/ORDER PAGES:
+  - Pages involving cart, checkout, order → MUST include "state-management" skill
+  - Check Dependencies for existing cart-store.ts or similar state file
+  - If cart-store.ts exists in Dependencies:
+    * Page MUST import from '@/lib/cart-store'
+    * Page MUST use useCartStore() hook
+    * DO NOT create manual localStorage parsing
+  - Example: 
+    * checkout/page.tsx → skills: ["frontend-component", "frontend-design", "state-management"]
+    * checkout/page.tsx → dependencies: ["src/lib/cart-store.ts"]
+  
   Skills by file type:
   | File | Skills |
   |------|--------|
   | prisma/schema.prisma | ["database-model"] |
   | src/app/api/**/route.ts | ["api-route"] |
+  | src/lib/stores/**/*-store.ts | ["state-management"] |
   | src/components/**/*.tsx | ["frontend-component", "frontend-design"] |
   | src/app/**/*.tsx (pages) | ["frontend-component", "frontend-design"] |
+  
+  SPECIAL CASES:
+  - Cart/checkout/order pages → Add "state-management" to skills array
+  - Pages using Zustand stores → Add "state-management" to skills array
+  - Components with complex UI state → Consider "state-management" skill
   </step_format>
   
   <example>

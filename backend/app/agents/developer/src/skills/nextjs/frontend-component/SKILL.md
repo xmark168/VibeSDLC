@@ -79,6 +79,65 @@ interface FilterPanelProps {
 - `TS2353: 'X' does not exist` → **REMOVE the prop - it's not in interface!**
 - `TS2322: Type 'X' is not assignable` → Check if server action includes relations
 
+## ⚠️ Using Zustand Stores - CRITICAL
+
+**BEFORE using any store hook (`useXxxStore()`), CHECK the store file in Pre-loaded Code!**
+
+```typescript
+// ❌ WRONG - assuming store interface without checking
+const { paymentMethod, bankDetails, orderCode } = usePaymentStore();
+// What if PaymentState doesn't have bankDetails or orderCode?
+
+// ✅ CORRECT - check Pre-loaded Code first
+// 1. Find src/lib/payment-store.ts in Pre-loaded Code section
+// 2. Read PaymentState interface to see available fields
+// 3. ONLY destructure fields that EXIST in the interface
+
+// Example: If PaymentState only has { paymentMethod, setPaymentMethod }
+const { paymentMethod, setPaymentMethod } = usePaymentStore();  // Only use what exists!
+```
+
+**Common store files and locations:**
+- Payment: `src/lib/payment-store.ts` → `usePaymentStore()`
+- Cart: `src/lib/cart-store.ts` → `useCartStore()`
+- Auth: `src/lib/auth-store.ts` → `useAuthStore()` (if exists)
+
+**Rules:**
+1. **Always check store file BEFORE using the hook**
+2. **Only destructure fields that exist** in the interface
+3. **If store file is NOT in Pre-loaded Code**:
+   - Use minimal assumptions (only `paymentMethod` for payment, only `items` for cart)
+   - Or request the store file as a dependency
+4. **Never invent store fields** - read the actual interface!
+
+**Example - Reading store interface:**
+```typescript
+// In Pre-loaded Code: src/lib/cart-store.ts
+interface CartState {
+  items: CartItem[];
+  addItem: (item: CartItem) => void;
+  removeItem: (id: string) => void;
+  // NO 'total' or 'count' fields!
+}
+
+// ✅ CORRECT - only use what exists
+const { items, addItem, removeItem } = useCartStore();
+const total = items.reduce((sum, item) => sum + item.price, 0);  // Calculate yourself
+
+// ❌ WRONG - assuming fields that don't exist
+const { items, total, count } = useCartStore();  // TS ERROR!
+```
+
+**Why this matters:**
+- TypeScript will error on non-existent fields: `Property 'X' does not exist on type 'YState'`
+- Component will fail to compile
+- Wastes time debugging obvious errors
+
+**If you get TS error about store fields:**
+1. Check Pre-loaded Code for the store file
+2. Read the actual interface
+3. Only use fields that are defined there
+
 ## ⚠️ Data Fetching - Self-Fetch Pattern
 
 **CRITICAL: API Route First!**
@@ -192,7 +251,67 @@ export function BookCard() {
 - onClick, onChange, onSubmit, onHover
 - useRouter, usePathname, useSearchParams
 
-### 1.4 Type Annotations - React 19 + Next.js 16
+### 2. String Quotes - CRITICAL for JSX Text ⚠️
+
+**RULE: Use DOUBLE QUOTES for JSX strings with apostrophes/contractions**
+
+```tsx
+// ❌ WRONG - Single quotes with apostrophe causes TypeScript error
+<p>{'Thank you! We'll send you a confirmation.'}</p>
+//              ^ ERROR: Unexpected token
+
+<Alert>{"Don't worry, we've got you covered!"}</Alert>
+//        ^ ERROR: String breaks at apostrophe
+
+// ✅ CORRECT - Double quotes for outer string
+<p>{"Thank you! We'll send you a confirmation."}</p>
+<Alert>{"Don't worry, we've got you covered!"}</Alert>
+
+// ✅ ALSO CORRECT - Template literals (if no variables)
+<p>{`Thank you! We'll send you a confirmation.`}</p>
+```
+
+**When to use each quote style:**
+
+| Quote Type | Use For | Example |
+|------------|---------|---------|
+| Double `"` | JSX text with contractions (we'll, don't, it's) | `{"We'll contact you soon"}` |
+| Single `'` | Simple JSX text WITHOUT apostrophes | `{'Hello'}` or `{'Submit'}` |
+| Template `` ` `` | Strings with variables or multi-line | `` {`Hello ${name}`} `` |
+
+**Common contractions to watch for:**
+- we'll, you'll, I'll, they'll
+- don't, won't, can't, shouldn't
+- it's, that's, here's, there's
+- I've, we've, you've
+
+**CRITICAL: JSX expression strings with apostrophes MUST use double quotes or template literals**
+
+```tsx
+// ❌ WRONG - Will break TypeScript
+{showMessage 
+  ? 'We'll send confirmation'  // ERROR
+  : 'Don't worry'}             // ERROR
+
+// ✅ CORRECT - Double quotes
+{showMessage 
+  ? "We'll send confirmation"
+  : "Don't worry"}
+
+// ✅ ALSO CORRECT - Template literals  
+{showMessage 
+  ? `We'll send confirmation`
+  : `Don't worry`}
+```
+
+**Exception - Plain text in JSX (no braces):**
+```tsx
+// These are OK (React escapes apostrophes automatically)
+<p>We'll send you a confirmation.</p>
+<Alert>Don't worry!</Alert>
+```
+
+### 3. Type Annotations - React 19 + Next.js 16
 
 **Use `React.ReactElement`, NOT `JSX.Element`:**
 
@@ -244,7 +363,7 @@ interface Props {
 }
 ```
 
-### 1.5 Event Handler Errors - Server vs Client Components
+### 4. Event Handler Errors - Server vs Client Components
 
 **Error:** "Event handlers cannot be passed to Client Component props"
 
@@ -323,7 +442,7 @@ export function KanbanBoard({ initialData }: { initialData: Data[] }) {
 - ❌ **NEVER** remove `'use client'` from child components that use hooks/events
 - ❌ **NEVER** try to pass functions from Server Components to Client Components
 
-### 2. Layout - NO header in pages
+### 5. Layout - NO header in pages
 Root `layout.tsx` has `<Navigation />`. Pages only have content:
 ```tsx
 //  CORRECT
@@ -332,7 +451,7 @@ export default function Page() {
 }
 ```
 
-### 2.1 Container & Text Centering
+### 5.1 Container & Text Centering
 ```tsx
 // WRONG - container not centered
 <div className="container">
@@ -358,7 +477,7 @@ export default function Page() {
 - Centered text sections: parent `text-center`, children `block` (not inline-block)
 - Long text: add `mx-auto max-w-2xl` to constrain width
 
-### 3. Null Safety - CRITICAL ⚠️
+### 6. Null Safety - CRITICAL ⚠️
 API responses may have undefined nested arrays/objects!
 
 ```tsx
@@ -382,7 +501,33 @@ function List({ items = [] }: Props) { ... }
 const [items, setItems] = useState<Item[]>([]);
 ```
 
-### 4. Type Casting - Filter/Toggle Functions ⚠️
+**String Methods - ALWAYS use optional chaining:**
+
+```tsx
+// ❌ WRONG - crashes if value is null/undefined
+{order.paymentMethod.replace('_', ' ')}
+category.name.toLowerCase()
+user.email.split('@')[0]
+
+// ✅ CORRECT - safe with optional chaining
+{order.paymentMethod?.replace('_', ' ')}
+{category.name?.toLowerCase()}
+{user.email?.split('@')[0]}
+
+// ✅ CORRECT - with fallback
+{order.paymentMethod?.replace('_', ' ') ?? 'N/A'}
+{category.name?.toLowerCase() ?? ''}
+```
+
+**RULE:** Any string method (`.replace()`, `.toLowerCase()`, `.toUpperCase()`, `.split()`, `.trim()`, etc.) 
+on object properties or API data MUST use optional chaining `?.`
+
+**Exception:** Only skip `?.` if value is guaranteed non-null:
+- Local variables: `const name = "John"; name.toLowerCase()` ✅
+- Literal strings: `"hello".toUpperCase()` ✅
+- Form inputs: `e.target.value.replace(...)` ✅ (guaranteed string)
+
+### 7. Type Casting - Filter/Toggle Functions ⚠️
 
 Filter values from UI components are often union types:
 
@@ -419,7 +564,7 @@ toggleCategory(String(filter.value));
 
 **RULE:** When filter.value/item.value has union type, cast before passing to typed functions
 
-### 5. Route Navigation - USE EXACT PATHS
+### 8. Route Navigation - USE EXACT PATHS
 Check the plan/context for existing page routes before using `router.push()` or `<Link>`:
 
 ```tsx

@@ -162,6 +162,20 @@ def _auto_detect_dependencies(file_path: str, all_steps: list = None) -> list:
         deps.append("src/types/index.ts")
     if "/api/" in fp:
         deps.append("src/lib/prisma.ts")
+    
+    # Auto-detect Zustand store dependencies for components
+    if fp.endswith(".tsx") and "/components/" in fp:
+        # Payment-related components need payment store
+        if "payment" in fp or "checkout" in fp:
+            deps.append("src/lib/payment-store.ts")
+        
+        # Cart-related components need cart store
+        if "cart" in fp or "checkout" in fp:
+            deps.append("src/lib/cart-store.ts")
+        
+        # Order-related components might need both stores
+        if "order" in fp:
+            deps.append("src/lib/payment-store.ts")
     if all_steps and fp.endswith(".tsx"):
         filename = file_path.split("/")[-1].replace(".tsx", "").lower()
         if "section" in filename:
@@ -401,6 +415,59 @@ def create_planning_tools(workspace_path: str):
     return [grep_file_contents, find_files_by_pattern, list_directory, read_specific_file]
 
 
+def _build_logic_analysis(steps: list, state: dict) -> str:
+    """Build design overview from implementation steps.
+    
+    Creates a high-level summary of all files being implemented
+    to give agent context about the overall design when working on individual files.
+    """
+    if not steps:
+        return ""
+    
+    story_title = state.get("story_title", "")
+    story_desc = state.get("story_description", "")
+    
+    # Group steps by category
+    schema_steps = [s for s in steps if "schema.prisma" in s.get("file_path", "")]
+    api_steps = [s for s in steps if "/api/" in s.get("file_path", "")]
+    component_steps = [s for s in steps if "/components/" in s.get("file_path", "")]
+    page_steps = [s for s in steps if "/page.tsx" in s.get("file_path", "")]
+    other_steps = [s for s in steps if s not in schema_steps + api_steps + component_steps + page_steps]
+    
+    parts = [f"**Story**: {story_title}"]
+    if story_desc:
+        parts.append(f"**Description**: {story_desc}")
+    
+    parts.append(f"\n**Implementation Plan** ({len(steps)} files):")
+    
+    if schema_steps:
+        parts.append("\n**Database Schema:**")
+        for s in schema_steps:
+            parts.append(f"- {s.get('file_path')}: {s.get('task', '')}")
+    
+    if api_steps:
+        parts.append("\n**API Routes:**")
+        for s in api_steps:
+            parts.append(f"- {s.get('file_path')}: {s.get('task', '')}")
+    
+    if component_steps:
+        parts.append("\n**Components:**")
+        for s in component_steps:
+            parts.append(f"- {s.get('file_path')}: {s.get('task', '')}")
+    
+    if page_steps:
+        parts.append("\n**Pages:**")
+        for s in page_steps:
+            parts.append(f"- {s.get('file_path')}: {s.get('task', '')}")
+    
+    if other_steps:
+        parts.append("\n**Other:**")
+        for s in other_steps:
+            parts.append(f"- {s.get('file_path')}: {s.get('task', '')}")
+    
+    return "\n".join(parts)
+
+
 @track_node("plan")
 async def plan(state: DeveloperState, config: dict = None, agent=None) -> DeveloperState:
     """Zero-shot planning with FileRepository."""
@@ -577,6 +644,9 @@ Output structured plan with steps."""
         for i, s in enumerate(steps):
             s["order"] = i + 1
         
+        # Build logic analysis from steps
+        logic_analysis = _build_logic_analysis(steps, state)
+        
         SkillRegistry.load(tech_stack)
         deps_content = _preload_dependencies(workspace_path, steps)
         
@@ -587,7 +657,7 @@ Output structured plan with steps."""
         if steps:
             await story_logger.message(f"Kế hoạch: {len(steps)} files, {len(layers)} layers")
         
-        return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
+        return {**state, "implementation_plan": steps, "total_steps": len(steps), "dependencies_content": deps_content, "project_structure": context, "logic_analysis": logic_analysis, "current_step": 0, "parallel_layers": {float(k): [s.get("file_path") for s in v] for k, v in layers.items()}, "can_parallel": can_parallel, "action": "IMPLEMENT", "message": f"Plan: {len(steps)} steps ({len(layers)} layers)" + (" [PARALLEL]" if can_parallel else "")}
     except Exception as e:
         from langgraph.errors import GraphInterrupt
         if isinstance(e, GraphInterrupt):

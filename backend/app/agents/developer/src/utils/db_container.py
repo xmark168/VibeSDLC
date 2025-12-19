@@ -59,8 +59,8 @@ def get_database_url(story_id: Optional[str] = None) -> str:
     return f"postgresql://{info['user']}:{info['password']}@{info['host']}:{info['port']}/{info['database']}"
 
 
-def update_env_file(workspace_path: str, story_id: Optional[str] = None) -> bool:
-    """Update .env file with database URL."""
+def update_env_file(workspace_path: str, story_id: Optional[str] = None, dev_port: Optional[int] = None) -> bool:
+    """Update .env file with database URL and NextAuth config."""
     info = get_connection_info(story_id)
     if not info:
         return False
@@ -73,10 +73,32 @@ def update_env_file(workspace_path: str, story_id: Optional[str] = None) -> bool
         with open(env_path, 'r', encoding='utf-8') as f:
             env_content = f.read()
     
+    # Update or add DATABASE_URL
     if "DATABASE_URL=" in env_content:
         env_content = re.sub(r'DATABASE_URL=.*', f'DATABASE_URL="{database_url}"', env_content)
     else:
         env_content += f'\nDATABASE_URL="{database_url}"\n'
+    
+    # Determine app URL (use dev_port if provided, otherwise default to 3000)
+    app_url = f"http://localhost:{dev_port}" if dev_port else "http://localhost:3000"
+    
+    # Update or add NEXT_PUBLIC_APP_URL
+    if "NEXT_PUBLIC_APP_URL=" in env_content:
+        env_content = re.sub(r'NEXT_PUBLIC_APP_URL=.*', f'NEXT_PUBLIC_APP_URL="{app_url}"', env_content)
+    else:
+        env_content += f'NEXT_PUBLIC_APP_URL="{app_url}"\n'
+    
+    # Update or add NEXTAUTH_URL
+    if "NEXTAUTH_URL=" in env_content:
+        env_content = re.sub(r'NEXTAUTH_URL=.*', f'NEXTAUTH_URL="{app_url}"', env_content)
+    else:
+        env_content += f'NEXTAUTH_URL="{app_url}"\n'
+    
+    # Generate or reuse NEXTAUTH_SECRET
+    if "NEXTAUTH_SECRET=" not in env_content:
+        import secrets
+        secret = secrets.token_urlsafe(32)
+        env_content += f'NEXTAUTH_SECRET="{secret}"\n'
     
     with open(env_path, 'w', encoding='utf-8') as f:
         f.write(env_content)

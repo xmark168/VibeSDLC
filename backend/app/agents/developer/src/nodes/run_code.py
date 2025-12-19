@@ -35,9 +35,11 @@ def _clear_next_types_cache(workspace_path: str) -> None:
 
 
 def _validate_null_safety(workspace_path: str) -> List[str]:
-    """Quick scan for unsafe array operations on API data.
+    """Quick scan for unsafe operations on API data.
     
-    Detects patterns like `data.items.map()` without null safety.
+    Detects patterns like:
+    - `data.items.map()` without null safety
+    - `obj.prop.replace()` without optional chaining
     """
     import re
     warnings = []
@@ -50,11 +52,32 @@ def _validate_null_safety(workspace_path: str) -> List[str]:
         try:
             content = tsx_file.read_text(encoding="utf-8")
             for i, line in enumerate(content.split('\n')):
-                # Pattern: obj.prop.filter/map/slice without ?? or ?.
+                # Pattern 1: Array methods without null safety
                 if re.search(r'\w+\.\w+\.(filter|map|slice|reduce)\(', line):
                     if '??' not in line and '|| []' not in line and '?.' not in line:
                         rel_path = tsx_file.relative_to(workspace_path)
-                        warnings.append(f"{rel_path}:{i+1}")
+                        warnings.append(f"{rel_path}:{i+1} [array]")
+                
+                # Pattern 2: String methods without optional chaining
+                # Match: obj.prop.replace/toLowerCase/etc but NOT e.target.value or "string".method
+                if re.search(r'(?<!target\.value)\b\w+\.\w+\.(replace|toLowerCase|toUpperCase|split|trim|substring|slice)\(', line):
+                    if '?.' not in line or not re.search(r'\?\.(replace|toLowerCase|toUpperCase|split|trim)', line):
+                        # Exclude safe patterns:
+                        # - Literal strings: "string".method()
+                        # - Form inputs: e.target.value, event.target.value
+                        # - Function parameters in standalone statements: method.split(), param.toLowerCase()
+                        # - Array method callbacks: .map((item) => item.method())
+                        safe_patterns = [
+                            'target.value',
+                            r'["\'].*\.(replace|toLowerCase)',
+                            r'\(([\w]+)\)\s*=>\s*\1\.',  # Arrow function param usage
+                            r'^\s*(const|let|var)\s+\w+\s*=\s*\w+\.',  # Simple variable assignments from params
+                        ]
+                        is_safe = any(re.search(pattern, line) for pattern in safe_patterns)
+                        
+                        if not is_safe:
+                            rel_path = tsx_file.relative_to(workspace_path)
+                            warnings.append(f"{rel_path}:{i+1} [string]")
         except Exception:
             pass
     
@@ -311,7 +334,14 @@ async def _run_service_build(
         # Quick null safety validation
         null_warnings = _validate_null_safety(workspace_path)
         if null_warnings:
-            logger.warning(f"[run_code] Null safety warnings ({len(null_warnings)}): {null_warnings[:5]}")
+            array_warnings = [w for w in null_warnings if '[array]' in w]
+            string_warnings = [w for w in null_warnings if '[string]' in w]
+            msg = f"[run_code] Null safety warnings ({len(null_warnings)}): "
+            if array_warnings:
+                msg += f"{len(array_warnings)} array, "
+            if string_warnings:
+                msg += f"{len(string_warnings)} string"
+            logger.warning(msg + f" | Examples: {null_warnings[:5]}")
         
         loop = asyncio.get_event_loop()
         tasks = []
@@ -569,7 +599,14 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         await log("Running null safety validation...", "debug")
         null_warnings = _validate_null_safety(workspace_path)
         if null_warnings:
-            await log(f"Found {len(null_warnings)} potential null safety issue(s): {', '.join(null_warnings[:5])}", "warning")
+            array_warnings = [w for w in null_warnings if '[array]' in w]
+            string_warnings = [w for w in null_warnings if '[string]' in w]
+            msg = f"Found {len(null_warnings)} null safety issues: "
+            if array_warnings:
+                msg += f"{len(array_warnings)} array methods, "
+            if string_warnings:
+                msg += f"{len(string_warnings)} string methods"
+            await log(msg + f". Examples: {', '.join(null_warnings[:5])}", "warning")
         else:
             await log("No null safety issues detected", "debug")
         

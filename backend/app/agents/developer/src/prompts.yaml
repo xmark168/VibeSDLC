@@ -39,6 +39,7 @@ tasks:
       - FOLLOW SKILLS: Use patterns from <skills> section
       - SCHEMA FIELDS: ONLY use fields defined in schema
       - PRISMA: Check schema for relation names before using include
+      - NULL SAFETY: Use `?.` before string methods (.replace, .toLowerCase, etc.) on object properties
 
       # OUTPUT
       Output JSON: {"content": "COMPLETE FILE CONTENT"}
@@ -53,8 +54,13 @@ tasks:
       ## Current File
       {legacy_code}
 
-      ## Dependencies
+      ## Project Structure & Dependencies
       {related_context}
+      
+      <!-- related_context contains:
+           1. Project structure (file tree, component imports, API routes)
+           2. Dependencies (schema, types, related files)
+      -->
 
       ## Feedback
       {feedback_section}
@@ -86,6 +92,14 @@ tasks:
       - "Cannot read properties of undefined" → Add null check or default value for prop
       - "Cannot read properties of null" → Add null check before accessing
       - "Element type is invalid: got undefined" → Wrong import/export. Pages use `export default` (import X from), Components use named export (import { X } from)
+      
+      String Method Errors:
+      - "Cannot read property 'replace' of undefined" → Add optional chaining: `value?.replace(...)`
+      - "Cannot read property 'toLowerCase' of null" → Add optional chaining: `value?.toLowerCase()`
+      - "Cannot read property 'split' of undefined" → Add optional chaining: `value?.split(...)`
+      - Pattern: ANY string method on object property MUST use `?.` unless guaranteed non-null
+      - Examples: `order.paymentMethod.replace()` → `order.paymentMethod?.replace()`, `category.name.toLowerCase()` → `category.name?.toLowerCase()`
+      - EXCEPTION: `e.target.value.replace()` is safe (form input always string)
       
       Test Errors:
       - "text is broken up by multiple elements" → Use `screen.getByText(/text/i)` or custom matcher
