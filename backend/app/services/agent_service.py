@@ -1,4 +1,4 @@
-"""Agent Service - Encapsulates agent database operations."""
+"""Agent Service"""
 
 from uuid import UUID
 from typing import Optional

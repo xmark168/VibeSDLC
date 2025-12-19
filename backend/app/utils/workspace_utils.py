@@ -112,37 +112,6 @@ def cleanup_workspace(
     logger.info(f"[{agent_name}] Workspace cleanup completed in {cleanup_elapsed:.1f}s")
 
 
-
-
-
-def cleanup_old_worktree(
-    main_workspace: Path,
-    branch_name: str,
-    worktree_path: Path,
-    agent_name: str = "Agent",
-    skip_node_modules: bool = False
-) -> None:
-    """Clean up worktree and branch (legacy wrapper).
-    
-    This is a legacy wrapper around cleanup_workspace() for backward compatibility.
-    New code should use cleanup_workspace() directly.
-    
-    Args:
-        main_workspace: Main git repository path
-        branch_name: Git branch name to delete
-        worktree_path: Path to worktree to cleanup
-        agent_name: Agent name for logging
-        skip_node_modules: If True, skip deleting node_modules (faster for restart)
-    """
-    cleanup_workspace(
-        workspace_path=worktree_path,
-        repo_path=main_workspace,
-        branch_name=branch_name,
-        skip_node_modules=skip_node_modules,
-        agent_name=agent_name
-    )
-
-
 def setup_git_worktree(
     story_code: str,
     main_workspace: Path | str,
@@ -151,38 +120,16 @@ def setup_git_worktree(
     skip_node_modules: bool = False
 ) -> dict:
     """Setup git worktree for agent tasks.
-    
-    Args:
-        story_code: Story code (e.g., "US-001")
-        main_workspace: Main git repository path
-        worktree_type: Type of worktree ("story", "test", "ba")
-        agent_name: Agent name for logging
-        skip_node_modules: If True, skip deleting node_modules during cleanup (10x faster for restart)
-    
-    Returns:
-        dict with workspace_path, branch_name, main_workspace, workspace_ready
     """
     setup_start_time = time.time()
     main_workspace = Path(main_workspace).resolve()
     safe_code = story_code.replace('/', '-').replace('\\', '-')
-    short_id = story_code.split('-')[-1][:8] if '-' in story_code else story_code[:8]
     
-    # Determine branch name and worktree path based on type
-    if worktree_type == "story":
-        branch_name = f"story_{safe_code}"
-        worktrees_dir = main_workspace / ".worktrees"
-        worktrees_dir.mkdir(exist_ok=True)
-        worktree_path = (worktrees_dir / safe_code).resolve()
-    elif worktree_type == "test":
-        branch_name = f"test_{short_id}"
-        worktree_path = (main_workspace.parent / f"ws_test_{short_id}").resolve()
-    elif worktree_type == "ba":
-        branch_name = f"ba_{safe_code}"
-        worktrees_dir = main_workspace / ".worktrees"
-        worktrees_dir.mkdir(exist_ok=True)
-        worktree_path = (worktrees_dir / f"ba_{safe_code}").resolve()
-    else:
-        raise ValueError(f"Unknown worktree_type: {worktree_type}")
+    # Determine branch name and worktree path 
+    branch_name = f"story_{safe_code}"
+    worktrees_dir = main_workspace / ".worktrees"
+    worktrees_dir.mkdir(exist_ok=True)
+    worktree_path = (worktrees_dir / safe_code).resolve()
     
     if not main_workspace.exists():
         logger.error(f"[{agent_name}] Workspace does not exist: {main_workspace}")
@@ -213,8 +160,13 @@ def setup_git_worktree(
     
     # Always clean up old worktree to ensure fresh state
     # Note: skip_node_modules can be used for faster cleanup if dependencies don't change
-    cleanup_old_worktree(main_workspace, branch_name, worktree_path, agent_name, skip_node_modules)
-    
+    cleanup_workspace(
+        workspace_path=worktree_path,
+        repo_path=main_workspace,
+        branch_name=branch_name,
+        skip_node_modules=skip_node_modules,
+        agent_name=agent_name
+    )
     # ===== CRITICAL FIX: Ensure repository has at least one commit =====
     # Check if repo has any commits (required for branch creation)
     has_commits_result = subprocess.run(

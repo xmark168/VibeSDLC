@@ -245,3 +245,14 @@ DOCUMENT_UPLOAD_LIMITS = {
     "allowed_extensions": [".docx", ".txt"],  # Word and plain text
     "max_files_per_message": 1,
 }
+
+# MinIO Storage Settings 
+class MinIOSettings(BaseSettings):
+    """MinIO object storage configuration."""
+    MINIO_ENDPOINT: str = Field(default="localhost:9000", description="MinIO endpoint")
+    MINIO_ACCESS_KEY: str = Field(default="minioadmin", description="MinIO access key")
+    MINIO_SECRET_KEY: str = Field(default="minioadmin", description="MinIO secret key")
+    MINIO_SECURE: bool = Field(default=False, description="Use HTTPS for MinIO")
+    MINIO_BUCKET_NAME: str = Field(default="images", description="MinIO bucket name")
+
+minio_settings = MinIOSettings()

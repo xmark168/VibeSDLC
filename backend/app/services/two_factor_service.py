@@ -59,11 +59,7 @@ class TwoFactorService:
         return totp.verify(code, valid_window=1)
     
     def generate_backup_codes(self) -> Tuple[list[str], list[str]]:
-        """
-        Generate backup codes.
-        Returns tuple of (plain_codes, hashed_codes).
-        Plain codes are shown to user once, hashed codes are stored.
-        """
+        """Generate backup codes."""
         plain_codes = []
         hashed_codes = []
         

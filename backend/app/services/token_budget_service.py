@@ -10,7 +10,6 @@ import logging
 from sqlmodel import Session
 from app.models import Project, Agent
 from app.models.base import Role
-from app.core.db import engine
 
 logger = logging.getLogger(__name__)
 

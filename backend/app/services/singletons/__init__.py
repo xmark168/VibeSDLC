@@ -19,6 +19,7 @@ from .system_status_service import (
     get_system_status_service,
     init_system_status_service,
 )
+from .minio_service import MinIOService, get_minio_service
 
 __all__ = [
     # Pool Registry
@@ -30,4 +31,7 @@ __all__ = [
     "SystemStatusService",
     "get_system_status_service",
     "init_system_status_service",
+    # MinIO Storage
+    "MinIOService",
+    "get_minio_service",
 ]

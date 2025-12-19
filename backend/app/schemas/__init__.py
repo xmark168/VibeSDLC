@@ -105,8 +105,8 @@ from .project_rules import (
     ProjectRulesPublic,
 )
 
-# Common schemas
-from .common import (
+# Common schemas (moved to auth.py)
+from .auth import (
     Message,
     NewPassword,
 )

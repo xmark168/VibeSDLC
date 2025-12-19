@@ -12,6 +12,7 @@ from PIL import Image
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
+from app.services.singletons import get_minio_service
 from app.schemas.profile import (
     ProfileUpdate,
     ChangePasswordRequest,
@@ -153,16 +154,35 @@ async def upload_avatar(
                 except Exception as e:
                     logger.warning(f"Failed to delete old avatar: {e}")
 
-        # Save new avatar
-        image.save(filepath, "JPEG", quality=90)
+        # Save image to BytesIO for MinIO upload
+        output = BytesIO()
+        image.save(output, "JPEG", quality=90, optimize=True)
+        output.seek(0)
+        
+        # Upload to MinIO
+        minio = get_minio_service()
+        object_name = f"avatars/{filename}"
+        avatar_url = minio.upload_file(
+            file_data=output.getvalue(),
+            object_name=object_name,
+            content_type="image/jpeg"
+        )
+        
+        # Delete old avatar from MinIO if exists
+        if current_user.avatar_url and "avatars/" in current_user.avatar_url:
+            old_object = current_user.avatar_url.split("/images/")[-1]
+            try:
+                minio.delete_file(old_object)
+                logger.info(f"Deleted old avatar from MinIO: {old_object}")
+            except Exception as e:
+                logger.warning(f"Failed to delete old avatar from MinIO: {e}")
 
         # Update user's avatar_url
-        avatar_url = f"/uploads/avatars/{filename}"
         current_user.avatar_url = avatar_url
         session.add(current_user)
         session.commit()
 
-        logger.info(f"Avatar uploaded for user {current_user.id}: {avatar_url}")
+        logger.info(f"Avatar uploaded for user {current_user.id} to MinIO: {avatar_url}")
 
         return AvatarUploadResponse(
             avatar_url=avatar_url,
@@ -183,14 +203,15 @@ def delete_avatar(
     session: SessionDep,
 ):
     """Delete current user's avatar and reset to default"""
-    if current_user.avatar_url and current_user.avatar_url.startswith("/uploads/avatars/"):
-        filename = current_user.avatar_url.split("/")[-1]
-        filepath = os.path.join(AVATARS_DIR, filename)
-        if os.path.exists(filepath):
-            try:
-                os.remove(filepath)
-            except Exception as e:
-                logger.warning(f"Failed to delete avatar file: {e}")
+    # Delete from MinIO if exists
+    if current_user.avatar_url and "avatars/" in current_user.avatar_url:
+        minio = get_minio_service()
+        object_name = current_user.avatar_url.split("/images/")[-1]
+        try:
+            minio.delete_file(object_name)
+            logger.info(f"Deleted avatar from MinIO: {object_name}")
+        except Exception as e:
+            logger.warning(f"Failed to delete avatar from MinIO: {e}")
 
     current_user.avatar_url = None
     session.add(current_user)
