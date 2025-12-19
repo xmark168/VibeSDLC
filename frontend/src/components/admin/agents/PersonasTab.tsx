@@ -1,35 +1,21 @@
-import { formatDistanceToNow } from "date-fns"
-import {
-  CheckCircle,
-  Edit,
-  Filter,
-  Loader2,
-  MoreVertical,
-  Plus,
-  Trash2,
-  Users,
-  XCircle,
-} from "lucide-react"
 import { useState } from "react"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { Badge } from "@/components/ui/badge"
+  Plus,
+  Edit,
+  Trash2,
+  MoreVertical,
+  Users,
+  CheckCircle,
+  XCircle,
+  Filter,
+  Loader2,
+} from "lucide-react"
+import type { PersonaWithUsageStats, RoleType } from "@/types/persona"
+import { roleTypeLabels, roleTypeColors } from "@/types/persona"
+import { usePersonasWithStats, useDeletePersona, useActivatePersona } from "@/queries/personas"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +31,16 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Table,
   TableBody,
   TableCell,
@@ -52,30 +48,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  useActivatePersona,
-  useDeletePersona,
-  usePersonasWithStats,
-} from "@/queries/personas"
-import type { PersonaWithUsageStats, RoleType } from "@/types/persona"
-import { roleTypeColors, roleTypeLabels } from "@/types/persona"
 import { PersonaDialog } from "./dialogs/PersonaDialog"
+import { formatDistanceToNow } from "date-fns"
 
 export function PersonasTab() {
   const [roleFilter, setRoleFilter] = useState<string>("all")
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [personaToEdit, setPersonaToEdit] =
-    useState<PersonaWithUsageStats | null>(null)
+  const [personaToEdit, setPersonaToEdit] = useState<PersonaWithUsageStats | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [personaToDelete, setPersonaToDelete] =
-    useState<PersonaWithUsageStats | null>(null)
+  const [personaToDelete, setPersonaToDelete] = useState<PersonaWithUsageStats | null>(null)
 
-  const {
-    data: personas,
-    isLoading,
-    refetch,
-  } = usePersonasWithStats(roleFilter !== "all" ? roleFilter : undefined)
+  const { data: personas, isLoading, refetch } = usePersonasWithStats(
+    roleFilter !== "all" ? roleFilter : undefined
+  )
   const deletePersona = useDeletePersona()
   const activatePersona = useActivatePersona()
 
@@ -129,9 +115,7 @@ export function PersonasTab() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total Personas
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Total Personas</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -167,10 +151,7 @@ export function PersonasTab() {
           <CardContent>
             <div className="text-2xl font-bold">{stats.inUse}</div>
             <p className="text-xs text-muted-foreground">
-              {personas
-                ? personas.reduce((sum, p) => sum + p.active_agents_count, 0)
-                : 0}{" "}
-              active agents
+              {personas ? personas.reduce((sum, p) => sum + p.active_agents_count, 0) : 0} active agents
             </p>
           </CardContent>
         </Card>
@@ -242,14 +223,10 @@ export function PersonasTab() {
               <TableBody>
                 {personas.map((persona) => (
                   <TableRow key={persona.id}>
-                    <TableCell className="font-medium">
-                      {persona.name}
-                    </TableCell>
+                    <TableCell className="font-medium">{persona.name}</TableCell>
                     <TableCell>
                       <Badge
-                        className={
-                          roleTypeColors[persona.role_type as RoleType]
-                        }
+                        className={roleTypeColors[persona.role_type as RoleType]}
                         variant="outline"
                       >
                         {roleTypeLabels[persona.role_type as RoleType]}
@@ -258,11 +235,7 @@ export function PersonasTab() {
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {persona.personality_traits.slice(0, 3).map((trait) => (
-                          <Badge
-                            key={trait}
-                            variant="secondary"
-                            className="text-xs"
-                          >
+                          <Badge key={trait} variant="secondary" className="text-xs">
                             {trait}
                           </Badge>
                         ))}
@@ -313,9 +286,7 @@ export function PersonasTab() {
                             Edit
                           </DropdownMenuItem>
                           {!persona.is_active && (
-                            <DropdownMenuItem
-                              onClick={() => handleActivate(persona)}
-                            >
+                            <DropdownMenuItem onClick={() => handleActivate(persona)}>
                               <CheckCircle className="w-4 h-4 mr-2" />
                               Activate
                             </DropdownMenuItem>
@@ -368,29 +339,26 @@ export function PersonasTab() {
             <AlertDialogDescription>
               {personaToDelete?.is_active ? (
                 <>
-                  Are you sure you want to deactivate "{personaToDelete?.name}"?
-                  It will no longer be available for new agents.
+                  Are you sure you want to deactivate "{personaToDelete?.name}"? It will no
+                  longer be available for new agents.
                   {personaToDelete?.active_agents_count > 0 && (
                     <span className="block mt-2 text-amber-500 font-medium">
-                      Note: {personaToDelete.active_agents_count} active agents
-                      are currently using this persona.
+                      Note: {personaToDelete.active_agents_count} active agents are currently
+                      using this persona.
                     </span>
                   )}
                 </>
               ) : (
                 <>
-                  Are you sure you want to permanently delete "
-                  {personaToDelete?.name}"? This action cannot be undone.
+                  Are you sure you want to permanently delete "{personaToDelete?.name}"?
+                  This action cannot be undone.
                 </>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive"
-            >
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive">
               {personaToDelete?.is_active ? "Deactivate" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>

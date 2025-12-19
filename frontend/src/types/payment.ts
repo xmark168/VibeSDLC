@@ -6,7 +6,7 @@ export interface PaymentItem {
 
 export interface CreatePaymentRequest {
   plan_id: string
-  billing_cycle: "monthly" | "yearly"
+  billing_cycle: 'monthly' | 'yearly'
   auto_renew?: boolean
   return_url?: string
   cancel_url?: string
@@ -16,14 +16,14 @@ export interface PaymentLinkResponse {
   order_id: string
   payos_order_code: number
   checkout_url: string
-  qr_code: string // Base64 QR code image
+  qr_code: string  // Base64 QR code image
   amount: number
   description: string
 }
 
 export interface PaymentStatusResponse {
   order_id: string
-  status: "pending" | "paid" | "failed" | "canceled"
+  status: 'pending' | 'paid' | 'failed' | 'canceled'
   paid_at: string | null
   payos_transaction_id: string | null
 }
@@ -31,10 +31,10 @@ export interface PaymentStatusResponse {
 export interface Order {
   id: string
   user_id?: string
-  order_type: "subscription" | "credit" | "addon" | "SUBSCRIPTION" | "CREDIT"
+  order_type: 'subscription' | 'credit' | 'addon' | 'SUBSCRIPTION' | 'CREDIT'
   subscription_id?: string | null
   amount: number
-  status: "PENDING" | "PAID" | "FAILED" | "CANCELED"
+  status: 'PENDING' | 'PAID' | 'FAILED' | 'CANCELED'
   paid_at: string | null
   is_active?: boolean
   payos_order_code: number | null
@@ -65,7 +65,7 @@ export interface Invoice {
   amount: number
   currency: string
   issue_date: string
-  status: "DRAFT" | "PAID" | "CANCELLED"
+  status: 'DRAFT' | 'PAID' | 'CANCELLED'
 }
 
 export interface PlanInfo {

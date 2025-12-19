@@ -1,6 +1,6 @@
 /**
  * AgentMentionDropdown - Agent mention selection dropdown
- *
+ * 
  * Features:
  * - Filtered agent list based on search
  * - Keyboard navigation (arrow keys + Enter)
@@ -8,9 +8,9 @@
  * - Positioned near cursor
  */
 
-import { useEffect, useRef } from "react"
-import { Card } from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { useEffect, useRef, type KeyboardEvent } from 'react'
+import { Card } from '@/components/ui/card'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 export interface Agent {
   id: string
@@ -31,7 +31,7 @@ export interface AgentMentionDropdownProps {
   /** Close dropdown handler */
   onClose: () => void
   /** Navigate up/down handler */
-  onNavigate?: (direction: "up" | "down") => void
+  onNavigate?: (direction: 'up' | 'down') => void
   /** Dropdown position */
   position?: { top: number; left: number }
 }
@@ -48,25 +48,21 @@ export function AgentMentionDropdown({
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Filter agents based on search query
-  const filteredAgents = agents.filter(
-    (agent) =>
-      agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      agent.role.toLowerCase().includes(searchQuery.toLowerCase()),
+  const filteredAgents = agents.filter((agent) =>
+    agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    agent.role.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   // Close on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         onClose()
       }
     }
 
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [onClose])
 
   // Handle keyboard navigation
@@ -74,31 +70,31 @@ export function AgentMentionDropdown({
     const handleKeyDown = (e: globalThis.KeyboardEvent) => {
       if (!onNavigate) return
 
-      if (e.key === "ArrowUp") {
+      if (e.key === 'ArrowUp') {
         e.preventDefault()
-        onNavigate("up")
-      } else if (e.key === "ArrowDown") {
+        onNavigate('up')
+      } else if (e.key === 'ArrowDown') {
         e.preventDefault()
-        onNavigate("down")
-      } else if (e.key === "Enter" && filteredAgents[selectedIndex]) {
+        onNavigate('down')
+      } else if (e.key === 'Enter' && filteredAgents[selectedIndex]) {
         e.preventDefault()
         onSelect(filteredAgents[selectedIndex])
-      } else if (e.key === "Escape") {
+      } else if (e.key === 'Escape') {
         e.preventDefault()
         onClose()
       }
     }
 
-    document.addEventListener("keydown", handleKeyDown)
-    return () => document.removeEventListener("keydown", handleKeyDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
   }, [filteredAgents, selectedIndex, onSelect, onClose, onNavigate])
 
   // Scroll selected item into view
   useEffect(() => {
     const selectedElement = dropdownRef.current?.querySelector(
-      `[data-index="${selectedIndex}"]`,
+      `[data-index="${selectedIndex}"]`
     )
-    selectedElement?.scrollIntoView({ block: "nearest" })
+    selectedElement?.scrollIntoView({ block: 'nearest' })
   }, [selectedIndex])
 
   if (filteredAgents.length === 0) {
@@ -124,16 +120,15 @@ export function AgentMentionDropdown({
               className={`
                 w-full text-left px-3 py-2 rounded-md transition-colors
                 flex items-center gap-3
-                ${
-                  index === selectedIndex
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-accent/50"
+                ${index === selectedIndex
+                  ? 'bg-accent text-accent-foreground'
+                  : 'hover:bg-accent/50'
                 }
               `}
             >
               {/* Avatar */}
               <span className="text-2xl">{agent.avatar}</span>
-
+              
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="font-medium truncate">{agent.name}</div>
@@ -144,7 +139,9 @@ export function AgentMentionDropdown({
 
               {/* Selected indicator */}
               {index === selectedIndex && (
-                <span className="text-xs text-muted-foreground">↵ Enter</span>
+                <span className="text-xs text-muted-foreground">
+                  ↵ Enter
+                </span>
               )}
             </button>
           ))}

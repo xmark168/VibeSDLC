@@ -1,16 +1,10 @@
-import { CheckCircle, Copy, ExternalLink, Loader2, XCircle } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { toast } from "@/lib/toast"
+import { Loader2, CheckCircle, XCircle, ExternalLink, Copy } from "lucide-react"
 import { usePaymentStatus } from "@/queries/payments"
 import type { PaymentLinkResponse } from "@/types/payment"
+import { toast } from "@/lib/toast"
 
 interface PaymentDialogProps {
   open: boolean
@@ -25,14 +19,14 @@ export function PaymentDialog({
   onOpenChange,
   paymentData,
   onSuccess,
-  onCancel,
+  onCancel
 }: PaymentDialogProps) {
   const [copiedQR, setCopiedQR] = useState(false)
 
   // Poll payment status
   const { data: statusData, isLoading: statusLoading } = usePaymentStatus(
     paymentData?.order_id || null,
-    { enabled: open && !!paymentData },
+    { enabled: open && !!paymentData }
   )
 
   // Handle payment completion
@@ -40,10 +34,7 @@ export function PaymentDialog({
     if (statusData?.status === "paid") {
       toast.success("Payment successful! Your subscription is now active.")
       onSuccess()
-    } else if (
-      statusData?.status === "failed" ||
-      statusData?.status === "canceled"
-    ) {
+    } else if (statusData?.status === "failed" || statusData?.status === "canceled") {
       toast.error("Payment failed or was canceled.")
       onCancel()
     }
@@ -72,8 +63,7 @@ export function PaymentDialog({
         <DialogHeader>
           <DialogTitle>Complete Your Payment</DialogTitle>
           <DialogDescription>
-            Scan the QR code below using your banking app to complete the
-            payment
+            Scan the QR code below using your banking app to complete the payment
           </DialogDescription>
         </DialogHeader>
 
@@ -98,9 +88,9 @@ export function PaymentDialog({
             <div className="flex justify-between">
               <span className="text-muted-foreground">Amount:</span>
               <span className="font-semibold">
-                {new Intl.NumberFormat("vi-VN", {
-                  style: "currency",
-                  currency: "VND",
+                {new Intl.NumberFormat('vi-VN', {
+                  style: 'currency',
+                  currency: 'VND'
                 }).format(paymentData.amount)}
               </span>
             </div>
@@ -110,9 +100,7 @@ export function PaymentDialog({
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Order Code:</span>
-              <span className="font-mono text-xs">
-                {paymentData.payos_order_code}
-              </span>
+              <span className="font-mono text-xs">{paymentData.payos_order_code}</span>
             </div>
           </div>
 
@@ -121,24 +109,17 @@ export function PaymentDialog({
             {statusLoading || statusData?.status === "pending" ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400" />
-                <span className="text-sm text-blue-600 dark:text-blue-400">
-                  Waiting for payment...
-                </span>
+                <span className="text-sm text-blue-600 dark:text-blue-400">Waiting for payment...</span>
               </>
             ) : statusData?.status === "paid" ? (
               <>
                 <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
-                <span className="text-sm text-green-600 dark:text-green-400">
-                  Payment successful!
-                </span>
+                <span className="text-sm text-green-600 dark:text-green-400">Payment successful!</span>
               </>
-            ) : statusData?.status === "failed" ||
-              statusData?.status === "canceled" ? (
+            ) : statusData?.status === "failed" || statusData?.status === "canceled" ? (
               <>
                 <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
-                <span className="text-sm text-red-600 dark:text-red-400">
-                  Payment failed
-                </span>
+                <span className="text-sm text-red-600 dark:text-red-400">Payment failed</span>
               </>
             ) : null}
           </div>
@@ -153,7 +134,10 @@ export function PaymentDialog({
               <Copy className="w-4 h-4 mr-2" />
               {copiedQR ? "Copied!" : "Copy Link"}
             </Button>
-            <Button onClick={handleOpenCheckoutUrl} className="flex-1">
+            <Button
+              onClick={handleOpenCheckoutUrl}
+              className="flex-1"
+            >
               <ExternalLink className="w-4 h-4 mr-2" />
               Open in Browser
             </Button>

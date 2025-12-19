@@ -1,8 +1,8 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router"
-import { Header } from "@/components/landing/header"
-import { Footer } from "@/components/ui/footer"
+import { createFileRoute, Outlet } from '@tanstack/react-router'
+import { Header } from '@/components/landing/header'
+import { Footer } from '@/components/ui/footer'
 
-export const Route = createFileRoute("/_public")({
+export const Route = createFileRoute('/_public')({
   component: PublicLayout,
 })
 

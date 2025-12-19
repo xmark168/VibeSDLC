@@ -51,7 +51,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             position="top-center"
             toastOptions={{
               style: {
-                maxWidth: "500px",
+                maxWidth: '500px',
               },
               duration: 3000,
             }}

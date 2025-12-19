@@ -1,19 +1,20 @@
+import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
-  Clock,
-  Copy,
-  FileCode,
-  Loader2,
-  MoreVertical,
-  Play,
   Plus,
   Trash2,
+  Copy,
+  Play,
+  MoreVertical,
+  Loader2,
+  FileCode,
+  Tag,
   User,
+  Clock,
 } from "lucide-react"
-import { useState } from "react"
 import { projectsApi } from "@/apis/projects"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import {
   Card,
   CardContent,
@@ -22,30 +23,6 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   Table,
   TableBody,
   TableCell,
@@ -53,14 +30,38 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { toast } from "@/lib/toast"
 import {
+  useTemplates,
   useCreateTemplate,
   useDeleteTemplate,
-  useDuplicateTemplate,
   useSpawnFromTemplate,
-  useTemplates,
+  useDuplicateTemplate,
 } from "@/queries/agents"
 import type { AgentTemplate, AgentTemplateCreate, PoolResponse } from "@/types"
 
@@ -80,8 +81,7 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false)
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
-  const [selectedTemplate, setSelectedTemplate] =
-    useState<AgentTemplate | null>(null)
+  const [selectedTemplate, setSelectedTemplate] = useState<AgentTemplate | null>(null)
   const [spawnCount, setSpawnCount] = useState(1)
   const [duplicateName, setDuplicateName] = useState("")
   const [selectedProjectId, setSelectedProjectId] = useState(projectId || "")
@@ -223,8 +223,7 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
         <CardContent>
           {!templates || templates.length === 0 ? (
             <div className="text-center text-muted-foreground py-8">
-              No templates created yet. Create a template to save agent
-              configurations.
+              No templates created yet. Create a template to save agent configurations.
             </div>
           ) : (
             <Table>
@@ -258,19 +257,14 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">
-                        {roleTypeLabels[template.role_type] ||
-                          template.role_type}
+                        {roleTypeLabels[template.role_type] || template.role_type}
                       </Badge>
                     </TableCell>
                     <TableCell>{template.pool_name}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {template.tags.slice(0, 3).map((tag) => (
-                          <Badge
-                            key={tag}
-                            variant="secondary"
-                            className="text-xs"
-                          >
+                          <Badge key={tag} variant="secondary" className="text-xs">
                             {tag}
                           </Badge>
                         ))}
@@ -306,15 +300,11 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
-                          <DropdownMenuItem
-                            onClick={() => openSpawnDialog(template)}
-                          >
+                          <DropdownMenuItem onClick={() => openSpawnDialog(template)}>
                             <Play className="w-4 h-4 mr-2" />
                             Spawn Agents
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => openDuplicateDialog(template)}
-                          >
+                          <DropdownMenuItem onClick={() => openDuplicateDialog(template)}>
                             <Copy className="w-4 h-4 mr-2" />
                             Duplicate
                           </DropdownMenuItem>
@@ -352,9 +342,7 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
               <Label>Template Name</Label>
               <Input
                 value={formData.name || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="e.g., High Performance Developer"
               />
             </div>
@@ -363,9 +351,7 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
               <Label>Description</Label>
               <Textarea
                 value={formData.description || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, description: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="Describe what this template is for..."
                 rows={2}
               />
@@ -375,9 +361,7 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
               <Label>Role Type</Label>
               <Select
                 value={formData.role_type}
-                onValueChange={(v) =>
-                  setFormData({ ...formData, role_type: v })
-                }
+                onValueChange={(v) => setFormData({ ...formData, role_type: v })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -386,9 +370,7 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
                   <SelectItem value="team_leader">Team Leader</SelectItem>
                   <SelectItem value="developer">Developer</SelectItem>
                   <SelectItem value="tester">Tester</SelectItem>
-                  <SelectItem value="business_analyst">
-                    Business Analyst
-                  </SelectItem>
+                  <SelectItem value="business_analyst">Business Analyst</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -397,9 +379,7 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
               <Label>Pool</Label>
               <Select
                 value={formData.pool_name}
-                onValueChange={(v) =>
-                  setFormData({ ...formData, pool_name: v })
-                }
+                onValueChange={(v) => setFormData({ ...formData, pool_name: v })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -421,10 +401,7 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
                 onChange={(e) =>
                   setFormData({
                     ...formData,
-                    tags: e.target.value
-                      .split(",")
-                      .map((t) => t.trim())
-                      .filter(Boolean),
+                    tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean),
                   })
                 }
                 placeholder="production, high-priority"
@@ -433,16 +410,11 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
           </div>
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setCreateDialogOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={createTemplate.isPending}>
-              {createTemplate.isPending && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              )}
+              {createTemplate.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Create
             </Button>
           </DialogFooter>
@@ -462,10 +434,7 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Project</Label>
-              <Select
-                value={selectedProjectId}
-                onValueChange={setSelectedProjectId}
-              >
+              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select project" />
                 </SelectTrigger>
@@ -486,9 +455,7 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
                 min={1}
                 max={10}
                 value={spawnCount}
-                onChange={(e) =>
-                  setSpawnCount(parseInt(e.target.value, 10) || 1)
-                }
+                onChange={(e) => setSpawnCount(parseInt(e.target.value) || 1)}
               />
             </div>
           </div>
@@ -497,13 +464,8 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
             <Button variant="outline" onClick={() => setSpawnDialogOpen(false)}>
               Cancel
             </Button>
-            <Button
-              onClick={handleSpawn}
-              disabled={spawnFromTemplate.isPending || !selectedProjectId}
-            >
-              {spawnFromTemplate.isPending && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              )}
+            <Button onClick={handleSpawn} disabled={spawnFromTemplate.isPending || !selectedProjectId}>
+              {spawnFromTemplate.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Spawn
             </Button>
           </DialogFooter>
@@ -532,19 +494,11 @@ export function TemplatesTab({ pools, projectId }: TemplatesTabProps) {
           </div>
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDuplicateDialogOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setDuplicateDialogOpen(false)}>
               Cancel
             </Button>
-            <Button
-              onClick={handleDuplicate}
-              disabled={duplicateTemplate.isPending}
-            >
-              {duplicateTemplate.isPending && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              )}
+            <Button onClick={handleDuplicate} disabled={duplicateTemplate.isPending}>
+              {duplicateTemplate.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Duplicate
             </Button>
           </DialogFooter>

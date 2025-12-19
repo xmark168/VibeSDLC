@@ -1,20 +1,13 @@
-import { Calendar, Coins, CreditCard, Loader2, Receipt } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Loader2, Receipt, Calendar, CreditCard, Coins } from "lucide-react"
 import type { Plan } from "@/types/plan"
 
 interface InvoiceConfirmDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   plan: Plan | null
-  billingCycle: "monthly" | "yearly"
+  billingCycle: 'monthly' | 'yearly'
   onConfirm: () => void
   isProcessing: boolean
   isPurchasingCredit?: boolean
@@ -27,19 +20,15 @@ export function InvoiceConfirmDialog({
   billingCycle,
   onConfirm,
   isProcessing,
-  isPurchasingCredit = false,
+  isPurchasingCredit = false
 }: InvoiceConfirmDialogProps) {
   if (!plan) return null
 
-  const amount =
-    billingCycle === "monthly" ? plan.monthly_price : plan.yearly_price
-  const period = billingCycle === "monthly" ? "1 tháng" : "1 năm"
-  const discount =
-    !isPurchasingCredit &&
-    billingCycle === "yearly" &&
-    plan.yearly_discount_percentage
-      ? plan.yearly_discount_percentage
-      : 0
+  const amount = billingCycle === 'monthly' ? plan.monthly_price : plan.yearly_price
+  const period = billingCycle === 'monthly' ? '1 tháng' : '1 năm'
+  const discount = !isPurchasingCredit && billingCycle === 'yearly' && plan.yearly_discount_percentage
+    ? plan.yearly_discount_percentage
+    : 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -51,7 +40,7 @@ export function InvoiceConfirmDialog({
             ) : (
               <Receipt className="h-5 w-5 text-primary" />
             )}
-            {isPurchasingCredit ? "Xác nhận mua credits" : "Xác nhận hóa đơn"}
+            {isPurchasingCredit ? 'Xác nhận mua credits' : 'Xác nhận hóa đơn'}
           </DialogTitle>
           <DialogDescription>
             Vui lòng kiểm tra thông tin trước khi thanh toán
@@ -63,15 +52,13 @@ export function InvoiceConfirmDialog({
           <div className="bg-muted rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">
-                {isPurchasingCredit ? "Mua credits" : "Gói dịch vụ"}
+                {isPurchasingCredit ? 'Mua credits' : 'Gói dịch vụ'}
               </span>
               <span className="font-semibold">{plan.name}</span>
             </div>
 
             {plan.description && (
-              <p className="text-xs text-muted-foreground">
-                {plan.description}
-              </p>
+              <p className="text-xs text-muted-foreground">{plan.description}</p>
             )}
           </div>
 
@@ -85,14 +72,12 @@ export function InvoiceConfirmDialog({
                     Chu kỳ thanh toán
                   </span>
                   <span className="font-medium capitalize">
-                    {billingCycle === "monthly" ? "Hàng tháng" : "Hàng năm"}
+                    {billingCycle === 'monthly' ? 'Hàng tháng' : 'Hàng năm'}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">
-                    Thời hạn sử dụng
-                  </span>
+                  <span className="text-muted-foreground">Thời hạn sử dụng</span>
                   <span className="font-medium">{period}</span>
                 </div>
               </>
@@ -111,9 +96,7 @@ export function InvoiceConfirmDialog({
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Credits / tháng</span>
                 <span className="font-medium">
-                  {plan.monthly_credits === -1
-                    ? "Không giới hạn"
-                    : plan.monthly_credits.toLocaleString()}
+                  {plan.monthly_credits === -1 ? 'Không giới hạn' : plan.monthly_credits.toLocaleString()}
                 </span>
               </div>
             )}
@@ -122,9 +105,7 @@ export function InvoiceConfirmDialog({
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Số dự án</span>
                 <span className="font-medium">
-                  {plan.available_project === -1
-                    ? "Không giới hạn"
-                    : plan.available_project}
+                  {plan.available_project === -1 ? 'Không giới hạn' : plan.available_project}
                 </span>
               </div>
             )}
@@ -137,14 +118,11 @@ export function InvoiceConfirmDialog({
                 <span className="text-muted-foreground">Giá gốc</span>
                 <span className="text-muted-foreground line-through">
                   {plan.monthly_price
-                    ? new Intl.NumberFormat("vi-VN", {
-                        style: "currency",
-                        currency: plan.currency,
-                      }).format(
-                        (plan.monthly_price || 0) *
-                          (billingCycle === "yearly" ? 12 : 1),
-                      )
-                    : "0"}
+                    ? new Intl.NumberFormat('vi-VN', {
+                        style: 'currency',
+                        currency: plan.currency
+                      }).format((plan.monthly_price || 0) * (billingCycle === 'yearly' ? 12 : 1))
+                    : '0'}
                 </span>
               </div>
             )}
@@ -153,11 +131,10 @@ export function InvoiceConfirmDialog({
               <div className="flex items-center justify-between text-sm">
                 <span className="text-green-600">Giảm giá ({discount}%)</span>
                 <span className="text-green-600 font-medium">
-                  -
-                  {new Intl.NumberFormat("vi-VN", {
-                    style: "currency",
-                    currency: plan.currency,
-                  }).format((plan.monthly_price || 0) * 12 - (amount || 0))}
+                  -{new Intl.NumberFormat('vi-VN', {
+                    style: 'currency',
+                    currency: plan.currency
+                  }).format(((plan.monthly_price || 0) * 12) - (amount || 0))}
                 </span>
               </div>
             )}
@@ -165,9 +142,9 @@ export function InvoiceConfirmDialog({
             <div className="flex items-center justify-between">
               <span className="font-semibold">Tổng thanh toán</span>
               <span className="text-2xl font-bold text-primary">
-                {new Intl.NumberFormat("vi-VN", {
-                  style: "currency",
-                  currency: plan.currency,
+                {new Intl.NumberFormat('vi-VN', {
+                  style: 'currency',
+                  currency: plan.currency
                 }).format(amount || 0)}
               </span>
             </div>
@@ -175,9 +152,10 @@ export function InvoiceConfirmDialog({
 
           {/* Notice */}
           <p className="text-xs text-center text-muted-foreground">
-            {isPurchasingCredit
-              ? "Credits sẽ được thêm vào tài khoản ngay sau khi thanh toán thành công"
-              : "Sau khi thanh toán, gói dịch vụ sẽ được kích hoạt tự động"}
+            {isPurchasingCredit 
+              ? 'Credits sẽ được thêm vào tài khoản ngay sau khi thanh toán thành công'
+              : 'Sau khi thanh toán, gói dịch vụ sẽ được kích hoạt tự động'
+            }
           </p>
         </div>
 

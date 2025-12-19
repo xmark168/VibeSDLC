@@ -141,7 +141,7 @@ export function OTPVerificationForm() {
           error: <b>Code verification failed. Please try again.</b>,
         },
       )
-    } catch (_err) {
+    } catch (err) {
     } finally {
       setIsLoading(false)
     }
@@ -175,8 +175,10 @@ export function OTPVerificationForm() {
           error: <b>Failed to resend code. Please try again.</b>,
         },
       )
-    } catch (_error) {}
-  }
+    } catch (error) {
+    }
+
+   }
 
   return (
     <motion.div

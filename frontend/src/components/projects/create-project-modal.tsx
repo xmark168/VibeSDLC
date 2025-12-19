@@ -1,20 +1,13 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { motion } from "framer-motion"
-import {
-  Check,
-  ChevronDown,
-  Globe,
-  Layers,
-  Search,
-  Settings,
-  Shuffle,
-  X,
-} from "lucide-react"
-import { useEffect, useId, useMemo, useState } from "react"
-import toast from "react-hot-toast"
-import { type ProjectCreate, ProjectsService } from "@/client"
-import { Badge } from "@/components/ui/badge"
+import { Globe, X, Layers, Users, Search, Check, ChevronDown, Shuffle, Settings } from "lucide-react"
+import { useId, useState, useMemo, useEffect } from "react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Command,
   CommandEmpty,
@@ -23,21 +16,21 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Textarea } from "@/components/ui/textarea"
-import { cn } from "@/lib/utils"
+import { ProjectCreate, ProjectsService } from "@/client"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useAppStore } from "@/stores/auth-store"
+import toast from "react-hot-toast"
+import { withToast } from "@/utils"
 import { usePersonasByRole } from "@/queries/personas"
 import { useStacks } from "@/queries/stacks"
-import { useAppStore } from "@/stores/auth-store"
-import type { RoleType } from "@/types/persona"
+import { cn } from "@/lib/utils"
+import type { PersonaTemplate, RoleType } from "@/types/persona"
+import type { TechStack } from "@/types/stack"
 
 interface CreateProjectModalProps {
   isOpen: boolean
@@ -45,44 +38,32 @@ interface CreateProjectModalProps {
   setIsOpen: React.Dispatch<React.SetStateAction<boolean>>
 }
 
-const TECH_STACK_CATEGORIES = [
-  "All",
-  "Full Stack",
-  "Frontend",
-  "Backend",
-  "Mobile",
-  "Desktop",
-]
+const TECH_STACK_CATEGORIES = ["All", "Full Stack", "Frontend", "Backend", "Mobile", "Desktop"]
 
-const AGENT_ROLES: {
-  role: RoleType
-  label: string
-  description: string
-  icon: string
-}[] = [
+const AGENT_ROLES: { role: RoleType; label: string; description: string; icon: string }[] = [
   {
     role: "team_leader",
     label: "Team Leader",
     description: "Manages project workflow and coordinates team",
-    icon: "👨‍💼",
+    icon: "👨‍💼"
   },
   {
     role: "developer",
     label: "Developer",
     description: "Implements features and writes code",
-    icon: "👨‍💻",
+    icon: "👨‍💻"
   },
   {
     role: "business_analyst",
     label: "Business Analyst",
     description: "Analyzes requirements and creates documentation",
-    icon: "📊",
+    icon: "📊"
   },
   {
     role: "tester",
     label: "Tester",
     description: "Creates test plans and ensures quality",
-    icon: "🧪",
+    icon: "🧪"
   },
 ]
 
@@ -108,14 +89,13 @@ function PersonaSelector({
 
   const filteredPersonas = useMemo(() => {
     if (!search) return personas
-    return personas.filter(
-      (p) =>
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.communication_style?.toLowerCase().includes(search.toLowerCase()),
+    return personas.filter(p =>
+      p.name.toLowerCase().includes(search.toLowerCase()) ||
+      p.communication_style?.toLowerCase().includes(search.toLowerCase())
     )
   }, [personas, search])
 
-  const selectedPersona = personas.find((p) => p.id === selectedPersonaId)
+  const selectedPersona = personas.find(p => p.id === selectedPersonaId)
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -129,9 +109,7 @@ function PersonaSelector({
         >
           {selectedPersona ? (
             <div className="flex flex-col items-start text-left flex-1 min-w-0">
-              <span className="font-medium truncate w-full">
-                {selectedPersona.name}
-              </span>
+              <span className="font-medium truncate w-full">{selectedPersona.name}</span>
               <span className="text-xs text-muted-foreground truncate w-full">
                 {selectedPersona.communication_style}
               </span>
@@ -160,9 +138,7 @@ function PersonaSelector({
                     key={persona.id}
                     value={persona.id}
                     onSelect={() => {
-                      onSelect(
-                        persona.id === selectedPersonaId ? null : persona.id,
-                      )
+                      onSelect(persona.id === selectedPersonaId ? null : persona.id)
                       setOpen(false)
                     }}
                     className="flex flex-col items-start py-2 cursor-pointer"
@@ -171,9 +147,7 @@ function PersonaSelector({
                       <Check
                         className={cn(
                           "mr-2 h-4 w-4",
-                          selectedPersonaId === persona.id
-                            ? "opacity-100"
-                            : "opacity-0",
+                          selectedPersonaId === persona.id ? "opacity-100" : "opacity-0"
                         )}
                       />
                       <div className="flex-1">
@@ -183,17 +157,11 @@ function PersonaSelector({
                         </div>
                         {persona.personality_traits?.length > 0 && (
                           <div className="flex gap-1 mt-1 flex-wrap">
-                            {persona.personality_traits
-                              .slice(0, 3)
-                              .map((trait, i) => (
-                                <Badge
-                                  key={i}
-                                  variant="secondary"
-                                  className="text-[10px] px-1 py-0"
-                                >
-                                  {trait}
-                                </Badge>
-                              ))}
+                            {persona.personality_traits.slice(0, 3).map((trait, i) => (
+                              <Badge key={i} variant="secondary" className="text-[10px] px-1 py-0">
+                                {trait}
+                              </Badge>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -225,16 +193,14 @@ export function CreateProjectModal({
   const [techStackCategory, setTechStackCategory] = useState("All")
   const [isLoading, setIsLoading] = useState(false)
   const [agentSelections, setAgentSelections] = useState<AgentSelection[]>(
-    AGENT_ROLES.map((r) => ({ role: r.role, personaId: null })),
+    AGENT_ROLES.map(r => ({ role: r.role, personaId: null }))
   )
 
-  const _user = useAppStore((state) => state.user)
+  const user = useAppStore((state) => state.user)
   const queryClient = useQueryClient()
-
+  
   // Fetch tech stacks from database
-  const { data: stacksData, isLoading: stacksLoading } = useStacks({
-    is_active: true,
-  })
+  const { data: stacksData, isLoading: stacksLoading } = useStacks({ is_active: true })
   const techStacks = stacksData?.data || []
 
   // Auto-select first stack when loaded
@@ -245,19 +211,17 @@ export function CreateProjectModal({
   }, [techStacks, techStack])
 
   const filteredTechStacks = useMemo(() => {
-    return techStacks.filter((stack) => {
-      const matchesSearch =
-        !techStackSearch ||
+    return techStacks.filter(stack => {
+      const matchesSearch = !techStackSearch ||
         stack.name.toLowerCase().includes(techStackSearch.toLowerCase()) ||
         stack.description?.toLowerCase().includes(techStackSearch.toLowerCase())
-      const matchesCategory =
-        techStackCategory === "All" ||
+      const matchesCategory = techStackCategory === "All" || 
         stack.stack_config?.category === techStackCategory
       return matchesSearch && matchesCategory
     })
   }, [techStacks, techStackSearch, techStackCategory])
 
-  const selectedTechStack = techStacks.find((s) => s.code === techStack)
+  const selectedTechStack = techStacks.find(s => s.code === techStack)
 
   const createProjectMutation = useMutation({
     mutationFn: (data: ProjectCreate) =>
@@ -269,27 +233,19 @@ export function CreateProjectModal({
     },
   })
 
-  const validateProjectName = (
-    name: string,
-  ): { isValid: boolean; error?: string } => {
+  const validateProjectName = (name: string): { isValid: boolean; error?: string } => {
     if (!name.trim()) {
       return { isValid: false, error: "Project name is required" }
     }
     if (name.length < 1 || name.length > 100) {
-      return {
-        isValid: false,
-        error: "Project name must be between 1 and 100 characters",
-      }
+      return { isValid: false, error: "Project name must be between 1 and 100 characters" }
     }
     return { isValid: true }
   }
 
-  const handleAgentPersonaChange = (
-    role: RoleType,
-    personaId: string | null,
-  ) => {
-    setAgentSelections((prev) =>
-      prev.map((a) => (a.role === role ? { ...a, personaId } : a)),
+  const handleAgentPersonaChange = (role: RoleType, personaId: string | null) => {
+    setAgentSelections(prev =>
+      prev.map(a => a.role === role ? { ...a, personaId } : a)
     )
   }
 
@@ -309,22 +265,18 @@ export function CreateProjectModal({
     setIsLoading(true)
     try {
       // Build persona selections if custom mode
-      const agentPersonas =
-        agentMode === "custom"
-          ? Object.fromEntries(
-              agentSelections
-                .filter((a) => a.personaId)
-                .map((a) => [a.role, a.personaId as string]),
-            )
-          : undefined
+      const agentPersonas = agentMode === "custom"
+        ? Object.fromEntries(
+            agentSelections
+              .filter(a => a.personaId)
+              .map(a => [a.role, a.personaId as string])
+          )
+        : undefined
 
       const dataProjectCreate: ProjectCreate = {
         name: projectName,
         tech_stack: techStack ? [techStack] : null,
-        agent_personas:
-          agentPersonas && Object.keys(agentPersonas).length > 0
-            ? agentPersonas
-            : null,
+        agent_personas: agentPersonas && Object.keys(agentPersonas).length > 0 ? agentPersonas : null,
       }
 
       await createProjectMutation.mutateAsync(dataProjectCreate)
@@ -332,10 +284,7 @@ export function CreateProjectModal({
       resetForm()
       setIsOpen(false)
     } catch (error: any) {
-      const errorMessage =
-        error?.body?.detail ||
-        error?.message ||
-        "Failed to create project. Please try again."
+      const errorMessage = error?.body?.detail || error?.message || "Failed to create project. Please try again."
       toast.error(errorMessage, { duration: 5000 })
       setIsLoading(false)
     }
@@ -349,9 +298,7 @@ export function CreateProjectModal({
     setTechStackCategory("All")
     setActiveTab("info")
     setAgentMode("random")
-    setAgentSelections(
-      AGENT_ROLES.map((r) => ({ role: r.role, personaId: null })),
-    )
+    setAgentSelections(AGENT_ROLES.map(r => ({ role: r.role, personaId: null })))
     setIsLoading(false)
   }
 
@@ -422,11 +369,7 @@ export function CreateProjectModal({
           </motion.div>
 
           {/* Tabs */}
-          <Tabs
-            value={activeTab}
-            onValueChange={setActiveTab}
-            className="w-full"
-          >
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="info" className="flex items-center gap-2">
                 <Globe className="h-4 w-4" />
@@ -480,18 +423,15 @@ export function CreateProjectModal({
                     whileTap={{ scale: 0.98 }}
                     onClick={() => setAgentMode("random")}
                     disabled={isLoading}
-                    className={`relative p-4 rounded-lg border-2 transition-all ${
-                      agentMode === "random"
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-muted hover:border-primary/50"
-                    } disabled:opacity-50`}
+                    className={`relative p-4 rounded-lg border-2 transition-all ${agentMode === "random"
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-muted hover:border-primary/50"
+                      } disabled:opacity-50`}
                   >
                     <Shuffle
                       className={`h-5 w-5 mx-auto mb-2 ${agentMode === "random" ? "text-primary" : "text-muted-foreground"}`}
                     />
-                    <p
-                      className={`text-sm font-semibold ${agentMode === "random" ? "text-foreground" : "text-muted-foreground"}`}
-                    >
+                    <p className={`text-sm font-semibold ${agentMode === "random" ? "text-foreground" : "text-muted-foreground"}`}>
                       Random
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
@@ -504,18 +444,15 @@ export function CreateProjectModal({
                     whileTap={{ scale: 0.98 }}
                     onClick={() => setAgentMode("custom")}
                     disabled={isLoading}
-                    className={`relative p-4 rounded-lg border-2 transition-all ${
-                      agentMode === "custom"
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-muted hover:border-primary/50"
-                    } disabled:opacity-50`}
+                    className={`relative p-4 rounded-lg border-2 transition-all ${agentMode === "custom"
+                      ? "border-primary bg-primary/10"
+                      : "border-border bg-muted hover:border-primary/50"
+                      } disabled:opacity-50`}
                   >
                     <Settings
                       className={`h-5 w-5 mx-auto mb-2 ${agentMode === "custom" ? "text-primary" : "text-muted-foreground"}`}
                     />
-                    <p
-                      className={`text-sm font-semibold ${agentMode === "custom" ? "text-foreground" : "text-muted-foreground"}`}
-                    >
+                    <p className={`text-sm font-semibold ${agentMode === "custom" ? "text-foreground" : "text-muted-foreground"}`}>
                       Custom
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
@@ -538,9 +475,7 @@ export function CreateProjectModal({
                   </div>
                   <div className="grid gap-3">
                     {AGENT_ROLES.map((agentRole) => {
-                      const selection = agentSelections.find(
-                        (a) => a.role === agentRole.role,
-                      )
+                      const selection = agentSelections.find(a => a.role === agentRole.role)
                       return (
                         <div
                           key={agentRole.role}
@@ -548,13 +483,9 @@ export function CreateProjectModal({
                         >
                           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                             <div className="flex items-center gap-3 flex-1 min-w-0">
-                              <div className="text-2xl shrink-0">
-                                {agentRole.icon}
-                              </div>
+                              <div className="text-2xl shrink-0">{agentRole.icon}</div>
                               <div className="flex-1 min-w-0">
-                                <h4 className="font-medium text-sm">
-                                  {agentRole.label}
-                                </h4>
+                                <h4 className="font-medium text-sm">{agentRole.label}</h4>
                                 <p className="text-xs text-muted-foreground">
                                   {agentRole.description}
                                 </p>
@@ -564,12 +495,7 @@ export function CreateProjectModal({
                               <PersonaSelector
                                 role={agentRole.role}
                                 selectedPersonaId={selection?.personaId || null}
-                                onSelect={(personaId) =>
-                                  handleAgentPersonaChange(
-                                    agentRole.role,
-                                    personaId,
-                                  )
-                                }
+                                onSelect={(personaId) => handleAgentPersonaChange(agentRole.role, personaId)}
                                 disabled={isLoading}
                               />
                             </div>
@@ -603,9 +529,7 @@ export function CreateProjectModal({
                 {TECH_STACK_CATEGORIES.map((category) => (
                   <Button
                     key={category}
-                    variant={
-                      techStackCategory === category ? "default" : "outline"
-                    }
+                    variant={techStackCategory === category ? "default" : "outline"}
                     size="sm"
                     onClick={() => setTechStackCategory(category)}
                     disabled={isLoading}
@@ -632,11 +556,10 @@ export function CreateProjectModal({
                         key={stack.code}
                         whileHover={{ scale: 1.01 }}
                         onClick={() => !isLoading && setTechStack(stack.code)}
-                        className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                          techStack === stack.code
-                            ? "border-primary bg-primary/5"
-                            : "border-border hover:border-primary/50"
-                        } ${isLoading ? "opacity-50 cursor-not-allowed" : ""}`}
+                        className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all ${techStack === stack.code
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/50"
+                          } ${isLoading ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
                         {stack.image ? (
                           <img
@@ -658,25 +581,18 @@ export function CreateProjectModal({
                               </Badge>
                             )}
                           </div>
-                          <p className="text-sm text-muted-foreground mb-2">
-                            {stack.description || "No description"}
-                          </p>
-                          {stack.stack_config &&
-                            Object.keys(stack.stack_config).length > 0 && (
-                              <div className="flex flex-wrap gap-1">
-                                {Object.entries(stack.stack_config)
-                                  .filter(([key]) => key !== "category")
-                                  .map(([key, value]) => (
-                                    <Badge
-                                      key={key}
-                                      variant="outline"
-                                      className="text-[10px] px-1.5 py-0"
-                                    >
-                                      {key}: {value}
-                                    </Badge>
-                                  ))}
-                              </div>
-                            )}
+                          <p className="text-sm text-muted-foreground mb-2">{stack.description || "No description"}</p>
+                          {stack.stack_config && Object.keys(stack.stack_config).length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {Object.entries(stack.stack_config)
+                                .filter(([key]) => key !== "category")
+                                .map(([key, value]) => (
+                                  <Badge key={key} variant="outline" className="text-[10px] px-1.5 py-0">
+                                    {key}: {value}
+                                  </Badge>
+                                ))}
+                            </div>
+                          )}
                         </div>
                         {techStack === stack.code && (
                           <Check className="h-5 w-5 text-primary" />
@@ -692,13 +608,12 @@ export function CreateProjectModal({
                 <div className="p-3 bg-muted rounded-lg">
                   <p className="text-sm">
                     <span className="text-muted-foreground">Selected: </span>
-                    <span className="font-medium">
-                      {selectedTechStack.name}
-                    </span>
+                    <span className="font-medium">{selectedTechStack.name}</span>
                   </p>
                 </div>
               )}
             </TabsContent>
+
           </Tabs>
 
           {/* Action Buttons */}

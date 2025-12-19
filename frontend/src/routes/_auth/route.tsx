@@ -25,14 +25,11 @@ function RouteComponent() {
         <div className="absolute inset-0">
           <motion.div
             className="absolute left-1/4 top-1/4 h-96 w-96 rounded-full blur-3xl"
-            style={{
-              background:
-                "linear-gradient(to br, rgba(201, 100, 66, 0.25), rgba(61, 57, 41, 0.2))",
-            }}
+            style={{ background: "linear-gradient(to br, rgba(201, 100, 66, 0.25), rgba(61, 57, 41, 0.2))" }}
             animate={{
               y: [0, -20, 0],
               x: [0, 10, 0],
-              scale: [1, 1.05, 1],
+              scale: [1, 1.05, 1]
             }}
             transition={{
               duration: 8,
@@ -42,14 +39,11 @@ function RouteComponent() {
           />
           <motion.div
             className="absolute right-1/4 bottom-1/4 h-96 w-96 rounded-full blur-3xl"
-            style={{
-              background:
-                "linear-gradient(to br, rgba(233, 230, 220, 0.4), rgba(201, 100, 66, 0.25))",
-            }}
+            style={{ background: "linear-gradient(to br, rgba(233, 230, 220, 0.4), rgba(201, 100, 66, 0.25))" }}
             animate={{
               y: [0, 20, 0],
               x: [0, -10, 0],
-              scale: [1, 1.08, 1],
+              scale: [1, 1.08, 1]
             }}
             transition={{
               duration: 10,
@@ -60,13 +54,10 @@ function RouteComponent() {
           />
           <motion.div
             className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[500px] w-[500px] rounded-full blur-3xl"
-            style={{
-              background:
-                "linear-gradient(to br, rgba(201, 100, 66, 0.15), rgba(233, 230, 220, 0.2))",
-            }}
+            style={{ background: "linear-gradient(to br, rgba(201, 100, 66, 0.15), rgba(233, 230, 220, 0.2))" }}
             animate={{
               scale: [1, 1.1, 1],
-              rotate: [0, 180, 360],
+              rotate: [0, 180, 360]
             }}
             transition={{
               duration: 20,
@@ -90,19 +81,13 @@ function RouteComponent() {
             {/* Outer glow ring */}
             <div
               className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 -translate-y-1/2 rounded-full blur-xl"
-              style={{
-                background:
-                  "linear-gradient(to br, rgba(201, 100, 66, 0.3), rgba(233, 230, 220, 0.4))",
-              }}
+              style={{ background: "linear-gradient(to br, rgba(201, 100, 66, 0.3), rgba(233, 230, 220, 0.4))" }}
             />
 
             {/* Middle ring */}
             <div
               className="absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full backdrop-blur-sm shadow-xl"
-              style={{
-                background:
-                  "linear-gradient(to br, rgba(233, 230, 220, 0.8), rgba(255, 255, 255, 0.7))",
-              }}
+              style={{ background: "linear-gradient(to br, rgba(233, 230, 220, 0.8), rgba(255, 255, 255, 0.7))" }}
             />
 
             {/* Center AI circle */}
@@ -110,16 +95,14 @@ function RouteComponent() {
               className="absolute left-1/2 top-1/2 h-48 w-48 -translate-x-1/2 -translate-y-1/2 rounded-full shadow-2xl"
               style={{
                 background: "#e9e6dc",
-                boxShadow:
-                  "0 20px 60px rgba(61, 57, 41, 0.3), inset 0 0 30px rgba(201, 100, 66, 0.1)",
+                boxShadow: "0 20px 60px rgba(61, 57, 41, 0.3), inset 0 0 30px rgba(201, 100, 66, 0.1)"
               }}
             >
               <div
                 className="absolute inset-2 rounded-full"
                 style={{
-                  background:
-                    "linear-gradient(145deg, #c96442 0%, #b55638 100%)",
-                  boxShadow: "0 8px 32px rgba(201, 100, 66, 0.4)",
+                  background: "linear-gradient(145deg, #c96442 0%, #b55638 100%)",
+                  boxShadow: "0 8px 32px rgba(201, 100, 66, 0.4)"
                 }}
               />
               <div className="relative flex h-full w-full items-center justify-center">
@@ -307,23 +290,11 @@ function RouteComponent() {
               style={{ transform: "rotate(0deg)" }}
             >
               <defs>
-                <linearGradient
-                  id="ringGradient1"
-                  x1="0%"
-                  y1="0%"
-                  x2="100%"
-                  y2="100%"
-                >
+                <linearGradient id="ringGradient1" x1="0%" y1="0%" x2="100%" y2="100%">
                   <stop offset="0%" stopColor="#c96442" stopOpacity="0.3" />
                   <stop offset="100%" stopColor="#3d3929" stopOpacity="0.3" />
                 </linearGradient>
-                <linearGradient
-                  id="ringGradient2"
-                  x1="0%"
-                  y1="0%"
-                  x2="100%"
-                  y2="100%"
-                >
+                <linearGradient id="ringGradient2" x1="0%" y1="0%" x2="100%" y2="100%">
                   <stop offset="0%" stopColor="#3d3929" stopOpacity="0.2" />
                   <stop offset="100%" stopColor="#c96442" stopOpacity="0.2" />
                 </linearGradient>
@@ -366,10 +337,7 @@ function RouteComponent() {
               </span>
               <span
                 className="bg-clip-text text-transparent"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(to right, #c96442, #3d3929, #c96442)",
-                }}
+                style={{ backgroundImage: "linear-gradient(to right, #c96442, #3d3929, #c96442)" }}
               >
                 24/7 AI Team
               </span>

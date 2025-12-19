@@ -1,17 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  type UserAdminCreate,
-  type UserAdminUpdate,
-  usersApi,
-} from "@/apis/users"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { usersApi, type UserAdminCreate, type UserAdminUpdate } from "@/apis/users"
 import { toast } from "@/lib/toast"
 
 // Query Keys
 export const userQueryKeys = {
   all: ["users"] as const,
   lists: () => [...userQueryKeys.all, "list"] as const,
-  list: (filters?: Record<string, unknown>) =>
-    [...userQueryKeys.lists(), filters] as const,
+  list: (filters?: Record<string, unknown>) => [...userQueryKeys.lists(), filters] as const,
   stats: () => [...userQueryKeys.all, "stats"] as const,
   detail: (userId: string) => [...userQueryKeys.all, "detail", userId] as const,
 }
@@ -25,9 +20,9 @@ export function useAdminUsers(
     role?: string
     status?: string
     order_by?: string
-    order_dir?: "asc" | "desc"
+    order_dir?: 'asc' | 'desc'
   },
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean }
 ) {
   return useQuery({
     queryKey: userQueryKeys.list(params),
@@ -58,8 +53,7 @@ export function useCreateUser() {
       toast.success("User created successfully")
     },
     onError: (error: any) => {
-      const message =
-        error?.body?.detail || error?.message || "Failed to create user"
+      const message = error?.body?.detail || error?.message || "Failed to create user"
       toast.error(message)
     },
   })
@@ -77,8 +71,7 @@ export function useUpdateUser() {
       toast.success("User updated successfully")
     },
     onError: (error: any) => {
-      const message =
-        error?.body?.detail || error?.message || "Failed to update user"
+      const message = error?.body?.detail || error?.message || "Failed to update user"
       toast.error(message)
     },
   })
@@ -94,8 +87,7 @@ export function useDeleteUser() {
       toast.success("User deleted successfully")
     },
     onError: (error: any) => {
-      const message =
-        error?.body?.detail || error?.message || "Failed to delete user"
+      const message = error?.body?.detail || error?.message || "Failed to delete user"
       toast.error(message)
     },
   })
@@ -112,8 +104,7 @@ export function useLockUser() {
       toast.success("User locked successfully")
     },
     onError: (error: any) => {
-      const message =
-        error?.body?.detail || error?.message || "Failed to lock user"
+      const message = error?.body?.detail || error?.message || "Failed to lock user"
       toast.error(message)
     },
   })
@@ -130,8 +121,7 @@ export function useUnlockUser() {
       toast.success("User unlocked successfully")
     },
     onError: (error: any) => {
-      const message =
-        error?.body?.detail || error?.message || "Failed to unlock user"
+      const message = error?.body?.detail || error?.message || "Failed to unlock user"
       toast.error(message)
     },
   })
@@ -147,8 +137,7 @@ export function useRevokeUserSessions() {
       toast.success("All sessions revoked successfully")
     },
     onError: (error: any) => {
-      const message =
-        error?.body?.detail || error?.message || "Failed to revoke sessions"
+      const message = error?.body?.detail || error?.message || "Failed to revoke sessions"
       toast.error(message)
     },
   })
@@ -164,8 +153,7 @@ export function useBulkLockUsers() {
       toast.success(data.message)
     },
     onError: (error: any) => {
-      const message =
-        error?.body?.detail || error?.message || "Failed to lock users"
+      const message = error?.body?.detail || error?.message || "Failed to lock users"
       toast.error(message)
     },
   })
@@ -181,8 +169,7 @@ export function useBulkUnlockUsers() {
       toast.success(data.message)
     },
     onError: (error: any) => {
-      const message =
-        error?.body?.detail || error?.message || "Failed to unlock users"
+      const message = error?.body?.detail || error?.message || "Failed to unlock users"
       toast.error(message)
     },
   })
@@ -198,8 +185,7 @@ export function useBulkDeleteUsers() {
       toast.success(data.message)
     },
     onError: (error: any) => {
-      const message =
-        error?.body?.detail || error?.message || "Failed to delete users"
+      const message = error?.body?.detail || error?.message || "Failed to delete users"
       toast.error(message)
     },
   })

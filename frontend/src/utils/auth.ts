@@ -1,31 +1,31 @@
-import { redirect } from "@tanstack/react-router"
-import type { Role } from "@/client"
-import { useAppStore } from "@/stores/auth-store"
+import { redirect } from '@tanstack/react-router'
+import { useAppStore } from '@/stores/auth-store'
+import type { Role } from '@/client'
 
 /**
  * Check if user is logged in by checking access token
  */
 export const isLoggedIn = (): boolean => {
-  return localStorage.getItem("access_token") !== null
+  return localStorage.getItem('access_token') !== null
 }
 
 export const requireAuth = async () => {
   if (!isLoggedIn()) {
     throw redirect({
-      to: "/login",
+      to: '/login',
       search: {
-        redirect: window.location.pathname,
-      },
+        redirect: window.location.pathname
+      }
     })
   }
 
   const store = useAppStore.getState()
   if (!store.user && !store.isLoading) {
     throw redirect({
-      to: "/login",
+      to: '/login',
       search: {
-        redirect: window.location.pathname,
-      },
+        redirect: window.location.pathname
+      }
     })
   }
 }
@@ -33,10 +33,10 @@ export const requireAuth = async () => {
 export const requireRole = async (requiredRole: Role) => {
   if (!isLoggedIn()) {
     throw redirect({
-      to: "/login",
+      to: '/login',
       search: {
-        redirect: window.location.pathname,
-      },
+        redirect: window.location.pathname
+      }
     })
   }
 
@@ -47,24 +47,24 @@ export const requireRole = async (requiredRole: Role) => {
 
   while (waited < maxWaitTime) {
     const store = useAppStore.getState()
-
+    
     // If we have user data, break out of loop
     if (store.user) {
       break
     }
-
+    
     // If not loading and no user, authentication failed
     if (!store.isLoading && !store.user) {
       throw redirect({
-        to: "/login",
+        to: '/login',
         search: {
-          redirect: window.location.pathname,
-        },
+          redirect: window.location.pathname
+        }
       })
     }
-
+    
     // Wait and check again
-    await new Promise((resolve) => setTimeout(resolve, checkInterval))
+    await new Promise(resolve => setTimeout(resolve, checkInterval))
     waited += checkInterval
   }
 
@@ -72,22 +72,22 @@ export const requireRole = async (requiredRole: Role) => {
 
   if (!user) {
     throw redirect({
-      to: "/login",
+      to: '/login',
       search: {
-        redirect: window.location.pathname,
-      },
+        redirect: window.location.pathname
+      }
     })
   }
 
   // Check if user has the required role
   // Admin can access all pages, so skip check if user is admin
-  if (user.role === "admin") {
+  if (user.role === 'admin') {
     return // Admin has access to everything
   }
 
   if (user.role !== requiredRole) {
     // Redirect non-admin users to their appropriate page
-    throw redirect({ to: "/projects" })
+    throw redirect({ to: '/projects' })
   }
 }
 
@@ -101,10 +101,11 @@ export const requireNoAuth = async () => {
     const user = store.user
 
     // Redirect based on user role
-    if (user?.role === "admin") {
-      throw redirect({ to: "/admin" })
+    if (user?.role === 'admin') {
+      throw redirect({ to: '/admin' })
+    } else {
+      throw redirect({ to: '/projects' })
     }
-    throw redirect({ to: "/projects" })
   }
 }
 
@@ -113,12 +114,12 @@ export const requireNoAuth = async () => {
  */
 export const getRedirectPathByRole = (role: Role | undefined): string => {
   switch (role) {
-    case "admin":
-      return "/admin"
-    case "user":
-      return "/projects"
+    case 'admin':
+      return '/admin'
+    case 'user':
+      return '/projects'
     default:
-      return "/login"
+      return '/login'
   }
 }
 
@@ -127,7 +128,7 @@ export const getRedirectPathByRole = (role: Role | undefined): string => {
  */
 export const isAdmin = (): boolean => {
   const store = useAppStore.getState()
-  return store.user?.role === "admin"
+  return store.user?.role === 'admin'
 }
 
 /**
@@ -135,5 +136,5 @@ export const isAdmin = (): boolean => {
  */
 export const isUser = (): boolean => {
   const store = useAppStore.getState()
-  return store.user?.role === "user"
+  return store.user?.role === 'user'
 }

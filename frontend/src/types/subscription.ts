@@ -2,7 +2,7 @@ import type { Plan } from "./plan"
 
 export interface Subscription {
   id: string
-  status: "active" | "expired" | "canceled" | "pending"
+  status: 'active' | 'expired' | 'canceled' | 'pending'
   plan: Plan
   start_at: string
   end_at: string

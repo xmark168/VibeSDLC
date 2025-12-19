@@ -399,15 +399,12 @@ export interface SystemTokenSummary {
   total_llm_calls: number
   total_agents: number
   total_pools: number
-  by_role_type: Record<
-    string,
-    {
-      total_tokens: number
-      tokens_today: number
-      llm_calls: number
-      agent_count: number
-    }
-  >
+  by_role_type: Record<string, {
+    total_tokens: number
+    tokens_today: number
+    llm_calls: number
+    agent_count: number
+  }>
   by_pool: PoolTokenStats[]
   estimated_cost_usd: number
 }

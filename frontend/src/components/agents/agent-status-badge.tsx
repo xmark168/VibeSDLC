@@ -1,14 +1,7 @@
-import {
-  AlertCircle,
-  CheckCircle2,
-  Circle,
-  Loader2,
-  Pause,
-  XCircle,
-} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { AgentState, AgentStatus } from "@/types"
+import { Circle, Loader2, AlertCircle, CheckCircle2, Pause, XCircle } from "lucide-react"
 
 interface AgentStatusBadgeProps {
   state?: AgentState
@@ -128,11 +121,7 @@ export function AgentStatusBadge({
   size = "sm",
 }: AgentStatusBadgeProps) {
   // Use database status if provided, otherwise use runtime state
-  const config = status
-    ? dbStatusConfig[status]
-    : state
-      ? stateConfig[state]
-      : stateConfig.idle
+  const config = status ? dbStatusConfig[status] : state ? stateConfig[state] : stateConfig.idle
   const Icon = config.icon
 
   return (
@@ -141,7 +130,7 @@ export function AgentStatusBadge({
       className={cn(
         size === "sm" ? "text-xs px-2 py-0.5" : "text-sm px-3 py-1",
         "gap-1",
-        className,
+        className
       )}
     >
       {showIcon && <Icon className={cn("w-3 h-3", config.colorClass)} />}
@@ -184,18 +173,18 @@ export function AgentStatusDot({
   const colorClass = status
     ? dbColorMap[status] || "bg-gray-400"
     : state
-      ? runtimeColorMap[state] || "bg-gray-400"
-      : "bg-gray-400"
+    ? runtimeColorMap[state] || "bg-gray-400"
+    : "bg-gray-400"
 
-  const config = status
-    ? dbStatusConfig[status]
-    : state
-      ? stateConfig[state]
-      : stateConfig.idle
+  const config = status ? dbStatusConfig[status] : state ? stateConfig[state] : stateConfig.idle
 
   return (
     <span
-      className={cn("inline-block w-2 h-2 rounded-full", colorClass, className)}
+      className={cn(
+        "inline-block w-2 h-2 rounded-full",
+        colorClass,
+        className
+      )}
       title={config?.label || status || state}
     />
   )

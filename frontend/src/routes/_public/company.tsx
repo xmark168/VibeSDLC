@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router"
-import { Github, Linkedin, Mail, MapPin, Phone, Twitter } from "lucide-react"
+import { createFileRoute } from '@tanstack/react-router'
+import { Mail, MapPin, Phone, Linkedin, Twitter, Github } from 'lucide-react'
 
-export const Route = createFileRoute("/_public/company")({
+export const Route = createFileRoute('/_public/company')({
   component: Company,
 })
 
@@ -30,10 +30,8 @@ function Company() {
                   <div>
                     <p className="font-medium mb-1">Address</p>
                     <p className="text-muted-foreground">
-                      FPT University
-                      <br />
-                      Hoa Lac, Ha Noi City
-                      <br />
+                      FPT University<br />
+                      Hoa Lac, Ha Noi City<br />
                       Vietnam
                     </p>
                   </div>
@@ -43,10 +41,7 @@ function Company() {
                   <Mail className="w-5 h-5 text-primary mt-1 flex-shrink-0" />
                   <div>
                     <p className="font-medium mb-1">Email</p>
-                    <a
-                      href="mailto:vibesdlc@gmail.com"
-                      className="text-primary hover:underline"
-                    >
+                    <a href="mailto:vibesdlc@gmail.com" className="text-primary hover:underline">
                       vibesdlc@gmail.com
                     </a>
                   </div>
@@ -56,10 +51,7 @@ function Company() {
                   <Phone className="w-5 h-5 text-primary mt-1 flex-shrink-0" />
                   <div>
                     <p className="font-medium mb-1">Phone</p>
-                    <a
-                      href="tel:+84911524396"
-                      className="text-primary hover:underline"
-                    >
+                    <a href="tel:+84911524396" className="text-primary hover:underline">
                       +84 911 524 396
                     </a>
                   </div>
@@ -104,16 +96,12 @@ function Company() {
             <h2 className="text-2xl font-semibold mb-6">Company Details</h2>
             <div className="space-y-4">
               <div>
-                <p className="font-medium text-muted-foreground mb-1">
-                  Legal Name
-                </p>
+                <p className="font-medium text-muted-foreground mb-1">Legal Name</p>
                 <p className="text-lg">VibeSDLC Technology Co., Ltd.</p>
               </div>
 
               <div>
-                <p className="font-medium text-muted-foreground mb-1">
-                  Business Registration
-                </p>
+                <p className="font-medium text-muted-foreground mb-1">Business Registration</p>
                 <p className="text-lg">0123456789</p>
               </div>
 
@@ -123,16 +111,12 @@ function Company() {
               </div>
 
               <div>
-                <p className="font-medium text-muted-foreground mb-1">
-                  Founded
-                </p>
+                <p className="font-medium text-muted-foreground mb-1">Founded</p>
                 <p className="text-lg">2025</p>
               </div>
 
               <div>
-                <p className="font-medium text-muted-foreground mb-1">
-                  Industry
-                </p>
+                <p className="font-medium text-muted-foreground mb-1">Industry</p>
                 <p className="text-lg">Software Development & AI Technology</p>
               </div>
             </div>
@@ -152,9 +136,7 @@ function Company() {
               <span className="font-medium">9:00 AM - 12:00 PM</span>
             </div>
             <div className="flex justify-between md:col-span-2">
-              <span className="text-muted-foreground">
-                Sunday & Public Holidays
-              </span>
+              <span className="text-muted-foreground">Sunday & Public Holidays</span>
               <span className="font-medium">Closed</span>
             </div>
           </div>

@@ -1,42 +1,32 @@
-import { useQueryClient } from "@tanstack/react-query"
-import {
-  Activity,
-  AlertCircle,
-  CheckCircle2,
-  ChevronsRight,
-  Code2,
-  Download,
-  FileText,
-  Globe,
-  Info,
-  LayoutGrid,
-  Loader2,
-  ScrollText,
-  Search,
-  XCircle,
-} from "lucide-react"
+
 import type React from "react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { filesApi } from "@/apis/files"
-import type { AgentPublic } from "@/client/types.gen"
+import { Rive, RiveFile } from '@rive-app/react-webgl2';
+import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { useProjectAgents } from "@/queries/agents"
-import { AgentPopup } from "../agents/agent-popup"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { History, Globe, Code2, LayoutGrid, Pencil, ScrollText, PanelLeftOpen, PanelRightOpen, MessageCircle, Loader2, ChevronsRight, Download, FileText, Search, Filter, CheckCircle2, AlertCircle, Info, XCircle, Activity } from "lucide-react"
+import { KanbanBoard } from "./kanban-board"
+import { FileExplorer } from "../shared/file-explorer"
 import { CodeViewer } from "../shared/code-viewer"
 import { DiffViewer } from "../shared/diff-viewer"
-import { FileExplorer } from "../shared/file-explorer"
 import { AnimatedTooltip } from "../ui/animated-tooltip"
 import { AppViewer } from "./app-viewer"
-import { KanbanBoard } from "./kanban-board"
-
+import { AgentPopup } from "../agents/agent-popup"
+import { useProjectAgents } from "@/queries/agents"
+import { useQueryClient } from "@tanstack/react-query"
+import type { AgentPublic } from "@/client/types.gen"
+import { filesApi } from "@/apis/files"
+import {
+  useRive,
+  Layout,
+  Fit,
+  Alignment,
+  useViewModel,
+  useViewModelInstance,
+  useViewModelInstanceNumber,
+  useViewModelInstanceTrigger,
+} from "@rive-app/react-webgl2";
 type WorkspaceView = "app-preview" | "kanban" | "file" | "loggings"
 interface Tab {
   id: string
@@ -59,14 +49,10 @@ interface WorkspacePanelProps {
 
 // Default avatars by role type
 const DEFAULT_AVATARS: Record<string, string> = {
-  team_leader:
-    "https://api.dicebear.com/7.x/avataaars/svg?seed=TeamLeader&backgroundColor=6366f1",
-  business_analyst:
-    "https://api.dicebear.com/7.x/avataaars/svg?seed=BusinessAnalyst&backgroundColor=3b82f6",
-  developer:
-    "https://api.dicebear.com/7.x/avataaars/svg?seed=Developer&backgroundColor=22c55e",
-  tester:
-    "https://api.dicebear.com/7.x/avataaars/svg?seed=Tester&backgroundColor=f59e0b",
+  team_leader: "https://api.dicebear.com/7.x/avataaars/svg?seed=TeamLeader&backgroundColor=6366f1",
+  business_analyst: "https://api.dicebear.com/7.x/avataaars/svg?seed=BusinessAnalyst&backgroundColor=3b82f6",
+  developer: "https://api.dicebear.com/7.x/avataaars/svg?seed=Developer&backgroundColor=22c55e",
+  tester: "https://api.dicebear.com/7.x/avataaars/svg?seed=Tester&backgroundColor=f59e0b",
 }
 
 // Generate avatar URL from agent human_name using DiceBear API
@@ -90,19 +76,8 @@ const getRoleDesignation = (roleType: string): string => {
   return roleMap[roleType] || roleType
 }
 
-export function WorkspacePanel({
-  chatCollapsed,
-  onExpandChat,
-  kanbanData,
-  projectId,
-  activeTab: wsActiveTab,
-  agentStatuses,
-  selectedArtifactId,
-  onResize,
-  initialSelectedFile,
-  onMessageAgent,
-}: WorkspacePanelProps) {
-  const _queryClient = useQueryClient()
+export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projectId, activeTab: wsActiveTab, agentStatuses, selectedArtifactId, onResize, initialSelectedFile, onMessageAgent }: WorkspacePanelProps) {
+  const queryClient = useQueryClient()
 
   // Resize handle state - use refs to avoid re-renders during drag
   const isDraggingRef = useRef(false)
@@ -180,32 +155,29 @@ export function WorkspacePanel({
     document.body.style.cursor = "col-resize"
   }, [])
 
-  const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(
-    projectId || "",
-    {
-      enabled: !!projectId,
-    },
-  )
+
+
+  const { data: projectAgents, isLoading: agentsLoading } = useProjectAgents(projectId || "", {
+    enabled: !!projectId,
+  })
 
   const [selectedAgent, setSelectedAgent] = useState<AgentPublic | null>(null)
   const [agentDetailOpen, setAgentDetailOpen] = useState(false)
 
   const agentItems = useMemo(() => {
-    const agentsList: AgentPublic[] = Array.isArray(projectAgents)
-      ? projectAgents
-      : projectAgents?.data || []
+    const agentsList: AgentPublic[] = Array.isArray(projectAgents) 
+      ? projectAgents 
+      : (projectAgents?.data || [])
 
     if (!agentsList.length) {
-      return []
+       return []
     }
 
     const items = agentsList.map((agent: AgentPublic) => {
       const wsStatus = agentStatuses?.get(agent.human_name)
-      const displayStatus = wsStatus?.status || agent.status || "idle"
+      const displayStatus = wsStatus?.status || agent.status || 'idle'
 
-      const avatarUrl =
-        agent.persona_avatar ||
-        generateAvatarUrl(agent.human_name, agent.role_type)
+      const avatarUrl = agent.persona_avatar || generateAvatarUrl(agent.human_name, agent.role_type)
 
       return {
         id: agent.id,
@@ -222,9 +194,9 @@ export function WorkspacePanel({
     })
 
     return items
-  }, [projectAgents, agentStatuses]) // Include agentStatuses in dependencies
+  }, [projectAgents, agentsLoading, agentStatuses]) // Include agentStatuses in dependencies
 
-  const [tabs, _setTabs] = useState<Tab[]>([
+  const [tabs, setTabs] = useState<Tab[]>([
     { id: "tab-1", view: "app-preview", label: "App Preview" },
     { id: "tab-2", view: "kanban", label: "Kanban" },
     { id: "tab-3", view: "file", label: "File" },
@@ -236,10 +208,10 @@ export function WorkspacePanel({
   useEffect(() => {
     if (wsActiveTab) {
       const tabMap: Record<string, string> = {
-        kanban: "tab-2",
-        "app-preview": "tab-1",
-        file: "tab-3",
-        loggings: "tab-4",
+        'kanban': 'tab-2',
+        'app-preview': 'tab-1',
+        'file': 'tab-3',
+        'loggings': 'tab-4',
       }
       const targetTabId = tabMap[wsActiveTab]
       if (targetTabId) {
@@ -251,9 +223,7 @@ export function WorkspacePanel({
   const [isEditingName, setIsEditingName] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
-  const [selectedWorktree, setSelectedWorktree] = useState<string | undefined>(
-    undefined,
-  )
+  const [selectedWorktree, setSelectedWorktree] = useState<string | undefined>(undefined)
 
   // Logging state
   const [logSearchQuery, setLogSearchQuery] = useState("")
@@ -270,11 +240,11 @@ export function WorkspacePanel({
     const fetchLogs = async () => {
       setIsLoadingLogs(true)
       try {
-        const { projectsApi } = await import("@/apis/projects")
+        const { projectsApi } = await import('@/apis/projects')
         const result = await projectsApi.getLogs(projectId, { limit: 200 })
         setProjectLogs(result.logs)
       } catch (err) {
-        console.error("Failed to fetch logs:", err)
+        console.error('Failed to fetch logs:', err)
       } finally {
         setIsLoadingLogs(false)
       }
@@ -299,7 +269,7 @@ export function WorkspacePanel({
   // Artifact state
   const [selectedArtifact, setSelectedArtifact] = useState<any | null>(null)
   const [isLoadingArtifact, setIsLoadingArtifact] = useState(false)
-
+  
   // Diff viewer state
   const [diffFilePath, setDiffFilePath] = useState<string | null>(null)
 
@@ -310,7 +280,7 @@ export function WorkspacePanel({
     } else {
       setSelectedArtifact(null)
     }
-  }, [selectedArtifactId, projectId, fetchArtifact])
+  }, [selectedArtifactId, projectId])
 
   const fetchArtifact = async (artifactId: string) => {
     if (!projectId) return
@@ -318,10 +288,10 @@ export function WorkspacePanel({
     setIsLoadingArtifact(true)
 
     try {
-      const { artifactsApi } = await import("@/apis/artifacts")
+      const { artifactsApi } = await import('@/apis/artifacts')
       const artifact = await artifactsApi.getArtifact(artifactId)
       setSelectedArtifact(artifact)
-    } catch (_err: any) {
+    } catch (err: any) {
       setSelectedArtifact(null)
     } finally {
       setIsLoadingArtifact(false)
@@ -337,7 +307,7 @@ export function WorkspacePanel({
       setFileError(null)
       setIsFileBinary(false)
     }
-  }, [selectedFile, projectId, selectedWorktree, fetchFileContent])
+  }, [selectedFile, projectId, selectedWorktree])
 
   const fetchFileContent = async (path: string, worktree?: string) => {
     if (!projectId) return
@@ -357,43 +327,43 @@ export function WorkspacePanel({
       setIsLoadingFile(false)
     }
   }
-
+  
   // Download file from uploads folder
   const handleDownloadFile = async () => {
     if (!projectId || !selectedFile) return
-
+    
     try {
       // Get token for auth
       const token = localStorage.getItem("access_token")
-      const baseUrl = import.meta.env.VITE_API_URL || ""
-
+      const baseUrl = import.meta.env.VITE_API_URL || ''
+      
       // Fetch file as blob
       const response = await fetch(
         `${baseUrl}/api/v1/projects/${projectId}/files/download?path=${encodeURIComponent(selectedFile)}`,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
+            'Authorization': `Bearer ${token}`,
           },
-        },
+        }
       )
-
+      
       if (!response.ok) {
-        throw new Error("Download failed")
+        throw new Error('Download failed')
       }
-
+      
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
-      const link = document.createElement("a")
+      const link = document.createElement('a')
       link.href = url
       // Get filename from path
-      const filename = selectedFile.split("/").pop() || "download"
+      const filename = selectedFile.split('/').pop() || 'download'
       link.download = filename
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
-    } catch (_err) {
-      alert("Failed to download file. Please try again.")
+    } catch (err) {
+      alert('Failed to download file. Please try again.')
     }
   }
 
@@ -411,7 +381,7 @@ export function WorkspacePanel({
     }
   }
 
-  const _handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       handleSaveName()
     } else if (e.key === "Escape") {
@@ -440,7 +410,9 @@ export function WorkspacePanel({
   const renderView = () => {
     switch (activeView) {
       case "app-preview":
-        return <AppViewer projectId={projectId} />
+        return (
+          <AppViewer projectId={projectId} />
+        )
       case "kanban":
         // KanbanBoard is rendered separately to keep it always mounted
         return null
@@ -482,7 +454,7 @@ export function WorkspacePanel({
                   </div>
                 ) : (
                   (() => {
-                    const { ArtifactViewer } = require("./ArtifactViewer")
+                    const { ArtifactViewer } = require('./ArtifactViewer')
                     return (
                       <ArtifactViewer
                         artifact={selectedArtifact}
@@ -507,12 +479,8 @@ export function WorkspacePanel({
                       <FileText className="w-8 h-8" />
                     </div>
                     <div className="text-center">
-                      <p className="font-medium text-foreground">
-                        {selectedFile.split("/").pop()}
-                      </p>
-                      <p className="text-sm mt-1">
-                        Binary file - cannot preview
-                      </p>
+                      <p className="font-medium text-foreground">{selectedFile.split('/').pop()}</p>
+                      <p className="text-sm mt-1">Binary file - cannot preview</p>
                     </div>
                     <Button onClick={handleDownloadFile} className="gap-2">
                       <Download className="w-4 h-4" />
@@ -524,15 +492,13 @@ export function WorkspacePanel({
                 )
               ) : (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
-                  {selectedArtifactId
-                    ? "Loading artifact..."
-                    : "Select a file or artifact to view"}
+                  {selectedArtifactId ? 'Loading artifact...' : 'Select a file or artifact to view'}
                 </div>
               )}
             </div>
           </div>
         )
-      case "loggings": {
+      case "loggings":
         const getLogIcon = (type: string) => {
           switch (type) {
             case "success":
@@ -559,20 +525,15 @@ export function WorkspacePanel({
           }
         }
 
-        const filteredLogs = projectLogs.filter((log) => {
-          const matchesSearch =
-            log.message?.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
+        const filteredLogs = projectLogs.filter(log => {
+          const matchesSearch = log.message?.toLowerCase().includes(logSearchQuery.toLowerCase()) ||
             log.action?.toLowerCase().includes(logSearchQuery.toLowerCase())
-          const matchesAgent =
-            selectedLogAgent === "all" || log.agent === selectedLogAgent
-          const matchesType =
-            selectedLogType === "all" || log.type === selectedLogType
+          const matchesAgent = selectedLogAgent === "all" || log.agent === selectedLogAgent
+          const matchesType = selectedLogType === "all" || log.type === selectedLogType
           return matchesSearch && matchesAgent && matchesType
         })
 
-        const uniqueAgents = Array.from(
-          new Set(projectLogs.map((log) => log.agent)),
-        )
+        const uniqueAgents = Array.from(new Set(projectLogs.map(log => log.agent)))
 
         return (
           <div className="flex flex-col h-full bg-gray-50 dark:bg-background">
@@ -580,12 +541,9 @@ export function WorkspacePanel({
             <div className="flex-shrink-0 p-4 border-b border-border space-y-3 bg-white dark:bg-background">
               <div className="flex items-center gap-2">
                 <Activity className="w-5 h-5 text-indigo-400 dark:text-primary" />
-                <h2 className="text-lg font-semibold text-gray-700 dark:text-foreground">
-                  Agent Activity Logs
-                </h2>
+                <h2 className="text-lg font-semibold text-gray-700 dark:text-foreground">Agent Activity Logs</h2>
                 <span className="ml-auto text-xs text-gray-400 dark:text-muted-foreground font-medium">
-                  {filteredLogs.length}{" "}
-                  {filteredLogs.length === 1 ? "entry" : "entries"}
+                  {filteredLogs.length} {filteredLogs.length === 1 ? 'entry' : 'entries'}
                 </span>
               </div>
 
@@ -601,27 +559,19 @@ export function WorkspacePanel({
                   />
                 </div>
 
-                <Select
-                  value={selectedLogAgent}
-                  onValueChange={setSelectedLogAgent}
-                >
+                <Select value={selectedLogAgent} onValueChange={setSelectedLogAgent}>
                   <SelectTrigger className="w-[150px]" size="sm">
                     <SelectValue placeholder="All Agents" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Agents</SelectItem>
-                    {uniqueAgents.map((agent) => (
-                      <SelectItem key={agent} value={agent}>
-                        {agent}
-                      </SelectItem>
+                    {uniqueAgents.map(agent => (
+                      <SelectItem key={agent} value={agent}>{agent}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
 
-                <Select
-                  value={selectedLogType}
-                  onValueChange={setSelectedLogType}
-                >
+                <Select value={selectedLogType} onValueChange={setSelectedLogType}>
                   <SelectTrigger className="w-[130px]" size="sm">
                     <SelectValue placeholder="All Types" />
                   </SelectTrigger>
@@ -646,10 +596,7 @@ export function WorkspacePanel({
             </div>
 
             {/* Logs list */}
-            <div
-              ref={logsContainerRef}
-              className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-background"
-            >
+            <div ref={logsContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-background">
               {isLoadingLogs && projectLogs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-muted-foreground">
                   <Loader2 className="w-8 h-8 animate-spin mb-3" />
@@ -660,9 +607,7 @@ export function WorkspacePanel({
                   <Activity className="w-12 h-12 mb-3 opacity-40" />
                   <p className="font-medium">No logs found</p>
                   {logSearchQuery && (
-                    <p className="text-sm">
-                      Try adjusting your search or filters
-                    </p>
+                    <p className="text-sm">Try adjusting your search or filters</p>
                   )}
                 </div>
               ) : (
@@ -672,7 +617,9 @@ export function WorkspacePanel({
                     className={`p-4 rounded-lg shadow-sm hover:shadow-md transition-all ${getLogTypeColor(log.type)}`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className="mt-0.5">{getLogIcon(log.type)}</div>
+                      <div className="mt-0.5">
+                        {getLogIcon(log.type)}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-xs font-medium text-gray-400 dark:text-muted-foreground">
@@ -701,11 +648,11 @@ export function WorkspacePanel({
             </div>
           </div>
         )
-      }
       default:
         return null
     }
   }
+
 
   return (
     <div className="flex flex-col h-full bg-background relative">
@@ -735,11 +682,10 @@ export function WorkspacePanel({
             <button
               key={tab.id}
               onClick={() => setActiveTabId(tab.id)}
-              className={`rounded-md group flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors ${
-                activeTabId === tab.id
-                  ? "bg-muted text-foreground"
-                  : "bg-transparent text-muted-foreground hover:bg-muted/50"
-              }`}
+              className={`rounded-md group flex items-center gap-2 px-3 py-1.5 text-sm font-medium transition-colors ${activeTabId === tab.id
+                ? "bg-muted text-foreground"
+                : "bg-transparent text-muted-foreground hover:bg-muted/50"
+                }`}
             >
               {getViewIcon(tab.view)}
               <span className="max-w-[120px] truncate">{tab.label}</span>
@@ -747,21 +693,19 @@ export function WorkspacePanel({
           ))}
         </div>
         <div className="flex gap-6 items-center">
+
           <div>
             {agentItems.length > 0 ? (
               <AnimatedTooltip items={agentItems} />
             ) : agentsLoading ? (
-              <span className="text-xs text-muted-foreground">
-                Loading agents...
-              </span>
+              <span className="text-xs text-muted-foreground">Loading agents...</span>
             ) : null}
+
           </div>
           <div>
-            <div></div>
-            <Button
-              size="sm"
-              className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]"
-            >
+            <div>
+            </div>
+            <Button  size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
               Publish
             </Button>
           </div>
@@ -772,13 +716,13 @@ export function WorkspacePanel({
           {/* Keep KanbanBoard always mounted for real-time updates */}
           <div className={activeView === "kanban" ? "h-full" : "hidden"}>
             <div className="flex-1 overflow-hidden h-full">
-              <KanbanBoard
-                kanbanData={kanbanData}
+              <KanbanBoard 
+                kanbanData={kanbanData} 
                 projectId={projectId}
                 onViewFiles={(worktreePath) => {
                   setSelectedWorktree(worktreePath)
                   // Find the file tab and switch to it
-                  const fileTab = tabs.find((t) => t.view === "file")
+                  const fileTab = tabs.find(t => t.view === "file")
                   if (fileTab) setActiveTabId(fileTab.id)
                 }}
               />

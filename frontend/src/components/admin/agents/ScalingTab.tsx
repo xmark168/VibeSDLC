@@ -1,17 +1,18 @@
+import { useState } from "react"
 import {
-  Activity,
-  Clock,
-  Loader2,
-  MoreVertical,
-  Pause,
-  Play,
   Plus,
   Trash2,
+  Play,
+  Pause,
+  Clock,
+  Activity,
   Zap,
+  MoreVertical,
+  Loader2,
+  Settings,
 } from "lucide-react"
-import { useState } from "react"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import {
   Card,
   CardContent,
@@ -20,13 +21,13 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +35,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -44,36 +53,21 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import {
+  useScalingRules,
   useCreateScalingRule,
   useDeleteScalingRule,
-  useScalingRules,
   useToggleScalingRule,
   useTriggerScalingRule,
 } from "@/queries/agents"
-import type {
-  AutoScalingRule,
-  AutoScalingRuleCreate,
-  PoolResponse,
-} from "@/types"
+import type { AutoScalingRule, AutoScalingRuleCreate, PoolResponse } from "@/types"
 
 interface ScalingTabProps {
   pools: PoolResponse[]
 }
 
-const triggerTypeLabels: Record<
-  string,
-  { label: string; icon: React.ReactNode }
-> = {
+const triggerTypeLabels: Record<string, { label: string; icon: React.ReactNode }> = {
   schedule: { label: "Schedule", icon: <Clock className="w-4 h-4" /> },
   load: { label: "Load-based", icon: <Activity className="w-4 h-4" /> },
   queue_depth: { label: "Queue Depth", icon: <Zap className="w-4 h-4" /> },
@@ -225,9 +219,7 @@ export function ScalingTab({ pools }: ScalingTabProps) {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {triggerTypeLabels[rule.trigger_type]?.icon}
-                        <span>
-                          {triggerTypeLabels[rule.trigger_type]?.label}
-                        </span>
+                        <span>{triggerTypeLabels[rule.trigger_type]?.label}</span>
                         {rule.cron_expression && (
                           <Badge variant="outline" className="ml-1">
                             {rule.cron_expression}
@@ -236,11 +228,7 @@ export function ScalingTab({ pools }: ScalingTabProps) {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant={
-                          rule.action === "scale_up" ? "default" : "secondary"
-                        }
-                      >
+                      <Badge variant={rule.action === "scale_up" ? "default" : "secondary"}>
                         {actionLabels[rule.action]}
                         {rule.action === "set_count" && rule.target_count
                           ? ` → ${rule.target_count}`
@@ -314,9 +302,7 @@ export function ScalingTab({ pools }: ScalingTabProps) {
               <Label>Rule Name</Label>
               <Input
                 value={formData.name || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="e.g., Scale up during business hours"
               />
             </div>
@@ -325,9 +311,7 @@ export function ScalingTab({ pools }: ScalingTabProps) {
               <Label>Pool</Label>
               <Select
                 value={formData.pool_name}
-                onValueChange={(v) =>
-                  setFormData({ ...formData, pool_name: v })
-                }
+                onValueChange={(v) => setFormData({ ...formData, pool_name: v })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -346,9 +330,7 @@ export function ScalingTab({ pools }: ScalingTabProps) {
               <Label>Trigger Type</Label>
               <Select
                 value={formData.trigger_type}
-                onValueChange={(v: any) =>
-                  setFormData({ ...formData, trigger_type: v })
-                }
+                onValueChange={(v: any) => setFormData({ ...formData, trigger_type: v })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -366,31 +348,20 @@ export function ScalingTab({ pools }: ScalingTabProps) {
                 <Label>Cron Expression</Label>
                 <Input
                   value={formData.cron_expression || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      cron_expression: e.target.value,
-                    })
-                  }
+                  onChange={(e) => setFormData({ ...formData, cron_expression: e.target.value })}
                   placeholder="0 9 * * 1-5 (9 AM weekdays)"
                 />
               </div>
             )}
 
-            {(formData.trigger_type === "load" ||
-              formData.trigger_type === "queue_depth") && (
+            {(formData.trigger_type === "load" || formData.trigger_type === "queue_depth") && (
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>High Threshold</Label>
                   <Input
                     type="number"
                     value={formData.threshold_high || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        threshold_high: parseFloat(e.target.value),
-                      })
-                    }
+                    onChange={(e) => setFormData({ ...formData, threshold_high: parseFloat(e.target.value) })}
                     placeholder="80"
                   />
                 </div>
@@ -399,12 +370,7 @@ export function ScalingTab({ pools }: ScalingTabProps) {
                   <Input
                     type="number"
                     value={formData.threshold_low || ""}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        threshold_low: parseFloat(e.target.value),
-                      })
-                    }
+                    onChange={(e) => setFormData({ ...formData, threshold_low: parseFloat(e.target.value) })}
                     placeholder="20"
                   />
                 </div>
@@ -415,9 +381,7 @@ export function ScalingTab({ pools }: ScalingTabProps) {
               <Label>Action</Label>
               <Select
                 value={formData.action}
-                onValueChange={(v: any) =>
-                  setFormData({ ...formData, action: v })
-                }
+                onValueChange={(v: any) => setFormData({ ...formData, action: v })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -436,12 +400,7 @@ export function ScalingTab({ pools }: ScalingTabProps) {
                 <Input
                   type="number"
                   value={formData.target_count || ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      target_count: parseInt(e.target.value, 10),
-                    })
-                  }
+                  onChange={(e) => setFormData({ ...formData, target_count: parseInt(e.target.value) })}
                   placeholder="5"
                 />
               </div>
@@ -451,12 +410,7 @@ export function ScalingTab({ pools }: ScalingTabProps) {
                 <Input
                   type="number"
                   value={formData.scale_amount || 1}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      scale_amount: parseInt(e.target.value, 10),
-                    })
-                  }
+                  onChange={(e) => setFormData({ ...formData, scale_amount: parseInt(e.target.value) })}
                 />
               </div>
             )}
@@ -467,12 +421,7 @@ export function ScalingTab({ pools }: ScalingTabProps) {
                 <Input
                   type="number"
                   value={formData.min_agents || 1}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      min_agents: parseInt(e.target.value, 10),
-                    })
-                  }
+                  onChange={(e) => setFormData({ ...formData, min_agents: parseInt(e.target.value) })}
                 />
               </div>
               <div className="space-y-2">
@@ -480,28 +429,18 @@ export function ScalingTab({ pools }: ScalingTabProps) {
                 <Input
                   type="number"
                   value={formData.max_agents || 10}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      max_agents: parseInt(e.target.value, 10),
-                    })
-                  }
+                  onChange={(e) => setFormData({ ...formData, max_agents: parseInt(e.target.value) })}
                 />
               </div>
             </div>
           </div>
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setCreateDialogOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={createRule.isPending}>
-              {createRule.isPending && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              )}
+              {createRule.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Create
             </Button>
           </DialogFooter>

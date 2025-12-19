@@ -1,114 +1,126 @@
 // Central export for all types
 
+// Message types
+export type { 
+  Message, 
+  MessageStatus, 
+  MessagesPage
+} from './message'
+
+export { AuthorType } from './message'
+
+// Project types
+export type { 
+  Project, 
+  ProjectsPage 
+} from './project'
+
+// Theme types
+export type { ThemeVars } from './theme'
+
 // Agent types
 export type {
-  AgentExecutionRecord,
-  AgentHealth,
-  AgentPoolDB,
-  AgentPoolMetrics,
   AgentState,
   AgentStatus,
+  PoolResponse,
+  AgentHealth,
+  SystemStats,
+  DashboardData,
+  Alert,
+  AgentExecutionRecord,
+  ExecutionFilters,
+  SpawnAgentRequest,
+  SpawnAgentResponse,
+  CreatePoolRequest,
+  ExecuteAgentRequest,
+  ExecuteAgentResponse,
+  ExecuteAgentSyncResponse,
+  PoolType,
+  AgentPoolDB,
+  AgentPoolMetrics,
+  PoolResponseExtended,
+  CreatePoolRequestExtended,
+  UpdatePoolConfigRequest,
+  ScalePoolRequest,
+  PoolSuggestion,
+  SystemStatus,
+  SystemStatusResponse,
+  EmergencyActionResponse,
+  BulkOperationResponse,
+  ScalingTriggerType,
+  ScalingAction,
+  AutoScalingRule,
+  AutoScalingRuleCreate,
   AgentTemplate,
   AgentTemplateCreate,
   AgentTemplateFromAgent,
   AgentTokenStats,
-  Alert,
-  AutoScalingRule,
-  AutoScalingRuleCreate,
-  BulkOperationResponse,
-  CreatePoolRequest,
-  CreatePoolRequestExtended,
-  DashboardData,
-  EmergencyActionResponse,
-  ExecuteAgentRequest,
-  ExecuteAgentResponse,
-  ExecuteAgentSyncResponse,
-  ExecutionFilters,
-  PoolResponse,
-  PoolResponseExtended,
-  PoolSuggestion,
   PoolTokenStats,
-  PoolType,
-  ScalePoolRequest,
-  ScalingAction,
-  ScalingTriggerType,
-  SpawnAgentRequest,
-  SpawnAgentResponse,
-  SystemStats,
-  SystemStatus,
-  SystemStatusResponse,
-  SystemTokenSummary,
-  UpdatePoolConfigRequest,
-} from "./agent"
-// API types
-export type {
-  CreateMessageBody,
-  CreateProjectBody,
-  FetchMessagesParams,
-  FetchProjectsParams,
-  TimeRange,
-  UpdateMessageBody,
-  UpdateProjectBody,
-} from "./api"
+  SystemTokenSummary
+} from './agent'
+
 // Backlog types
 export type {
   BacklogItem,
-  FetchBacklogItemsParams,
   KanbanBoard,
-  UpdateWIPLimitParams,
+  FetchBacklogItemsParams,
   WIPLimit,
-} from "./backlog"
-// Common types
-export type {
-  Theme,
-  ThemeProviderProps,
-  ThemeProviderState,
-  ToastMessages,
-} from "./common"
-// File types
-export type {
-  FileContentResponse,
-  FileNode,
-  FileTreeResponse,
-  GitStatusResponse,
-} from "./file"
-// Message types
-export type {
-  Message,
-  MessageStatus,
-  MessagesPage,
-} from "./message"
-export { AuthorType } from "./message"
-// Persona types
-export type {
-  PersonaCreate,
-  PersonaTemplate,
-  PersonaUpdate,
-  PersonaWithUsageStats,
-  RoleType,
-} from "./persona"
-export { roleTypeColors, roleTypeLabels } from "./persona"
-// Project types
-export type {
-  Project,
-  ProjectsPage,
-} from "./project"
+  UpdateWIPLimitParams,
+} from './backlog'
+
 // Story types
 export type {
-  CreateStoryResponse,
   Story,
   StoryFormData,
-  StoryStatus,
-  StoryType,
+  CreateStoryResponse,
   UpdateStoryParams,
-} from "./story"
-// Theme types
-export type { ThemeVars } from "./theme"
+  StoryStatus,
+  StoryType
+} from './story'
+
+// File types
+export type {
+  FileNode,
+  FileTreeResponse,
+  FileContentResponse,
+  GitStatusResponse
+} from './file'
+
+// API types
+export type {
+  FetchMessagesParams,
+  CreateMessageBody,
+  UpdateMessageBody,
+  FetchProjectsParams,
+  CreateProjectBody,
+  UpdateProjectBody,
+  TimeRange
+} from './api'
+
 // WebSocket types
 export type {
-  AgentStatusType,
-  BackgroundTask,
-  ExecutionContext,
   TypingState,
+  AgentStatusType,
   UseChatWebSocketReturn,
-} from "./websocket"
+  ExecutionContext,
+  BackgroundTask
+} from './websocket'
+
+// Common types
+export type {
+  ToastMessages,
+  Theme,
+  ThemeProviderProps,
+  ThemeProviderState
+} from './common'
+
+// Persona types
+export type {
+  PersonaTemplate,
+  PersonaCreate,
+  PersonaUpdate,
+  PersonaWithUsageStats,
+  RoleType
+} from './persona'
+
+export { roleTypeLabels, roleTypeColors } from './persona'

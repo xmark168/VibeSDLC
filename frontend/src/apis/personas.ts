@@ -1,11 +1,6 @@
 import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
-import type {
-  PersonaCreate,
-  PersonaTemplate,
-  PersonaUpdate,
-  PersonaWithUsageStats,
-} from "@/types/persona"
+import type { PersonaTemplate, PersonaCreate, PersonaUpdate, PersonaWithUsageStats } from "@/types/persona"
 
 export const personasApi = {
   listPersonas: async (params?: {
@@ -21,10 +16,7 @@ export const personasApi = {
     })
   },
 
-  getPersonasByRole: async (
-    roleType: string,
-    isActive: boolean = true,
-  ): Promise<PersonaTemplate[]> => {
+  getPersonasByRole: async (roleType: string, isActive: boolean = true): Promise<PersonaTemplate[]> => {
     return __request<PersonaTemplate[]>(OpenAPI, {
       method: "GET",
       url: `/api/v1/personas/by-role/${roleType}`,
@@ -32,9 +24,7 @@ export const personasApi = {
     })
   },
 
-  listPersonasWithStats: async (
-    roleType?: string,
-  ): Promise<PersonaWithUsageStats[]> => {
+  listPersonasWithStats: async (roleType?: string): Promise<PersonaWithUsageStats[]> => {
     return __request<PersonaWithUsageStats[]>(OpenAPI, {
       method: "GET",
       url: "/api/v1/personas/with-stats",
@@ -57,10 +47,7 @@ export const personasApi = {
     })
   },
 
-  updatePersona: async (
-    personaId: string,
-    data: PersonaUpdate,
-  ): Promise<PersonaTemplate> => {
+  updatePersona: async (personaId: string, data: PersonaUpdate): Promise<PersonaTemplate> => {
     return __request<PersonaTemplate>(OpenAPI, {
       method: "PUT",
       url: `/api/v1/personas/${personaId}`,
@@ -68,10 +55,7 @@ export const personasApi = {
     })
   },
 
-  deletePersona: async (
-    personaId: string,
-    hardDelete: boolean = false,
-  ): Promise<void> => {
+  deletePersona: async (personaId: string, hardDelete: boolean = false): Promise<void> => {
     return __request<void>(OpenAPI, {
       method: "DELETE",
       url: `/api/v1/personas/${personaId}`,

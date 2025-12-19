@@ -6,7 +6,6 @@ import asyncio
 import logging
 import json
 from datetime import datetime, timezone
-from typing import Optional
 from app.websocket.connection_manager import connection_manager
 from app.core.security import decode_access_token
 from app.models import User, Message as MessageModel, Project, AuthorType, MessageVisibility
@@ -15,11 +14,6 @@ from sqlmodel import select
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
-
-# Heartbeat configuration
-PING_INTERVAL = 30  # Send ping every 30 seconds
-PONG_TIMEOUT = 10   # Wait 10 seconds for pong response
-MAX_MISSED_PONGS = 3  # Close connection after 3 missed pongs
 
 
 async def update_websocket_activity(project_id: UUID):
@@ -91,38 +85,12 @@ async def websocket_endpoint(
         # Add connection limits to prevent resource leaks
         from datetime import timedelta
         MAX_CONNECTION_DURATION = timedelta(hours=24)
+        HEARTBEAT_TIMEOUT = 120  # 2 minutes without message = dead connection
         connection_start = datetime.now()
-        
-        # Heartbeat state
-        last_pong_received = datetime.now()
-        missed_pongs = 0
-        ping_task: Optional[asyncio.Task] = None
-        should_close = False
-        
-        async def send_ping():
-            """Send periodic ping messages to keep connection alive."""
-            nonlocal missed_pongs, should_close
-            while not should_close:
-                await asyncio.sleep(PING_INTERVAL)
-                if should_close:
-                    break
-                try:
-                    await websocket.send_json({
-                        "type": "ping",
-                        "timestamp": datetime.now(timezone.utc).isoformat()
-                    })
-                    logger.debug(f"Sent ping to user {user.id}")
-                except Exception as e:
-                    logger.warning(f"Failed to send ping to user {user.id}: {e}")
-                    should_close = True
-                    break
 
         try:
-            # Start ping task
-            ping_task = asyncio.create_task(send_ping())
-            
-            # Keep connection alive and handle messages
-            while not should_close:
+            # Keep connection alive and handle ping/pong
+            while True:
                 # Check max connection duration (prevent infinite connections)
                 if datetime.now() - connection_start > MAX_CONNECTION_DURATION:
                     logger.info(f"User {user.id} connection reached 24h limit, closing")
@@ -132,32 +100,19 @@ async def websocket_endpoint(
                     })
                     break
                 
-                # Check for missed pongs (connection health)
-                time_since_pong = (datetime.now() - last_pong_received).total_seconds()
-                if time_since_pong > PING_INTERVAL * MAX_MISSED_PONGS:
-                    logger.warning(f"User {user.id} missed {MAX_MISSED_PONGS} pongs, closing connection")
-                    break
-                
-                # Receive messages with longer timeout (ping will keep connection alive)
+                # Receive messages with timeout (detect dead connections)
                 try:
                     data = await asyncio.wait_for(
                         websocket.receive_text(),
-                        timeout=PING_INTERVAL + PONG_TIMEOUT
+                        timeout=HEARTBEAT_TIMEOUT
                     )
                 except asyncio.TimeoutError:
-                    # This is expected if no user messages, ping/pong handles keepalive
-                    continue
+                    logger.warning(f"User {user.id} heartbeat timeout, closing connection")
+                    break
 
                 try:
                     message = json.loads(data)
                     message_type = message.get("type")
-                    
-                    # Handle pong response from client
-                    if message_type == "pong":
-                        last_pong_received = datetime.now()
-                        missed_pongs = 0
-                        logger.debug(f"Received pong from user {user.id}")
-                        continue
                     
                     # Update WebSocket activity timestamp
                     await update_websocket_activity(project_id)
@@ -492,15 +447,6 @@ async def websocket_endpoint(
                     await websocket.close(code=1011, reason="Internal server error")
             except:
                 pass  # Already closed or closing
-        finally:
-            # Clean up ping task
-            should_close = True
-            if ping_task and not ping_task.done():
-                ping_task.cancel()
-                try:
-                    await ping_task
-                except asyncio.CancelledError:
-                    pass
 
     except Exception as e:
         logger.error(f"WebSocket connection error: {e}")

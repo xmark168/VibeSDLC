@@ -1,16 +1,7 @@
-import {
-  AlertTriangle,
-  Check,
-  Copy,
-  Loader2,
-  Mail,
-  ShieldCheck,
-  ShieldOff,
-} from "lucide-react"
-import { useEffect, useState } from "react"
-import toast from "react-hot-toast"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Card,
   CardContent,
@@ -22,19 +13,23 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import {
+  Alert,
+  AlertDescription,
+} from "@/components/ui/alert"
 import {
   use2FAStatus,
-  useDisable2FA,
-  useRequestDisable2FA,
   useSetup2FA,
   useVerifySetup2FA,
+  useRequestDisable2FA,
+  useDisable2FA,
 } from "@/queries/two-factor"
+import { ShieldCheck, ShieldOff, Copy, Check, Loader2, AlertTriangle, Mail } from "lucide-react"
+import toast from "react-hot-toast"
 import { withToast } from "@/utils"
 
 export function TwoFactorSettings() {
@@ -45,8 +40,7 @@ export function TwoFactorSettings() {
   const disable2FA = useDisable2FA()
 
   const [setupDialogOpen, setSetupDialogOpen] = useState(false)
-  const [disableConfirmDialogOpen, setDisableConfirmDialogOpen] =
-    useState(false)
+  const [disableConfirmDialogOpen, setDisableConfirmDialogOpen] = useState(false)
   const [disableCodeDialogOpen, setDisableCodeDialogOpen] = useState(false)
   const [backupCodesDialogOpen, setBackupCodesDialogOpen] = useState(false)
   const [verifyCode, setVerifyCode] = useState("")
@@ -86,7 +80,7 @@ export function TwoFactorSettings() {
     try {
       await setup2FA.mutateAsync()
       setSetupDialogOpen(true)
-    } catch (_error) {
+    } catch (error) {
       toast.error("Failed to setup 2FA. Please try again.")
     }
   }
@@ -99,7 +93,7 @@ export function TwoFactorSettings() {
       setBackupCodesDialogOpen(true)
       setVerifyCode("")
       toast.success("Two-factor authentication enabled!")
-    } catch (_error) {
+    } catch (error) {
       toast.error("Invalid verification code. Please try again.")
     }
   }
@@ -109,14 +103,14 @@ export function TwoFactorSettings() {
   const handleRequestDisable = async () => {
     try {
       const result = await withToast(
-        requestDisable2FA.mutateAsync({
-          password: requiresPassword ? disablePassword : undefined,
+        requestDisable2FA.mutateAsync({ 
+          password: requiresPassword ? disablePassword : undefined 
         }),
         {
           loading: "Sending verification code...",
           success: "Verification code sent to your email!",
           error: "Failed to send verification code. Please try again.",
-        },
+        }
       )
       setMaskedEmail(result.masked_email)
       setCodeExpiry(result.expires_in || 180) // 3 minutes
@@ -124,9 +118,7 @@ export function TwoFactorSettings() {
       setDisableConfirmDialogOpen(false)
       setDisableCodeDialogOpen(true)
     } catch (error: any) {
-      const errorMessage =
-        error?.body?.detail ||
-        "Failed to send verification code. Check your password."
+      const errorMessage = error?.body?.detail || "Failed to send verification code. Check your password."
       toast.error(errorMessage)
     }
   }
@@ -134,22 +126,21 @@ export function TwoFactorSettings() {
   const handleResendCode = async () => {
     try {
       const result = await withToast(
-        requestDisable2FA.mutateAsync({
-          password: requiresPassword ? disablePassword : undefined,
+        requestDisable2FA.mutateAsync({ 
+          password: requiresPassword ? disablePassword : undefined 
         }),
         {
           loading: "Resending verification code...",
           success: "New verification code sent!",
           error: "Failed to resend code. Please try again.",
-        },
+        }
       )
       setMaskedEmail(result.masked_email)
       setCodeExpiry(result.expires_in || 180)
       setResendCooldown(30)
       setDisableCode("") // Clear old code
     } catch (error: any) {
-      const errorMessage =
-        error?.body?.detail || "Failed to resend verification code."
+      const errorMessage = error?.body?.detail || "Failed to resend verification code."
       toast.error(errorMessage)
     }
   }
@@ -168,8 +159,7 @@ export function TwoFactorSettings() {
       setResendCooldown(0)
       toast.success("Two-factor authentication disabled")
     } catch (error: any) {
-      const errorMessage =
-        error?.body?.detail || "Invalid or expired verification code."
+      const errorMessage = error?.body?.detail || "Invalid or expired verification code."
       toast.error(errorMessage)
     }
   }
@@ -204,8 +194,7 @@ export function TwoFactorSettings() {
             Two-Factor Authentication (2FA)
           </CardTitle>
           <CardDescription>
-            Enhance account security with authenticator apps like Google
-            Authenticator or Authy
+            Enhance account security with authenticator apps like Google Authenticator or Authy
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -257,8 +246,7 @@ export function TwoFactorSettings() {
           <DialogHeader>
             <DialogTitle>Setup Two-Factor Authentication</DialogTitle>
             <DialogDescription>
-              Scan the QR code with your authenticator app, then enter the
-              6-digit code to confirm
+              Scan the QR code with your authenticator app, then enter the 6-digit code to confirm
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -301,9 +289,7 @@ export function TwoFactorSettings() {
                 inputMode="numeric"
                 placeholder="000000"
                 value={verifyCode}
-                onChange={(e) =>
-                  setVerifyCode(e.target.value.replace(/[^0-9]/g, ""))
-                }
+                onChange={(e) => setVerifyCode(e.target.value.replace(/[^0-9]/g, ""))}
                 maxLength={6}
                 className="text-center text-lg tracking-widest"
               />
@@ -327,20 +313,17 @@ export function TwoFactorSettings() {
       </Dialog>
 
       {/* Disable Confirm Dialog - Step 1: Enter password (if required) and confirm */}
-      <Dialog
-        open={disableConfirmDialogOpen}
-        onOpenChange={(open) => {
-          setDisableConfirmDialogOpen(open)
-          if (!open) {
-            setDisablePassword("")
-          }
-        }}
-      >
+      <Dialog open={disableConfirmDialogOpen} onOpenChange={(open) => {
+        setDisableConfirmDialogOpen(open)
+        if (!open) {
+          setDisablePassword("")
+        }
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Disable Two-Factor Authentication</DialogTitle>
             <DialogDescription>
-              {requiresPassword
+              {requiresPassword 
                 ? "Are you sure you want to disable 2FA? Enter your password to confirm."
                 : "Are you sure you want to disable 2FA? A verification code will be sent to your email."}
             </DialogDescription>
@@ -349,8 +332,7 @@ export function TwoFactorSettings() {
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                Disabling 2FA will reduce your account security. A verification
-                code will be sent to your email.
+                Disabling 2FA will reduce your account security. A verification code will be sent to your email.
               </AlertDescription>
             </Alert>
             {requiresPassword && (
@@ -367,22 +349,16 @@ export function TwoFactorSettings() {
             )}
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDisableConfirmDialogOpen(false)
-                setDisablePassword("")
-              }}
-            >
+            <Button variant="outline" onClick={() => {
+              setDisableConfirmDialogOpen(false)
+              setDisablePassword("")
+            }}>
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={handleRequestDisable}
-              disabled={
-                requestDisable2FA.isPending ||
-                (requiresPassword && !disablePassword)
-              }
+              disabled={requestDisable2FA.isPending || (requiresPassword && !disablePassword)}
             >
               {requestDisable2FA.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-1" />
@@ -396,24 +372,19 @@ export function TwoFactorSettings() {
       </Dialog>
 
       {/* Disable Code Dialog - Step 2: Enter verification code from email */}
-      <Dialog
-        open={disableCodeDialogOpen}
-        onOpenChange={(open) => {
-          setDisableCodeDialogOpen(open)
-          if (!open) {
-            setDisableCode("")
-            setCodeExpiry(0)
-            setResendCooldown(0)
-          }
-        }}
-      >
+      <Dialog open={disableCodeDialogOpen} onOpenChange={(open) => {
+        setDisableCodeDialogOpen(open)
+        if (!open) {
+          setDisableCode("")
+          setCodeExpiry(0)
+          setResendCooldown(0)
+        }
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Enter Verification Code</DialogTitle>
             <DialogDescription>
-              Verification code sent to{" "}
-              <span className="font-medium">{maskedEmail}</span>. Please enter
-              the code to complete.
+              Verification code sent to <span className="font-medium">{maskedEmail}</span>. Please enter the code to complete.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -421,13 +392,7 @@ export function TwoFactorSettings() {
               <Mail className="h-4 w-4" />
               <AlertDescription>
                 {codeExpiry > 0 ? (
-                  <>
-                    Code expires in{" "}
-                    <span className="font-semibold">
-                      {formatTime(codeExpiry)}
-                    </span>
-                    . Check your inbox or spam folder.
-                  </>
+                  <>Code expires in <span className="font-semibold">{formatTime(codeExpiry)}</span>. Check your inbox or spam folder.</>
                 ) : (
                   <>Verification code expired. Please resend a new code.</>
                 )}
@@ -441,9 +406,7 @@ export function TwoFactorSettings() {
                 inputMode="numeric"
                 placeholder="000000"
                 value={disableCode}
-                onChange={(e) =>
-                  setDisableCode(e.target.value.replace(/[^0-9]/g, ""))
-                }
+                onChange={(e) => setDisableCode(e.target.value.replace(/[^0-9]/g, ""))}
                 maxLength={6}
                 className="text-center text-lg tracking-widest"
                 disabled={codeExpiry === 0}
@@ -461,32 +424,25 @@ export function TwoFactorSettings() {
                 {requestDisable2FA.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin mr-1" />
                 ) : null}
-                {resendCooldown > 0
-                  ? `Resend code in ${resendCooldown}s`
+                {resendCooldown > 0 
+                  ? `Resend code in ${resendCooldown}s` 
                   : "Resend verification code"}
               </Button>
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDisableCodeDialogOpen(false)
-                setDisableCode("")
-                setCodeExpiry(0)
-                setResendCooldown(0)
-              }}
-            >
+            <Button variant="outline" onClick={() => {
+              setDisableCodeDialogOpen(false)
+              setDisableCode("")
+              setCodeExpiry(0)
+              setResendCooldown(0)
+            }}>
               Cancel
             </Button>
             <Button
               variant="destructive"
               onClick={handleDisable}
-              disabled={
-                disable2FA.isPending ||
-                disableCode.length !== 6 ||
-                codeExpiry === 0
-              }
+              disabled={disable2FA.isPending || disableCode.length !== 6 || codeExpiry === 0}
             >
               {disable2FA.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-1" />
@@ -498,16 +454,12 @@ export function TwoFactorSettings() {
       </Dialog>
 
       {/* Backup Codes Dialog */}
-      <Dialog
-        open={backupCodesDialogOpen}
-        onOpenChange={setBackupCodesDialogOpen}
-      >
+      <Dialog open={backupCodesDialogOpen} onOpenChange={setBackupCodesDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Your Backup Codes</DialogTitle>
             <DialogDescription>
-              Save these codes in a secure place. Each code can only be used
-              once.
+              Save these codes in a secure place. Each code can only be used once.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

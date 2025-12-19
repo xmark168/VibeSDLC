@@ -1,12 +1,11 @@
-import { zodResolver } from "@hookform/resolvers/zod"
-import { ImageIcon, Loader2, Plus, Upload, X } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useForm } from "react-hook-form"
-import toast from "react-hot-toast"
+import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Loader2, Plus, X, Upload, ImageIcon } from "lucide-react"
+import type { PersonaTemplate, PersonaCreate, RoleType } from "@/types/persona"
+import { roleTypeLabels } from "@/types/persona"
+import { useCreatePersona, useUpdatePersona } from "@/queries/personas"
 import {
   Dialog,
   DialogContent,
@@ -24,7 +23,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -33,20 +31,19 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { useCreatePersona, useUpdatePersona } from "@/queries/personas"
-import type { PersonaTemplate, RoleType } from "@/types/persona"
-import { roleTypeLabels } from "@/types/persona"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import toast from "react-hot-toast"
 
 const personaFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   role_type: z.enum(["team_leader", "business_analyst", "developer", "tester"]),
   avatar: z.string().nullable().optional(),
   personality_traits: z.array(z.string()).default([]),
-  communication_style: z
-    .string()
-    .min(1, "Communication style is required")
-    .max(500),
+  communication_style: z.string().min(1, "Communication style is required").max(500),
   display_order: z.coerce.number().int().min(0).default(0),
   persona_metadata: z.record(z.string(), z.unknown()).optional(),
 })
@@ -58,16 +55,8 @@ const jsonPersonaSchema = z.object({
   role_type: z.enum(["team_leader", "business_analyst", "developer", "tester"]),
   avatar: z.string().nullable().optional(),
   personality_traits: z.array(z.string()).optional().default([]),
-  communication_style: z
-    .string()
-    .min(1, "Communication style is required")
-    .max(500),
-  display_order: z
-    .number()
-    .int()
-    .min(0, "Display order must be non-negative")
-    .optional()
-    .default(0),
+  communication_style: z.string().min(1, "Communication style is required").max(500),
+  display_order: z.number().int().min(0, "Display order must be non-negative").optional().default(0),
   persona_metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
@@ -162,19 +151,14 @@ function AvatarUpload({
   )
 }
 
-export function PersonaDialog({
-  open,
-  onOpenChange,
-  persona,
-  onSuccess,
-}: PersonaDialogProps) {
+export function PersonaDialog({ open, onOpenChange, persona, onSuccess }: PersonaDialogProps) {
   const isEditing = !!persona
   const [traitInput, setTraitInput] = useState("")
   const [activeTab, setActiveTab] = useState<string>("form")
   const [jsonInput, setJsonInput] = useState("")
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [jsonAvatar, setJsonAvatar] = useState<string | null>(null)
-
+  
   const createPersona = useCreatePersona()
   const updatePersona = useUpdatePersona()
 
@@ -203,20 +187,14 @@ export function PersonaDialog({
         persona_metadata: persona.persona_metadata || {},
       }
       form.reset(values)
-      setJsonInput(
-        JSON.stringify(
-          {
-            name: persona.name,
-            role_type: persona.role_type,
-            personality_traits: persona.personality_traits || [],
-            communication_style: persona.communication_style,
-            display_order: persona.display_order,
-            persona_metadata: persona.persona_metadata || {},
-          },
-          null,
-          2,
-        ),
-      )
+      setJsonInput(JSON.stringify({
+        name: persona.name,
+        role_type: persona.role_type,
+        personality_traits: persona.personality_traits || [],
+        communication_style: persona.communication_style,
+        display_order: persona.display_order,
+        persona_metadata: persona.persona_metadata || {},
+      }, null, 2))
       setJsonAvatar(persona.avatar || null)
     } else if (!open) {
       form.reset({
@@ -228,20 +206,14 @@ export function PersonaDialog({
         display_order: 0,
         persona_metadata: {},
       })
-      setJsonInput(
-        JSON.stringify(
-          {
-            name: "",
-            role_type: "developer",
-            personality_traits: [],
-            communication_style: "",
-            display_order: 0,
-            persona_metadata: {},
-          },
-          null,
-          2,
-        ),
-      )
+      setJsonInput(JSON.stringify({
+        name: "",
+        role_type: "developer",
+        personality_traits: [],
+        communication_style: "",
+        display_order: 0,
+        persona_metadata: {},
+      }, null, 2))
       setJsonAvatar(null)
       setJsonError(null)
       setActiveTab("form")
@@ -252,10 +224,7 @@ export function PersonaDialog({
     if (traitInput.trim()) {
       const currentTraits = form.getValues("personality_traits")
       if (!currentTraits.includes(traitInput.trim())) {
-        form.setValue("personality_traits", [
-          ...currentTraits,
-          traitInput.trim(),
-        ])
+        form.setValue("personality_traits", [...currentTraits, traitInput.trim()])
       }
       setTraitInput("")
     }
@@ -265,7 +234,7 @@ export function PersonaDialog({
     const currentTraits = form.getValues("personality_traits")
     form.setValue(
       "personality_traits",
-      currentTraits.filter((t) => t !== trait),
+      currentTraits.filter((t) => t !== trait)
     )
   }
 
@@ -291,14 +260,14 @@ export function PersonaDialog({
       }
       onOpenChange(false)
       onSuccess?.()
-    } catch (_error: any) {
+    } catch (error: any) {
       // Error handled by mutation hooks - keep modal open
     }
   }
 
   const handleJsonSubmit = async () => {
     setJsonError(null)
-
+    
     let parsed: any
     try {
       parsed = JSON.parse(jsonInput)
@@ -312,16 +281,14 @@ export function PersonaDialog({
       validated = jsonPersonaSchema.parse(parsed)
     } catch (error: any) {
       if (error?.errors) {
-        const zodErrors = error.errors
-          .map((e: any) => `${e.path.join(".")}: ${e.message}`)
-          .join(", ")
+        const zodErrors = error.errors.map((e: any) => `${e.path.join(".")}: ${e.message}`).join(", ")
         setJsonError(zodErrors)
       } else {
         setJsonError("Validation failed")
       }
       return
     }
-
+    
     const payload = {
       ...validated,
       avatar: jsonAvatar,
@@ -350,9 +317,7 @@ export function PersonaDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {isEditing ? "Edit Persona" : "Create Persona"}
-          </DialogTitle>
+          <DialogTitle>{isEditing ? "Edit Persona" : "Create Persona"}</DialogTitle>
           <DialogDescription>
             {isEditing
               ? "Update the persona template properties."
@@ -368,10 +333,7 @@ export function PersonaDialog({
 
           <TabsContent value="form" className="mt-4">
             <Form {...form}>
-              <form
-                onSubmit={form.handleSubmit(onSubmit)}
-                className="space-y-6"
-              >
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 {/* Avatar Upload */}
                 <FormField
                   control={form.control}
@@ -402,10 +364,7 @@ export function PersonaDialog({
                       <FormItem>
                         <FormLabel>Name</FormLabel>
                         <FormControl>
-                          <Input
-                            placeholder="e.g., Strategic Visionary"
-                            {...field}
-                          />
+                          <Input placeholder="e.g., Strategic Visionary" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -419,23 +378,18 @@ export function PersonaDialog({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Role Type</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select role type" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {Object.entries(roleTypeLabels).map(
-                              ([value, label]) => (
-                                <SelectItem key={value} value={value}>
-                                  {label}
-                                </SelectItem>
-                              ),
-                            )}
+                            {Object.entries(roleTypeLabels).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>
+                                {label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -495,15 +449,11 @@ export function PersonaDialog({
                             <Plus className="w-4 h-4" />
                           </Button>
                         </div>
-
+                        
                         {field.value.length > 0 && (
                           <div className="flex flex-wrap gap-2 p-3 border rounded-md bg-muted/30">
                             {field.value.map((trait) => (
-                              <Badge
-                                key={trait}
-                                variant="secondary"
-                                className="gap-1"
-                              >
+                              <Badge key={trait} variant="secondary" className="gap-1">
                                 {trait}
                                 <button
                                   type="button"
@@ -553,9 +503,7 @@ export function PersonaDialog({
                     Cancel
                   </Button>
                   <Button type="submit" disabled={isPending}>
-                    {isPending && (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    )}
+                    {isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                     {isEditing ? "Update" : "Create"}
                   </Button>
                 </DialogFooter>
@@ -567,7 +515,10 @@ export function PersonaDialog({
             {/* Avatar Upload for JSON tab */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Avatar</label>
-              <AvatarUpload value={jsonAvatar} onChange={setJsonAvatar} />
+              <AvatarUpload
+                value={jsonAvatar}
+                onChange={setJsonAvatar}
+              />
               <p className="text-xs text-muted-foreground">
                 Upload an avatar image for this persona
               </p>
@@ -596,8 +547,7 @@ export function PersonaDialog({
                 <p className="text-sm text-destructive">{jsonError}</p>
               )}
               <p className="text-xs text-muted-foreground">
-                Provide persona data in JSON format. Required fields: name,
-                role_type, communication_style
+                Provide persona data in JSON format. Required fields: name, role_type, communication_style
               </p>
             </div>
 
@@ -617,6 +567,7 @@ export function PersonaDialog({
             </DialogFooter>
           </TabsContent>
         </Tabs>
+
       </DialogContent>
     </Dialog>
   )

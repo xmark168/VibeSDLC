@@ -1,6 +1,6 @@
 /**
  * MessageInput - Chat message input with mentions support
- *
+ * 
  * Features:
  * - Auto-resizing textarea
  * - Agent mention trigger (@)
@@ -9,16 +9,10 @@
  * - Disabled state during sending
  */
 
-import { ArrowUp } from "lucide-react"
-import {
-  type ChangeEvent,
-  type KeyboardEvent,
-  useEffect,
-  useRef,
-  useState,
-} from "react"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
+import { useState, useRef, useEffect, type KeyboardEvent, type ChangeEvent } from 'react'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { ArrowUp } from 'lucide-react'
 
 export interface MessageInputProps {
   /** Current message value */
@@ -50,7 +44,7 @@ export function MessageInput({
   maxChars = 5000,
 }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [_isFocused, setIsFocused] = useState(false)
+  const [isFocused, setIsFocused] = useState(false)
 
   // Auto-focus on mount
   useEffect(() => {
@@ -63,12 +57,12 @@ export function MessageInput({
     if (!textarea) return
 
     // Reset height to recalculate
-    textarea.style.height = "auto"
-
+    textarea.style.height = 'auto'
+    
     // Set new height based on scroll height (max 200px)
     const newHeight = Math.min(textarea.scrollHeight, 200)
     textarea.style.height = `${newHeight}px`
-  }, [])
+  }, [value])
 
   // Handle input change
   const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
@@ -79,7 +73,7 @@ export function MessageInput({
       const cursorPosition = e.target.selectionStart
       const textBeforeCursor = newValue.slice(0, cursorPosition)
       const mentionMatch = textBeforeCursor.match(/@(\w*)$/)
-
+      
       if (mentionMatch) {
         // User typed @ - trigger mention dropdown
         onMentionTrigger(mentionMatch[1]) // Search query after @
@@ -92,7 +86,7 @@ export function MessageInput({
   // Handle keyboard shortcuts
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter to send (Shift+Enter for newline)
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       if (value.trim() && !disabled) {
         onSend()
@@ -127,7 +121,7 @@ export function MessageInput({
             className="min-h-[60px] max-h-[200px] resize-none pr-12"
             rows={1}
           />
-
+          
           {/* Character count */}
           {showCharCount && (
             <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
@@ -150,9 +144,7 @@ export function MessageInput({
       {/* Helper text */}
       <div className="mt-2 text-xs text-muted-foreground">
         <span>Press Enter to send, Shift+Enter for new line</span>
-        {onMentionTrigger && (
-          <span className="ml-2">• Type @ to mention an agent</span>
-        )}
+        {onMentionTrigger && <span className="ml-2">• Type @ to mention an agent</span>}
       </div>
     </div>
   )

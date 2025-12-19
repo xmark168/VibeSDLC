@@ -1,10 +1,10 @@
 import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
 import type {
-  CreateProjectBody,
-  FetchProjectsParams,
   Project,
   ProjectsPage,
+  FetchProjectsParams,
+  CreateProjectBody,
   UpdateProjectBody,
 } from "@/types"
 
@@ -44,10 +44,7 @@ export const projectsApi = {
       body,
     })
   },
-  getLogs: async (
-    projectId: string,
-    params?: { limit?: number; level?: string },
-  ): Promise<{
+  getLogs: async (projectId: string, params?: { limit?: number; level?: string }): Promise<{
     logs: Array<{
       id: string
       timestamp: string

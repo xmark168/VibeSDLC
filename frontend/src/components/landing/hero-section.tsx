@@ -1,37 +1,38 @@
-"use client"
+"use client";
 
-import { ArrowRightIcon } from "lucide-react"
-import { useTheme } from "next-themes"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Glow } from "@/components/ui/glow"
-import { cn } from "@/lib/utils"
-import BlurText from "../BlurText"
-import { Mockup, MockupFrame } from "../ui/mock-up"
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ArrowRightIcon } from "lucide-react";
+
+import { Glow } from "@/components/ui/glow";
+import { useTheme } from "next-themes";
+import { cn } from "@/lib/utils";
+import { Mockup, MockupFrame } from "../ui/mock-up";
+import BlurText from "../BlurText";
 
 interface HeroAction {
-  text: string
-  href: string
-  icon?: React.ReactNode
-  variant?: "default" | "glow"
+  text: string;
+  href: string;
+  icon?: React.ReactNode;
+  variant?: "default" | "glow";
 }
 
 interface HeroProps {
   badge?: {
-    text: string
+    text: string;
     action: {
-      text: string
-      href: string
-    }
-  }
-  title: string
-  description: string
-  actions: HeroAction[]
+      text: string;
+      href: string;
+    };
+  };
+  title: string;
+  description: string;
+  actions: HeroAction[];
   image: {
-    light: string
-    dark: string
-    alt: string
-  }
+    light: string;
+    dark: string;
+    alt: string;
+  };
 }
 
 export function HeroSection({
@@ -41,15 +42,15 @@ export function HeroSection({
   actions,
   image,
 }: HeroProps) {
-  const { resolvedTheme } = useTheme()
-  const imageSrc = resolvedTheme === "light" ? image.light : image.dark
+  const { resolvedTheme } = useTheme();
+  const imageSrc = resolvedTheme === "light" ? image.light : image.dark;
 
   return (
     <section
       className={cn(
         "bg-background text-foreground",
         "py-10 sm:py-24 md:py-7 px-4",
-        "fade-bottom overflow-hidden pb-0",
+        "fade-bottom overflow-hidden pb-0"
       )}
     >
       <div className="mx-auto flex max-w-container flex-col gap-12 pt-8 sm:gap-24">
@@ -97,15 +98,26 @@ export function HeroSection({
 
           {/* Image with Glow */}
           <div className="relative pt-12">
-            <MockupFrame className="animate-appear delay-700" size="small">
+            <MockupFrame
+              className="animate-appear delay-700"
+              size="small"
+            >
               <Mockup type="responsive">
-                <img src={imageSrc} alt={image.alt} width={1248} height={765} />
+                <img
+                  src={imageSrc}
+                  alt={image.alt}
+                  width={1248}
+                  height={765}
+                />
               </Mockup>
             </MockupFrame>
-            <Glow variant="top" className="animate-appear-zoom delay-1000" />
+            <Glow
+              variant="top"
+              className="animate-appear-zoom delay-1000"
+            />
           </div>
         </div>
       </div>
     </section>
-  )
+  );
 }

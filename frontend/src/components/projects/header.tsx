@@ -1,18 +1,7 @@
+import { useState, useEffect } from "react"
 import { useLocation, useNavigate } from "@tanstack/react-router"
-import {
-  ChevronDown,
-  CreditCard,
-  Home,
-  LogOut,
-  Monitor,
-  Moon,
-  Sun,
-  User,
-} from "lucide-react"
-import { useEffect, useState } from "react"
+import { ChevronDown, LogOut, CreditCard, User, Sun, Moon, Monitor, Home } from "lucide-react"
 import toast from "react-hot-toast"
-import { useTheme } from "@/components/provider/theme-provider"
-import { SettingsDialog } from "@/components/settings"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -21,15 +10,17 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuTrigger,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useAppStore } from "@/stores/auth-store"
 import useAuth from "@/hooks/useAuth"
+import { useTheme } from "@/components/provider/theme-provider"
+import { SettingsDialog } from "@/components/settings"
 import { useProfile } from "@/queries/profile"
 import { useCurrentSubscription } from "@/queries/subscription"
-import { useAppStore } from "@/stores/auth-store"
 
 const DEFAULT_AVATAR = "https://github.com/shadcn.png"
 
@@ -52,8 +43,7 @@ export const HeaderProject = ({
   const location = useLocation()
   const navigate = useNavigate()
   // Get avatar URL with fallback
-  const avatarUrl =
-    import.meta.env.VITE_API_URL + profile?.avatar_url || DEFAULT_AVATAR
+  const avatarUrl = import.meta.env.VITE_API_URL + profile?.avatar_url || DEFAULT_AVATAR
   const displayName = profile?.full_name || user?.full_name || ""
   const planName = subscriptionData?.subscription?.plan?.name || "Free"
   useEffect(() => {
@@ -111,10 +101,10 @@ export const HeaderProject = ({
         {/* Left side - Logo/Brand */}
         <a href="/" className="flex items-center gap-2 cursor-pointer">
           <div className="flex items-center justify-center rounded-lg">
-            <img
-              src="/assets/images/logo.png"
-              alt="VibeSDLC"
-              className="h-5 object-contain"
+            <img 
+              src="/assets/images/logo.png" 
+              alt="VibeSDLC" 
+              className="h-5 object-contain" 
             />
           </div>
         </a>
@@ -147,9 +137,7 @@ export const HeaderProject = ({
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">
-                  {user?.full_name}
-                </p>
+                <p className="text-sm font-medium leading-none">{user?.full_name}</p>
                 <p className="text-xs leading-none text-muted-foreground">
                   {user?.email}
                 </p>
@@ -229,9 +217,7 @@ export const HeaderProject = ({
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        defaultTab={
-          defaultTab as "profile" | "security" | "billing" | "theme" | undefined
-        }
+        defaultTab={defaultTab as "profile" | "security" | "billing" | "theme" | undefined}
       />
     </header>
   )

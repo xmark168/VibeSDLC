@@ -16,9 +16,7 @@ export const sepayApi = {
     })
   },
 
-  createCreditPurchase: async (
-    data: SePayCreditPurchaseRequest,
-  ): Promise<SePayQRResponse> => {
+  createCreditPurchase: async (data: SePayCreditPurchaseRequest): Promise<SePayQRResponse> => {
     return __request<SePayQRResponse>(OpenAPI, {
       method: "POST",
       url: "/api/v1/sepay/credits/purchase",

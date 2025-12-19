@@ -1,7 +1,10 @@
 import { motion } from "framer-motion"
-import { Bot, GitBranch, Zap } from "lucide-react"
+import { GitBranch, Zap, Bot } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
-type CreateProjectContentProps = {}
+interface CreateProjectContentProps {
+  // No longer need GitHub props
+}
 
 export function CreateProjectContent({}: CreateProjectContentProps) {
   const containerVariants = {
@@ -42,11 +45,12 @@ export function CreateProjectContent({}: CreateProjectContentProps) {
             </span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Let our AI agents collaborate on your project. Get instant code
-            reviews, automated testing, and smart project management.
+            Let our AI agents collaborate on your project. Get instant code reviews,
+            automated testing, and smart project management.
           </p>
         </motion.div>
 
+    
         {/* Features Grid */}
         <motion.div
           variants={itemVariants}

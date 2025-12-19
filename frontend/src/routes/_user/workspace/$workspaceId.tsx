@@ -1,15 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { useCallback, useRef, useState } from "react"
-import type { AgentPublic } from "@/client/types.gen"
-import { AgentPopup } from "@/components/agents/agent-popup"
+import { useRef, useState, useCallback } from "react"
 import { ChatPanelWS } from "@/components/chat/chat-panel-ws"
 import { WorkspacePanel } from "@/components/chat/workspace-panel"
+import { AgentPopup } from "@/components/agents/agent-popup"
 import { useProjectAgents } from "@/queries/agents"
+import type { AgentPublic } from "@/client/types.gen"
 import { requireRole } from "@/utils/auth"
 
 export const Route = createFileRoute("/_user/workspace/$workspaceId")({
   beforeLoad: async () => {
-    await requireRole("user")
+    await requireRole('user')
   },
   component: WorkspacePage,
 })
@@ -19,21 +19,14 @@ function WorkspacePage() {
   const chatWidthRef = useRef(40) // Use ref for smooth drag
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const [chatCollapsed, setChatCollapsed] = useState(false)
-  const [_isWebSocketConnected, setIsWebSocketConnected] = useState(false)
-  const sendMessageRef = useRef<
-    | ((params: { content: string; author_type?: "user" | "agent" }) => boolean)
-    | null
-  >(null)
+  const [isWebSocketConnected, setIsWebSocketConnected] = useState(false)
+  const sendMessageRef = useRef<((params: { content: string; author_type?: 'user' | 'agent' }) => boolean) | null>(null)
   const [kanbanData, setKanbanData] = useState<any>(null)
   const [activeTab, setActiveTab] = useState<string | null>(null)
   // Track agent statuses from WebSocket for avatar display
-  const [agentStatuses, setAgentStatuses] = useState<
-    Map<string, { status: string; lastUpdate: string }>
-  >(new Map())
+  const [agentStatuses, setAgentStatuses] = useState<Map<string, { status: string; lastUpdate: string }>>(new Map())
   // Track selected artifact for viewing
-  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(
-    null,
-  )
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
   // Track selected file for viewing
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   // Callback to insert @mention in chat
@@ -49,12 +42,12 @@ function WorkspacePage() {
 
   const handleOpenArtifact = (artifactId: string) => {
     setSelectedArtifactId(artifactId)
-    setActiveTab("file") // Switch to file tab to show artifact viewer
+    setActiveTab('file') // Switch to file tab to show artifact viewer
   }
 
   const handleOpenFile = (filePath: string) => {
     setSelectedFile(filePath)
-    setActiveTab("file") // Switch to file tab
+    setActiveTab('file') // Switch to file tab
   }
 
   const handleMessageAgent = (agentName: string) => {
@@ -70,13 +63,11 @@ function WorkspacePage() {
 
   const handleAgentClick = (agentName: string) => {
     // Find agent by name from projectAgents
-    const agentsList: AgentPublic[] = Array.isArray(projectAgents)
-      ? projectAgents
-      : projectAgents?.data || []
-
-    const agent = agentsList.find(
-      (a) => a.human_name === agentName || a.name === agentName,
-    )
+    const agentsList: AgentPublic[] = Array.isArray(projectAgents) 
+      ? projectAgents 
+      : (projectAgents?.data || [])
+    
+    const agent = agentsList.find(a => a.human_name === agentName || a.name === agentName)
     if (agent) {
       setSelectedAgent(agent)
       setAgentDetailOpen(true)
@@ -87,7 +78,7 @@ function WorkspacePage() {
   const handleResize = useCallback((delta: number) => {
     const newWidth = chatWidthRef.current + (delta / window.innerWidth) * 100
     chatWidthRef.current = Math.max(20, Math.min(80, newWidth))
-
+    
     // Directly update DOM for smooth performance (no React re-render)
     if (chatContainerRef.current) {
       chatContainerRef.current.style.width = `${chatWidthRef.current}%`
@@ -96,55 +87,55 @@ function WorkspacePage() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-white relative">
-      <div className="flex flex-1 overflow-hidden">
-        {/* Always mount ChatPanelWS to keep WebSocket alive, just hide with CSS */}
-        <div
-          ref={chatContainerRef}
-          className={`flex flex-col overflow-hidden ${chatCollapsed ? "hidden" : ""}`}
-          style={{ width: `${chatWidthRef.current}%` }}
-        >
-          <ChatPanelWS
-            onCollapse={() => setChatCollapsed(true)}
-            projectId={workspaceId}
-            onSendMessageReady={(sendFn) => {
-              sendMessageRef.current = sendFn
-            }}
-            onConnectionChange={setIsWebSocketConnected}
-            onKanbanDataChange={setKanbanData}
-            onActiveTabChange={setActiveTab}
-            onAgentStatusesChange={setAgentStatuses}
-            onOpenArtifact={handleOpenArtifact}
-            onOpenFile={handleOpenFile}
-            onInsertMentionReady={(fn) => {
-              insertMentionRef.current = fn
-            }}
-            onAgentClick={handleAgentClick}
-          />
+        <div className="flex flex-1 overflow-hidden">
+          {/* Always mount ChatPanelWS to keep WebSocket alive, just hide with CSS */}
+          <div
+            ref={chatContainerRef}
+            className={`flex flex-col overflow-hidden ${chatCollapsed ? 'hidden' : ''}`}
+            style={{ width: `${chatWidthRef.current}%` }}
+          >
+            <ChatPanelWS
+              onCollapse={() => setChatCollapsed(true)}
+              projectId={workspaceId}
+              onSendMessageReady={(sendFn) => {
+                sendMessageRef.current = sendFn
+              }}
+              onConnectionChange={setIsWebSocketConnected}
+              onKanbanDataChange={setKanbanData}
+              onActiveTabChange={setActiveTab}
+              onAgentStatusesChange={setAgentStatuses}
+              onOpenArtifact={handleOpenArtifact}
+              onOpenFile={handleOpenFile}
+              onInsertMentionReady={(fn) => {
+                insertMentionRef.current = fn
+              }}
+              onAgentClick={handleAgentClick}
+            />
+          </div>
+
+          <div className="flex-1 overflow-hidden">
+            <WorkspacePanel
+              chatCollapsed={chatCollapsed}
+              onExpandChat={() => setChatCollapsed(false)}
+              kanbanData={kanbanData}
+              projectId={workspaceId}
+              activeTab={activeTab}
+              agentStatuses={agentStatuses}
+              selectedArtifactId={selectedArtifactId}
+              initialSelectedFile={selectedFile}
+              onResize={handleResize}
+              onMessageAgent={handleMessageAgent}
+            />
+          </div>
         </div>
 
-        <div className="flex-1 overflow-hidden">
-          <WorkspacePanel
-            chatCollapsed={chatCollapsed}
-            onExpandChat={() => setChatCollapsed(false)}
-            kanbanData={kanbanData}
-            projectId={workspaceId}
-            activeTab={activeTab}
-            agentStatuses={agentStatuses}
-            selectedArtifactId={selectedArtifactId}
-            initialSelectedFile={selectedFile}
-            onResize={handleResize}
-            onMessageAgent={handleMessageAgent}
-          />
-        </div>
+        {/* Agent Popup - shared between chat and workspace */}
+        <AgentPopup
+          agent={selectedAgent}
+          open={agentDetailOpen}
+          onOpenChange={setAgentDetailOpen}
+          onMessage={handleMessageAgent}
+        />
       </div>
-
-      {/* Agent Popup - shared between chat and workspace */}
-      <AgentPopup
-        agent={selectedAgent}
-        open={agentDetailOpen}
-        onOpenChange={setAgentDetailOpen}
-        onMessage={handleMessageAgent}
-      />
-    </div>
   )
 }

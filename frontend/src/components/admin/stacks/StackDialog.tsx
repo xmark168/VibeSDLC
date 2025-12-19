@@ -1,8 +1,8 @@
-import { Plus, Save, Trash2 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Plus, Trash2, Save } from "lucide-react"
+import type { TechStack, TechStackCreate, TechStackUpdate } from "@/types/stack"
+import { useCreateStack, useUpdateStack } from "@/queries/stacks"
 
 import {
   Dialog,
@@ -10,12 +10,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { useCreateStack, useUpdateStack } from "@/queries/stacks"
-import type { TechStack, TechStackCreate, TechStackUpdate } from "@/types/stack"
+import { Switch } from "@/components/ui/switch"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 interface StackDialogProps {
   open: boolean
@@ -33,12 +33,7 @@ interface StackFormValues {
   is_active: boolean
 }
 
-export function StackDialog({
-  open,
-  onOpenChange,
-  stack,
-  onSuccess,
-}: StackDialogProps) {
+export function StackDialog({ open, onOpenChange, stack, onSuccess }: StackDialogProps) {
   const isEditing = !!stack
   const [stackConfig, setStackConfig] = useState<Record<string, string>>({})
   const [newKey, setNewKey] = useState("")
@@ -87,7 +82,7 @@ export function StackDialog({
       })
       setStackConfig({})
     }
-  }, [stack, reset])
+  }, [stack, reset, open])
 
   const handleAddConfigItem = () => {
     if (newKey.trim() && newValue.trim()) {
@@ -124,7 +119,7 @@ export function StackDialog({
         await createStack.mutateAsync(payload as TechStackCreate)
       }
       onSuccess?.()
-    } catch (_error) {
+    } catch (error) {
       // Error handled by mutation hooks
     }
   }
@@ -157,9 +152,7 @@ export function StackDialog({
                     disabled={isEditing}
                   />
                   {errors.code && (
-                    <p className="text-xs text-destructive">
-                      {errors.code.message}
-                    </p>
+                    <p className="text-xs text-destructive">{errors.code.message}</p>
                   )}
                 </div>
 
@@ -171,9 +164,7 @@ export function StackDialog({
                     placeholder="Next.js Full Stack"
                   />
                   {errors.name && (
-                    <p className="text-xs text-destructive">
-                      {errors.name.message}
-                    </p>
+                    <p className="text-xs text-destructive">{errors.name.message}</p>
                   )}
                 </div>
               </div>
@@ -230,14 +221,15 @@ export function StackDialog({
               <div className="space-y-2">
                 {Object.entries(stackConfig).map(([key, value]) => (
                   <div key={key} className="flex items-center gap-2">
-                    <Input value={key} disabled className="flex-1" />
+                    <Input
+                      value={key}
+                      disabled
+                      className="flex-1"
+                    />
                     <Input
                       value={value}
                       onChange={(e) =>
-                        setStackConfig((prev) => ({
-                          ...prev,
-                          [key]: e.target.value,
-                        }))
+                        setStackConfig((prev) => ({ ...prev, [key]: e.target.value }))
                       }
                       className="flex-1"
                     />
@@ -261,20 +253,14 @@ export function StackDialog({
                   onChange={(e) => setNewKey(e.target.value)}
                   placeholder="Key (e.g., runtime)"
                   className="flex-1"
-                  onKeyDown={(e) =>
-                    e.key === "Enter" &&
-                    (e.preventDefault(), handleAddConfigItem())
-                  }
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddConfigItem())}
                 />
                 <Input
                   value={newValue}
                   onChange={(e) => setNewValue(e.target.value)}
                   placeholder="Value (e.g., bun)"
                   className="flex-1"
-                  onKeyDown={(e) =>
-                    e.key === "Enter" &&
-                    (e.preventDefault(), handleAddConfigItem())
-                  }
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddConfigItem())}
                 />
                 <Button
                   type="button"
@@ -299,11 +285,7 @@ export function StackDialog({
             </Button>
             <Button type="submit" disabled={isPending}>
               <Save className="w-4 h-4 mr-2" />
-              {isPending
-                ? "Saving..."
-                : isEditing
-                  ? "Update Stack"
-                  : "Create Stack"}
+              {isPending ? "Saving..." : isEditing ? "Update Stack" : "Create Stack"}
             </Button>
           </div>
         </form>

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { useState } from "react"
-import toast from "react-hot-toast"
+
 import {
   type ApiError,
   type AuthenticationLoginData,
@@ -10,11 +10,12 @@ import {
   type UserPublic,
   UsersService,
 } from "@/client"
-import { setLoggingOut } from "@/config/setup"
-import { useAppStore } from "@/stores/auth-store"
-import { isLoginRequires2FA, type LoginResult } from "@/types/two-factor"
 import { handleError } from "@/utils"
+import toast from "react-hot-toast"
+import { useAppStore } from "@/stores/auth-store"
 import { getRedirectPathByRole } from "@/utils/auth"
+import { isLoginRequires2FA, type LoginResult } from "@/types/two-factor"
+import { setLoggingOut } from "@/config/setup"
 
 const isLoggedIn = () => {
   return localStorage.getItem("access_token") !== null
@@ -48,14 +49,8 @@ export const useAuth = () => {
     },
   })
 
-  const login = async (
-    data: AuthenticationLoginData,
-  ): Promise<{
-    userData?: UserPublic
-    requires2FA?: boolean
-    tempToken?: string
-  }> => {
-    const response = (await AuthenticationService.login(data)) as LoginResult
+  const login = async (data: AuthenticationLoginData): Promise<{ userData?: UserPublic; requires2FA?: boolean; tempToken?: string }> => {
+    const response = await AuthenticationService.login(data) as LoginResult
     // Check if 2FA is required
     if (isLoginRequires2FA(response)) {
       return {
@@ -79,9 +74,9 @@ export const useAuth = () => {
     onSuccess: (result) => {
       // If 2FA is required, redirect to 2FA verification page
       if (result.requires2FA && result.tempToken) {
-        navigate({
+        navigate({ 
           to: "/verify-2fa",
-          search: { token: result.tempToken },
+          search: { token: result.tempToken }
         })
         return
       }

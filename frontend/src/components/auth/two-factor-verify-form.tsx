@@ -1,15 +1,16 @@
-import { Link, useNavigate } from "@tanstack/react-router"
 import { motion } from "framer-motion"
-import { ArrowLeft, ShieldCheck } from "lucide-react"
 import { useState } from "react"
-import { UsersService } from "@/client"
+import { useNavigate } from "@tanstack/react-router"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useVerify2FALogin } from "@/queries/two-factor"
+import { UsersService } from "@/client"
 import { useAppStore } from "@/stores/auth-store"
-import { withToast } from "@/utils"
 import { getRedirectPathByRole } from "@/utils/auth"
+import { withToast } from "@/utils"
+import { ShieldCheck, ArrowLeft } from "lucide-react"
+import { Link } from "@tanstack/react-router"
 
 interface TwoFactorVerifyFormProps {
   tempToken: string
@@ -46,14 +47,14 @@ export function TwoFactorVerifyForm({ tempToken }: TwoFactorVerifyFormProps) {
             onError: (error) => {
               reject(error)
             },
-          },
+          }
         )
       }),
       {
         loading: "Verifying...",
         success: <b>Verification successful!</b>,
         error: <b>Invalid verification code. Please try again.</b>,
-      },
+      }
     )
   }
 
@@ -110,10 +111,7 @@ export function TwoFactorVerifyForm({ tempToken }: TwoFactorVerifyFormProps) {
 
           <Button
             type="submit"
-            disabled={
-              verify2FAMutation.isPending ||
-              code.replace(/[-\s]/g, "").length < 6
-            }
+            disabled={verify2FAMutation.isPending || code.replace(/[-\s]/g, "").length < 6}
             className="w-full h-12 text-base font-semibold"
           >
             {verify2FAMutation.isPending ? "Verifying..." : "Confirm"}

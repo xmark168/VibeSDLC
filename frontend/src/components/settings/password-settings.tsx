@@ -1,21 +1,11 @@
-import { Check, Eye, EyeOff, Key, Loader2, Lock, X } from "lucide-react"
 import { useState } from "react"
-import toast from "react-hot-toast"
+import { Eye, EyeOff, Key, Lock, Loader2, Check, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  useChangePassword,
-  usePasswordStatus,
-  useSetPassword,
-} from "@/queries/profile"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { usePasswordStatus, useChangePassword, useSetPassword } from "@/queries/profile"
+import toast from "react-hot-toast"
 
 export function PasswordSettings() {
   const { data: passwordStatus, isLoading: statusLoading } = usePasswordStatus()
@@ -32,8 +22,7 @@ export function PasswordSettings() {
   const [confirmPassword, setConfirmPassword] = useState("")
 
   const hasPassword = passwordStatus?.has_password ?? false
-  const isSubmitting =
-    changePasswordMutation.isPending || setPasswordMutation.isPending
+  const isSubmitting = changePasswordMutation.isPending || setPasswordMutation.isPending
 
   const passwordRequirements = [
     { label: "At least 8 characters", met: newPassword.length >= 8 },
@@ -42,8 +31,7 @@ export function PasswordSettings() {
   ]
 
   const allRequirementsMet = passwordRequirements.every((r) => r.met)
-  const passwordsMatch =
-    newPassword === confirmPassword && confirmPassword !== ""
+  const passwordsMatch = newPassword === confirmPassword && confirmPassword !== ""
 
   const resetForm = () => {
     setCurrentPassword("")
@@ -135,8 +123,8 @@ export function PasswordSettings() {
                   {hasPassword
                     ? "You can login with email and password"
                     : passwordStatus?.login_provider
-                      ? `You are logged in via ${passwordStatus.login_provider}`
-                      : "Create a password for another login method"}
+                    ? `You are logged in via ${passwordStatus.login_provider}`
+                    : "Create a password for another login method"}
                 </p>
               </div>
             </div>
@@ -164,11 +152,7 @@ export function PasswordSettings() {
                     onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
-                    {showCurrentPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
+                    {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
@@ -191,30 +175,19 @@ export function PasswordSettings() {
                   onClick={() => setShowNewPassword(!showNewPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  {showNewPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
               {newPassword && (
                 <div className="space-y-1 pt-1">
                   {passwordRequirements.map((req, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-2 text-sm"
-                    >
+                    <div key={index} className="flex items-center gap-2 text-sm">
                       {req.met ? (
                         <Check className="h-3.5 w-3.5 text-green-500" />
                       ) : (
                         <X className="h-3.5 w-3.5 text-muted-foreground" />
                       )}
-                      <span
-                        className={
-                          req.met ? "text-green-500" : "text-muted-foreground"
-                        }
-                      >
+                      <span className={req.met ? "text-green-500" : "text-muted-foreground"}>
                         {req.label}
                       </span>
                     </div>
@@ -242,11 +215,7 @@ export function PasswordSettings() {
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  {showConfirmPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
               {confirmPassword && !passwordsMatch && (
@@ -264,18 +233,12 @@ export function PasswordSettings() {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button
-                variant="outline"
-                onClick={resetForm}
-                disabled={isSubmitting}
-              >
+              <Button variant="outline" onClick={resetForm} disabled={isSubmitting}>
                 Cancel
               </Button>
               <Button
                 onClick={handleSubmit}
-                disabled={
-                  !allRequirementsMet || !passwordsMatch || isSubmitting
-                }
+                disabled={!allRequirementsMet || !passwordsMatch || isSubmitting}
               >
                 {isSubmitting ? (
                   <>

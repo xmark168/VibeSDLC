@@ -5,19 +5,34 @@ from pathlib import Path
 from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.language_models import BaseChatModel
+from sqlmodel import Session, func, select
+from sqlalchemy.orm.attributes import flag_modified
 
-from .state import BAState
-from .schemas import (
+from app.core.agent.llm_factory import get_llm, create_llm, MODELS
+
+from ..state import BAState
+from ..schemas import (
+    IntentOutput,
     QuestionsOutput,
     PRDOutput,
-    PRDUpdateOutput
+    PRDUpdateOutput,
+    DocumentAnalysisOutput,
+    EpicsOnlyOutput,
+    StoriesForEpicOutput,
+    FullStoriesOutput,
+    VerifyStoryOutput,
+    DocumentFeedbackOutput,
+    SingleStoryEditOutput,
+    FeatureClarityOutput,
 )
 from app.core.agent.prompt_utils import (
-    load_prompts_yaml
+    load_prompts_yaml,
+    extract_agent_personality,
 )
 
 # Load prompts from YAML (same pattern as Developer V2)
-PROMPTS = load_prompts_yaml(Path(__file__).parent / "prompts.yaml")
+PROMPTS = load_prompts_yaml(Path(__file__).parent.parent / "prompts.yaml")
 
 # Default values for BA agent persona
 BA_DEFAULTS = {
@@ -37,7 +52,7 @@ from app.kafka.event_schemas import AgentEvent
 
 logger = logging.getLogger(__name__)
 
-from .utils import _get_llm, _invoke_structured, _cfg, _sys_prompt, _user_prompt, _save_interview_state_to_question
+from .utils import _get_llm, _invoke_structured, _cfg, _sys_prompt, _user_prompt, _save_interview_state_to_question, _default_llm
 
 async def generate_prd(state: BAState, agent=None) -> dict:
     """Node: Generate PRD document.

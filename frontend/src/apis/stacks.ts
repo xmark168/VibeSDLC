@@ -1,12 +1,12 @@
 import { request as __request } from "@client/core/request"
 import { OpenAPI } from "@/client"
 import type {
-  FileContent,
-  FileNode,
   TechStack,
   TechStackCreate,
-  TechStacksResponse,
   TechStackUpdate,
+  TechStacksResponse,
+  FileNode,
+  FileContent,
 } from "@/types/stack"
 
 export const stacksApi = {
@@ -46,10 +46,7 @@ export const stacksApi = {
     })
   },
 
-  updateStack: async (
-    stackId: string,
-    data: TechStackUpdate,
-  ): Promise<TechStack> => {
+  updateStack: async (stackId: string, data: TechStackUpdate): Promise<TechStack> => {
     return __request<TechStack>(OpenAPI, {
       method: "PUT",
       url: `/api/v1/tech-stacks/${stackId}`,
@@ -57,10 +54,7 @@ export const stacksApi = {
     })
   },
 
-  deleteStack: async (
-    stackId: string,
-    deleteFiles: boolean = false,
-  ): Promise<void> => {
+  deleteStack: async (stackId: string, deleteFiles: boolean = false): Promise<void> => {
     return __request<void>(OpenAPI, {
       method: "DELETE",
       url: `/api/v1/tech-stacks/${stackId}`,
@@ -91,11 +85,7 @@ export const stacksApi = {
     })
   },
 
-  createSkillFile: async (
-    code: string,
-    path: string,
-    content: string = "",
-  ): Promise<void> => {
+  createSkillFile: async (code: string, path: string, content: string = ""): Promise<void> => {
     return __request<void>(OpenAPI, {
       method: "POST",
       url: `/api/v1/tech-stacks/${code}/skills/file`,
@@ -103,11 +93,7 @@ export const stacksApi = {
     })
   },
 
-  updateSkillFile: async (
-    code: string,
-    path: string,
-    content: string,
-  ): Promise<void> => {
+  updateSkillFile: async (code: string, path: string, content: string): Promise<void> => {
     return __request<void>(OpenAPI, {
       method: "PUT",
       url: `/api/v1/tech-stacks/${code}/skills/file`,
@@ -147,10 +133,7 @@ export const stacksApi = {
     })
   },
 
-  readBoilerplateFile: async (
-    code: string,
-    path: string,
-  ): Promise<FileContent> => {
+  readBoilerplateFile: async (code: string, path: string): Promise<FileContent> => {
     return __request<FileContent>(OpenAPI, {
       method: "GET",
       url: `/api/v1/tech-stacks/${code}/boilerplate/file`,
@@ -158,11 +141,7 @@ export const stacksApi = {
     })
   },
 
-  createBoilerplateFile: async (
-    code: string,
-    path: string,
-    content: string = "",
-  ): Promise<void> => {
+  createBoilerplateFile: async (code: string, path: string, content: string = ""): Promise<void> => {
     return __request<void>(OpenAPI, {
       method: "POST",
       url: `/api/v1/tech-stacks/${code}/boilerplate/file`,
@@ -170,11 +149,7 @@ export const stacksApi = {
     })
   },
 
-  updateBoilerplateFile: async (
-    code: string,
-    path: string,
-    content: string,
-  ): Promise<void> => {
+  updateBoilerplateFile: async (code: string, path: string, content: string): Promise<void> => {
     return __request<void>(OpenAPI, {
       method: "PUT",
       url: `/api/v1/tech-stacks/${code}/boilerplate/file`,
@@ -190,10 +165,7 @@ export const stacksApi = {
     })
   },
 
-  createBoilerplateFolder: async (
-    code: string,
-    path: string,
-  ): Promise<void> => {
+  createBoilerplateFolder: async (code: string, path: string): Promise<void> => {
     return __request<void>(OpenAPI, {
       method: "POST",
       url: `/api/v1/tech-stacks/${code}/boilerplate/folder`,
@@ -201,10 +173,7 @@ export const stacksApi = {
     })
   },
 
-  deleteBoilerplateFolder: async (
-    code: string,
-    path: string,
-  ): Promise<void> => {
+  deleteBoilerplateFolder: async (code: string, path: string): Promise<void> => {
     return __request<void>(OpenAPI, {
       method: "DELETE",
       url: `/api/v1/tech-stacks/${code}/boilerplate/folder`,
@@ -216,7 +185,7 @@ export const stacksApi = {
     code: string,
     files: File[],
     paths: string[],
-    clearExisting: boolean = false,
+    clearExisting: boolean = false
   ): Promise<{ message: string; uploaded: number; skipped: number }> => {
     const formData = new FormData()
     files.forEach((file) => {
@@ -235,7 +204,7 @@ export const stacksApi = {
         headers: {
           Authorization: `Bearer ${typeof OpenAPI.TOKEN === "function" ? await OpenAPI.TOKEN({} as any) : OpenAPI.TOKEN}`,
         },
-      },
+      }
     )
 
     if (!response.ok) {

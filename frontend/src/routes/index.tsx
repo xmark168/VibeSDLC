@@ -1,27 +1,16 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import {
-  ArrowRight,
-  BarChart3,
-  CheckCircle2,
-  Code,
-  FileText,
-  GitBranch,
-  MessageSquare,
-  Quote,
-  Shield,
-  Sparkles,
-  Users,
-  Workflow,
-  Zap,
-} from "lucide-react"
-import { useState } from "react"
-import { AnimatedSection } from "@/components/landing/animated-section"
-import { Header } from "@/components/landing/header"
 import { HeroSection } from "@/components/landing/hero-section"
-import { Footer } from "@/components/ui/footer"
+import { AnimatedSection } from "@/components/landing/animated-section"
 import { GlowingEffect } from "@/components/ui/glow-effect-card"
 import { StaggerTestimonials } from "@/components/ui/stagger-testitermonials"
+import { Footer } from "@/components/ui/footer"
+import {
+  Users, Code, FileText, Shield, ArrowRight, Sparkles,
+  Workflow, MessageSquare, BarChart3, Zap, GitBranch, CheckCircle2, Quote
+} from "lucide-react"
+import { useState } from "react"
 import { cn } from "@/lib/utils"
+import { Header } from "@/components/landing/header"
 
 export const Route = createFileRoute("/")({
   component: RouteComponent,
@@ -32,36 +21,31 @@ const features = [
   {
     icon: <Workflow className="h-4 w-4 text-primary" />,
     title: "Kanban Workflow",
-    description:
-      "Manage tasks using Kanban model with WIP limits, helping teams focus and avoid overload.",
+    description: "Manage tasks using Kanban model with WIP limits, helping teams focus and avoid overload.",
     area: "md:[grid-area:1/1/2/7] xl:[grid-area:1/1/2/5]",
   },
   {
     icon: <MessageSquare className="h-4 w-4 text-primary" />,
     title: "Natural Language Chat",
-    description:
-      "Communicate with AI agents like real colleagues, no complex syntax to learn.",
+    description: "Communicate with AI agents like real colleagues, no complex syntax to learn.",
     area: "md:[grid-area:1/7/2/13] xl:[grid-area:2/1/3/5]",
   },
   {
     icon: <GitBranch className="h-4 w-4 text-primary" />,
     title: "Smart Task Routing",
-    description:
-      "Team Leader automatically analyzes requests and routes to the most suitable agent for optimal efficiency.",
+    description: "Team Leader automatically analyzes requests and routes to the most suitable agent for optimal efficiency.",
     area: "md:[grid-area:2/1/3/7] xl:[grid-area:1/5/3/8]",
   },
   {
     icon: <BarChart3 className="h-4 w-4 text-primary" />,
     title: "Flow Metrics & Analytics",
-    description:
-      "Track cycle time, throughput and bottlenecks to continuously improve processes.",
+    description: "Track cycle time, throughput and bottlenecks to continuously improve processes.",
     area: "md:[grid-area:2/7/3/13] xl:[grid-area:1/8/2/13]",
   },
   {
     icon: <Zap className="h-4 w-4 text-primary" />,
     title: "10x Development Speed",
-    description:
-      "From idea to PRD, User Stories, Code and Test - all supported by AI in parallel.",
+    description: "From idea to PRD, User Stories, Code and Test - all supported by AI in parallel.",
     area: "md:[grid-area:3/1/4/13] xl:[grid-area:2/8/3/13]",
   },
 ]
@@ -110,17 +94,11 @@ const agents = [
     icon: Users,
     title: "Team Leader",
     subtitle: "Routing Coordinator",
-    description:
-      "Coordinate work and provide Agile/Kanban consulting for the team",
+    description: "Coordinate work and provide Agile/Kanban consulting for the team",
     image: "/assets/images/agent/1.webp",
     gradient: "from-amber-500 to-orange-600",
     bgGradient: "from-amber-500/10 to-orange-500/5",
-    features: [
-      "Smart Routing",
-      "WIP Management",
-      "Agile Coaching",
-      "Flow Metrics",
-    ],
+    features: ["Smart Routing", "WIP Management", "Agile Coaching", "Flow Metrics"],
   },
   {
     icon: Code,
@@ -140,12 +118,7 @@ const agents = [
     image: "/assets/images/agent/3.png",
     gradient: "from-cyan-500 to-blue-600",
     bgGradient: "from-cyan-500/10 to-blue-500/5",
-    features: [
-      "PRD Creation",
-      "User Stories",
-      "Requirements",
-      "Domain Analysis",
-    ],
+    features: ["PRD Creation", "User Stories", "Requirements", "Domain Analysis"],
   },
   {
     icon: Shield,
@@ -155,23 +128,18 @@ const agents = [
     image: "/assets/images/agent/4.webp",
     gradient: "from-rose-500 to-red-600",
     bgGradient: "from-rose-500/10 to-red-500/5",
-    features: [
-      "Test Planning",
-      "QA Automation",
-      "Bug Reporting",
-      "Quality Gates",
-    ],
+    features: ["Test Planning", "QA Automation", "Bug Reporting", "Quality Gates"],
   },
 ]
 
-function AgentFlipCard({ agent }: { agent: (typeof agents)[0] }) {
+function AgentFlipCard({ agent }: { agent: typeof agents[0] }) {
   const [isFlipped, setIsFlipped] = useState(false)
   const navigate = useNavigate()
   const Icon = agent.icon
 
   const handleChatClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    navigate({ to: "/projects" })
+    navigate({ to: '/projects' })
   }
 
   return (
@@ -183,9 +151,7 @@ function AgentFlipCard({ agent }: { agent: (typeof agents)[0] }) {
       <div
         className={cn(
           "relative w-full h-full [transform-style:preserve-3d] transition-all duration-700",
-          isFlipped
-            ? "[transform:rotateY(180deg)]"
-            : "[transform:rotateY(0deg)]",
+          isFlipped ? "[transform:rotateY(180deg)]" : "[transform:rotateY(0deg)]"
         )}
       >
         {/* Front */}
@@ -195,45 +161,33 @@ function AgentFlipCard({ agent }: { agent: (typeof agents)[0] }) {
             "overflow-hidden rounded-3xl",
             "bg-gradient-to-b dark:from-zinc-900 dark:to-zinc-950 from-white to-zinc-50",
             "border border-zinc-200 dark:border-zinc-800",
-            "shadow-xl",
+            "shadow-xl"
           )}
         >
-          <div
-            className={`absolute inset-0 bg-gradient-to-br ${agent.bgGradient} opacity-50`}
-          />
+          <div className={`absolute inset-0 bg-gradient-to-br ${agent.bgGradient} opacity-50`} />
 
           <div className="relative h-full flex flex-col">
             <div className="flex-1 flex items-center justify-center pt-6">
               <div className="relative">
-                <div
-                  className={`absolute inset-0 bg-gradient-to-br ${agent.gradient} rounded-full blur-2xl opacity-30 scale-150`}
-                />
+                <div className={`absolute inset-0 bg-gradient-to-br ${agent.gradient} rounded-full blur-2xl opacity-30 scale-150`} />
                 <img
                   src={agent.image}
                   alt={agent.title}
                   className="w-40 h-40 rounded-full object-cover border-4 border-white/20 shadow-2xl relative z-10"
                 />
-                <div
-                  className={`absolute -bottom-2 -right-2 p-2.5 rounded-xl bg-gradient-to-br ${agent.gradient} shadow-lg z-20`}
-                >
+                <div className={`absolute -bottom-2 -right-2 p-2.5 rounded-xl bg-gradient-to-br ${agent.gradient} shadow-lg z-20`}>
                   <Icon className="w-5 h-5 text-white" />
                 </div>
               </div>
             </div>
 
             <div className="p-6 text-center space-y-2">
-              <div
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r ${agent.gradient} text-white text-xs font-medium`}
-              >
+              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r ${agent.gradient} text-white text-xs font-medium`}>
                 <Sparkles className="w-3 h-3" />
                 AI Agent
               </div>
-              <h3 className="text-xl font-bold text-zinc-900 dark:text-white">
-                {agent.title}
-              </h3>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                {agent.subtitle}
-              </p>
+              <h3 className="text-xl font-bold text-zinc-900 dark:text-white">{agent.title}</h3>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">{agent.subtitle}</p>
             </div>
           </div>
         </div>
@@ -245,27 +199,19 @@ function AgentFlipCard({ agent }: { agent: (typeof agents)[0] }) {
             "overflow-hidden rounded-3xl p-6",
             "bg-gradient-to-b dark:from-zinc-900 dark:to-zinc-950 from-white to-zinc-50",
             "border border-zinc-200 dark:border-zinc-800",
-            "shadow-xl flex flex-col",
+            "shadow-xl flex flex-col"
           )}
         >
-          <div
-            className={`absolute inset-0 bg-gradient-to-br ${agent.bgGradient} opacity-30`}
-          />
+          <div className={`absolute inset-0 bg-gradient-to-br ${agent.bgGradient} opacity-30`} />
 
           <div className="relative flex-1 flex flex-col">
             <div className="flex items-center gap-3 mb-4">
-              <div
-                className={`p-2.5 rounded-xl bg-gradient-to-br ${agent.gradient}`}
-              >
+              <div className={`p-2.5 rounded-xl bg-gradient-to-br ${agent.gradient}`}>
                 <Icon className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h3 className="font-bold text-zinc-900 dark:text-white">
-                  {agent.title}
-                </h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {agent.subtitle}
-                </p>
+                <h3 className="font-bold text-zinc-900 dark:text-white">{agent.title}</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">{agent.subtitle}</p>
               </div>
             </div>
 
@@ -274,45 +220,37 @@ function AgentFlipCard({ agent }: { agent: (typeof agents)[0] }) {
             </p>
 
             <div className="space-y-2.5 flex-1">
-              <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
-                Capabilities
-              </p>
+              <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">Capabilities</p>
               {agent.features.map((feature, idx) => (
                 <div
                   key={feature}
                   className="flex items-center gap-2.5 text-sm text-zinc-700 dark:text-zinc-300"
                   style={{
-                    transform: isFlipped
-                      ? "translateX(0)"
-                      : "translateX(-10px)",
+                    transform: isFlipped ? "translateX(0)" : "translateX(-10px)",
                     opacity: isFlipped ? 1 : 0,
                     transition: `all 0.4s ease ${idx * 80 + 150}ms`,
                   }}
                 >
-                  <div
-                    className={`w-1.5 h-1.5 rounded-full bg-gradient-to-r ${agent.gradient}`}
-                  />
+                  <div className={`w-1.5 h-1.5 rounded-full bg-gradient-to-r ${agent.gradient}`} />
                   {feature}
                 </div>
               ))}
             </div>
 
-            <div
+            <div 
               onClick={handleChatClick}
               className={cn(
                 "mt-4 flex items-center justify-between p-3 -mx-1 rounded-xl",
                 "bg-zinc-100 dark:bg-zinc-800/50",
                 "hover:bg-gradient-to-r hover:from-zinc-100 hover:to-transparent",
                 "dark:hover:from-zinc-800 dark:hover:to-transparent",
-                "transition-all duration-300 cursor-pointer group/cta",
+                "transition-all duration-300 cursor-pointer group/cta"
               )}
             >
               <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200 group-hover/cta:text-zinc-900 dark:group-hover/cta:text-white transition-colors">
                 Chat with {agent.title}
               </span>
-              <ArrowRight
-                className={`w-4 h-4 text-zinc-400 group-hover/cta:translate-x-1 transition-all bg-gradient-to-r ${agent.gradient} bg-clip-text`}
-              />
+              <ArrowRight className={`w-4 h-4 text-zinc-400 group-hover/cta:translate-x-1 transition-all bg-gradient-to-r ${agent.gradient} bg-clip-text`} />
             </div>
           </div>
         </div>
@@ -380,9 +318,7 @@ function RouteComponent() {
                     <Users className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <p className="font-semibold text-foreground">
-                      Smart Routing
-                    </p>
+                    <p className="font-semibold text-foreground">Smart Routing</p>
                     <p className="text-sm">Auto assignment</p>
                   </div>
                 </div>
@@ -400,9 +336,7 @@ function RouteComponent() {
                     <Code className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <p className="font-semibold text-foreground">
-                      Conversational
-                    </p>
+                    <p className="font-semibold text-foreground">Conversational</p>
                     <p className="text-sm">Natural language</p>
                   </div>
                 </div>
@@ -422,8 +356,8 @@ function RouteComponent() {
                   Why choose VibeSDLC?
                 </h2>
                 <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                  Combining AI power with Agile/Kanban processes to optimize the
-                  entire software development lifecycle.
+                  Combining AI power with Agile/Kanban processes to optimize
+                  the entire software development lifecycle.
                 </p>
               </div>
 
@@ -453,15 +387,15 @@ function RouteComponent() {
                   What developers say about VibeSDLC?
                 </h2>
                 <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                  Feedback from beta testers and early adopters in the tech
-                  community.
+                  Feedback from beta testers and early adopters in the tech community.
                 </p>
               </div>
               <StaggerTestimonials />
             </section>
           </AnimatedSection>
-        </main>
 
+        </main>
+        
         <Footer />
       </div>
     </div>

@@ -1,6 +1,6 @@
 /**
  * MessageStatusIndicator - WhatsApp-like message status indicators
- *
+ * 
  * Shows message delivery status with icons:
  * - pending: Loading spinner
  * - sent: Single checkmark
@@ -8,7 +8,7 @@
  * - failed: Error icon
  */
 
-import { AlertCircle, Check, CheckCheck, Loader2 } from "lucide-react"
+import { Check, CheckCheck, Loader2, AlertCircle } from "lucide-react"
 import type { MessageStatus } from "@/types/message"
 
 interface MessageStatusIndicatorProps {
@@ -16,45 +16,42 @@ interface MessageStatusIndicatorProps {
   className?: string
 }
 
-export function MessageStatusIndicator({
-  status,
-  className = "",
-}: MessageStatusIndicatorProps) {
+export function MessageStatusIndicator({ status, className = "" }: MessageStatusIndicatorProps) {
   if (!status) return null
 
   switch (status) {
-    case "pending":
+    case 'pending':
       return (
-        <Loader2
-          className={`w-3.5 h-3.5 animate-spin text-gray-400 ${className}`}
+        <Loader2 
+          className={`w-3.5 h-3.5 animate-spin text-gray-400 ${className}`} 
           aria-label="Sending..."
         />
       )
-
-    case "sent":
+    
+    case 'sent':
       return (
-        <Check
+        <Check 
           className={`w-3.5 h-3.5 text-gray-400 ${className}`}
           aria-label="Sent"
         />
       )
-
-    case "delivered":
+    
+    case 'delivered':
       return (
-        <CheckCheck
+        <CheckCheck 
           className={`w-3.5 h-3.5 text-gray-400 ${className}`}
           aria-label="Delivered"
         />
       )
-
-    case "failed":
+    
+    case 'failed':
       return (
-        <AlertCircle
+        <AlertCircle 
           className={`w-3.5 h-3.5 text-red-500 ${className}`}
           aria-label="Failed to send"
         />
       )
-
+    
     default:
       return null
   }

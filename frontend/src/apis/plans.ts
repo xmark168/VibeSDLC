@@ -3,13 +3,19 @@ import { OpenAPI } from "@/client"
 import type {
   Plan,
   PlanCreate,
-  PlanFilters,
-  PlansResponse,
   PlanUpdate,
+  PlansResponse,
+  PlanFilters,
 } from "@/types/plan"
 
 // Re-export types for convenience
-export type { Plan, PlanCreate, PlanUpdate, PlansResponse, PlanFilters }
+export type {
+  Plan,
+  PlanCreate,
+  PlanUpdate,
+  PlansResponse,
+  PlanFilters,
+}
 
 // ===== API Client =====
 
@@ -22,7 +28,7 @@ export const plansApi = {
     tier?: string
     is_active?: boolean
     is_featured?: boolean
-    order_by?: "sort_index" | "price" | "created_at" | "name"
+    order_by?: 'sort_index' | 'price' | 'created_at' | 'name'
   }): Promise<PlansResponse> => {
     return __request<PlansResponse>(OpenAPI, {
       method: "GET",
@@ -34,7 +40,7 @@ export const plansApi = {
         tier: params?.tier,
         is_active: params?.is_active,
         is_featured: params?.is_featured,
-        order_by: params?.order_by ?? "sort_index",
+        order_by: params?.order_by ?? 'sort_index',
       },
     })
   },
@@ -87,15 +93,15 @@ export const plansApi = {
 /**
  * Format price with currency
  */
-export function formatPrice(price: number, currency: string = "VND"): string {
-  if (currency === "VND") {
-    return new Intl.NumberFormat("vi-VN", {
-      style: "currency",
-      currency: "VND",
+export function formatPrice(price: number, currency: string = 'VND'): string {
+  if (currency === 'VND') {
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: 'VND',
     }).format(price)
   }
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
     currency: currency,
   }).format(price)
 }
@@ -105,8 +111,8 @@ export function formatPrice(price: number, currency: string = "VND"): string {
  */
 export function getTierLabel(tier: string): string {
   const labels: Record<string, string> = {
-    free: "Free",
-    pay: "Pay",
+    free: 'Free',
+    pay: 'Pay',
   }
   return labels[tier] || tier
 }
@@ -114,16 +120,14 @@ export function getTierLabel(tier: string): string {
 /**
  * Get tier badge variant
  */
-export function getTierVariant(
-  tier: string,
-): "default" | "secondary" | "destructive" | "outline" {
+export function getTierVariant(tier: string): "default" | "secondary" | "destructive" | "outline" {
   switch (tier) {
-    case "free":
-      return "outline"
-    case "pay":
-      return "default"
+    case 'free':
+      return 'outline'
+    case 'pay':
+      return 'default'
     default:
-      return "outline"
+      return 'outline'
   }
 }
 
@@ -131,7 +135,7 @@ export function getTierVariant(
  * Format discount percentage for display
  */
 export function formatDiscount(discount: number | null): string {
-  if (!discount || discount <= 0) return ""
+  if (!discount || discount <= 0) return ''
   return `Save ${Math.round(discount)}%`
 }
 
@@ -140,9 +144,9 @@ export function formatDiscount(discount: number | null): string {
  */
 export function getEffectivePrice(
   plan: Plan,
-  billingCycle: "monthly" | "yearly",
+  billingCycle: 'monthly' | 'yearly'
 ): number | null {
-  return billingCycle === "monthly" ? plan.monthly_price : plan.yearly_price
+  return billingCycle === 'monthly' ? plan.monthly_price : plan.yearly_price
 }
 
 /**
@@ -150,9 +154,9 @@ export function getEffectivePrice(
  */
 export function supportsBillingCycle(
   plan: Plan,
-  billingCycle: "monthly" | "yearly",
+  billingCycle: 'monthly' | 'yearly'
 ): boolean {
-  return billingCycle === "monthly"
+  return billingCycle === 'monthly'
     ? plan.monthly_price !== null
     : plan.yearly_price !== null
 }

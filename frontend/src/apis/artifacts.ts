@@ -36,14 +36,11 @@ export const artifactsApi = {
       artifact_type?: string
       status?: string
       limit?: number
-    },
+    }
   ): Promise<Artifact[]> => {
-    const response = await apiClient.get(
-      `/artifacts/projects/${projectId}/artifacts`,
-      {
-        params,
-      },
-    )
+    const response = await apiClient.get(`/artifacts/projects/${projectId}/artifacts`, {
+      params,
+    })
     return response.data.artifacts || []
   },
 
@@ -51,7 +48,7 @@ export const artifactsApi = {
   updateArtifactStatus: async (
     artifactId: string,
     status: string,
-    feedback?: string,
+    feedback?: string
   ): Promise<Artifact> => {
     const response = await apiClient.patch(`/artifacts/${artifactId}/status`, {
       status,
@@ -64,7 +61,7 @@ export const artifactsApi = {
   createVersion: async (
     artifactId: string,
     newContent: any,
-    description?: string,
+    description?: string
   ): Promise<Artifact> => {
     const response = await apiClient.post(`/artifacts/${artifactId}/version`, {
       new_content: newContent,
@@ -77,17 +74,14 @@ export const artifactsApi = {
   getLatestVersion: async (
     projectId: string,
     artifactType: string,
-    title?: string,
+    title?: string
   ): Promise<Artifact | null> => {
-    const response = await apiClient.get(
-      `/artifacts/projects/${projectId}/artifacts/latest`,
-      {
-        params: {
-          artifact_type: artifactType,
-          title,
-        },
+    const response = await apiClient.get(`/artifacts/projects/${projectId}/artifacts/latest`, {
+      params: {
+        artifact_type: artifactType,
+        title,
       },
-    )
+    })
     return response.data
   },
 }

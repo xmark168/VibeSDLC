@@ -1,22 +1,48 @@
 import { createFileRoute } from "@tanstack/react-router"
+import { useState } from "react"
 import {
+  Search,
+  Plus,
+  MoreVertical,
+  Layers,
   Code2,
   Edit,
-  FileCode,
-  Image as ImageIcon,
-  Layers,
-  MoreVertical,
-  Package,
-  Plus,
-  RefreshCw,
-  Search,
   Trash2,
+  RefreshCw,
+  Image as ImageIcon,
+  FileCode,
+  Package,
 } from "lucide-react"
-import { useState } from "react"
-import { AdminLayout } from "@/components/admin/AdminLayout"
-import { BoilerplateEditorDialog } from "@/components/admin/stacks/BoilerplateEditorDialog"
-import { SkillEditorDialog } from "@/components/admin/stacks/SkillEditorDialog"
-import { StackDialog } from "@/components/admin/stacks/StackDialog"
+import { useStacks, useDeleteStack } from "@/queries/stacks"
+import { requireRole } from "@/utils/auth"
+import type { TechStack } from "@/types/stack"
+
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,36 +53,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { useDeleteStack, useStacks } from "@/queries/stacks"
-import type { TechStack } from "@/types/stack"
-import { requireRole } from "@/utils/auth"
+import { AdminLayout } from "@/components/admin/AdminLayout"
+import { StackDialog } from "@/components/admin/stacks/StackDialog"
+import { SkillEditorDialog } from "@/components/admin/stacks/SkillEditorDialog"
+import { BoilerplateEditorDialog } from "@/components/admin/stacks/BoilerplateEditorDialog"
 
 export const Route = createFileRoute("/admin/stacks")({
   beforeLoad: async () => {
@@ -79,12 +80,7 @@ function StacksAdminPage() {
 
   const queryParams = {
     search: searchTerm || undefined,
-    is_active:
-      statusFilter === "active"
-        ? true
-        : statusFilter === "inactive"
-          ? false
-          : undefined,
+    is_active: statusFilter === "active" ? true : statusFilter === "inactive" ? false : undefined,
     limit: 100,
   }
 
@@ -201,19 +197,14 @@ function StacksAdminPage() {
             {isLoading ? (
               <div className="p-8 space-y-4">
                 {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="h-16 bg-muted rounded-lg animate-pulse"
-                  />
+                  <div key={i} className="h-16 bg-muted rounded-lg animate-pulse" />
                 ))}
               </div>
             ) : stacksData?.data.length === 0 ? (
               <div className="text-center py-20">
                 <Layers className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-xl font-semibold mb-2">No stacks found</h3>
-                <p className="text-muted-foreground mb-6">
-                  Create your first stack to get started.
-                </p>
+                <p className="text-muted-foreground mb-6">Create your first stack to get started.</p>
                 <Button onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="w-4 h-4 mr-2" />
                   Create Stack
@@ -251,39 +242,24 @@ function StacksAdminPage() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-primary">
-                        {stack.code}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {stack.name}
-                      </TableCell>
+                      <TableCell className="font-mono text-primary">{stack.code}</TableCell>
+                      <TableCell className="font-medium">{stack.name}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {Object.keys(stack.stack_config || {}).length ===
-                          0 ? (
-                            <span className="text-muted-foreground text-xs">
-                              No config
-                            </span>
+                          {Object.keys(stack.stack_config || {}).length === 0 ? (
+                            <span className="text-muted-foreground text-xs">No config</span>
                           ) : (
                             <>
                               {Object.entries(stack.stack_config || {})
                                 .slice(0, 4)
                                 .map(([key, value]) => (
-                                  <Badge
-                                    key={key}
-                                    variant="secondary"
-                                    className="text-xs"
-                                  >
+                                  <Badge key={key} variant="secondary" className="text-xs">
                                     {key}: {String(value)}
                                   </Badge>
                                 ))}
-                              {Object.keys(stack.stack_config || {}).length >
-                                4 && (
+                              {Object.keys(stack.stack_config || {}).length > 4 && (
                                 <Badge variant="outline" className="text-xs">
-                                  +
-                                  {Object.keys(stack.stack_config || {})
-                                    .length - 4}{" "}
-                                  more
+                                  +{Object.keys(stack.stack_config || {}).length - 4} more
                                 </Badge>
                               )}
                             </>
@@ -294,22 +270,15 @@ function StacksAdminPage() {
                         <div className="flex items-center gap-2">
                           <div
                             className={`w-2 h-2 rounded-full ${
-                              stack.is_active
-                                ? "bg-green-500"
-                                : "bg-muted-foreground"
+                              stack.is_active ? "bg-green-500" : "bg-muted-foreground"
                             }`}
                           />
-                          <Badge
-                            variant={stack.is_active ? "default" : "secondary"}
-                          >
+                          <Badge variant={stack.is_active ? "default" : "secondary"}>
                             {stack.is_active ? "Active" : "Inactive"}
                           </Badge>
                         </div>
                       </TableCell>
-                      <TableCell
-                        className="text-right"
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
@@ -317,21 +286,15 @@ function StacksAdminPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => handleEditDetail(stack)}
-                            >
+                            <DropdownMenuItem onClick={() => handleEditDetail(stack)}>
                               <Edit className="w-4 h-4 mr-2" />
                               Edit Detail
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleEditSkills(stack)}
-                            >
+                            <DropdownMenuItem onClick={() => handleEditSkills(stack)}>
                               <FileCode className="w-4 h-4 mr-2" />
                               Edit Skills
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleEditBoilerplate(stack)}
-                            >
+                            <DropdownMenuItem onClick={() => handleEditBoilerplate(stack)}>
                               <Package className="w-4 h-4 mr-2" />
                               Edit Boilerplate
                             </DropdownMenuItem>
@@ -415,8 +378,7 @@ function StacksAdminPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Stack</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{stackToDelete?.name}"? This
-              action cannot be undone.
+              Are you sure you want to delete "{stackToDelete?.name}"? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex items-center gap-2 py-2">
@@ -425,10 +387,7 @@ function StacksAdminPage() {
               checked={deleteFiles}
               onCheckedChange={(checked) => setDeleteFiles(checked as boolean)}
             />
-            <label
-              htmlFor="deleteFiles"
-              className="text-sm text-muted-foreground"
-            >
+            <label htmlFor="deleteFiles" className="text-sm text-muted-foreground">
               Also delete skill files from disk
             </label>
           </div>

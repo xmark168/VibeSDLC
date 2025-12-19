@@ -1,10 +1,13 @@
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Info, Loader2, RotateCcw, Settings } from "lucide-react"
-import { useEffect } from "react"
+import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Button } from "@/components/ui/button"
+import {
+  Settings,
+  Loader2,
+  RotateCcw,
+  Info,
+} from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -13,6 +16,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Slider } from "@/components/ui/slider"
 import {
   Form,
   FormControl,
@@ -22,9 +30,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { Slider } from "@/components/ui/slider"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Tooltip,
   TooltipContent,
@@ -32,6 +37,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { toast } from "@/lib/toast"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { agentsApi } from "@/apis/agents"
 
 const configSchema = z.object({
   temperature: z.number().min(0).max(2),
@@ -77,12 +84,9 @@ export function AgentConfigDialog({
   const { data: defaultsData } = useQuery({
     queryKey: ["agent-config-defaults", roleType],
     queryFn: async () => {
-      const response = await fetch(
-        `/api/v1/agents/config/defaults/${roleType}`,
-        {
-          credentials: "include",
-        },
-      )
+      const response = await fetch(`/api/v1/agents/config/defaults/${roleType}`, {
+        credentials: "include",
+      })
       if (!response.ok) throw new Error("Failed to fetch defaults")
       return response.json()
     },
@@ -210,8 +214,7 @@ export function AgentConfigDialog({
                             </TooltipTrigger>
                             <TooltipContent>
                               <p className="max-w-xs">
-                                Controls randomness. Lower = more focused,
-                                higher = more creative
+                                Controls randomness. Lower = more focused, higher = more creative
                               </p>
                             </TooltipContent>
                           </Tooltip>
@@ -250,8 +253,7 @@ export function AgentConfigDialog({
                             </TooltipTrigger>
                             <TooltipContent>
                               <p className="max-w-xs">
-                                Nucleus sampling. Consider tokens with top_p
-                                probability mass
+                                Nucleus sampling. Consider tokens with top_p probability mass
                               </p>
                             </TooltipContent>
                           </Tooltip>
@@ -286,9 +288,7 @@ export function AgentConfigDialog({
                         <Input
                           type="number"
                           {...field}
-                          onChange={(e) =>
-                            field.onChange(parseInt(e.target.value, 10))
-                          }
+                          onChange={(e) => field.onChange(parseInt(e.target.value))}
                         />
                       </FormControl>
                       <FormDescription>Maximum response length</FormDescription>
@@ -307,9 +307,7 @@ export function AgentConfigDialog({
                         <Input
                           type="number"
                           {...field}
-                          onChange={(e) =>
-                            field.onChange(parseInt(e.target.value, 10))
-                          }
+                          onChange={(e) => field.onChange(parseInt(e.target.value))}
                         />
                       </FormControl>
                       <FormDescription>Max execution time</FormDescription>
@@ -328,9 +326,7 @@ export function AgentConfigDialog({
                         <Input
                           type="number"
                           {...field}
-                          onChange={(e) =>
-                            field.onChange(parseInt(e.target.value, 10))
-                          }
+                          onChange={(e) => field.onChange(parseInt(e.target.value))}
                         />
                       </FormControl>
                       <FormDescription>Retries on failure</FormDescription>
@@ -350,9 +346,7 @@ export function AgentConfigDialog({
                           placeholder="e.g., gpt-4-turbo"
                           {...field}
                           value={field.value || ""}
-                          onChange={(e) =>
-                            field.onChange(e.target.value || null)
-                          }
+                          onChange={(e) => field.onChange(e.target.value || null)}
                         />
                       </FormControl>
                       <FormDescription>Leave empty for default</FormDescription>
@@ -378,8 +372,7 @@ export function AgentConfigDialog({
                       />
                     </FormControl>
                     <FormDescription>
-                      Override the default system prompt. Leave empty to use
-                      role default.
+                      Override the default system prompt. Leave empty to use role default.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

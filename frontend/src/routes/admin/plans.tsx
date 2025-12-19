@@ -1,19 +1,52 @@
 import { createFileRoute } from "@tanstack/react-router"
-import {
-  Edit,
-  MoreVertical,
-  Package,
-  Plus,
-  RefreshCw,
-  Search,
-  Star,
-  Trash2,
-  Users,
-} from "lucide-react"
 import { useState } from "react"
-import { formatDiscount, formatPrice, getTierVariant } from "@/apis/plans"
-import { AdminLayout } from "@/components/admin/AdminLayout"
-import { PlanDialog } from "@/components/admin/PlanDialog"
+import {
+  Search,
+  Plus,
+  MoreVertical,
+  DollarSign,
+  Users,
+  Package,
+  Star,
+  Edit,
+  Trash2,
+  RefreshCw,
+} from "lucide-react"
+import { usePlans, useDeletePlan } from "@/queries/plans"
+import { requireRole } from "@/utils/auth"
+import type { Plan } from "@/types/plan"
+import {
+  formatPrice,
+  getTierVariant,
+  formatDiscount,
+} from "@/apis/plans"
+
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,35 +57,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { useDeletePlan, usePlans } from "@/queries/plans"
-import type { Plan } from "@/types/plan"
-import { requireRole } from "@/utils/auth"
+import { PlanDialog } from "@/components/admin/PlanDialog"
+import { AdminLayout } from "@/components/admin/AdminLayout"
 
 export const Route = createFileRoute("/admin/plans")({
   beforeLoad: async () => {
@@ -65,9 +71,7 @@ function PlansAdminPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [tierFilter, setTierFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [orderBy, setOrderBy] = useState<
-    "sort_index" | "price" | "created_at" | "name"
-  >("sort_index")
+  const [orderBy, setOrderBy] = useState<"sort_index" | "price" | "created_at" | "name">("sort_index")
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [planToDelete, setPlanToDelete] = useState<Plan | null>(null)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -77,12 +81,7 @@ function PlansAdminPage() {
   const queryParams = {
     search: searchTerm || undefined,
     tier: tierFilter !== "all" ? tierFilter : undefined,
-    is_active:
-      statusFilter === "active"
-        ? true
-        : statusFilter === "inactive"
-          ? false
-          : undefined,
+    is_active: statusFilter === "active" ? true : statusFilter === "inactive" ? false : undefined,
     order_by: orderBy,
     limit: 100,
   }
@@ -234,19 +233,14 @@ function PlansAdminPage() {
             {isLoading ? (
               <div className="p-8 space-y-4">
                 {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="h-16 bg-muted rounded-lg animate-pulse"
-                  />
+                  <div key={i} className="h-16 bg-muted rounded-lg animate-pulse" />
                 ))}
               </div>
             ) : plansData?.data.length === 0 ? (
               <div className="text-center py-20">
                 <Package className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
                 <h3 className="text-xl font-semibold mb-2">No plans found</h3>
-                <p className="text-muted-foreground mb-6">
-                  Create your first plan to get started.
-                </p>
+                <p className="text-muted-foreground mb-6">Create your first plan to get started.</p>
                 <Button onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="w-4 h-4 mr-2" />
                   Create Plan
@@ -276,10 +270,7 @@ function PlansAdminPage() {
                       onClick={() => handleEdit(plan)}
                     >
                       <TableCell>
-                        <Badge
-                          variant={getTierVariant(plan.tier)}
-                          className="text-xs"
-                        >
+                        <Badge variant={getTierVariant(plan.tier)} className="text-xs">
                           {plan.code}
                         </Badge>
                       </TableCell>
@@ -301,31 +292,22 @@ function PlansAdminPage() {
                           <span className="text-muted-foreground">Custom</span>
                         ) : plan.yearly_price != null ? (
                           <div className="flex flex-col">
-                            <span>
-                              {formatPrice(plan.yearly_price, plan.currency)}
-                            </span>
-                            {plan.yearly_discount_percentage &&
-                              plan.yearly_discount_percentage > 0 && (
-                                <span className="text-xs text-green-500">
-                                  {formatDiscount(
-                                    plan.yearly_discount_percentage,
-                                  )}
-                                </span>
-                              )}
+                            <span>{formatPrice(plan.yearly_price, plan.currency)}</span>
+                            {plan.yearly_discount_percentage && plan.yearly_discount_percentage > 0 && (
+                              <span className="text-xs text-green-500">
+                                {formatDiscount(plan.yearly_discount_percentage)}
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        {plan.monthly_credits != null
-                          ? plan.monthly_credits.toLocaleString()
-                          : "—"}
+                        {plan.monthly_credits != null ? plan.monthly_credits.toLocaleString() : '—'}
                       </TableCell>
                       <TableCell>
-                        {plan.available_project != null
-                          ? plan.available_project
-                          : "—"}
+                        {plan.available_project != null ? plan.available_project : '—'}
                       </TableCell>
                       <TableCell>
                         {plan.is_featured ? (
@@ -340,22 +322,15 @@ function PlansAdminPage() {
                         <div className="flex items-center gap-2">
                           <div
                             className={`w-2 h-2 rounded-full ${
-                              plan.is_active
-                                ? "bg-green-500"
-                                : "bg-muted-foreground"
+                              plan.is_active ? "bg-green-500" : "bg-muted-foreground"
                             }`}
                           />
-                          <Badge
-                            variant={plan.is_active ? "default" : "secondary"}
-                          >
+                          <Badge variant={plan.is_active ? "default" : "secondary"}>
                             {plan.is_active ? "Active" : "Inactive"}
                           </Badge>
                         </div>
                       </TableCell>
-                      <TableCell
-                        className="text-right"
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
@@ -418,8 +393,7 @@ function PlansAdminPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Plan</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{planToDelete?.name}"? This
-              action cannot be undone.
+              Are you sure you want to delete "{planToDelete?.name}"? This action cannot be undone.
               {planToDelete?.is_active && (
                 <span className="block mt-2 text-amber-500 font-medium">
                   Warning: This plan is currently active.

@@ -1,9 +1,4 @@
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query"
 import type {
   CreateMessageBody,
   CreateMessageWithFileParams,
@@ -37,9 +32,9 @@ export function useInfiniteMessages(projectId: string) {
         project_id: projectId,
         skip: pageParam,
         limit: MESSAGES_PER_PAGE,
-        order: "desc", // Newest first from API
+        order: 'desc',  // Newest first from API
       })
-
+      
       return {
         messages: result.data,
         totalCount: result.count,
@@ -49,16 +44,13 @@ export function useInfiniteMessages(projectId: string) {
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       // Calculate total messages loaded so far
-      const totalLoaded = allPages.reduce(
-        (acc, page) => acc + page.messages.length,
-        0,
-      )
-
+      const totalLoaded = allPages.reduce((acc, page) => acc + page.messages.length, 0)
+      
       // If we've loaded all messages, no more pages
       if (totalLoaded >= lastPage.totalCount) {
         return undefined
       }
-
+      
       // Return next skip value to load older messages
       return totalLoaded
     },
@@ -84,8 +76,7 @@ export function useCreateMessageWithFile() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (params: CreateMessageWithFileParams) =>
-      messagesApi.createWithFile(params),
+    mutationFn: (params: CreateMessageWithFileParams) => messagesApi.createWithFile(params),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["messages", { project_id: variables.project_id }],

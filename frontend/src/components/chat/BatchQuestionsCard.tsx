@@ -1,14 +1,16 @@
-import { CheckCircle2, ChevronDown, ChevronUp } from "lucide-react"
-import { useEffect, useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { useState, useEffect } from 'react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Label } from '@/components/ui/label'
+import { Loader2, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react'
 
 interface BatchQuestion {
   question_id?: string
   question_text: string
-  question_type: "open" | "multichoice"
+  question_type: 'open' | 'multichoice'
   options?: string[]
   allow_multiple?: boolean
   context?: string
@@ -24,26 +26,20 @@ interface BatchQuestionsCardProps {
   batchId: string
   questions: BatchQuestion[]
   questionIds: string[]
-  onSubmit: (
-    answers: Array<{
-      question_id: string
-      answer: string
-      selected_options?: string[]
-    }>,
-  ) => void
+  onSubmit: (answers: Array<{ question_id: string; answer: string; selected_options?: string[] }>) => void
   agentName?: string
   answered?: boolean
-  submittedAnswers?: SubmittedAnswer[] // Answers that were submitted
-  chatInputValue?: string // Current value from chat input
-  onChatInputUsed?: () => void // Callback when chat input is used as answer
-  onQuestionChange?: (questionId: string, savedInput: string) => void // Callback when question changes
-  onAllAnsweredChange?: (allAnswered: boolean) => void // Callback when all questions answered status changes
-  currentQuestionIndex?: number // Controlled current question index
-  onNavigate?: (direction: "next" | "back") => void // Callback for navigation
-  onCurrentAnsweredChange?: (isAnswered: boolean) => void // Callback when current question answer status changes
-  onNextReady?: (nextFn: () => void) => void // Expose next function to parent
-  onBackReady?: (backFn: () => void) => void // Expose back function to parent
-  onSubmitReady?: (submitFn: () => Promise<void>) => void // Expose submit function to parent
+  submittedAnswers?: SubmittedAnswer[]  // Answers that were submitted
+  chatInputValue?: string  // Current value from chat input
+  onChatInputUsed?: () => void  // Callback when chat input is used as answer
+  onQuestionChange?: (questionId: string, savedInput: string) => void  // Callback when question changes
+  onAllAnsweredChange?: (allAnswered: boolean) => void  // Callback when all questions answered status changes
+  currentQuestionIndex?: number  // Controlled current question index
+  onNavigate?: (direction: 'next' | 'back') => void  // Callback for navigation
+  onCurrentAnsweredChange?: (isAnswered: boolean) => void  // Callback when current question answer status changes
+  onNextReady?: (nextFn: () => void) => void  // Expose next function to parent
+  onBackReady?: (backFn: () => void) => void  // Expose back function to parent
+  onSubmitReady?: (submitFn: () => Promise<void>) => void  // Expose submit function to parent
 }
 
 export function BatchQuestionsCard({
@@ -54,7 +50,7 @@ export function BatchQuestionsCard({
   agentName,
   answered = false,
   submittedAnswers = [],
-  chatInputValue = "",
+  chatInputValue = '',
   onChatInputUsed,
   onQuestionChange,
   onAllAnsweredChange,
@@ -63,44 +59,32 @@ export function BatchQuestionsCard({
   onCurrentAnsweredChange,
   onNextReady,
   onBackReady,
-  onSubmitReady,
+  onSubmitReady
 }: BatchQuestionsCardProps) {
   // ALL hooks must be at the top, before any conditional returns
   // Use controlled index if provided, otherwise use local state
   const [localIndex, setLocalIndex] = useState(0)
-  const currentIndex =
-    currentQuestionIndex !== undefined ? currentQuestionIndex : localIndex
-  const [answers, setAnswers] = useState<
-    Map<string, { answer: string; selectedOptions: Set<string> }>
-  >(
-    new Map(
-      questions.map((_q, idx) => [
-        questionIds[idx],
-        { answer: "", selectedOptions: new Set() },
-      ]),
-    ),
+  const currentIndex = currentQuestionIndex !== undefined ? currentQuestionIndex : localIndex
+  const [answers, setAnswers] = useState<Map<string, { answer: string; selectedOptions: Set<string> }>>(
+    new Map(questions.map((q, idx) => [questionIds[idx], { answer: '', selectedOptions: new Set() }]))
   )
-  const [customInputs, setCustomInputs] = useState<Map<string, string>>(
-    new Map(),
-  )
-  const [_isSubmitting, setIsSubmitting] = useState(false)
-  const [showQA, setShowQA] = useState(false) // Moved here from below
-
+  const [customInputs, setCustomInputs] = useState<Map<string, string>>(new Map())
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showQA, setShowQA] = useState(false)  // Moved here from below
+  
   const currentQuestion = questions[currentIndex]
   const currentQuestionId = questionIds[currentIndex]
-  const currentAnswer = currentQuestionId
-    ? answers.get(currentQuestionId)
-    : undefined
-
-  const _isFirstQuestion = currentIndex === 0
-  const _isLastQuestion = currentIndex === questions.length - 1
-
+  const currentAnswer = currentQuestionId ? answers.get(currentQuestionId) : undefined
+  
+  const isFirstQuestion = currentIndex === 0
+  const isLastQuestion = currentIndex === questions.length - 1
+  
   // Guard: If no questions, show nothing
   if (!questions || questions.length === 0 || !currentQuestion) {
     return null
   }
-
-  const _updateAnswer = (questionId: string, answer: string) => {
+  
+  const updateAnswer = (questionId: string, answer: string) => {
     const newAnswers = new Map(answers)
     const current = newAnswers.get(questionId)
     if (current) {
@@ -108,18 +92,14 @@ export function BatchQuestionsCard({
       setAnswers(newAnswers)
     }
   }
-
-  const toggleOption = (
-    questionId: string,
-    option: string,
-    allowMultiple: boolean,
-  ) => {
+  
+  const toggleOption = (questionId: string, option: string, allowMultiple: boolean) => {
     const newAnswers = new Map(answers)
     const current = newAnswers.get(questionId)
     if (!current) return
-
+    
     const newSelected = new Set(current.selectedOptions)
-
+    
     if (allowMultiple) {
       if (newSelected.has(option)) {
         newSelected.delete(option)
@@ -130,27 +110,24 @@ export function BatchQuestionsCard({
       newSelected.clear()
       newSelected.add(option)
     }
-
+    
     newAnswers.set(questionId, { ...current, selectedOptions: newSelected })
     setAnswers(newAnswers)
   }
-
+  
   const handleNext = () => {
     // ALWAYS save current chat input (even if empty) before switching
     const newAnswers = new Map(answers)
     const newCustom = new Map(customInputs)
-
-    if (currentQuestion.question_type === "open") {
+    
+    if (currentQuestion.question_type === 'open') {
       // For open questions, save chat input as answer directly
       const current = newAnswers.get(currentQuestionId)
       if (current) {
-        newAnswers.set(currentQuestionId, {
-          ...current,
-          answer: chatInputValue,
-        })
+        newAnswers.set(currentQuestionId, { ...current, answer: chatInputValue })
         setAnswers(newAnswers)
       }
-    } else if (currentQuestion.question_type === "multichoice") {
+    } else if (currentQuestion.question_type === 'multichoice') {
       // For multichoice, save as custom input
       newCustom.set(currentQuestionId, chatInputValue)
       setCustomInputs(newCustom)
@@ -160,11 +137,8 @@ export function BatchQuestionsCard({
         const current = newAnswers.get(currentQuestionId)
         if (current) {
           const newSelected = new Set(current.selectedOptions)
-          newSelected.add("__CUSTOM__")
-          newAnswers.set(currentQuestionId, {
-            ...current,
-            selectedOptions: newSelected,
-          })
+          newSelected.add('__CUSTOM__')
+          newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
           setAnswers(newAnswers)
         }
       } else {
@@ -172,11 +146,8 @@ export function BatchQuestionsCard({
         const current = newAnswers.get(currentQuestionId)
         if (current) {
           const newSelected = new Set(current.selectedOptions)
-          newSelected.delete("__CUSTOM__")
-          newAnswers.set(currentQuestionId, {
-            ...current,
-            selectedOptions: newSelected,
-          })
+          newSelected.delete('__CUSTOM__')
+          newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
           setAnswers(newAnswers)
         }
       }
@@ -189,20 +160,20 @@ export function BatchQuestionsCard({
 
       // Notify parent to restore saved input for next question BEFORE navigating
       if (onQuestionChange) {
-        let savedInput = ""
-        if (nextQuestion.question_type === "open") {
+        let savedInput = ''
+        if (nextQuestion.question_type === 'open') {
           // For open questions, restore from answer
-          savedInput = newAnswers.get(nextQuestionId)?.answer || ""
+          savedInput = newAnswers.get(nextQuestionId)?.answer || ''
         } else {
           // For multichoice, restore from custom inputs
-          savedInput = newCustom.get(nextQuestionId) || ""
+          savedInput = newCustom.get(nextQuestionId) || ''
         }
         onQuestionChange(nextQuestionId, savedInput)
       }
 
       // Navigate AFTER restoring input
       if (onNavigate) {
-        onNavigate("next")
+        onNavigate('next')
       } else {
         setLocalIndex(nextIndex)
       }
@@ -213,18 +184,15 @@ export function BatchQuestionsCard({
     // ALWAYS save current chat input (even if empty) before switching
     const newAnswers = new Map(answers)
     const newCustom = new Map(customInputs)
-
-    if (currentQuestion.question_type === "open") {
+    
+    if (currentQuestion.question_type === 'open') {
       // For open questions, save chat input as answer directly
       const current = newAnswers.get(currentQuestionId)
       if (current) {
-        newAnswers.set(currentQuestionId, {
-          ...current,
-          answer: chatInputValue,
-        })
+        newAnswers.set(currentQuestionId, { ...current, answer: chatInputValue })
         setAnswers(newAnswers)
       }
-    } else if (currentQuestion.question_type === "multichoice") {
+    } else if (currentQuestion.question_type === 'multichoice') {
       // For multichoice, save as custom input
       newCustom.set(currentQuestionId, chatInputValue)
       setCustomInputs(newCustom)
@@ -234,22 +202,16 @@ export function BatchQuestionsCard({
         const current = newAnswers.get(currentQuestionId)
         if (current) {
           const newSelected = new Set(current.selectedOptions)
-          newSelected.add("__CUSTOM__")
-          newAnswers.set(currentQuestionId, {
-            ...current,
-            selectedOptions: newSelected,
-          })
+          newSelected.add('__CUSTOM__')
+          newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
           setAnswers(newAnswers)
         }
       } else {
         const current = newAnswers.get(currentQuestionId)
         if (current) {
           const newSelected = new Set(current.selectedOptions)
-          newSelected.delete("__CUSTOM__")
-          newAnswers.set(currentQuestionId, {
-            ...current,
-            selectedOptions: newSelected,
-          })
+          newSelected.delete('__CUSTOM__')
+          newAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
           setAnswers(newAnswers)
         }
       }
@@ -262,133 +224,125 @@ export function BatchQuestionsCard({
 
       // Notify parent to restore saved input for previous question BEFORE navigating
       if (onQuestionChange) {
-        let savedInput = ""
-        if (prevQuestion.question_type === "open") {
+        let savedInput = ''
+        if (prevQuestion.question_type === 'open') {
           // For open questions, restore from answer
-          savedInput = newAnswers.get(prevQuestionId)?.answer || ""
+          savedInput = newAnswers.get(prevQuestionId)?.answer || ''
         } else {
           // For multichoice, restore from custom inputs
-          savedInput = newCustom.get(prevQuestionId) || ""
+          savedInput = newCustom.get(prevQuestionId) || ''
         }
         onQuestionChange(prevQuestionId, savedInput)
       }
 
       // Navigate AFTER restoring input
       if (onNavigate) {
-        onNavigate("back")
+        onNavigate('back')
       } else {
         setLocalIndex(prevIndex)
       }
     }
   }
-
+  
   const handleSubmitAll = async () => {
     setIsSubmitting(true)
-
+    
     try {
       // Prepare final answers and custom inputs map
-      const finalAnswers = new Map(answers)
-      const finalCustomInputs = new Map(customInputs)
-
+      let finalAnswers = new Map(answers)
+      let finalCustomInputs = new Map(customInputs)
+      
       // Save current chat input before submitting
       if (chatInputValue.trim()) {
-        if (currentQuestion.question_type === "open") {
+        if (currentQuestion.question_type === 'open') {
           // For open questions, use chat input as the answer
           const current = finalAnswers.get(currentQuestionId)
           if (current) {
-            finalAnswers.set(currentQuestionId, {
-              ...current,
-              answer: chatInputValue.trim(),
-            })
+            finalAnswers.set(currentQuestionId, { ...current, answer: chatInputValue.trim() })
           }
-        } else if (currentQuestion.question_type === "multichoice") {
+        } else if (currentQuestion.question_type === 'multichoice') {
           // For multichoice with custom input
           finalCustomInputs.set(currentQuestionId, chatInputValue.trim())
-
+          
           const current = finalAnswers.get(currentQuestionId)
           if (current) {
             const newSelected = new Set(current.selectedOptions)
-            newSelected.add("__CUSTOM__")
-            finalAnswers.set(currentQuestionId, {
-              ...current,
-              selectedOptions: newSelected,
-            })
+            newSelected.add('__CUSTOM__')
+            finalAnswers.set(currentQuestionId, { ...current, selectedOptions: newSelected })
           }
         }
-
+        
         if (onChatInputUsed) {
           onChatInputUsed()
         }
       }
-
+      
       const allAnswers = questions.map((q, idx) => {
         const questionId = questionIds[idx]
         const ans = finalAnswers.get(questionId)!
         let finalOptions = Array.from(ans.selectedOptions)
-
+        
         // Replace __CUSTOM__ marker with actual custom text
-        if (finalOptions.includes("__CUSTOM__")) {
+        if (finalOptions.includes('__CUSTOM__')) {
           const customText = finalCustomInputs.get(questionId)
           if (customText?.trim()) {
-            finalOptions = finalOptions.filter((o) => o !== "__CUSTOM__")
+            finalOptions = finalOptions.filter(o => o !== '__CUSTOM__')
             finalOptions.push(customText.trim())
           } else {
-            finalOptions = finalOptions.filter((o) => o !== "__CUSTOM__")
+            finalOptions = finalOptions.filter(o => o !== '__CUSTOM__')
           }
         }
-
+        
         return {
           question_id: questionId,
           answer: ans.answer,
-          selected_options:
-            q.question_type === "multichoice" ? finalOptions : undefined,
+          selected_options: q.question_type === 'multichoice' ? finalOptions : undefined
         }
       })
-
+      
       await onSubmit(allAnswers)
     } finally {
       setIsSubmitting(false)
     }
   }
-
+  
   // Check if current question is answered
   const isCurrentAnswered = () => {
     if (!currentAnswer) return false
-
-    if (currentQuestion.question_type === "open") {
+    
+    if (currentQuestion.question_type === 'open') {
       // For open questions, check chat input value OR saved answer
-      return (
-        chatInputValue.trim().length > 0 ||
-        currentAnswer.answer.trim().length > 0
-      )
+      return chatInputValue.trim().length > 0 || currentAnswer.answer.trim().length > 0
+    } else {
+      // For multichoice: has selected options OR has text in chat input (treated as custom answer)
+      const hasSelectedOptions = currentAnswer.selectedOptions.size > 0
+      const hasChatInput = chatInputValue.trim().length > 0
+      const hasCustomText = customInputs.get(currentQuestionId)?.trim()
+      
+      return hasSelectedOptions || hasChatInput || !!hasCustomText
     }
-    // For multichoice: has selected options OR has text in chat input (treated as custom answer)
-    const hasSelectedOptions = currentAnswer.selectedOptions.size > 0
-    const hasChatInput = chatInputValue.trim().length > 0
-    const hasCustomText = customInputs.get(currentQuestionId)?.trim()
-
-    return hasSelectedOptions || hasChatInput || !!hasCustomText
   }
-
+  
   // Check if all questions are answered
   const allAnswered = questions.every((q, idx) => {
     const questionId = questionIds[idx]
     const ans = answers.get(questionId)
     if (!ans) return false
-
-    if (q.question_type === "open") {
+    
+    if (q.question_type === 'open') {
       // For open questions: check saved answer OR (if current question) chat input
       const isCurrentQ = questionId === currentQuestionId
       const hasSavedAnswer = ans.answer.trim().length > 0
       const hasChatInput = isCurrentQ && chatInputValue.trim().length > 0
       return hasSavedAnswer || hasChatInput
+    } else {
+      // For multichoice: has selected options OR has custom text OR (if current question) has chat input
+      const hasSelectedOptions = ans.selectedOptions.size > 0
+      const hasCustomText = customInputs.get(questionId)?.trim()
+      const isCurrentQ = questionId === currentQuestionId
+      const hasChatInput = isCurrentQ && chatInputValue.trim().length > 0
+      return hasSelectedOptions || !!hasCustomText || hasChatInput
     }
-    // For multichoice: has selected options OR has custom text OR (if current question) has chat input
-    const hasSelectedOptions = ans.selectedOptions.size > 0
-    const hasCustomText = customInputs.get(questionId)?.trim()
-    const isCurrentQ = questionId === currentQuestionId
-    const hasChatInput = isCurrentQ && chatInputValue.trim().length > 0
-    return hasSelectedOptions || !!hasCustomText || hasChatInput
   })
 
   // Notify parent when allAnswered status changes
@@ -405,7 +359,7 @@ export function BatchQuestionsCard({
       onCurrentAnsweredChange(answered)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onCurrentAnsweredChange, isCurrentAnswered])
+  }, [currentQuestionId, chatInputValue, answers, customInputs, onCurrentAnsweredChange])
 
   // Expose navigation functions to parent
   useEffect(() => {
@@ -438,10 +392,10 @@ export function BatchQuestionsCard({
       onBackReady(handleBack)
     }
   }, [handleBack, onBackReady])
-
+  
   if (answered) {
     // Build a map of answers by question_id for quick lookup
-    const answersMap = new Map(submittedAnswers.map((a) => [a.question_id, a]))
+    const answersMap = new Map(submittedAnswers.map(a => [a.question_id, a]))
 
     return (
       <Card className="p-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 border-green-500/20">
@@ -462,9 +416,13 @@ export function BatchQuestionsCard({
               className="-p-2 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/50"
             >
               {showQA ? (
-                <ChevronUp className="w-4 h-4" />
+                <>
+                  <ChevronUp className="w-4 h-4" />
+                </>
               ) : (
-                <ChevronDown className="w-4 h-4" />
+                <>
+                  <ChevronDown className="w-4 h-4" />
+                </>
               )}
             </Button>
           </div>
@@ -475,30 +433,22 @@ export function BatchQuestionsCard({
               {questions.map((q, idx) => {
                 const questionId = questionIds[idx]
                 const ans = answersMap.get(questionId)
-
+                
                 // Get answer text - check both selected_options and answer
-                let answerText = ""
+                let answerText = ''
                 if (ans?.selected_options && ans.selected_options.length > 0) {
-                  answerText = ans.selected_options.join(", ")
-                } else if (ans?.answer?.trim()) {
+                  answerText = ans.selected_options.join(', ')
+                } else if (ans?.answer && ans.answer.trim()) {
                   answerText = ans.answer
                 }
 
                 return (
                   <div key={questionId}>
                     <p className="text-sm text-muted-foreground">
-                      <span className="font-medium text-green-600 dark:text-green-400">
-                        Q{idx + 1}:
-                      </span>{" "}
-                      {q.question_text}
+                      <span className="font-medium text-green-600 dark:text-green-400">Q{idx + 1}:</span> {q.question_text}
                     </p>
                     <p className="text-sm text-foreground mt-0.5">
-                      <span className="font-medium">→</span>{" "}
-                      {answerText || (
-                        <span className="italic text-muted-foreground">
-                          Không có câu trả lời
-                        </span>
-                      )}
+                      <span className="font-medium">→</span> {answerText || <span className="italic text-muted-foreground">Không có câu trả lời</span>}
                     </p>
                   </div>
                 )
@@ -509,13 +459,13 @@ export function BatchQuestionsCard({
       </Card>
     )
   }
-
+  
   // Filter out "Khác" options from the list
   const filterOutOtherOption = (options: string[] | undefined): string[] => {
     if (!options) return []
-    return options.filter((opt) => {
+    return options.filter(opt => {
       const lower = opt.toLowerCase()
-      return !lower.startsWith("khác") && !lower.startsWith("other")
+      return !lower.startsWith('khác') && !lower.startsWith('other')
     })
   }
 
@@ -529,9 +479,7 @@ export function BatchQuestionsCard({
         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1 overflow-hidden">
           <div
             className="bg-blue-400 dark:bg-blue-500 h-1 rounded-full transition-all duration-500 ease-out"
-            style={{
-              width: `${((currentIndex + 1) / questions.length) * 100}%`,
-            }}
+            style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
           />
         </div>
 
@@ -547,56 +495,49 @@ export function BatchQuestionsCard({
           </div>
 
           {/* Answer Options */}
-          {currentQuestion.question_type ===
-          "open" ? // For open questions, user types in main chat input (no input here)
-          null : (
+          {currentQuestion.question_type === 'open' ? (
+            // For open questions, user types in main chat input (no input here)
+            null
+          ) : (
             <div className="space-y-1.5">
               {currentQuestion.allow_multiple ? (
                 <div className="space-y-1.5">
-                  {filteredOptions.map((option) => (
-                    <div
-                      key={option}
+                  {filteredOptions.map(option => (
+                    <div 
+                      key={option} 
                       className="flex items-center space-x-2 p-1.5 rounded hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() =>
-                        toggleOption(currentQuestionId, option, true)
-                      }
+                      onClick={() => toggleOption(currentQuestionId, option, true)}
                     >
                       <Checkbox
                         id={`${currentQuestionId}-${option}`}
-                        checked={
-                          currentAnswer?.selectedOptions.has(option) || false
-                        }
+                        checked={currentAnswer?.selectedOptions.has(option) || false}
                         onCheckedChange={() => {}}
                       />
-                      <span className="text-sm flex-1">{option}</span>
+                      <span className="text-sm flex-1">
+                        {option}
+                      </span>
                     </div>
                   ))}
                 </div>
               ) : (
                 <RadioGroup
-                  value={
-                    currentAnswer
-                      ? Array.from(currentAnswer.selectedOptions)[0] || ""
-                      : ""
-                  }
-                  onValueChange={(value) =>
-                    toggleOption(currentQuestionId, value, false)
-                  }
+                  value={currentAnswer ? Array.from(currentAnswer.selectedOptions)[0] || '' : ''}
+                  onValueChange={(value) => toggleOption(currentQuestionId, value, false)}
                   className="space-y-1.5 -gap-3 -grid"
                 >
-                  {filteredOptions.map((option) => (
-                    <div
-                      key={option}
+                  {filteredOptions.map(option => (
+                    <div 
+                      key={option} 
                       className="flex items-center space-x-2 p-1.5 rounded hover:bg-accent transition-colors cursor-pointer"
-                      onClick={() =>
-                        toggleOption(currentQuestionId, option, false)
-                      }
+                      onClick={() => toggleOption(currentQuestionId, option, false)}
                     >
-                      <RadioGroupItem
-                        value={option}
+                      <RadioGroupItem 
+                        value={option} 
                         id={`${currentQuestionId}-${option}`}
                       />
-                      <span className="text-sm flex-1">{option}</span>
+                      <span className="text-sm flex-1">
+                        {option}
+                      </span>
                     </div>
                   ))}
                 </RadioGroup>
@@ -604,6 +545,7 @@ export function BatchQuestionsCard({
             </div>
           )}
         </div>
+
       </CardContent>
     </Card>
   )

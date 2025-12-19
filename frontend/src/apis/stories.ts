@@ -1,22 +1,22 @@
-import { OpenAPI } from "@client"
-import { request as __request } from "@client/core/request"
-import type {
-  CreateStoryResponse,
-  Story,
+import { OpenAPI } from '@client'
+import { request as __request } from '@client/core/request'
+import type { 
+  Story, 
   StoryFormData,
-  StoryStatus,
-  StoryType,
+  CreateStoryResponse,
   UpdateStoryParams,
-} from "@/types"
+  StoryStatus,
+  StoryType
+} from '@/types'
 
 // Re-export types for convenience
-export type {
-  Story,
+export type { 
+  Story, 
   StoryFormData,
   CreateStoryResponse,
   UpdateStoryParams,
   StoryStatus,
-  StoryType,
+  StoryType
 }
 
 export const storiesApi = {
@@ -42,8 +42,8 @@ export const storiesApi = {
     new_epic_description?: string
   }): Promise<Story> => {
     return __request<Story>(OpenAPI, {
-      method: "POST",
-      url: "/api/v1/stories/",
+      method: 'POST',
+      url: '/api/v1/stories/',
       body: {
         project_id: data.project_id,
         title: data.title,
@@ -76,10 +76,10 @@ export const storiesApi = {
       story_type?: StoryType
       skip?: number
       limit?: number
-    },
+    }
   ): Promise<{ data: Story[]; count: number }> => {
     return __request<{ data: Story[]; count: number }>(OpenAPI, {
-      method: "GET",
+      method: 'GET',
       url: `/api/v1/stories/project/${projectId}`,
       query: {
         status: params?.status,
@@ -96,7 +96,7 @@ export const storiesApi = {
    */
   get: async (storyId: string): Promise<Story> => {
     return __request<Story>(OpenAPI, {
-      method: "GET",
+      method: 'GET',
       url: `/api/v1/stories/${storyId}`,
     })
   },
@@ -106,7 +106,7 @@ export const storiesApi = {
    */
   update: async (storyId: string, data: UpdateStoryParams): Promise<Story> => {
     return __request<Story>(OpenAPI, {
-      method: "PATCH",
+      method: 'PATCH',
       url: `/api/v1/stories/${storyId}`,
       body: data,
     })
@@ -115,12 +115,9 @@ export const storiesApi = {
   /**
    * Update story status
    */
-  updateStatus: async (
-    storyId: string,
-    status: StoryStatus,
-  ): Promise<Story> => {
+  updateStatus: async (storyId: string, status: StoryStatus): Promise<Story> => {
     return __request<Story>(OpenAPI, {
-      method: "PUT",
+      method: 'PUT',
       url: `/api/v1/stories/${storyId}/status`,
       query: { new_status: status },
     })
@@ -130,12 +127,12 @@ export const storiesApi = {
    * Assign story to a user
    */
   assign: async (
-    storyId: string,
-    assigneeId: string,
-    reviewerId?: string,
+    storyId: string, 
+    assigneeId: string, 
+    reviewerId?: string
   ): Promise<Story> => {
     return __request<Story>(OpenAPI, {
-      method: "PUT",
+      method: 'PUT',
       url: `/api/v1/stories/${storyId}/assign`,
       body: {
         assignee_id: assigneeId,
@@ -149,7 +146,7 @@ export const storiesApi = {
    */
   delete: async (storyId: string): Promise<void> => {
     return __request<void>(OpenAPI, {
-      method: "DELETE",
+      method: 'DELETE',
       url: `/api/v1/stories/${storyId}`,
     })
   },
@@ -159,13 +156,13 @@ export const storiesApi = {
    */
   reviewAction: async (
     storyId: string,
-    action: "apply" | "keep" | "remove",
+    action: 'apply' | 'keep' | 'remove',
     suggestions?: {
       suggested_title?: string
       suggested_acceptance_criteria?: string[]
       suggested_requirements?: string[]
-    },
-  ): Promise<{
+    }
+  ): Promise<{ 
     message: string
     story_id: string
     story?: {
@@ -176,7 +173,7 @@ export const storiesApi = {
       requirements?: string[]
     }
   }> => {
-    return __request<{
+    return __request<{ 
       message: string
       story_id: string
       story?: {
@@ -187,11 +184,11 @@ export const storiesApi = {
         requirements?: string[]
       }
     }>(OpenAPI, {
-      method: "POST",
+      method: 'POST',
       url: `/api/v1/stories/${storyId}/review-action`,
       body: {
         action,
-        ...suggestions,
+        ...suggestions
       },
     })
   },
@@ -200,30 +197,10 @@ export const storiesApi = {
    * List all epics for a project
    */
   listEpics: async (
-    projectId: string,
-  ): Promise<{
-    data: {
-      id: string
-      epic_code?: string
-      title: string
-      description?: string
-      domain?: string
-      status?: string
-    }[]
-    count: number
-  }> => {
-    return __request<{
-      data: {
-        id: string
-        epic_code?: string
-        title: string
-        description?: string
-        domain?: string
-        status?: string
-      }[]
-      count: number
-    }>(OpenAPI, {
-      method: "GET",
+    projectId: string
+  ): Promise<{ data: { id: string; epic_code?: string; title: string; description?: string; domain?: string; status?: string }[]; count: number }> => {
+    return __request<{ data: { id: string; epic_code?: string; title: string; description?: string; domain?: string; status?: string }[]; count: number }>(OpenAPI, {
+      method: 'GET',
       url: `/api/v1/stories/epics/${projectId}`,
     })
   },
@@ -232,12 +209,12 @@ export const storiesApi = {
    * Bulk update ranks for multiple stories in one request
    */
   bulkUpdateRanks: async (
-    updates: { story_id: string; rank: number }[],
+    updates: { story_id: string; rank: number }[]
   ): Promise<{ updated: number }> => {
     return __request<{ updated: number }>(OpenAPI, {
-      method: "PATCH",
-      url: "/api/v1/stories/bulk-rank",
+      method: 'PATCH',
+      url: '/api/v1/stories/bulk-rank',
       body: { updates },
     })
-  },
+  }
 }

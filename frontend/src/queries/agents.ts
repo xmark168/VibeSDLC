@@ -1,28 +1,21 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { AgentsService } from "@/client/sdk.gen"
 import {
   agentsApi,
   type CreatePoolRequest,
-  type ExecutionFilters,
   type SpawnAgentRequest,
+  type ExecutionFilters,
   type UpdatePoolConfigRequest,
 } from "@/apis/agents"
-import { AgentsService } from "@/client/sdk.gen"
 
 // ===== Query Keys =====
 export const agentQueryKeys = {
   all: ["agents"] as const,
   pools: () => [...agentQueryKeys.all, "pools"] as const,
   pool: (poolName: string) => [...agentQueryKeys.pools(), poolName] as const,
-  poolDb: (poolName: string) =>
-    [...agentQueryKeys.pool(poolName), "db"] as const,
+  poolDb: (poolName: string) => [...agentQueryKeys.pool(poolName), "db"] as const,
   poolMetrics: (poolId: string, startDate?: string, endDate?: string) =>
-    [
-      ...agentQueryKeys.all,
-      "pool-metrics",
-      poolId,
-      startDate,
-      endDate,
-    ] as const,
+    [...agentQueryKeys.all, "pool-metrics", poolId, startDate, endDate] as const,
   poolSuggestions: () => [...agentQueryKeys.pools(), "suggestions"] as const,
   health: () => [...agentQueryKeys.all, "health"] as const,
   agentHealth: (agentId: string, poolName: string) =>
@@ -30,12 +23,9 @@ export const agentQueryKeys = {
   dashboard: () => [...agentQueryKeys.all, "dashboard"] as const,
   systemStats: () => [...agentQueryKeys.all, "system-stats"] as const,
   alerts: (limit?: number) => [...agentQueryKeys.all, "alerts", limit] as const,
-  project: (projectId: string) =>
-    [...agentQueryKeys.all, "project", projectId] as const,
-  activity: (agentId: string) =>
-    [...agentQueryKeys.all, "activity", agentId] as const,
-  executions: (filters?: ExecutionFilters) =>
-    [...agentQueryKeys.all, "executions", filters] as const,
+  project: (projectId: string) => [...agentQueryKeys.all, "project", projectId] as const,
+  activity: (agentId: string) => [...agentQueryKeys.all, "activity", agentId] as const,
+  executions: (filters?: ExecutionFilters) => [...agentQueryKeys.all, "executions", filters] as const,
   metrics: () => [...agentQueryKeys.all, "metrics"] as const,
   metricsTimeseries: (params: {
     metric_type: string
@@ -53,10 +43,7 @@ export const agentQueryKeys = {
 /**
  * Fetch all agents for a specific project (from database)
  */
-export function useProjectAgents(
-  projectId: string,
-  options?: { enabled?: boolean },
-) {
+export function useProjectAgents(projectId: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: agentQueryKeys.project(projectId),
     queryFn: async () => {
@@ -66,17 +53,14 @@ export function useProjectAgents(
     enabled: (options?.enabled ?? true) && !!projectId && projectId.length > 0,
     staleTime: 0,
     refetchOnWindowFocus: false,
-    refetchOnMount: "always",
+    refetchOnMount: 'always',
   })
 }
 
 /**
  * Fetch agent activity for popup display
  */
-export function useAgentActivity(
-  agentId: string,
-  options?: { enabled?: boolean },
-) {
+export function useAgentActivity(agentId: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: agentQueryKeys.activity(agentId),
     queryFn: () => agentsApi.getAgentActivity(agentId),
@@ -89,10 +73,7 @@ export function useAgentActivity(
 /**
  * Fetch all agent pools with polling
  */
-export function useAgentPools(options?: {
-  enabled?: boolean
-  refetchInterval?: number
-}) {
+export function useAgentPools(options?: { enabled?: boolean; refetchInterval?: number }) {
   return useQuery({
     queryKey: agentQueryKeys.pools(),
     queryFn: () => agentsApi.listPools(),
@@ -105,10 +86,7 @@ export function useAgentPools(options?: {
 /**
  * Fetch specific pool statistics
  */
-export function usePoolStats(
-  poolName: string,
-  options?: { enabled?: boolean },
-) {
+export function usePoolStats(poolName: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: agentQueryKeys.pool(poolName),
     queryFn: () => agentsApi.getPoolStats(poolName),
@@ -120,10 +98,7 @@ export function usePoolStats(
 /**
  * Fetch all agent health data
  */
-export function useAllAgentHealth(options?: {
-  enabled?: boolean
-  refetchInterval?: number
-}) {
+export function useAllAgentHealth(options?: { enabled?: boolean; refetchInterval?: number }) {
   return useQuery({
     queryKey: agentQueryKeys.health(),
     queryFn: () => agentsApi.getAllAgentHealth(),
@@ -139,7 +114,7 @@ export function useAllAgentHealth(options?: {
 export function useAgentHealth(
   agentId: string,
   poolName: string,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean }
 ) {
   return useQuery({
     queryKey: agentQueryKeys.agentHealth(agentId, poolName),
@@ -152,10 +127,7 @@ export function useAgentHealth(
 /**
  * Fetch dashboard data (comprehensive view)
  */
-export function useAgentDashboard(options?: {
-  enabled?: boolean
-  refetchInterval?: number
-}) {
+export function useAgentDashboard(options?: { enabled?: boolean; refetchInterval?: number }) {
   return useQuery({
     queryKey: agentQueryKeys.dashboard(),
     queryFn: () => agentsApi.getDashboard(),
@@ -180,10 +152,7 @@ export function useSystemStats(options?: { enabled?: boolean }) {
 /**
  * Fetch alerts
  */
-export function useAgentAlerts(
-  limit: number = 20,
-  options?: { enabled?: boolean },
-) {
+export function useAgentAlerts(limit: number = 20, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: agentQueryKeys.alerts(limit),
     queryFn: () => agentsApi.getAlerts(limit),
@@ -197,7 +166,7 @@ export function useAgentAlerts(
  */
 export function useAgentExecutions(
   filters?: ExecutionFilters,
-  options?: { enabled?: boolean; refetchInterval?: number },
+  options?: { enabled?: boolean; refetchInterval?: number }
 ) {
   return useQuery({
     queryKey: agentQueryKeys.executions(filters),
@@ -220,7 +189,7 @@ export function useMetricsTimeseries(
     interval?: string
     pool_name?: string
   },
-  options?: { enabled?: boolean; refetchInterval?: number },
+  options?: { enabled?: boolean; refetchInterval?: number }
 ) {
   return useQuery({
     queryKey: agentQueryKeys.metricsTimeseries(params),
@@ -239,7 +208,7 @@ export function useMetricsAggregated(
     time_range?: "1h" | "6h" | "24h" | "7d" | "30d"
     group_by?: "pool" | "hour" | "day"
   },
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean }
 ) {
   return useQuery({
     queryKey: agentQueryKeys.metricsAggregated(params),
@@ -250,6 +219,8 @@ export function useMetricsAggregated(
   })
 }
 
+
+
 /**
  * Fetch token usage metrics
  */
@@ -258,7 +229,7 @@ export function useTokenMetrics(
     time_range?: "1h" | "6h" | "24h" | "7d" | "30d"
     group_by?: "pool" | "agent_type"
   },
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean }
 ) {
   return useQuery({
     queryKey: agentQueryKeys.tokenMetrics(params),
@@ -293,13 +264,8 @@ export function useDeletePool() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      poolName,
-      graceful = true,
-    }: {
-      poolName: string
-      graceful?: boolean
-    }) => agentsApi.deletePool(poolName, graceful),
+    mutationFn: ({ poolName, graceful = true }: { poolName: string; graceful?: boolean }) =>
+      agentsApi.deletePool(poolName, graceful),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.pools() })
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
@@ -316,9 +282,7 @@ export function useSpawnAgent() {
   return useMutation({
     mutationFn: (body: SpawnAgentRequest) => agentsApi.spawnAgent(body),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: agentQueryKeys.pool(variables.pool_name),
-      })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pool(variables.pool_name) })
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.health() })
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
     },
@@ -342,9 +306,7 @@ export function useTerminateAgent() {
       graceful?: boolean
     }) => agentsApi.terminateAgent(poolName, agentId, graceful),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: agentQueryKeys.pool(variables.poolName),
-      })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pool(variables.poolName) })
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.health() })
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
     },
@@ -358,19 +320,11 @@ export function useSetAgentIdle() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      agentId,
-      poolName,
-    }: {
-      agentId: string
-      poolName: string
-    }) => agentsApi.setAgentIdle(agentId, poolName),
+    mutationFn: ({ agentId, poolName }: { agentId: string; poolName: string }) =>
+      agentsApi.setAgentIdle(agentId, poolName),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: agentQueryKeys.agentHealth(
-          variables.agentId,
-          variables.poolName,
-        ),
+        queryKey: agentQueryKeys.agentHealth(variables.agentId, variables.poolName),
       })
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.health() })
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.dashboard() })
@@ -385,8 +339,7 @@ export function useStartMonitoring() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (monitorInterval: number = 30) =>
-      agentsApi.startMonitoring(monitorInterval),
+    mutationFn: (monitorInterval: number = 30) => agentsApi.startMonitoring(monitorInterval),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.systemStats() })
     },
@@ -413,10 +366,7 @@ export function useStopMonitoring() {
  * Fetch pool database information
  * Returns persistent pool record including configuration, counters, and metadata
  */
-export function usePoolDbInfo(
-  poolName: string,
-  options?: { enabled?: boolean },
-) {
+export function usePoolDbInfo(poolName: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: agentQueryKeys.poolDb(poolName),
     queryFn: () => agentsApi.getPoolDbInfo(poolName),
@@ -437,21 +387,12 @@ export function usePoolMetrics(
     startDate?: string
     endDate?: string
     limit?: number
-  },
+  }
 ) {
   return useQuery({
-    queryKey: agentQueryKeys.poolMetrics(
-      poolId,
-      options?.startDate,
-      options?.endDate,
-    ),
+    queryKey: agentQueryKeys.poolMetrics(poolId, options?.startDate, options?.endDate),
     queryFn: () =>
-      agentsApi.getPoolMetrics(
-        poolId,
-        options?.startDate,
-        options?.endDate,
-        options?.limit,
-      ),
+      agentsApi.getPoolMetrics(poolId, options?.startDate, options?.endDate, options?.limit),
     enabled: (options?.enabled ?? true) && !!poolId,
     staleTime: 60000, // 1 minute - historical data
     refetchInterval: 120000, // Refetch every 2 minutes
@@ -462,10 +403,7 @@ export function usePoolMetrics(
  * Fetch pool creation suggestions based on current load
  * Analyzes pools and suggests creating new ones when needed
  */
-export function usePoolSuggestions(options?: {
-  enabled?: boolean
-  refetchInterval?: number
-}) {
+export function usePoolSuggestions(options?: { enabled?: boolean; refetchInterval?: number }) {
   return useQuery({
     queryKey: agentQueryKeys.poolSuggestions(),
     queryFn: () => agentsApi.getPoolSuggestions(),
@@ -492,13 +430,9 @@ export function useUpdatePoolConfig() {
     }) => agentsApi.updatePoolConfig(poolId, config),
     onSuccess: (data) => {
       // Invalidate pool DB info
-      queryClient.invalidateQueries({
-        queryKey: agentQueryKeys.poolDb(data.pool_name),
-      })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.poolDb(data.pool_name) })
       // Invalidate pool stats (runtime data)
-      queryClient.invalidateQueries({
-        queryKey: agentQueryKeys.pool(data.pool_name),
-      })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pool(data.pool_name) })
       // Invalidate pools list
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.pools() })
       // Invalidate dashboard
@@ -514,9 +448,8 @@ export function useUpdatePoolPriorities() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (
-      poolPriorities: Array<{ pool_id: string; priority: number }>,
-    ) => agentsApi.updatePoolPriorities(poolPriorities),
+    mutationFn: (poolPriorities: Array<{ pool_id: string; priority: number }>) =>
+      agentsApi.updatePoolPriorities(poolPriorities),
     onSuccess: () => {
       // Invalidate pools list
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.pools() })
@@ -534,22 +467,13 @@ export function useScalePool() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      poolName,
-      targetAgents,
-    }: {
-      poolName: string
-      targetAgents: number
-    }) => agentsApi.scalePool(poolName, targetAgents),
+    mutationFn: ({ poolName, targetAgents }: { poolName: string; targetAgents: number }) =>
+      agentsApi.scalePool(poolName, targetAgents),
     onSuccess: (_, variables) => {
       // Invalidate pool DB info
-      queryClient.invalidateQueries({
-        queryKey: agentQueryKeys.poolDb(variables.poolName),
-      })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.poolDb(variables.poolName) })
       // Invalidate pool stats
-      queryClient.invalidateQueries({
-        queryKey: agentQueryKeys.pool(variables.poolName),
-      })
+      queryClient.invalidateQueries({ queryKey: agentQueryKeys.pool(variables.poolName) })
       // Invalidate health data
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.health() })
       // Invalidate pools list
@@ -565,10 +489,7 @@ export function useScalePool() {
 /**
  * Fetch system status including emergency state
  */
-export function useSystemStatus(options?: {
-  enabled?: boolean
-  refetchInterval?: number
-}) {
+export function useSystemStatus(options?: { enabled?: boolean; refetchInterval?: number }) {
   return useQuery({
     queryKey: [...agentQueryKeys.all, "system-status"] as const,
     queryFn: () => agentsApi.getSystemStatus(),
@@ -659,13 +580,8 @@ export function useBulkTerminate() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      agentIds,
-      graceful = true,
-    }: {
-      agentIds: string[]
-      graceful?: boolean
-    }) => agentsApi.bulkTerminate(agentIds, graceful),
+    mutationFn: ({ agentIds, graceful = true }: { agentIds: string[]; graceful?: boolean }) =>
+      agentsApi.bulkTerminate(agentIds, graceful),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
     },
@@ -727,10 +643,7 @@ export const scalingQueryKeys = {
   rule: (id: string) => [...scalingQueryKeys.rules(), id] as const,
 }
 
-export function useScalingRules(params?: {
-  poolName?: string
-  enabledOnly?: boolean
-}) {
+export function useScalingRules(params?: { poolName?: string; enabledOnly?: boolean }) {
   return useQuery({
     queryKey: [...scalingQueryKeys.rules(), params],
     queryFn: () => agentsApi.listScalingRules(params),
@@ -760,13 +673,8 @@ export function useUpdateScalingRule() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      ruleId,
-      rule,
-    }: {
-      ruleId: string
-      rule: Parameters<typeof agentsApi.updateScalingRule>[1]
-    }) => agentsApi.updateScalingRule(ruleId, rule),
+    mutationFn: ({ ruleId, rule }: { ruleId: string; rule: Parameters<typeof agentsApi.updateScalingRule>[1] }) =>
+      agentsApi.updateScalingRule(ruleId, rule),
     onSuccess: (_, { ruleId }) => {
       queryClient.invalidateQueries({ queryKey: scalingQueryKeys.rule(ruleId) })
       queryClient.invalidateQueries({ queryKey: scalingQueryKeys.rules() })
@@ -820,7 +728,7 @@ export const tokenStatsQueryKeys = {
 
 export function useAgentsTokenStats(
   params?: { role_type?: string; pool_name?: string; limit?: number },
-  options?: { enabled?: boolean; refetchInterval?: number },
+  options?: { enabled?: boolean; refetchInterval?: number }
 ) {
   return useQuery({
     queryKey: tokenStatsQueryKeys.agents(params),
@@ -831,10 +739,7 @@ export function useAgentsTokenStats(
   })
 }
 
-export function usePoolsTokenStats(options?: {
-  enabled?: boolean
-  refetchInterval?: number
-}) {
+export function usePoolsTokenStats(options?: { enabled?: boolean; refetchInterval?: number }) {
   return useQuery({
     queryKey: tokenStatsQueryKeys.pools(),
     queryFn: () => agentsApi.getPoolsTokenStats(),
@@ -844,10 +749,7 @@ export function usePoolsTokenStats(options?: {
   })
 }
 
-export function useSystemTokenSummary(options?: {
-  enabled?: boolean
-  refetchInterval?: number
-}) {
+export function useSystemTokenSummary(options?: { enabled?: boolean; refetchInterval?: number }) {
   return useQuery({
     queryKey: tokenStatsQueryKeys.summary(),
     queryFn: () => agentsApi.getSystemTokenSummary(),
@@ -917,17 +819,10 @@ export function useUpdateTemplate() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      templateId,
-      template,
-    }: {
-      templateId: string
-      template: Parameters<typeof agentsApi.updateTemplate>[1]
-    }) => agentsApi.updateTemplate(templateId, template),
+    mutationFn: ({ templateId, template }: { templateId: string; template: Parameters<typeof agentsApi.updateTemplate>[1] }) =>
+      agentsApi.updateTemplate(templateId, template),
     onSuccess: (_, { templateId }) => {
-      queryClient.invalidateQueries({
-        queryKey: templateQueryKeys.detail(templateId),
-      })
+      queryClient.invalidateQueries({ queryKey: templateQueryKeys.detail(templateId) })
       queryClient.invalidateQueries({ queryKey: templateQueryKeys.list() })
     },
   })
@@ -948,15 +843,8 @@ export function useSpawnFromTemplate() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      templateId,
-      projectId,
-      count,
-    }: {
-      templateId: string
-      projectId: string
-      count?: number
-    }) => agentsApi.spawnFromTemplate(templateId, projectId, count),
+    mutationFn: ({ templateId, projectId, count }: { templateId: string; projectId: string; count?: number }) =>
+      agentsApi.spawnFromTemplate(templateId, projectId, count),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: agentQueryKeys.all })
       queryClient.invalidateQueries({ queryKey: templateQueryKeys.list() })
@@ -968,13 +856,8 @@ export function useDuplicateTemplate() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      templateId,
-      newName,
-    }: {
-      templateId: string
-      newName: string
-    }) => agentsApi.duplicateTemplate(templateId, newName),
+    mutationFn: ({ templateId, newName }: { templateId: string; newName: string }) =>
+      agentsApi.duplicateTemplate(templateId, newName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: templateQueryKeys.list() })
     },

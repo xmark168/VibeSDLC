@@ -1,81 +1,66 @@
-import { Link, useLocation } from "@tanstack/react-router"
-import {
-  ChevronDown,
-  CreditCard,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  Monitor,
-  Moon,
-  Sun,
-  User,
-  X,
-} from "lucide-react"
-import { useState } from "react"
-import { useTheme } from "@/components/provider/theme-provider"
-import { SettingsDialog } from "@/components/settings"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/button";
+import { Menu, X, User, LogOut, LayoutDashboard, ChevronDown, CreditCard, Sun, Moon, Monitor } from "lucide-react";
+import { useState } from "react";
+import { useAppStore } from "@/stores/auth-store";
+import { Link, useLocation } from "@tanstack/react-router";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuTrigger,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import useAuth from "@/hooks/useAuth"
-import { useProfile } from "@/queries/profile"
-import { useAppStore } from "@/stores/auth-store"
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import useAuth from "@/hooks/useAuth";
+import { useTheme } from "@/components/provider/theme-provider";
+import { SettingsDialog } from "@/components/settings";
+import { useProfile } from "@/queries/profile";
 
 const navItems = [
   { title: "Home", path: "#" },
   { title: "AI Agents", path: "#agents" },
   { title: "Features", path: "#features" },
   { title: "Testimonials", path: "#testimonials" },
-]
+];
 
-const scrollToSection = (
-  e: React.MouseEvent<HTMLAnchorElement>,
-  path: string,
-  currentPath: string,
-) => {
+const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, path: string, currentPath: string) => {
   // If not on landing page, navigate to landing page with hash
   if (currentPath !== "/") {
-    window.location.href = `/${path}`
-    return
+    window.location.href = `/${path}`;
+    return;
   }
 
   // On landing page, smooth scroll to section
-  e.preventDefault()
+  e.preventDefault();
   if (path === "#") {
-    window.scrollTo({ top: 0, behavior: "smooth" })
+    window.scrollTo({ top: 0, behavior: "smooth" });
   } else {
-    const element = document.querySelector(path)
+    const element = document.querySelector(path);
     if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" })
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
-}
+};
 
 export const Header = () => {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [defaultTab, setDefaultTab] = useState<string | undefined>(undefined)
-  const user = useAppStore((state) => state.user)
-  const isLoggedIn = !!user
-  const { logout } = useAuth()
-  const { theme, setTheme } = useTheme()
-  const { data: profile } = useProfile()
-  const location = useLocation()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [defaultTab, setDefaultTab] = useState<string | undefined>(undefined);
+  const user = useAppStore((state) => state.user);
+  const isLoggedIn = !!user;
+  const { logout } = useAuth();
+  const { theme, setTheme } = useTheme();
+  const { data: profile } = useProfile();
+  const location = useLocation();
 
-  const DEFAULT_AVATAR = "https://github.com/shadcn.png"
-  const avatarUrl = profile?.avatar_url
+  const DEFAULT_AVATAR = "https://github.com/shadcn.png";
+  const avatarUrl = profile?.avatar_url 
     ? `${import.meta.env.VITE_API_URL}${profile.avatar_url}`
-    : DEFAULT_AVATAR
+    : DEFAULT_AVATAR;
 
   const getInitials = (name: string) => {
     return name
@@ -83,33 +68,32 @@ export const Header = () => {
       .map((n) => n[0])
       .join("")
       .toUpperCase()
-      .slice(0, 2)
-  }
+      .slice(0, 2);
+  };
 
   const handleLogout = () => {
-    logout.mutate()
-  }
+    logout.mutate();
+  };
 
   const handleViewProfile = () => {
-    setSettingsOpen(true)
-    setDefaultTab("profile")
-  }
+    setSettingsOpen(true);
+    setDefaultTab("profile");
+  };
 
   const handleBilling = () => {
-    setSettingsOpen(true)
-    setDefaultTab("billing")
-  }
+    setSettingsOpen(true);
+    setDefaultTab("billing");
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between px-4 md:px-8">
         {/* Logo */}
-        <a href="/" className="flex items-center cursor-pointer">
-          <img
-            src="/assets/images/logo.png"
-            alt="VibeSDLC"
-            className="h-36 w-36 object-contain"
-          />
+        <a
+          href="/"
+          className="flex items-center cursor-pointer"
+        >
+          <img src="/assets/images/logo.png" alt="VibeSDLC" className="h-36 w-36 object-contain" />
           {/* <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
             <span className="text-primary-foreground font-bold text-sm">VS</span>
           </div>
@@ -135,10 +119,7 @@ export const Header = () => {
           {isLoggedIn ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="flex items-center gap-2 focus-visible:ring-0 focus-visible:ring-offset-0"
-                >
+                <Button variant="ghost" className="flex items-center gap-2 focus-visible:ring-0 focus-visible:ring-offset-0">
                   <Avatar className="h-8 w-8">
                     <AvatarImage src={avatarUrl} alt={user?.full_name || ""} />
                     <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
@@ -152,9 +133,7 @@ export const Header = () => {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">
-                      {user?.full_name}
-                    </p>
+                    <p className="text-sm font-medium leading-none">{user?.full_name}</p>
                     <p className="text-xs leading-none text-muted-foreground">
                       {user?.email}
                     </p>
@@ -230,12 +209,7 @@ export const Header = () => {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button
-              variant="default"
-              size="sm"
-              className="rounded-full px-6"
-              asChild
-            >
+            <Button variant="default" size="sm" className="rounded-full px-6" asChild>
               <a href="/login">Sign in</a>
             </Button>
           )}
@@ -245,11 +219,7 @@ export const Header = () => {
           className="md:hidden inline-flex items-center justify-center p-2 text-muted-foreground hover:bg-accent hover:text-foreground"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
         >
-          {mobileMenuOpen ? (
-            <X className="h-5 w-5" />
-          ) : (
-            <Menu className="h-5 w-5" />
-          )}
+          {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>
       {mobileMenuOpen && (
@@ -260,8 +230,8 @@ export const Header = () => {
                 key={item.path}
                 href={item.path}
                 onClick={(e) => {
-                  scrollToSection(e, item.path, location.pathname)
-                  setMobileMenuOpen(false)
+                  scrollToSection(e, item.path, location.pathname);
+                  setMobileMenuOpen(false);
                 }}
                 className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
               >
@@ -280,10 +250,10 @@ export const Header = () => {
                     Projects
                   </Link>
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-destructive hover:text-destructive"
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="w-full text-destructive hover:text-destructive" 
                   onClick={handleLogout}
                 >
                   <LogOut className="w-4 h-4 mr-2" />
@@ -302,10 +272,8 @@ export const Header = () => {
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        defaultTab={
-          defaultTab as "profile" | "security" | "billing" | "theme" | undefined
-        }
+        defaultTab={defaultTab as "profile" | "security" | "billing" | "theme" | undefined}
       />
     </header>
-  )
-}
+  );
+};

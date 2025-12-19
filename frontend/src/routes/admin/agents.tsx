@@ -1,11 +1,14 @@
+import { useState, useMemo } from "react"
+import { createFileRoute } from "@tanstack/react-router"
+import { requireRole } from "@/utils/auth"
 import {
-  closestCenter,
   DndContext,
-  type DragEndEvent,
+  closestCenter,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
+  type DragEndEvent,
 } from "@dnd-kit/core"
 import {
   arrayMove,
@@ -15,62 +18,49 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { createFileRoute } from "@tanstack/react-router"
-import { formatDistanceToNow } from "date-fns"
 import {
-  Activity,
-  Ban,
-  CheckCircle,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  Coins,
-  GripVertical,
-  Heart,
-  History,
-  Loader2,
-  MoreVertical,
-  Pause,
-  Play,
-  Plus,
-  RefreshCw,
-  Server,
-  Settings,
-  ShieldAlert,
-  Square,
-  Trash2,
-  Users,
-  Wrench,
-  XCircle,
-  Zap,
-} from "lucide-react"
-import { useMemo, useState } from "react"
+  useAgentDashboard,
+  useAgentPools,
+  useAllAgentHealth,
+  useSystemStats,
+  useAgentExecutions,
+  useCreatePool,
+  useDeletePool,
+  useSpawnAgent,
+  useTerminateAgent,
+  useSetAgentIdle,
+  useStartMonitoring,
+  useStopMonitoring,
+  useMetricsTimeseries,
+  useTokenMetrics,
+  useSystemStatus,
+  useEmergencyPause,
+  useEmergencyResume,
+  useEmergencyStop,
+  useEnterMaintenanceMode,
+  useRestartPool,
+  useUpdatePoolPriorities,
+} from "@/queries/agents"
 import {
-  type AgentExecutionRecord,
-  type AgentHealth,
-  generateAgentDisplayName,
-  getStateLabel,
-  getStateVariant,
   type PoolResponse,
+  type AgentHealth,
+  type AgentExecutionRecord,
+  generateAgentDisplayName,
+  getStateVariant,
+  getStateLabel,
 } from "@/apis/agents"
-import { MetricCard } from "@/components/admin"
-import { AdminLayout } from "@/components/admin/AdminLayout"
-import {
-  ActivityTab,
-  AgentConfigDialog,
-  BulkActionsToolbar,
-  SpawnAgentDialog,
-} from "@/components/admin/agents"
-import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import {
   Dialog,
   DialogContent,
@@ -84,12 +74,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -97,40 +85,42 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+  RefreshCw,
+  Plus,
+  Trash2,
+  MoreVertical,
+  Play,
+  Square,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Activity,
+  Users,
+  Server,
+  Zap,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Heart,
+  History,
+  Pause,
+  Wrench,
+  ShieldAlert,
+  Ban,
+  Settings,
+  GripVertical,
+} from "lucide-react"
 import { toast } from "@/lib/toast"
-import {
-  useAgentDashboard,
-  useAgentExecutions,
-  useAgentPools,
-  useAgentsTokenStats,
-  useAllAgentHealth,
-  useCreatePool,
-  useDeletePool,
-  useEmergencyPause,
-  useEmergencyResume,
-  useEmergencyStop,
-  useEnterMaintenanceMode,
-  useMetricsTimeseries,
-  usePoolsTokenStats,
-  useSetAgentIdle,
-  useStartMonitoring,
-  useStopMonitoring,
-  useSystemStats,
-  useSystemStatus,
-  useTerminateAgent,
-  useTokenMetrics,
-  useUpdatePoolPriorities,
-} from "@/queries/agents"
-import { requireRole } from "@/utils/auth"
+import { formatDistanceToNow } from "date-fns"
+import { MetricCard } from "@/components/admin"
+import { ActivityTab, AgentConfigDialog, BulkActionsToolbar, SpawnAgentDialog } from "@/components/admin/agents"
+import { useSystemTokenSummary, usePoolsTokenStats, useAgentsTokenStats } from "@/queries/agents"
+import { Coins } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
+import { AdminLayout } from "@/components/admin/AdminLayout"
 
 export const Route = createFileRoute("/admin/agents")({
   beforeLoad: async () => {
@@ -143,108 +133,83 @@ function AgentAdminPage() {
   const [activeTab, setActiveTab] = useState("pools")
 
   // Queries
-  const {
-    data: dashboard,
-    isLoading: dashboardLoading,
-    refetch: refetchDashboard,
-  } = useAgentDashboard()
+  const { data: dashboard, isLoading: dashboardLoading, refetch: refetchDashboard } = useAgentDashboard()
   const { data: pools, isLoading: poolsLoading } = useAgentPools()
   const { data: healthData, isLoading: healthLoading } = useAllAgentHealth()
-  const { data: executions, isLoading: executionsLoading } = useAgentExecutions(
-    { limit: 100 },
-  )
+  const { data: executions, isLoading: executionsLoading } = useAgentExecutions({ limit: 100 })
   const { data: systemStats } = useSystemStats()
 
   const isLoading = dashboardLoading || poolsLoading || healthLoading
 
   return (
     <AdminLayout>
-      <div className="container mx-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Agent Management</h1>
-            <p className="text-muted-foreground">
-              Monitor and manage all agent processes in the system
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetchDashboard()}
-            >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh
-            </Button>
-            <SystemControls />
-          </div>
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Agent Management</h1>
+          <p className="text-muted-foreground">
+            Monitor and manage all agent processes in the system
+          </p>
         </div>
-
-        {/* System Stats Cards */}
-        <SystemStatsCards stats={systemStats} isLoading={isLoading} />
-
-        {/* Main Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="pools">
-              <Server className="w-4 h-4 mr-2" />
-              Pools
-            </TabsTrigger>
-            <TabsTrigger value="agents">
-              <Users className="w-4 h-4 mr-2" />
-              Agents
-            </TabsTrigger>
-            <TabsTrigger value="activity">
-              <Activity className="w-4 h-4 mr-2" />
-              Activity
-            </TabsTrigger>
-            <TabsTrigger value="health">
-              <Heart className="w-4 h-4 mr-2" />
-              Health
-            </TabsTrigger>
-            <TabsTrigger value="executions">
-              <History className="w-4 h-4 mr-2" />
-              Executions
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="pools" className="mt-6">
-            <PoolsTab
-              pools={pools || []}
-              healthData={healthData}
-              isLoading={poolsLoading}
-            />
-          </TabsContent>
-
-          <TabsContent value="agents" className="mt-6">
-            <AgentsTab
-              healthData={healthData}
-              pools={pools || []}
-              isLoading={healthLoading}
-            />
-          </TabsContent>
-
-          <TabsContent value="activity" className="mt-6">
-            <ActivityTab />
-          </TabsContent>
-
-          <TabsContent value="health" className="mt-6">
-            <HealthTab
-              healthData={healthData}
-              pools={pools || []}
-              isLoading={healthLoading}
-            />
-          </TabsContent>
-
-          <TabsContent value="executions" className="mt-6">
-            <ExecutionsTab
-              executions={executions || []}
-              isLoading={executionsLoading}
-            />
-          </TabsContent>
-        </Tabs>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetchDashboard()}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
+          </Button>
+          <SystemControls />
+        </div>
       </div>
+
+      {/* System Stats Cards */}
+      <SystemStatsCards stats={systemStats} isLoading={isLoading} />
+
+      {/* Main Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="pools">
+            <Server className="w-4 h-4 mr-2" />
+            Pools
+          </TabsTrigger>
+          <TabsTrigger value="agents">
+            <Users className="w-4 h-4 mr-2" />
+            Agents
+          </TabsTrigger>
+          <TabsTrigger value="activity">
+            <Activity className="w-4 h-4 mr-2" />
+            Activity
+          </TabsTrigger>
+          <TabsTrigger value="health">
+            <Heart className="w-4 h-4 mr-2" />
+            Health
+          </TabsTrigger>
+          <TabsTrigger value="executions">
+            <History className="w-4 h-4 mr-2" />
+            Executions
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="pools" className="mt-6">
+          <PoolsTab pools={pools || []} healthData={healthData} isLoading={poolsLoading} />
+        </TabsContent>
+
+        <TabsContent value="agents" className="mt-6">
+          <AgentsTab healthData={healthData} pools={pools || []} isLoading={healthLoading} />
+        </TabsContent>
+
+        <TabsContent value="activity" className="mt-6">
+          <ActivityTab />
+        </TabsContent>
+
+        <TabsContent value="health" className="mt-6">
+          <HealthTab healthData={healthData} pools={pools || []} isLoading={healthLoading} />
+        </TabsContent>
+
+        <TabsContent value="executions" className="mt-6">
+          <ExecutionsTab executions={executions || []} isLoading={executionsLoading} />
+        </TabsContent>
+      </Tabs>
+    </div>
     </AdminLayout>
   )
 }
@@ -267,12 +232,12 @@ function SystemStatsCards({
   // Fetch 24h metrics for sparklines
   const { data: utilizationData } = useMetricsTimeseries(
     { metric_type: "utilization", time_range: "24h" },
-    { refetchInterval: 60000 },
+    { refetchInterval: 60000 }
   )
 
   const { data: executionData } = useMetricsTimeseries(
     { metric_type: "executions", time_range: "24h" },
-    { refetchInterval: 60000 },
+    { refetchInterval: 60000 }
   )
 
   const { data: tokenData } = useTokenMetrics({ time_range: "24h" })
@@ -301,36 +266,24 @@ function SystemStatsCards({
     const firstHalf = data.slice(0, midpoint)
     const secondHalf = data.slice(midpoint)
 
-    const firstAvg =
-      firstHalf.reduce((sum, d) => sum + (d[key] || 0), 0) / firstHalf.length
-    const secondAvg =
-      secondHalf.reduce((sum, d) => sum + (d[key] || 0), 0) / secondHalf.length
+    const firstAvg = firstHalf.reduce((sum, d) => sum + (d[key] || 0), 0) / firstHalf.length
+    const secondAvg = secondHalf.reduce((sum, d) => sum + (d[key] || 0), 0) / secondHalf.length
 
     if (firstAvg === 0) return 0
     return ((secondAvg - firstAvg) / firstAvg) * 100
   }
 
   // Prepare sparkline data
-  const agentTrend =
-    utilizationData?.data.map((d: any) => ({ value: d.total || 0 })) || []
+  const agentTrend = utilizationData?.data.map((d: any) => ({ value: d.total || 0 })) || []
   const agentChange = calculateTrend(utilizationData?.data || [], "total")
 
-  const successTrend =
-    executionData?.data.map((d: any) => ({ value: d.success_rate || 0 })) || []
-  const successChange = calculateTrend(
-    executionData?.data || [],
-    "success_rate",
-  )
+  const successTrend = executionData?.data.map((d: any) => ({ value: d.success_rate || 0 })) || []
+  const successChange = calculateTrend(executionData?.data || [], "success_rate")
 
-  const tokenTrend =
-    tokenData?.data?.map((d) => ({ value: d.total_tokens })) || []
-  const tokenChange =
-    tokenData?.data && tokenData.data.length > 1
-      ? ((tokenData.data[tokenData.data.length - 1].total_tokens -
-          tokenData.data[0].total_tokens) /
-          (tokenData.data[0].total_tokens || 1)) *
-        100
-      : 0
+  const tokenTrend = tokenData?.data?.map((d) => ({ value: d.total_tokens })) || []
+  const tokenChange = tokenData?.data && tokenData.data.length > 1
+    ? ((tokenData.data[tokenData.data.length - 1].total_tokens - tokenData.data[0].total_tokens) / (tokenData.data[0].total_tokens || 1)) * 100
+    : 0
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -345,11 +298,7 @@ function SystemStatsCards({
 
       <MetricCard
         title="Success Rate"
-        value={
-          stats?.success_rate
-            ? `${(stats.success_rate * 100).toFixed(1)}%`
-            : "N/A"
-        }
+        value={stats?.success_rate ? `${(stats.success_rate * 100).toFixed(1)}%` : "N/A"}
         change={successChange}
         trend={successTrend}
         icon={<Activity className="h-4 w-4 text-muted-foreground" />}
@@ -412,9 +361,7 @@ function SystemControls() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="relative">
-          <span
-            className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${getStatusColor()}`}
-          />
+          <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${getStatusColor()}`} />
           <ShieldAlert className="w-4 h-4 mr-2" />
           System
           <ChevronDown className="w-4 h-4 ml-2" />
@@ -426,10 +373,8 @@ function SystemControls() {
           Status: {systemStatus?.status?.toUpperCase() || "Unknown"}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-
-        <DropdownMenuLabel className="text-xs text-muted-foreground">
-          Monitoring
-        </DropdownMenuLabel>
+        
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Monitoring</DropdownMenuLabel>
         <DropdownMenuItem
           onClick={() => {
             startMonitoring.mutate(30, {
@@ -452,12 +397,10 @@ function SystemControls() {
           <Square className="w-4 h-4 mr-2" />
           Stop Monitoring
         </DropdownMenuItem>
-
+        
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs text-muted-foreground">
-          Emergency Controls
-        </DropdownMenuLabel>
-
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Emergency Controls</DropdownMenuLabel>
+        
         {isRunning && (
           <DropdownMenuItem
             onClick={() => {
@@ -471,7 +414,7 @@ function SystemControls() {
             Pause All Agents
           </DropdownMenuItem>
         )}
-
+        
         {(isPaused || isMaintenance) && (
           <DropdownMenuItem
             onClick={() => {
@@ -485,7 +428,7 @@ function SystemControls() {
             Resume All Agents
           </DropdownMenuItem>
         )}
-
+        
         {isRunning && (
           <DropdownMenuItem
             onClick={() => {
@@ -499,15 +442,11 @@ function SystemControls() {
             Enter Maintenance Mode
           </DropdownMenuItem>
         )}
-
+        
         <DropdownMenuSeparator />
-
+        
         <DropdownMenuItem
-          className={
-            confirmAction === "stop"
-              ? "bg-red-100 text-red-700"
-              : "text-red-600"
-          }
+          className={confirmAction === "stop" ? "bg-red-100 text-red-700" : "text-red-600"}
           onClick={handleEmergencyStop}
         >
           <Ban className="w-4 h-4 mr-2" />
@@ -548,11 +487,7 @@ function SortablePoolCard({
   }
 
   return (
-    <Card
-      ref={setNodeRef}
-      style={style}
-      className={isDragging ? "shadow-lg" : ""}
-    >
+    <Card ref={setNodeRef} style={style} className={isDragging ? "shadow-lg" : ""}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -630,18 +565,14 @@ function SortablePoolCard({
             <div>
               <span className="text-muted-foreground">Total Tokens:</span>
               <span className="ml-2 font-medium">
-                {poolTokenData
-                  ? poolTokenData.total_tokens_used.toLocaleString()
-                  : "0"}
+                {poolTokenData ? poolTokenData.total_tokens_used.toLocaleString() : "0"}
               </span>
             </div>
             <div>
               <span className="text-muted-foreground">Created:</span>
               <span className="ml-2 font-medium">
                 {pool.created_at
-                  ? formatDistanceToNow(new Date(pool.created_at), {
-                      addSuffix: true,
-                    })
+                  ? formatDistanceToNow(new Date(pool.created_at), { addSuffix: true })
                   : "N/A"}
               </span>
             </div>
@@ -663,30 +594,24 @@ function SortablePoolCard({
                   {healthData.map((agent) => (
                     <TableRow key={agent.agent_id}>
                       <TableCell className="font-medium">
-                        {generateAgentDisplayName(
-                          agent.agent_id,
-                          agent.role_name,
-                        )}
+                        {generateAgentDisplayName(agent.agent_id, agent.role_name)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={getStateVariant(agent.state)}>
                           {getStateLabel(agent.state)}
                         </Badge>
                       </TableCell>
+                      <TableCell>{formatUptime(agent.uptime_seconds)}</TableCell>
                       <TableCell>
-                        {formatUptime(agent.uptime_seconds)}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-green-600">
-                          {agent.successful_executions}
-                        </span>
+                        <span className="text-green-600">{agent.successful_executions}</span>
                         {" / "}
-                        <span className="text-red-600">
-                          {agent.failed_executions}
-                        </span>
+                        <span className="text-red-600">{agent.failed_executions}</span>
                       </TableCell>
                       <TableCell>
-                        <AgentActions agent={agent} poolName={pool.pool_name} />
+                        <AgentActions
+                          agent={agent}
+                          poolName={pool.pool_name}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -723,7 +648,7 @@ function PoolsTab({
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    }),
+    })
   )
 
   const togglePool = (poolName: string) => {
@@ -742,16 +667,12 @@ function PoolsTab({
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const oldIndex = sortedPools.findIndex(
-      (p) => (p.id || p.pool_name) === active.id,
-    )
-    const newIndex = sortedPools.findIndex(
-      (p) => (p.id || p.pool_name) === over.id,
-    )
+    const oldIndex = sortedPools.findIndex((p) => (p.id || p.pool_name) === active.id)
+    const newIndex = sortedPools.findIndex((p) => (p.id || p.pool_name) === over.id)
 
     if (oldIndex !== -1 && newIndex !== -1) {
       const reordered = arrayMove(sortedPools, oldIndex, newIndex)
-
+      
       // Update priorities based on new order
       const newPriorities = reordered.map((pool, index) => ({
         pool_id: pool.id,
@@ -812,7 +733,7 @@ function PoolsTab({
             <div className="space-y-4">
               {sortedPools.map((pool) => {
                 const poolTokenData = poolsTokenStats?.find(
-                  (p) => p.pool_name === pool.pool_name,
+                  (p) => p.pool_name === pool.pool_name
                 )
                 return (
                   <SortablePoolCard
@@ -859,7 +780,7 @@ function CreatePoolDialog() {
           setPoolName("")
         },
         onError: (e) => toast.error(`Failed to create pool: ${e.message}`),
-      },
+      }
     )
   }
 
@@ -887,9 +808,7 @@ function CreatePoolDialog() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="team_leader">Team Leader</SelectItem>
-                <SelectItem value="business_analyst">
-                  Business Analyst
-                </SelectItem>
+                <SelectItem value="business_analyst">Business Analyst</SelectItem>
                 <SelectItem value="tester">Tester</SelectItem>
               </SelectContent>
             </Select>
@@ -908,9 +827,7 @@ function CreatePoolDialog() {
             Cancel
           </Button>
           <Button onClick={handleCreate} disabled={createPool.isPending}>
-            {createPool.isPending && (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            )}
+            {createPool.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
             Create
           </Button>
         </DialogFooter>
@@ -944,17 +861,15 @@ function PoolActions({ pool }: { pool: PoolResponse }) {
                 deletePool.mutate(
                   { poolName: pool.pool_name, graceful: true },
                   {
-                    onSuccess: () =>
-                      toast.success(`Pool "${pool.pool_name}" deleted`),
-                    onError: (e) =>
-                      toast.error(`Failed to delete: ${e.message}`),
-                  },
+                    onSuccess: () => toast.success(`Pool "${pool.pool_name}" deleted`),
+                    onError: (e) => toast.error(`Failed to delete: ${e.message}`),
+                  }
                 )
               }
             }}
           >
-            <Trash2 className="w-4 h-4 mr-2" />
-            Delete Pool
+          <Trash2 className="w-4 h-4 mr-2" />
+          Delete Pool
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -1000,7 +915,7 @@ function AgentActions({
                 {
                   onSuccess: () => toast.success("Agent set to idle"),
                   onError: (e) => toast.error(`Failed: ${e.message}`),
-                },
+                }
               )
             }}
             disabled={agent.state === "idle"}
@@ -1017,7 +932,7 @@ function AgentActions({
                   {
                     onSuccess: () => toast.success("Agent terminated"),
                     onError: (e) => toast.error(`Failed: ${e.message}`),
-                  },
+                  }
                 )
               }
             }}
@@ -1129,10 +1044,7 @@ function AgentsTab({
                 <TableRow>
                   <TableHead className="w-[50px]">
                     <Checkbox
-                      checked={
-                        selectedAgents.size === allAgents.length &&
-                        allAgents.length > 0
-                      }
+                      checked={selectedAgents.size === allAgents.length && allAgents.length > 0}
                       onCheckedChange={toggleAll}
                       aria-label="Select all"
                     />
@@ -1151,66 +1063,56 @@ function AgentsTab({
               </TableHeader>
               <TableBody>
                 {allAgents.map(({ agent, poolName }) => {
-                  const tokenStats = agentsTokenStats?.find(
-                    (a) => a.agent_id === agent.agent_id,
-                  )
+                  const tokenStats = agentsTokenStats?.find(a => a.agent_id === agent.agent_id)
                   return (
-                    <TableRow
-                      key={agent.agent_id}
-                      className={
-                        selectedAgents.has(agent.agent_id) ? "bg-muted/50" : ""
-                      }
-                    >
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedAgents.has(agent.agent_id)}
-                          onCheckedChange={() => toggleAgent(agent.agent_id)}
-                          aria-label={`Select ${agent.agent_id}`}
-                        />
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {generateAgentDisplayName(
-                          agent.agent_id,
-                          agent.role_name,
-                        )}
-                      </TableCell>
-                      <TableCell>{poolName}</TableCell>
-                      <TableCell>{agent.role_name}</TableCell>
-                      <TableCell>
-                        <Badge variant={getStateVariant(agent.state)}>
-                          {getStateLabel(agent.state)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {agent.healthy ? (
-                          <CheckCircle className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <XCircle className="w-4 h-4 text-red-500" />
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {formatUptime(agent.uptime_seconds)}
-                      </TableCell>
-                      <TableCell>
-                        {agent.total_executions > 0
-                          ? `${(agent.success_rate * 100).toFixed(0)}%`
-                          : "N/A"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Coins className="w-3 h-3 text-muted-foreground" />
-                          {tokenStats
-                            ? `${(tokenStats.tokens_used_total / 1000).toFixed(1)}K`
-                            : "0"}
-                        </div>
-                      </TableCell>
-                      <TableCell>{tokenStats?.llm_calls_total || 0}</TableCell>
-                      <TableCell>
-                        <AgentActions agent={agent} poolName={poolName} />
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
+                  <TableRow
+                    key={agent.agent_id}
+                    className={selectedAgents.has(agent.agent_id) ? "bg-muted/50" : ""}
+                  >
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedAgents.has(agent.agent_id)}
+                        onCheckedChange={() => toggleAgent(agent.agent_id)}
+                        aria-label={`Select ${agent.agent_id}`}
+                      />
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {generateAgentDisplayName(agent.agent_id, agent.role_name)}
+                    </TableCell>
+                    <TableCell>{poolName}</TableCell>
+                    <TableCell>{agent.role_name}</TableCell>
+                    <TableCell>
+                      <Badge variant={getStateVariant(agent.state)}>
+                        {getStateLabel(agent.state)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {agent.healthy ? (
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <XCircle className="w-4 h-4 text-red-500" />
+                      )}
+                    </TableCell>
+                    <TableCell>{formatUptime(agent.uptime_seconds)}</TableCell>
+                    <TableCell>
+                      {agent.total_executions > 0
+                        ? `${(agent.success_rate * 100).toFixed(0)}%`
+                        : "N/A"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Coins className="w-3 h-3 text-muted-foreground" />
+                        {tokenStats ? (tokenStats.tokens_used_total / 1000).toFixed(1) + "K" : "0"}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {tokenStats?.llm_calls_total || 0}
+                    </TableCell>
+                    <TableCell>
+                      <AgentActions agent={agent} poolName={poolName} />
+                    </TableCell>
+                  </TableRow>
+                )})}
               </TableBody>
             </Table>
           )}
@@ -1265,9 +1167,7 @@ function HealthTab({
                   {unhealthyCount > 0 && (
                     <div className="flex items-center gap-1">
                       <XCircle className="w-4 h-4 text-red-500" />
-                      <span className="text-sm">
-                        {unhealthyCount} unhealthy
-                      </span>
+                      <span className="text-sm">{unhealthyCount} unhealthy</span>
                     </div>
                   )}
                 </div>
@@ -1288,10 +1188,7 @@ function HealthTab({
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between mb-3">
                           <span className="font-medium text-sm">
-                            {generateAgentDisplayName(
-                              agent.agent_id,
-                              agent.role_name,
-                            )}
+                            {generateAgentDisplayName(agent.agent_id, agent.role_name)}
                           </span>
                           <Badge variant={getStateVariant(agent.state)}>
                             {getStateLabel(agent.state)}
@@ -1299,35 +1196,21 @@ function HealthTab({
                         </div>
                         <div className="space-y-2 text-sm">
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">
-                              Health
-                            </span>
-                            <span
-                              className={
-                                agent.healthy
-                                  ? "text-green-600"
-                                  : "text-red-600"
-                              }
-                            >
+                            <span className="text-muted-foreground">Health</span>
+                            <span className={agent.healthy ? "text-green-600" : "text-red-600"}>
                               {agent.healthy ? "Healthy" : "Unhealthy"}
                             </span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">
-                              Uptime
-                            </span>
+                            <span className="text-muted-foreground">Uptime</span>
                             <span>{formatUptime(agent.uptime_seconds)}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">
-                              Idle Time
-                            </span>
+                            <span className="text-muted-foreground">Idle Time</span>
                             <span>{formatUptime(agent.idle_seconds)}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">
-                              Success Rate
-                            </span>
+                            <span className="text-muted-foreground">Success Rate</span>
                             <span>
                               {agent.total_executions > 0
                                 ? `${(agent.success_rate * 100).toFixed(0)}%`
@@ -1336,16 +1219,11 @@ function HealthTab({
                           </div>
                           {agent.last_heartbeat && (
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">
-                                Last Heartbeat
-                              </span>
+                              <span className="text-muted-foreground">Last Heartbeat</span>
                               <span>
-                                {formatDistanceToNow(
-                                  new Date(agent.last_heartbeat),
-                                  {
-                                    addSuffix: true,
-                                  },
-                                )}
+                                {formatDistanceToNow(new Date(agent.last_heartbeat), {
+                                  addSuffix: true,
+                                })}
                               </span>
                             </div>
                           )}
@@ -1372,9 +1250,7 @@ function ExecutionsTab({
   isLoading: boolean
 }) {
   const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [expandedExecution, setExpandedExecution] = useState<string | null>(
-    null,
-  )
+  const [expandedExecution, setExpandedExecution] = useState<string | null>(null)
 
   if (isLoading) {
     return (
@@ -1388,19 +1264,14 @@ function ExecutionsTab({
     )
   }
 
-  const filteredExecutions =
-    statusFilter === "all"
-      ? executions
-      : executions.filter((ex) => ex.status === statusFilter)
+  const filteredExecutions = statusFilter === "all"
+    ? executions
+    : executions.filter(ex => ex.status === statusFilter)
 
   const getStatusBadge = (status: AgentExecutionRecord["status"]) => {
     switch (status) {
       case "completed":
-        return (
-          <Badge variant="default" className="bg-green-500">
-            Completed
-          </Badge>
-        )
+        return <Badge variant="default" className="bg-green-500">Completed</Badge>
       case "failed":
         return <Badge variant="destructive">Failed</Badge>
       case "running":
@@ -1453,7 +1324,7 @@ function ExecutionsTab({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[50px]" />
+                <TableHead className="w-[50px]"></TableHead>
                 <TableHead>Agent</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Status</TableHead>
@@ -1469,13 +1340,9 @@ function ExecutionsTab({
                   <TableRow
                     key={execution.id}
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() =>
-                      setExpandedExecution(
-                        expandedExecution === execution.id
-                          ? null
-                          : execution.id,
-                      )
-                    }
+                    onClick={() => setExpandedExecution(
+                      expandedExecution === execution.id ? null : execution.id
+                    )}
                   >
                     <TableCell>
                       {expandedExecution === execution.id ? (
@@ -1489,12 +1356,8 @@ function ExecutionsTab({
                     </TableCell>
                     <TableCell>{execution.agent_type}</TableCell>
                     <TableCell>{getStatusBadge(execution.status)}</TableCell>
-                    <TableCell>
-                      {formatDuration(execution.duration_ms)}
-                    </TableCell>
-                    <TableCell>
-                      {execution.token_used.toLocaleString()}
-                    </TableCell>
+                    <TableCell>{formatDuration(execution.duration_ms)}</TableCell>
+                    <TableCell>{execution.token_used.toLocaleString()}</TableCell>
                     <TableCell>{execution.llm_calls}</TableCell>
                     <TableCell>
                       {execution.started_at
@@ -1510,51 +1373,29 @@ function ExecutionsTab({
                         <div className="p-4 space-y-3">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                             <div>
-                              <span className="text-muted-foreground">
-                                Execution ID:
-                              </span>
-                              <p className="font-mono text-xs">
-                                {execution.id}
-                              </p>
+                              <span className="text-muted-foreground">Execution ID:</span>
+                              <p className="font-mono text-xs">{execution.id}</p>
                             </div>
                             <div>
-                              <span className="text-muted-foreground">
-                                Project ID:
-                              </span>
-                              <p className="font-mono text-xs">
-                                {execution.project_id}
-                              </p>
+                              <span className="text-muted-foreground">Project ID:</span>
+                              <p className="font-mono text-xs">{execution.project_id}</p>
                             </div>
                             <div>
-                              <span className="text-muted-foreground">
-                                Started:
-                              </span>
-                              <p>
-                                {execution.started_at
-                                  ? new Date(
-                                      execution.started_at,
-                                    ).toLocaleString()
-                                  : "N/A"}
-                              </p>
+                              <span className="text-muted-foreground">Started:</span>
+                              <p>{execution.started_at
+                                ? new Date(execution.started_at).toLocaleString()
+                                : "N/A"}</p>
                             </div>
                             <div>
-                              <span className="text-muted-foreground">
-                                Completed:
-                              </span>
-                              <p>
-                                {execution.completed_at
-                                  ? new Date(
-                                      execution.completed_at,
-                                    ).toLocaleString()
-                                  : "N/A"}
-                              </p>
+                              <span className="text-muted-foreground">Completed:</span>
+                              <p>{execution.completed_at
+                                ? new Date(execution.completed_at).toLocaleString()
+                                : "N/A"}</p>
                             </div>
                           </div>
                           {execution.error_message && (
                             <div className="mt-3">
-                              <span className="text-sm text-muted-foreground">
-                                Error:
-                              </span>
+                              <span className="text-sm text-muted-foreground">Error:</span>
                               <div className="mt-1 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded text-sm text-red-700 dark:text-red-300">
                                 {execution.error_message}
                               </div>

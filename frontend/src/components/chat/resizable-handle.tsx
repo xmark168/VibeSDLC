@@ -1,3 +1,4 @@
+import { GripVertical } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 interface ResizableHandleProps {
@@ -42,10 +43,12 @@ export function ResizableHandle({ onResize }: ResizableHandleProps) {
     <div
       className="w-1 invisible pointer-events-auto cursor-col-resize absolute inset-y-0 right-0"
       onMouseDown={(e) => {
-        e.preventDefault()
+        e.preventDefault();
         setIsDragging(true)
         startXRef.current = e.clientX
       }}
     />
+
+
   )
 }

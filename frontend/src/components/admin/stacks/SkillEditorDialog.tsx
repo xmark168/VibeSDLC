@@ -1,10 +1,10 @@
+import type { TechStack } from "@/types/stack"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import type { TechStack } from "@/types/stack"
 import { SkillFileExplorer } from "./SkillFileExplorer"
 
 interface SkillEditorDialogProps {
@@ -13,11 +13,7 @@ interface SkillEditorDialogProps {
   stack: TechStack
 }
 
-export function SkillEditorDialog({
-  open,
-  onOpenChange,
-  stack,
-}: SkillEditorDialogProps) {
+export function SkillEditorDialog({ open, onOpenChange, stack }: SkillEditorDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="!max-w-[95vw] !w-[95vw] !h-[95vh] flex flex-col p-4">

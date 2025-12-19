@@ -1,12 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  backlogItemsApi,
-  type UpdateWIPLimitParams,
-} from "@/apis/backlog-items"
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { backlogItemsApi, type UpdateWIPLimitParams } from '@/apis/backlog-items'
 
 export function useKanbanBoard(projectId: string | undefined) {
   return useQuery({
-    queryKey: ["kanban-board", projectId],
+    queryKey: ['kanban-board', projectId],
     queryFn: async () => {
       const result = await backlogItemsApi.getKanbanBoard(projectId!)
       return result
@@ -21,7 +18,7 @@ export function useKanbanBoard(projectId: string | undefined) {
 
 export function useWIPLimits(projectId: string | undefined) {
   return useQuery({
-    queryKey: ["wip-limits", projectId],
+    queryKey: ['wip-limits', projectId],
     queryFn: () => backlogItemsApi.getWIPLimits(projectId!),
     enabled: !!projectId,
   })
@@ -31,17 +28,15 @@ export function useUpdateWIPLimit(projectId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({
-      columnName,
-      params,
-    }: {
-      columnName: string
-      params: UpdateWIPLimitParams
-    }) => backlogItemsApi.updateWIPLimit(projectId, columnName, params),
+    mutationFn: ({ columnName, params }: { columnName: string; params: UpdateWIPLimitParams }) =>
+      backlogItemsApi.updateWIPLimit(projectId, columnName, params),
     onSuccess: () => {
       // Invalidate both WIP limits and kanban board queries to refresh the UI
-      queryClient.invalidateQueries({ queryKey: ["wip-limits", projectId] })
-      queryClient.invalidateQueries({ queryKey: ["kanban-board", projectId] })
+      queryClient.invalidateQueries({ queryKey: ['wip-limits', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['kanban-board', projectId] })
     },
   })
 }
+
+
+
