@@ -254,14 +254,14 @@ async def create_project(
         )
         
         # Auto-spawn agents after project creation
-        from app.api.routes.agent_management import get_available_pool, get_role_class_map
+        from app.services.agent_pool_service import AgentPoolService
         
-        role_class_map = get_role_class_map()
+        role_class_map = AgentPoolService.get_role_class_map()
         spawned_count = 0
         
         for agent in created_agents:
             # Get pool for this agent's role (role-specific > universal > any)
-            pool_manager = get_available_pool(role_type=agent.role_type)
+            pool_manager = AgentPoolService.get_available_pool(role_type=agent.role_type)
             if not pool_manager:
                 logger.warning(f"No pool available for {agent.role_type}, skipping spawn")
                 continue
@@ -434,10 +434,10 @@ async def _cleanup_project_files_and_agents(
     
     # Terminate agents in parallel
     if agents_info:
-        from app.api.routes.agent_management import get_available_pool
+        from app.services.agent_pool_service import AgentPoolService
         
         async def terminate_agent(agent: dict):
-            pool_manager = get_available_pool(role_type=agent["role_type"])
+            pool_manager = AgentPoolService.get_available_pool(role_type=agent["role_type"])
             if pool_manager:
                 try:
                     await pool_manager.terminate_agent(agent["id"])

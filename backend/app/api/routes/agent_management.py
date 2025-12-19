@@ -3,12 +3,10 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from enum import Enum
 from typing import Any, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, update
 from app.core.agent.agent_pool_manager import AgentPoolManager
@@ -20,152 +18,61 @@ from app.schemas import (
 )
 from app.services.persona_service import PersonaService
 from app.services.pool_service import PoolService
+from app.services.singletons import (
+    get_pool_registry,
+    SystemStatus,
+    get_system_status_service,
+)
+from app.schemas.agent_management import (
+    SystemStatusResponse,
+    EmergencyActionRequest,
+    AgentConfigSchema,
+    AgentConfigResponse,
+    BulkAgentRequest,
+    BulkSpawnRequest,
+    BulkOperationResponse,
+    ScalingTriggerType,
+    ScalingAction,
+    AutoScalingRule,
+    AutoScalingRuleCreate,
+    AgentTokenStats,
+    PoolTokenStats,
+    SystemTokenSummary,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agents", tags=["agent-management"])
 
-_manager_registry: dict[str, AgentPoolManager] = {}
+# Legacy compatibility - get registry through service
+def _get_manager_registry():
+    """Get manager registry (for backward compatibility)."""
+    return get_pool_registry().get_all()
 
+# Import pool service functions for backward compatibility
+from app.services.agent_pool_service import AgentPoolService
 
-# ===== System Status Management =====
-
-class SystemStatus(str, Enum):
-    """System-wide status for emergency controls."""
-    RUNNING = "running"
-    PAUSED = "paused"
-    MAINTENANCE = "maintenance"
-    STOPPED = "stopped"
-
-
-class SystemStatusResponse(BaseModel):
-    """Response model for system status."""
-    status: SystemStatus
-    paused_at: datetime | None = None
-    maintenance_message: str | None = None
-    active_pools: int = 0
-    total_agents: int = 0
-    accepting_tasks: bool = True
-
-
-class EmergencyActionRequest(BaseModel):
-    """Request model for emergency actions."""
-    action: str  # pause, resume, stop, maintenance
-    message: str | None = None
-    force: bool = False
-
-
-# Global system state
-_system_status: SystemStatus = SystemStatus.RUNNING
-_status_changed_at: datetime | None = None
-_maintenance_message: str | None = None
-
-# Role class mapping - lazy loaded to avoid circular imports
+# Legacy exports - use AgentPoolService directly in new code
 def get_role_class_map():
-    """Get role class mapping with lazy imports."""
-    from app.agents.business_analyst import BusinessAnalyst
-    from app.agents.developer import Developer
-    from app.agents.team_leader import TeamLeader
-    from app.agents.tester import Tester
-
-    return {
-        "team_leader": TeamLeader,
-        "developer": Developer,
-        "tester": Tester,
-        "business_analyst": BusinessAnalyst,
-    }
-
-ROLE_CLASS_MAP = None  # Will be lazy loaded
+    """Get role class mapping (legacy - use AgentPoolService.get_role_class_map())."""
+    return AgentPoolService.get_role_class_map()
 
 
 def ensure_role_class_map():
-    """Ensure ROLE_CLASS_MAP is loaded (lazy init helper)."""
-    global ROLE_CLASS_MAP
-    if ROLE_CLASS_MAP is None:
-        ROLE_CLASS_MAP = get_role_class_map()
-    return ROLE_CLASS_MAP
+    """Ensure role class map loaded (legacy - use AgentPoolService.ensure_role_class_map())."""
+    return AgentPoolService.ensure_role_class_map()
+
+
+ROLE_CLASS_MAP = None  # Deprecated - use AgentPoolService.get_role_class_map()
 
 
 def get_available_pool(role_type: Optional[str] = None) -> Optional[AgentPoolManager]:
-    """Get best available pool manager based on priority and load.
-    
-    Selection criteria (in order):
-    1. Pool must be active (is_active=True)
-    2. Pool must have capacity (current_agents < max_agents)
-    3. Sort by priority (lower number = higher priority)
-    4. Among same priority, choose pool with least agents (load balancing)
-    
-    Note: role_type is ignored - agents are assigned to pools purely by priority and load.
-    
-    Args:
-        role_type: Ignored, kept for backward compatibility
-        
-    Returns:
-        AgentPoolManager or None if no pools available
-    """
-    from app.models import AgentPool
-    from app.core.db import engine
-    
-    if not _manager_registry:
-        return None
-    
-    # Query ALL active pools from DB
-    with Session(engine) as session:
-        statement = select(AgentPool).where(AgentPool.is_active == True)
-        db_pools = {p.pool_name: p for p in session.exec(statement).all()}
-    
-    # Build candidate list with metrics
-    candidates = []
-    for pool_name, manager in _manager_registry.items():
-        db_pool = db_pools.get(pool_name)
-        if not db_pool:
-            continue  # Pool not in DB or not active
-        
-        current_agents = len(manager.agents)
-        if current_agents >= manager.max_agents:
-            continue  # Pool at capacity
-        
-        # Calculate load (0.0 to 1.0)
-        load = current_agents / manager.max_agents if manager.max_agents > 0 else 1.0
-        
-        candidates.append({
-            "manager": manager,
-            "priority": db_pool.priority,
-            "load": load,
-            "current_agents": current_agents,
-        })
-    
-    if not candidates:
-        logger.warning(f"No available pool (all pools at capacity or inactive)")
-        return None
-    
-    # Sort by: priority (asc), load (asc)
-    candidates.sort(key=lambda x: (x["priority"], x["load"]))
-    
-    best = candidates[0]
-    logger.info(
-        f"Selected pool '{best['manager'].pool_name}' "
-        f"(priority={best['priority']}, load={best['load']:.1%}, agents={best['current_agents']})"
-    )
-    
-    return best["manager"]
+    """Get best available pool (legacy - use AgentPoolService.get_available_pool())."""
+    return AgentPoolService.get_available_pool(role_type)
 
 
 def find_pool_for_agent(agent_id: UUID) -> Optional[AgentPoolManager]:
-    """Find which pool contains the given agent.
-    
-    Searches all pools to find the agent. Use this when you need to
-    send signals to a specific agent but don't know which pool it's in.
-    
-    Args:
-        agent_id: Agent UUID to find
-        
-    Returns:
-        AgentPoolManager containing the agent, or None if not found
-    """
-    for pool_name, manager in _manager_registry.items():
-        if agent_id in manager.agents:
-            logger.debug(f"[find_pool] Agent {agent_id} found in pool '{pool_name}'")
-            return manager
+    """Find pool for agent (legacy - use AgentPoolService.find_pool_for_agent())."""
+    return AgentPoolService.find_pool_for_agent(agent_id)
     
     logger.warning(f"[find_pool] Agent {agent_id} not found in any pool")
     return None
@@ -228,7 +135,8 @@ async def _initialize_pool(logger, role_class_map) -> None:
     pool_name = "universal_pool"
 
     # Skip if manager already exists
-    if pool_name in _manager_registry:
+    registry = get_pool_registry()
+    if pool_name in registry:
         logger.info("Universal pool already exists, skipping")
         return
 
@@ -261,7 +169,7 @@ async def _initialize_pool(logger, role_class_map) -> None:
 
         # Start manager
         if await manager.start():
-            _manager_registry[pool_name] = manager
+            registry.register(pool_name, manager)
             logger.info(f"✓ Created agent pool: {pool_name} (supports all role types)")
 
             # Restore agents from database
@@ -288,7 +196,8 @@ async def _initialize_role_pool(logger, role_type: str, role_class_map) -> None:
     max_agents = role_config.get("max_agents", settings.AGENT_POOL_MAX_AGENTS // 4)
 
     # Skip if manager already exists
-    if pool_name in _manager_registry:
+    registry = get_pool_registry()
+    if pool_name in registry:
         logger.info(f"Pool '{pool_name}' already exists, skipping")
         return
 
@@ -321,7 +230,7 @@ async def _initialize_role_pool(logger, role_type: str, role_class_map) -> None:
 
         # Start manager
         if await manager.start():
-            _manager_registry[pool_name] = manager
+            registry.register(pool_name, manager)
             logger.info(f"✓ Created agent pool: {pool_name} (role: {role_type}, max: {max_agents})")
 
             # Restore agents for this role from database
@@ -469,7 +378,8 @@ def get_manager(pool_name: str) -> AgentPoolManager:
     Raises:
         HTTPException: If manager not found
     """
-    manager = _manager_registry.get(pool_name)
+    registry = get_pool_registry()
+    manager = registry.get(pool_name)
     if not manager:
         raise HTTPException(status_code=404, detail=f"Pool manager '{pool_name}' not found")
     return manager
@@ -498,7 +408,8 @@ async def create_pool(
         )
 
     # Check if pool manager already exists
-    if request.pool_name in _manager_registry:
+    registry = get_pool_registry()
+    if request.pool_name in registry:
         raise HTTPException(status_code=400, detail=f"Pool manager '{request.pool_name}' already exists")
 
     # Extract max_agents and health_check_interval if provided
@@ -521,7 +432,7 @@ async def create_pool(
         raise HTTPException(status_code=500, detail="Failed to start pool manager")
 
     # Register manager
-    _manager_registry[request.pool_name] = manager
+    registry.register(request.pool_name, manager)
 
     # Return manager stats
     stats = await manager.get_stats()
@@ -537,9 +448,10 @@ async def list_pools(
     from sqlalchemy import func
 
     stats_list = []
+    registry = get_pool_registry()
 
     # Get stats from in-memory managers
-    for manager in _manager_registry.values():
+    for manager in registry.values():
         stats = await manager.get_stats()
         stats_list.append(PoolResponse(**stats))
 
@@ -629,7 +541,8 @@ async def delete_pool(
         raise HTTPException(status_code=500, detail="Failed to stop pool manager")
 
     # Remove from registry
-    del _manager_registry[pool_name]
+    registry = get_pool_registry()
+    registry.unregister(pool_name)
 
     return {"message": f"Pool manager '{pool_name}' and all workers deleted successfully"}
 
@@ -704,8 +617,9 @@ async def spawn_agent(
     from app.core.agent.pool_helpers import get_best_pool_for_agent
     from app.core.config import settings
 
+    registry = get_pool_registry()
     manager = get_best_pool_for_agent(
-        _manager_registry,
+        registry.get_all(),
         request.role_type,
         prefer_role_pool=settings.AGENT_POOL_USE_ROLE_SPECIFIC
     )
@@ -713,18 +627,18 @@ async def spawn_agent(
     if not manager:
         # Fallback to universal pool or any available pool
         pool_name = "universal_pool"
-        if pool_name not in _manager_registry:
+        if pool_name not in registry:
             # Try role-specific pool
             pool_name = f"{request.role_type}_pool"
-        if pool_name not in _manager_registry:
+        if pool_name not in registry:
             # Use any available pool
-            if _manager_registry:
-                pool_name = next(iter(_manager_registry.keys()))
+            if registry:
+                pool_name = next(iter(registry.keys()))
             else:
                 session.delete(db_agent)
                 session.commit()
                 raise HTTPException(status_code=500, detail="No agent pools available")
-        manager = _manager_registry[pool_name]
+        manager = registry.get(pool_name)
 
     pool_name = manager.pool_name
 
@@ -840,8 +754,9 @@ async def get_system_stats(
     # Aggregate stats from all pool managers
     total_agents = 0
     pools_list = []
+    registry = get_pool_registry()
 
-    for pool_name, manager in _manager_registry.items():
+    for pool_name, manager in registry.items():
         stats = await manager.get_stats()
         total_agents += stats.get("total_agents", 0)
 
@@ -859,8 +774,8 @@ async def get_system_stats(
 
     # Calculate uptime from first manager
     uptime_seconds = 0.0
-    if _manager_registry:
-        first_manager = next(iter(_manager_registry.values()))
+    if registry:
+        first_manager = next(iter(registry.values()))
         stats = await first_manager.get_stats()
         uptime_seconds = stats.get("manager_uptime_seconds", 0.0)
 
@@ -893,7 +808,7 @@ async def get_system_stats(
 
     return SystemStatsResponse(
         uptime_seconds=uptime_seconds,
-        total_pools=len(_manager_registry),
+        total_pools=len(registry),
         total_agents=total_agents,
         total_executions=total_executions,
         successful_executions=successful_executions,
@@ -913,7 +828,8 @@ async def get_dashboard_data(
 
     # Get stats from all managers
     pools_data = {}
-    for pool_name, manager in _manager_registry.items():
+    registry = get_pool_registry()
+    for pool_name, manager in registry.items():
         pools_data[pool_name] = await manager.get_stats()
 
     return {
@@ -1120,10 +1036,11 @@ async def get_all_agent_health(
     from sqlalchemy import func
 
     health_data = {}
+    registry = get_pool_registry()
 
     # If we have pools in registry, get real-time data from managers
-    if _manager_registry:
-        for pool_name, manager in _manager_registry.items():
+    if registry:
+        for pool_name, manager in registry.items():
             pool_health = []
 
             # Get agents from manager (in-memory state)
@@ -1394,7 +1311,8 @@ async def update_pool_config(
         raise HTTPException(status_code=404, detail="Pool not found")
 
     # If pool is active, update runtime manager
-    manager = _manager_registry.get(updated_pool.pool_name)
+    registry = get_pool_registry()
+    manager = registry.get(updated_pool.pool_name)
     if manager:
         if config.max_agents is not None:
             manager.max_agents = config.max_agents
@@ -1534,7 +1452,8 @@ async def pool_events_stream(
                 try:
                     # Collect all pool stats
                     pools_data = []
-                    for pool_name, manager in _manager_registry.items():
+                    registry = get_pool_registry()
+                    for pool_name, manager in registry.items():
                         try:
                             pool_stats = {
                                 "pool_name": pool_name,
@@ -1555,7 +1474,7 @@ async def pool_events_stream(
 
                     # Collect all agent health
                     agents_health = []
-                    for pool_name, manager in _manager_registry.items():
+                    for pool_name, manager in registry.items():
                         for agent_id, agent in manager.agents.items():
                             try:
                                 health_data = {
@@ -1610,19 +1529,21 @@ async def get_system_status(
     
     Returns system-wide status, pool counts, and whether tasks are being accepted.
     """
-    global _system_status, _status_changed_at, _maintenance_message
+    status_service = get_system_status_service()
+    status_info = status_service.get_status_info()
 
     total_agents = 0
-    for manager in _manager_registry.values():
+    registry = get_pool_registry()
+    for manager in registry.values():
         total_agents += len(manager.agents)
 
-    accepting_tasks = _system_status == SystemStatus.RUNNING
+    accepting_tasks = status_service.is_running()
 
     return SystemStatusResponse(
-        status=_system_status,
-        paused_at=_status_changed_at if _system_status != SystemStatus.RUNNING else None,
-        maintenance_message=_maintenance_message,
-        active_pools=len(_manager_registry),
+        status=status_info["status"],
+        paused_at=status_info["status_changed_at"] if not status_service.is_running() else None,
+        maintenance_message=status_info["maintenance_message"],
+        active_pools=len(registry),
         total_agents=total_agents,
         accepting_tasks=accepting_tasks,
     )
@@ -1637,17 +1558,17 @@ async def emergency_pause_all(
     Agents will finish current tasks but won't accept new ones.
     Use this when you need to temporarily halt processing without losing work.
     """
-    global _system_status, _status_changed_at
+    status_service = get_system_status_service()
 
-    if _system_status == SystemStatus.PAUSED:
-        return {"message": "System already paused", "status": _system_status.value}
+    if status_service.is_paused():
+        return {"message": "System already paused", "status": status_service.status.value}
 
-    _system_status = SystemStatus.PAUSED
-    _status_changed_at = datetime.now()
+    status_info = status_service.pause()
 
     # Notify all agents to stop accepting tasks
     paused_count = 0
-    for pool_name, manager in _manager_registry.items():
+    registry = get_pool_registry()
+    for pool_name, manager in registry.items():
         for agent_id, agent in manager.agents.items():
             try:
                 # Set agent to not accept new tasks (implementation depends on agent)
@@ -1661,8 +1582,8 @@ async def emergency_pause_all(
 
     return {
         "message": f"System paused. {paused_count} agents stopped accepting tasks.",
-        "status": _system_status.value,
-        "paused_at": _status_changed_at.isoformat(),
+        "status": status_info["status"].value,
+        "paused_at": status_info["status_changed_at"].isoformat() if status_info["status_changed_at"] else None,
         "agents_affected": paused_count,
     }
 
@@ -1675,25 +1596,24 @@ async def emergency_resume_all(
     
     Agents will start accepting new tasks again.
     """
-    global _system_status, _status_changed_at, _maintenance_message
+    status_service = get_system_status_service()
 
-    if _system_status == SystemStatus.RUNNING:
-        return {"message": "System already running", "status": _system_status.value}
+    if status_service.is_running():
+        return {"message": "System already running", "status": status_service.status.value}
 
-    if _system_status == SystemStatus.STOPPED:
+    if status_service.is_stopped():
         raise HTTPException(
             status_code=400,
             detail="Cannot resume stopped system. Use /system/start to restart."
         )
 
-    previous_status = _system_status
-    _system_status = SystemStatus.RUNNING
-    _status_changed_at = datetime.now()
-    _maintenance_message = None
+    previous_status = status_service.status
+    status_info = status_service.resume()
 
     # Resume all agents
     resumed_count = 0
-    for pool_name, manager in _manager_registry.items():
+    registry = get_pool_registry()
+    for pool_name, manager in registry.items():
         for agent_id, agent in manager.agents.items():
             try:
                 if hasattr(agent, 'resume'):
@@ -1706,7 +1626,7 @@ async def emergency_resume_all(
 
     return {
         "message": f"System resumed. {resumed_count} agents now accepting tasks.",
-        "status": _system_status.value,
+        "status": status_info["status"].value,
         "previous_status": previous_status.value,
         "agents_affected": resumed_count,
     }
@@ -1723,15 +1643,14 @@ async def emergency_stop_all(
     - force=False: Wait for current tasks to complete (graceful)
     - force=True: Stop immediately without waiting (may lose work)
     """
-    global _system_status, _status_changed_at
-
-    _system_status = SystemStatus.STOPPED
-    _status_changed_at = datetime.now()
+    status_service = get_system_status_service()
+    status_info = status_service.stop()
 
     stopped_count = 0
     failed_count = 0
+    registry = get_pool_registry()
 
-    for pool_name, manager in list(_manager_registry.items()):
+    for pool_name, manager in list(registry.items()):
         agent_ids = list(manager.agents.keys())
         for agent_id in agent_ids:
             try:
@@ -1751,8 +1670,8 @@ async def emergency_stop_all(
 
     return {
         "message": f"Emergency stop executed. {stopped_count} agents terminated.",
-        "status": _system_status.value,
-        "stopped_at": _status_changed_at.isoformat(),
+        "status": status_info["status"].value,
+        "stopped_at": status_info["status_changed_at"].isoformat() if status_info["status_changed_at"] else None,
         "agents_stopped": stopped_count,
         "agents_failed": failed_count,
         "force": force,
@@ -1769,15 +1688,13 @@ async def enter_maintenance_mode(
     Similar to pause but with a custom message for users.
     Useful for planned maintenance windows.
     """
-    global _system_status, _status_changed_at, _maintenance_message
-
-    _system_status = SystemStatus.MAINTENANCE
-    _status_changed_at = datetime.now()
-    _maintenance_message = message
+    status_service = get_system_status_service()
+    status_info = status_service.enter_maintenance(message)
 
     # Pause all agents
     paused_count = 0
-    for pool_name, manager in _manager_registry.items():
+    registry = get_pool_registry()
+    for pool_name, manager in registry.items():
         for agent_id, agent in manager.agents.items():
             try:
                 if hasattr(agent, 'pause'):
@@ -1793,9 +1710,9 @@ async def enter_maintenance_mode(
 
     return {
         "message": f"Maintenance mode active. {paused_count} agents paused.",
-        "status": _system_status.value,
-        "maintenance_message": _maintenance_message,
-        "started_at": _status_changed_at.isoformat(),
+        "status": status_info["status"].value,
+        "maintenance_message": status_info["maintenance_message"],
+        "started_at": status_info["status_changed_at"].isoformat() if status_info["status_changed_at"] else None,
         "agents_affected": paused_count,
     }
 
@@ -1876,27 +1793,6 @@ def get_system_status() -> SystemStatus:
 
 # ===== Agent Configuration Endpoints =====
 
-class AgentConfigSchema(BaseModel):
-    """Schema for agent configuration."""
-    temperature: float = 0.7
-    max_tokens: int = 4096
-    top_p: float = 1.0
-    model_name: str | None = None
-    system_prompt_override: str | None = None
-    tool_permissions: list[str] | None = None
-    timeout_seconds: int = 300
-    retry_count: int = 3
-
-
-class AgentConfigResponse(BaseModel):
-    """Response model for agent configuration."""
-    agent_id: str
-    agent_name: str
-    role_type: str
-    config: AgentConfigSchema
-    updated_at: datetime | None = None
-
-
 @router.get("/config/{agent_id}", response_model=AgentConfigResponse)
 async def get_agent_config(
     agent_id: UUID,
@@ -1971,7 +1867,8 @@ async def update_agent_config(
     session.refresh(agent)
 
     # If agent is running, try to update its config in memory
-    for manager in _manager_registry.values():
+    registry = get_pool_registry()
+    for manager in registry.values():
         running_agent = manager.agents.get(agent_id)
         if running_agent:
             try:
@@ -2085,29 +1982,6 @@ async def reset_agent_config(
 
 # ===== Bulk Operations Endpoints =====
 
-class BulkAgentRequest(BaseModel):
-    """Request model for bulk agent operations."""
-    agent_ids: list[str]
-    pool_name: str | None = None
-
-
-class BulkSpawnRequest(BaseModel):
-    """Request model for bulk spawn operation."""
-    role_type: str
-    count: int
-    project_id: str
-    pool_name: str = "universal_pool"
-
-
-class BulkOperationResponse(BaseModel):
-    """Response model for bulk operations."""
-    success_count: int
-    failed_count: int
-    total_requested: int
-    results: list[dict[str, Any]]
-    message: str
-
-
 @router.post("/bulk/terminate", response_model=BulkOperationResponse)
 async def bulk_terminate_agents(
     request: BulkAgentRequest,
@@ -2129,7 +2003,8 @@ async def bulk_terminate_agents(
 
             # Find which pool this agent is in
             terminated = False
-            for pool_name, manager in _manager_registry.items():
+            registry = get_pool_registry()
+            for pool_name, manager in registry.items():
                 if agent_id in manager.agents:
                     success = await manager.terminate_agent(agent_id, graceful=graceful)
                     if success:
@@ -2200,7 +2075,8 @@ async def bulk_set_idle(
 
             # Find agent and set idle
             found = False
-            for pool_name, manager in _manager_registry.items():
+            registry = get_pool_registry()
+            for pool_name, manager in registry.items():
                 agent = manager.agents.get(agent_id)
                 if agent:
                     found = True
@@ -2301,7 +2177,8 @@ async def bulk_restart_agents(
             # Find and terminate agent
             terminated = False
             target_manager = None
-            for pool_name, manager in _manager_registry.items():
+            registry = get_pool_registry()
+            for pool_name, manager in registry.items():
                 if agent_id in manager.agents:
                     await manager.terminate_agent(agent_id, graceful=True)
                     terminated = True
@@ -2310,7 +2187,7 @@ async def bulk_restart_agents(
 
             if not target_manager:
                 # Use universal pool if agent wasn't running
-                target_manager = _manager_registry.get("universal_pool")
+                target_manager = registry.get("universal_pool")
 
             if not target_manager:
                 failed_count += 1
@@ -2393,7 +2270,8 @@ async def bulk_spawn_agents(
             detail="Count must be between 1 and 20"
         )
 
-    manager = _manager_registry.get(request.pool_name)
+    registry = get_pool_registry()
+    manager = registry.get(request.pool_name)
     if not manager:
         raise HTTPException(
             status_code=404,
@@ -2516,67 +2394,6 @@ async def bulk_spawn_agents(
 
 # ===== Phase 3: Auto-scaling Rules =====
 
-class ScalingTriggerType(str, Enum):
-    """Types of scaling triggers."""
-    SCHEDULE = "schedule"      # Time-based scaling
-    LOAD = "load"              # Load-based scaling
-    QUEUE_DEPTH = "queue_depth" # Task queue depth
-
-
-class ScalingAction(str, Enum):
-    """Scaling actions."""
-    SCALE_UP = "scale_up"
-    SCALE_DOWN = "scale_down"
-    SET_COUNT = "set_count"
-
-
-class AutoScalingRule(BaseModel):
-    """Auto-scaling rule configuration."""
-    id: str | None = None
-    name: str
-    pool_name: str
-    enabled: bool = True
-    trigger_type: ScalingTriggerType
-    # Schedule trigger config
-    cron_expression: str | None = None  # e.g., "0 9 * * 1-5" (9 AM weekdays)
-    timezone: str | None = "UTC"
-    # Load trigger config
-    metric: str | None = None  # cpu_percent, memory_percent, active_ratio
-    threshold_high: float | None = None  # Scale up when above
-    threshold_low: float | None = None   # Scale down when below
-    cooldown_seconds: int = 300  # Min time between scaling actions
-    # Action config
-    action: ScalingAction
-    target_count: int | None = None  # For SET_COUNT
-    scale_amount: int = 1  # For SCALE_UP/DOWN
-    min_agents: int = 1
-    max_agents: int = 10
-    # Role filter
-    role_type: str | None = None  # Only scale specific role
-    created_at: datetime | None = None
-    last_triggered: datetime | None = None
-
-
-class AutoScalingRuleCreate(BaseModel):
-    """Request to create auto-scaling rule."""
-    name: str
-    pool_name: str
-    enabled: bool = True
-    trigger_type: ScalingTriggerType
-    cron_expression: str | None = None
-    timezone: str | None = "UTC"
-    metric: str | None = None
-    threshold_high: float | None = None
-    threshold_low: float | None = None
-    cooldown_seconds: int = 300
-    action: ScalingAction
-    target_count: int | None = None
-    scale_amount: int = 1
-    min_agents: int = 1
-    max_agents: int = 10
-    role_type: str | None = None
-
-
 # In-memory storage for auto-scaling rules (in production, use database)
 _auto_scaling_rules: dict[str, AutoScalingRule] = {}
 _rule_id_counter = 0
@@ -2609,7 +2426,8 @@ async def create_auto_scaling_rule(
     global _rule_id_counter
 
     # Validate pool exists
-    if request.pool_name not in _manager_registry:
+    registry = get_pool_registry()
+    if request.pool_name not in registry:
         raise HTTPException(
             status_code=404,
             detail=f"Pool '{request.pool_name}' not found"
@@ -2763,7 +2581,8 @@ async def trigger_auto_scaling_rule(
         raise HTTPException(status_code=404, detail="Rule not found")
 
     rule = _auto_scaling_rules[rule_id]
-    manager = _manager_registry.get(rule.pool_name)
+    registry = get_pool_registry()
+    manager = registry.get(rule.pool_name)
 
     if not manager:
         raise HTTPException(
@@ -2827,42 +2646,6 @@ async def trigger_auto_scaling_rule(
 
 
 # ===== Token Usage Statistics Endpoints =====
-
-class AgentTokenStats(BaseModel):
-    """Token statistics for a single agent."""
-    agent_id: str
-    agent_name: str
-    role_type: str
-    pool_name: str | None
-    tokens_used_total: int
-    tokens_used_today: int
-    llm_calls_total: int
-    status: str
-    created_at: datetime | None
-
-
-class PoolTokenStats(BaseModel):
-    """Token statistics for a pool."""
-    pool_id: str
-    pool_name: str
-    role_type: str | None
-    total_tokens_used: int
-    total_llm_calls: int
-    total_agents: int
-    agents_stats: list[AgentTokenStats]
-
-
-class SystemTokenSummary(BaseModel):
-    """System-wide token usage summary."""
-    total_tokens_all_time: int
-    total_tokens_today: int
-    total_llm_calls: int
-    total_agents: int
-    total_pools: int
-    by_role_type: dict[str, dict]
-    by_pool: list[PoolTokenStats]
-    estimated_cost_usd: float
-
 
 @router.get("/stats/token-usage/agents", response_model=list[AgentTokenStats])
 async def get_agents_token_stats(

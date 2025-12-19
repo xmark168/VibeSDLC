@@ -294,23 +294,7 @@ class PausableAgentMixin:
             return False
     
     async def _run_graph_with_signal_check(self, graph, input_data, config, story_id: str):
-        """Run graph with DB state checking (single source of truth) and checkpoint validation.
-        
-        FIX #1: Use DB as single source of truth to eliminate race conditions.
-        FIX #2: Validate checkpoint periodically to detect serialization failures.
-        
-        Args:
-            graph: LangGraph compiled graph
-            input_data: Initial state or Command
-            config: Graph config with thread_id
-            story_id: Story UUID string
-            
-        Returns:
-            Final state from graph execution
-            
-        Raises:
-            StoryStoppedException: If story is paused or cancelled
-        """
+        """Run graph with DB state checking (single source of truth) and checkpoint validation."""
         final_state = None
         node_count = 0
         last_checkpoint_node = 0

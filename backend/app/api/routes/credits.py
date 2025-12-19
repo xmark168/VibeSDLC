@@ -5,35 +5,16 @@ from sqlmodel import Session, select, col, func
 from app.api.deps import CurrentUser, SessionDep
 from app.models import CreditActivity, Agent, Project, Story
 from app.models.base import Role
-from pydantic import BaseModel
 from datetime import datetime, timezone, timedelta
 from typing import Any
 from collections import Counter
+from app.schemas.credits import (
+    CreditActivityItem,
+    CreditActivityResponse,
+    TokenMonitoringStats,
+)
 
 router = APIRouter(prefix="/credits", tags=["credits"])
-
-
-class CreditActivityItem(BaseModel):
-    """Credit activity item for user display."""
-    id: str
-    created_at: datetime
-    activity_type: str
-    amount: int  # Credits
-    tokens_used: int | None
-    model_used: str | None
-    llm_calls: int | None
-    reason: str
-    agent_name: str | None
-    project_name: str | None
-    story_title: str | None
-    task_type: str | None
-
-
-class CreditActivityResponse(BaseModel):
-    """Paginated credit activity response."""
-    total: int
-    items: list[CreditActivityItem]
-    summary: dict
 
 
 @router.get("/activities", response_model=CreditActivityResponse)
@@ -156,15 +137,6 @@ def _get_top_model(activities: list) -> str | None:
 
 
 # Admin monitoring endpoints
-
-class TokenMonitoringStats(BaseModel):
-    """System-wide token monitoring stats."""
-    today: dict
-    this_month: dict
-    top_users: list[dict]
-    top_projects: list[dict]
-    model_breakdown: dict
-
 
 @router.get("/monitoring/stats", response_model=TokenMonitoringStats)
 def get_token_monitoring_stats(

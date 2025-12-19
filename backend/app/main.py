@@ -1,10 +1,6 @@
 import asyncio
 import logging
 import os
-import sys
-
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import sentry_sdk
 from contextlib import asynccontextmanager
@@ -34,12 +30,7 @@ def custom_generate_unique_id(route: APIRoute) -> str:
 
 
 async def cleanup_stale_story_states():
-    """Reset stale story states on backend restart.
-    
-    When backend restarts, any stories in PENDING/PROCESSING state
-    are stale (no agent is actually processing them). Reset to null
-    and clear checkpoints.
-    """
+    """Reset stale story states on backend restart."""
     from sqlmodel import Session
     from sqlalchemy import text
 
@@ -138,7 +129,7 @@ async def cleanup_stale_story_states():
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_: FastAPI):
     with Session(engine) as session:
         init_db(session)
 
@@ -154,7 +145,7 @@ async def lifespan(app: FastAPI):
     try:
         topics_ok = await ensure_kafka_topics()
         if not topics_ok:
-            logger.warning("⚠️  Some Kafka topics failed to create")
+            logger.warning("[SYSTEM] Some Kafka topics failed to create")
     except Exception as e:
         logger.warning(f"Failed to ensure Kafka topics: {e}")
 
@@ -222,14 +213,15 @@ async def lifespan(app: FastAPI):
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down monitoring system: {e}")
 
-        from app.api.routes.agent_management import _manager_registry
+        from app.services.pool_registry_service import get_pool_registry
         try:
-            for pool_name, manager in list(_manager_registry.items()):
+            registry = get_pool_registry()
+            for pool_name, manager in list(registry.items()):
                 try:
                     await manager.stop(graceful=True)
                 except (Exception, asyncio.CancelledError) as e:
                     logger.error(f"Error stopping pool '{pool_name}': {e}")
-            _manager_registry.clear()
+            registry.clear()
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down agent pools: {e}")
         

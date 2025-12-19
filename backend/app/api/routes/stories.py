@@ -13,6 +13,7 @@ from app.api.deps import CurrentUser, SessionDep
 from app.models import Story, StoryStatus, StoryType, AgentStatus
 from app.schemas import StoryCreate, StoryUpdate, StoryPublic, StoriesPublic
 from app.schemas.story import BulkRankUpdateRequest
+from app.schemas.story import ReviewActionType, ReviewActionRequest
 from app.services.story_service import StoryService
 
 logger = logging.getLogger(__name__)
@@ -21,8 +22,8 @@ router = APIRouter(prefix="/stories", tags=["stories"])
 
 def check_agent_busy(agent_id: uuid.UUID) -> tuple[bool, str]:
     """Check if agent is busy. Returns (is_busy, reason)."""
-    from app.api.routes.agent_management import get_available_pool
-    manager = get_available_pool()
+    from app.services.agent_pool_service import AgentPoolService
+    manager = AgentPoolService.get_available_pool()
     if not manager:
         return False, ""
     agent = manager.get_agent(agent_id)
@@ -41,19 +42,6 @@ async def run_subprocess_async(*args, **kwargs):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, lambda: subprocess.run(*args, **kwargs))
 
-
-class ReviewActionType(str, Enum):
-    APPLY = "apply"
-    KEEP = "keep"
-    REMOVE = "remove"
-
-
-class ReviewActionRequest(BaseModel):
-    action: ReviewActionType
-    suggested_title: Optional[str] = None
-    suggested_acceptance_criteria: Optional[list[str]] = None
-    suggested_requirements: Optional[list[str]] = None
-@router.post("/", response_model=StoryPublic)
 async def create_story(
     *,
     session: SessionDep,
@@ -1001,8 +989,9 @@ async def restart_story_task(
     clear_container_from_registry(str(story_id))
     
     # Clear agent's in-memory cache for this story (critical for restart after cancel)
-    from app.api.routes.agent_management import _manager_registry
-    for manager in _manager_registry.values():
+    from app.services.singletons import get_pool_registry
+    registry = get_pool_registry()
+    for manager in registry.values():
         for agent in manager.get_all_agents():
             if hasattr(agent, 'clear_story_cache'):
                 agent.clear_story_cache(str(story_id))

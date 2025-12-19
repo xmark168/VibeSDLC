@@ -7,8 +7,6 @@ from datetime import timedelta
 from typing import Annotated
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from app.api.deps import CurrentUser, SessionDep
 from app.core import security
 from app.core.config import settings
@@ -26,9 +24,6 @@ from app.utils import generate_password_reset_email, generate_verification_code_
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["authentication"])
-
-# Rate limiter
-limiter = Limiter(key_func=get_remote_address)
 
 # Redis client
 redis_client = get_redis_client()
@@ -109,7 +104,6 @@ def assign_free_plan_to_user(session: SessionDep, user: User) -> None:
 
 
 @router.post("/login/access-token", response_model=LoginResponse)
-@limiter.limit("5/minute")
 def login_access_token(
     request: Request,
     response: Response,
@@ -270,7 +264,6 @@ def login(
 
 
 @router.post("/register", response_model=RegisterResponse)
-@limiter.limit("3/minute")
 def register(
     request: Request, register_data: RegisterRequest, session: SessionDep
 ) -> RegisterResponse:
@@ -378,7 +371,6 @@ def register(
 
 
 @router.post("/confirm-code", response_model=ConfirmCodeResponse)
-@limiter.limit("5/minute")
 def confirm_code(
     request: Request, confirm_data: ConfirmCodeRequest, session: SessionDep
 ) -> ConfirmCodeResponse:
@@ -449,7 +441,6 @@ def confirm_code(
 
 
 @router.post("/resend-code", response_model=ResendCodeResponse)
-@limiter.limit("2/minute")
 def resend_code(
     request: Request, resend_data: ResendCodeRequest, session: SessionDep
 ) -> ResendCodeResponse:
@@ -502,7 +493,6 @@ def resend_code(
 
 
 @router.post("/refresh-token", response_model=RefreshTokenResponse)
-@limiter.limit("10/minute")
 def refresh_token(
     request: Request,
     response: Response,
@@ -608,7 +598,6 @@ def refresh_token(
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
-@limiter.limit("3/minute")
 def forgot_password(
     request: Request, forgot_data: ForgotPasswordRequest, session: SessionDep
 ) -> ForgotPasswordResponse:
@@ -669,7 +658,6 @@ def forgot_password(
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse)
-@limiter.limit("5/minute")
 def reset_password(
     request: Request, reset_data: ResetPasswordRequest, session: SessionDep
 ) -> ResetPasswordResponse:
@@ -725,21 +713,7 @@ def logout(
     current_user: CurrentUser,
     session: SessionDep,
 ) -> LogoutResponse:
-    """
-    Logout API - clear refresh token cookie and optionally revoke tokens from database
-
-    This endpoint:
-    1. Clears the refresh_token cookie from the client
-    2. Optionally revokes refresh tokens from database (if using RefreshToken model)
-
-    Args:
-        response: FastAPI Response object to manipulate cookies
-        current_user: Current authenticated user (from JWT token)
-        session: Database session
-
-    Returns:
-        LogoutResponse with success message
-    """
+    """Logout API - clear refresh token cookie and revoke tokens from database"""
     try:
         # Clear refresh token cookie by setting max_age to 0
         response.delete_cookie(

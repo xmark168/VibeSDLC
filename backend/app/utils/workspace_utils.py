@@ -1,19 +1,10 @@
-"""Shared workspace utilities for all agents (Developer, Tester, BA, etc.)
-
-This module provides unified workspace management functions including:
-- Git worktree setup and cleanup
-- Context file reading (AGENTS.md, README.md, etc.)
-- Workspace commit operations
-- ProjectWorkspaceManager class for workspace path management
-"""
+"""Shared workspace utilities for all agents (Developer, Tester, BA, etc.)"""
 
 import hashlib
 import json
 import logging
-import os
 import shutil
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 from uuid import UUID
@@ -35,29 +26,7 @@ def cleanup_workspace(
     agent_name: str = "Agent"
 ) -> None:
     """Unified workspace cleanup function.
-    
-    This function handles cleanup of any workspace directory with optional
-    git worktree and branch cleanup.
-    
-    Args:
-        workspace_path: Path to workspace/worktree to cleanup
-        repo_path: Main git repository path (required for git operations)
-        branch_name: Git branch name to delete (optional)
-        skip_node_modules: If True, skip deleting node_modules (faster for restart)
-        agent_name: Agent name for logging
-        
-    Usage:
-        # Cleanup worktree with git operations
-        cleanup_workspace(
-            workspace_path="/path/to/.worktrees/US-001",
-            repo_path="/path/to/main/repo",
-            branch_name="story_US-001"
-        )
-        
-        # Cleanup any directory without git operations
-        cleanup_workspace(workspace_path="/path/to/temp/workspace")
     """
-    import platform
     cleanup_start_time = time.time()
     
     workspace_path = Path(workspace_path)

@@ -8,11 +8,19 @@ from io import BytesIO
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, status
 from PIL import Image
-from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
+from app.schemas.profile import (
+    ProfileUpdate,
+    ChangePasswordRequest,
+    SetPasswordRequest,
+    PasswordStatusResponse,
+    PasswordChangeResponse,
+    ProfileResponse,
+    AvatarUploadResponse,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -28,53 +36,6 @@ DEFAULT_AVATAR_URL = "https://github.com/shadcn.png"
 # Uploads directory
 UPLOADS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "uploads")
 AVATARS_DIR = os.path.join(UPLOADS_DIR, "avatars")
-
-
-class ProfileUpdate(BaseModel):
-    """Request to update profile"""
-    full_name: str | None = None
-
-
-class ChangePasswordRequest(BaseModel):
-    """Request to change password (for users with existing password)"""
-    current_password: str
-    new_password: str
-    confirm_password: str
-
-
-class SetPasswordRequest(BaseModel):
-    """Request to set password (for OAuth users without password)"""
-    new_password: str
-    confirm_password: str
-
-
-class PasswordStatusResponse(BaseModel):
-    """Password status response"""
-    has_password: bool
-    login_provider: str | None
-
-
-class PasswordChangeResponse(BaseModel):
-    """Password change response"""
-    message: str
-
-
-class ProfileResponse(BaseModel):
-    """Profile response"""
-    id: str
-    email: str
-    full_name: str | None
-    avatar_url: str | None
-    login_provider: str | None
-
-    class Config:
-        from_attributes = True
-
-
-class AvatarUploadResponse(BaseModel):
-    """Avatar upload response"""
-    avatar_url: str
-    message: str
 
 
 def get_avatar_url(user) -> str:

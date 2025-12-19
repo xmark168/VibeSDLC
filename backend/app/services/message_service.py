@@ -9,11 +9,7 @@ from app.models import Message as MessageModel, AuthorType, MessageVisibility
 
 
 class MessageService:
-    """Service for message database operations.
-    
-    Consolidates all message-related DB operations to avoid duplicate code
-    across 5+ locations in the codebase.
-    """
+    """Service for message database operations."""
 
     def __init__(self, session: Session):
         self.session = session
@@ -31,23 +27,7 @@ class MessageService:
         message_metadata: Optional[dict] = None,
         **kwargs
     ) -> MessageModel:
-        """Create a new message.
-        
-        Args:
-            project_id: Project UUID
-            content: Message content
-            author_type: USER or AGENT
-            user_id: User ID (for user messages)
-            agent_id: Agent ID (for routing info)
-            message_type: Message type (text, prd, backlog, code, etc.)
-            structured_data: Optional structured data
-            visibility: Message visibility
-            message_metadata: Optional metadata
-            **kwargs: Additional fields
-            
-        Returns:
-            Created message
-        """
+        """Create a new message."""
         message = MessageModel(
             project_id=project_id,
             user_id=user_id,

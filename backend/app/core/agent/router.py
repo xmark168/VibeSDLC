@@ -1,7 +1,6 @@
 """Central Message Router for dispatching tasks to agents.
 """
 
-import asyncio
 import logging
 import re
 from abc import ABC, abstractmethod
@@ -839,12 +838,12 @@ class StoryEventRouter(BaseEventRouter):
         
         # Get assigned_agent_id from DB and signal via pool
         from app.models import Story
-        from app.api.routes.agent_management import find_pool_for_agent
+        from app.services.agent_pool_service import AgentPoolService
         
         with Session(engine) as session:
             story = session.get(Story, UUID(story_id) if isinstance(story_id, str) else story_id)
             if story and story.assigned_agent_id:
-                pool = find_pool_for_agent(story.assigned_agent_id)
+                pool = AgentPoolService.find_pool_for_agent(story.assigned_agent_id)
                 if pool:
                     pool.signal_agent(story.assigned_agent_id, story_id, "cancel")
                     self.logger.info(f"[cancel] Signal sent to agent {story.assigned_agent_id}")
@@ -1857,7 +1856,7 @@ async def route_story_event(
     from app.services import AgentService
     from app.models import Story
     from app.core.agent.agent_pool_manager import AgentPoolManager
-    from app.api.routes.agent_management import _manager_registry
+    from app.services.pool_registry_service import get_pool_registry
     
     logger = logging.getLogger(__name__)
     

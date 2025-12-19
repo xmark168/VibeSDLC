@@ -1,27 +1,13 @@
-"""Token Budget Service for cost control and rate limiting.
-
-This service manages token budgets per project to prevent cost explosions
-and ensure fair usage across projects.
-
-Features:
-- Daily and monthly token limits per project
-- Automatic reset at period boundaries
-- Budget checking before task execution
-- Usage tracking and analytics
-- Graceful rejection when budget exceeded
-- Admin bypass (admins skip budget checks)
-- Credit deduction integration
-- Per-agent token tracking
-"""
+"""Token Budget Service for cost control and rate limiting."""
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 from uuid import UUID
 import logging
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 from app.models import Project, Agent
 from app.models.base import Role
 from app.core.db import engine
@@ -37,20 +23,10 @@ _budget_locks: Dict[UUID, asyncio.Lock] = {}
 
 @dataclass
 class TokenBudget:
-    """Token budget for a project.
-    
-    Attributes:
-        project_id: Project UUID
-        daily_limit: Maximum tokens allowed per day
-        monthly_limit: Maximum tokens allowed per month
-        used_today: Tokens used today (resets daily)
-        used_this_month: Tokens used this month (resets monthly)
-        last_reset_daily: Last daily reset timestamp
-        last_reset_monthly: Last monthly reset timestamp
-    """
+    """Token budget for a project."""
     project_id: UUID
-    daily_limit: int = 100000  # 100K tokens/day default (reasonable for dev)
-    monthly_limit: int = 2000000  # 2M tokens/month default
+    daily_limit: int = 10000000  # 10M tokens/day default 
+    monthly_limit: int = 20000000  # 2M tokens/month default
     used_today: int = 0
     used_this_month: int = 0
     last_reset_daily: Optional[datetime] = None
@@ -83,29 +59,15 @@ class TokenBudget:
 
 class TokenBudgetManager:
     """Manages token budgets and enforces limits.
-    
-    This manager:
-    - Loads budgets from database
-    - Checks if requests can proceed based on budget
-    - Records token usage
-    - Auto-resets counters at period boundaries
-    - Caches budgets in memory for performance
-    
-    Example:
-        >>> with Session(engine) as session:
-        ...     manager = TokenBudgetManager(session)
-        ...     allowed, reason = await manager.check_budget(project_id, 1000)
-        ...     if allowed:
-        ...         # Process task...
-        ...         await manager.record_usage(project_id, actual_tokens)
+        - Loads budgets from database
+        - Checks if requests can proceed based on budget
+        - Records token usage
+        - Auto-resets counters at period boundaries
+        - Caches budgets in memory for performance
     """
     
     def __init__(self, session: Session):
-        """Initialize budget manager.
-        
-        Args:
-            session: SQLModel session for database operations
-        """
+        """Initialize budget manager. """
         self.session = session
         self.cache: Dict[UUID, TokenBudget] = {}
     
@@ -167,18 +129,7 @@ class TokenBudgetManager:
         estimated_tokens: int,
         user_id: Optional[UUID] = None
     ) -> Tuple[bool, str]:
-        """Check if project has budget AND user has credits for estimated token usage.
-        
-        Args:
-            project_id: Project UUID
-            estimated_tokens: Estimated tokens for the request
-            user_id: Optional user ID for credit check
-            
-        Returns:
-            Tuple of (allowed, reason):
-            - (True, "") if request can proceed
-            - (False, reason) if request should be rejected
-        """
+        """Check if project has budget AND user has credits for estimated token usage."""
         try:
             # Admin bypass - skip all checks
             if user_id and self._is_admin(user_id):

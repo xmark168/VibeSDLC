@@ -1,10 +1,4 @@
 """Pool helper functions for quick wins: auto-creation, smart selection, etc.
-
-Features:
-- Pool load calculation
-- Smart pool selection based on role type and load
-- Auto-scaling support
-- Priority-based allocation for PAID pools
 """
 
 import logging
@@ -85,16 +79,7 @@ async def create_pool_for_role(
 
 
 def get_pool_priority(pool_id: Optional[UUID]) -> int:
-    """Get pool priority based on PoolType.
-    
-    PAID pools have higher priority (lower number = higher priority).
-    
-    Args:
-        pool_id: Pool UUID
-        
-    Returns:
-        Priority value (1 = highest, 2 = normal)
-    """
+    """Get pool priority based on PoolType."""
     if not pool_id:
         return 2  # Default priority
     
