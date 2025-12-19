@@ -9,9 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, update
-from app.core.agent.agent_pool_manager import AgentPoolManager
+from app.agents.core.agent_pool_manager import AgentPoolManager
 from app.api.deps import SessionDep, get_current_user, get_db
 from app.models import Agent, AgentExecution, AgentExecutionStatus, AgentStatus, User
+from app.services.agent_pool_service import AgentPoolService
 from app.schemas import (
     AgentPoolMetricsPublic, AgentPoolPublic, AgentsPublic, CreatePoolRequest, PoolResponse,
     SpawnAgentRequest, SystemStatsResponse, TerminateAgentRequest, UpdatePoolConfigRequest,
@@ -48,34 +49,7 @@ def _get_manager_registry():
     """Get manager registry (for backward compatibility)."""
     return get_pool_registry().get_all()
 
-# Import pool service functions for backward compatibility
-from app.services.agent_pool_service import AgentPoolService
-
-# Legacy exports - use AgentPoolService directly in new code
-def get_role_class_map():
-    """Get role class mapping (legacy - use AgentPoolService.get_role_class_map())."""
-    return AgentPoolService.get_role_class_map()
-
-
-def ensure_role_class_map():
-    """Ensure role class map loaded (legacy - use AgentPoolService.ensure_role_class_map())."""
-    return AgentPoolService.ensure_role_class_map()
-
-
-ROLE_CLASS_MAP = None  # Deprecated - use AgentPoolService.get_role_class_map()
-
-
-def get_available_pool(role_type: Optional[str] = None) -> Optional[AgentPoolManager]:
-    """Get best available pool (legacy - use AgentPoolService.get_available_pool())."""
-    return AgentPoolService.get_available_pool(role_type)
-
-
-def find_pool_for_agent(agent_id: UUID) -> Optional[AgentPoolManager]:
-    """Find pool for agent (legacy - use AgentPoolService.find_pool_for_agent())."""
-    return AgentPoolService.find_pool_for_agent(agent_id)
-    
-    logger.warning(f"[find_pool] Agent {agent_id} not found in any pool")
-    return None
+# Legacy wrapper functions removed - use AgentPoolService directly
 
 
 async def initialize_default_pools() -> None:
@@ -95,11 +69,9 @@ async def initialize_default_pools() -> None:
     from app.models import AgentPool
 
     logger = logging.getLogger(__name__)
-    global ROLE_CLASS_MAP
-
-    # Lazy load role class map
-    if ROLE_CLASS_MAP is None:
-        ROLE_CLASS_MAP = get_role_class_map()
+    
+    # Get role class map from service
+    role_class_map = AgentPoolService.get_role_class_map()
 
     logger.info("🚀 Initializing agent pool managers (optimized architecture)")
 
@@ -113,14 +85,14 @@ async def initialize_default_pools() -> None:
         logger.info(f"📦 Found {len(existing_pools)} existing pools in database, restoring...")
         for db_pool in existing_pools:
             if db_pool.role_type:
-                await _initialize_role_pool(logger, db_pool.role_type, ROLE_CLASS_MAP)
+                await _initialize_role_pool(logger, db_pool.role_type, role_class_map)
             else:
-                await _initialize_pool(logger, ROLE_CLASS_MAP)
+                await _initialize_pool(logger, role_class_map)
     else:
         # No pools exist - create universal pool per role
         logger.info("📦 No pools found, creating universal pool per role...")
-        for role_type in ROLE_CLASS_MAP.keys():
-            await _initialize_role_pool(logger, role_type, ROLE_CLASS_MAP)
+        for role_type in role_class_map.keys():
+            await _initialize_role_pool(logger, role_type, role_class_map)
 
 
 async def _initialize_pool(logger, role_class_map) -> None:
@@ -398,7 +370,7 @@ async def create_pool(
     Uses AgentPoolManager with in-memory management (no multiprocessing).
     """
     # Ensure role class map is loaded
-    role_class_map = ensure_role_class_map()
+    role_class_map = AgentPoolService.ensure_role_class_map()
 
     # Validate role type
     if request.role_type not in role_class_map:
@@ -560,7 +532,7 @@ async def spawn_agent(
     Uses AgentPoolManager for in-memory agent management.
     """
     # Ensure role class map is loaded
-    role_class_map = ensure_role_class_map()
+    role_class_map = AgentPoolService.ensure_role_class_map()
 
     # Validate role type
     if request.role_type not in role_class_map:
@@ -614,7 +586,7 @@ async def spawn_agent(
     )
 
     # Get the best pool for this agent based on role type and load
-    from app.core.agent.pool_helpers import get_best_pool_for_agent
+    from app.agents.core.pool_helpers import get_best_pool_for_agent
     from app.core.config import settings
 
     registry = get_pool_registry()
@@ -1730,7 +1702,7 @@ async def restart_pool(
 
     # Get all agent IDs and role classes before terminating
     agents_info = []
-    role_class_map = ensure_role_class_map()
+    role_class_map = AgentPoolService.ensure_role_class_map()
 
     for agent_id, agent in list(manager.agents.items()):
         role_type = getattr(agent, 'role_type', None)
@@ -2147,7 +2119,7 @@ async def bulk_restart_agents(
     results = []
     success_count = 0
     failed_count = 0
-    role_class_map = ensure_role_class_map()
+    role_class_map = AgentPoolService.ensure_role_class_map()
 
     for agent_id_str in request.agent_ids:
         try:
@@ -2256,7 +2228,7 @@ async def bulk_spawn_agents(
     
     Useful for quickly scaling up capacity.
     """
-    role_class_map = ensure_role_class_map()
+    role_class_map = AgentPoolService.ensure_role_class_map()
 
     if request.role_type not in role_class_map:
         raise HTTPException(

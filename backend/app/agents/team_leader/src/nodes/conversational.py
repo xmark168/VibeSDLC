@@ -4,8 +4,8 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.team_leader.src.state import TeamLeaderState
-from app.core.agent.llm_factory import get_llm
-from app.core.agent.prompt_utils import get_task_prompts
+from app.agents.core.llm_factory import get_llm
+from app.agents.core.prompt_utils import get_task_prompts
 from app.agents.team_leader.src.nodes._utils import detect_specialist_completion, get_callback_config, _PROMPTS
 
 logger = logging.getLogger(__name__)

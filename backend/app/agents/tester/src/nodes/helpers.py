@@ -11,7 +11,7 @@ from sqlalchemy import or_
 
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt, build_system_prompt_with_persona
 from app.agents.tester.src.state import TesterState
-from app.core.agent.llm_factory import get_llm
+from app.agents.core.llm_factory import get_llm
 from app.core.db import engine
 from app.models import Story, StoryStatus
 from app.models.base import StoryAgentState

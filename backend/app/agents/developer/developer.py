@@ -4,10 +4,10 @@ import logging
 from typing import Dict, List, Optional, Set
 from uuid import UUID
 
-from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
-from app.core.agent.project_context import ProjectContext
-from app.core.agent.mixins import PausableAgentMixin, StoryStoppedException
-from app.core.agent.graph_helpers import get_or_create_thread_id
+from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+from app.agents.core.project_context import ProjectContext
+from app.agents.core.mixins import PausableAgentMixin, StoryStoppedException
+from app.agents.core.graph_helpers import get_or_create_thread_id
 from app.models import Agent as AgentModel
 from app.models.base import StoryAgentState
 from app.agents.developer.src import DeveloperGraph

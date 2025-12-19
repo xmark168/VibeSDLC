@@ -14,7 +14,7 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.nodes.helpers import send_message, generate_user_message
 from app.agents.tester.src.schemas import TestFileOutput
 from app.utils.token_utils import truncate_to_tokens
-from app.core.agent.llm_factory import get_llm
+from app.agents.core.llm_factory import get_llm
 from app.core.config import llm_settings
 MAX_RETRIES = llm_settings.MAX_RETRIES
 RETRY_DELAY = llm_settings.RETRY_BACKOFF_MIN

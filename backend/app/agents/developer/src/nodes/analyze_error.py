@@ -6,7 +6,7 @@ from typing import List
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.schemas import ParsedError, ErrorAnalysisOutput
-from app.core.agent.llm_factory import get_llm
+from app.agents.core.llm_factory import get_llm
 from app.core.config import llm_settings
 from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
 from app.agents.developer.src.utils.prompt_utils import build_system_prompt as _build_system_prompt

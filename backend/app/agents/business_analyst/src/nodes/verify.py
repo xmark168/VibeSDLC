@@ -7,7 +7,7 @@ from sqlmodel import Session
 
 from ..state import BAState
 from ..schemas import VerifyStoryOutput
-from app.core.agent.prompt_utils import load_prompts_yaml
+from app.agents.core.prompt_utils import load_prompts_yaml
 
 from app.core.db import engine
 from app.models import Epic, Story, StoryStatus, EpicStatus

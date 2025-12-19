@@ -637,42 +637,6 @@ class BaseAgent(ABC):
 
         await self.message_user("completed", summary)
     
-    async def ask_clarification_question(
-        self,
-        question: str,
-        question_type: str = "open",
-        options: Optional[list[str]] = None,
-        allow_multiple: bool = False,
-    ) -> UUID:
-        """DEPRECATED: Use message_user(event_type="question") instead.
-        
-        This method is kept for backward compatibility and will delegate
-        to the unified message_user() API.
-        
-        Args:
-            question: Question text to ask user
-            question_type: "open" or "multichoice"
-            options: List of options for multichoice
-            allow_multiple: Allow multiple selections (multichoice only)
-            
-        Returns:
-            question_id: UUID of created question
-        """
-        logger.warning(
-            f"[{self.name}] ask_clarification_question() is deprecated. "
-            "Use message_user(event_type='question') instead."
-        )
-        
-        return await self.message_user(
-            "question",
-            question,
-            question_config={
-                "question_type": question_type,
-                "options": options,
-                "allow_multiple": allow_multiple
-            }
-        )
-
     async def ask_approval(
         self,
         proposal_title: str,
@@ -1385,7 +1349,7 @@ class BaseAgent(ABC):
 
     async def start(self) -> bool:
         """Start the agent's Kafka consumer and task queue worker."""
-        from app.core.agent.base_agent_consumer import BaseAgentInstanceConsumer
+        from app.agents.core.base_agent_consumer import BaseAgentInstanceConsumer
 
         try:
             # Start task queue worker
@@ -1719,7 +1683,7 @@ class BaseAgent(ABC):
             task_failed = False
             try:
                 # Reset token tracking before handle_task
-                from app.core.agent.llm_factory import reset_token_count, get_token_count, get_llm_call_count
+                from app.agents.core.llm_factory import reset_token_count, get_token_count, get_llm_call_count
                 reset_token_count()
                 
                 # Call agent's implementation
@@ -2023,7 +1987,7 @@ class BaseAgent(ABC):
         
         try:
             # Record to metrics collector
-            from app.core.agent.metrics_collector import (
+            from app.agents.core.metrics_collector import (
                 get_metrics_collector,
                 ExecutionMetrics,
             )
@@ -2072,7 +2036,7 @@ class AgentTaskConsumer:
         Args:
             seek_to_end: If True, skip all existing messages and start from latest.
         """
-        from app.core.agent.base_agent_consumer import BaseAgentInstanceConsumer
+        from app.agents.core.base_agent_consumer import BaseAgentInstanceConsumer
 
         # Create a dynamic consumer class that wraps the agent
         class DynamicConsumer(BaseAgentInstanceConsumer):

@@ -9,7 +9,7 @@ from sqlmodel import Session
 from app.core.db import engine
 from app.services.pool_service import PoolService
 from app.models import PoolType
-from app.core.agent.agent_pool_manager import AgentPoolManager
+from app.agents.core.agent_pool_manager import AgentPoolManager
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -205,7 +205,7 @@ class AgentMonitor:
         
         Creates overflow pools when universal pool exceeds threshold.
         """
-        from app.core.agent.pool_helpers import get_pool_load, should_create_new_pool
+        from app.agents.core.pool_helpers import get_pool_load, should_create_new_pool
         
         threshold = settings.AGENT_POOL_AUTO_SCALE_THRESHOLD
         

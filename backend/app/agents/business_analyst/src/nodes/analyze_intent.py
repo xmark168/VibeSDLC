@@ -9,7 +9,7 @@ from ..schemas import (
     DocumentAnalysisOutput,
     DocumentFeedbackOutput
 )
-from app.core.agent.prompt_utils import (
+from app.agents.core.prompt_utils import (
     load_prompts_yaml
 )
 

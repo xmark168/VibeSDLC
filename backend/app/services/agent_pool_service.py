@@ -5,7 +5,7 @@ from uuid import UUID
 import logging
 from sqlmodel import Session, select
 
-from app.core.agent.agent_pool_manager import AgentPoolManager
+from app.agents.core.agent_pool_manager import AgentPoolManager
 from app.services.singletons import get_pool_registry
 
 logger = logging.getLogger(__name__)

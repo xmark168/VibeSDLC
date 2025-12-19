@@ -10,7 +10,7 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.schemas import RoutingDecision
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.nodes.helpers import get_llm_config, query_stories_from_db
-from app.core.agent.llm_factory import get_llm
+from app.agents.core.llm_factory import get_llm
 from app.core.db import engine
 from app.models import Project
 

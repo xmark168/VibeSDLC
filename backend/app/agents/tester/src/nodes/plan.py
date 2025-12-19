@@ -15,7 +15,7 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.nodes.helpers import detect_testing_context, send_message, generate_user_message, get_llm_config as _cfg
 from app.agents.tester.src.schemas import TestPlanStep, TestPlanOutput
-from app.core.agent.llm_factory import get_llm
+from app.agents.core.llm_factory import get_llm
 from app.core.config import llm_settings
 from app.agents.tester.src.utils.file_repository import FileRepository
 from app.core.db import engine

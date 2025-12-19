@@ -3,7 +3,7 @@
 
 import logging
 from typing import Any, Optional, List
-from app.core.agent.base_agent import BaseAgent
+from app.agents.core.base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 

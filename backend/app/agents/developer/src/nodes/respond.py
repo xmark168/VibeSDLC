@@ -5,7 +5,7 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer.src.state import DeveloperState
-from app.core.agent.llm_factory import get_llm
+from app.agents.core.llm_factory import get_llm
 from app.agents.developer.src.schemas import StoryChatResponse
 from app.agents.developer.src.utils.prompt_utils import build_system_prompt, format_input_template
 

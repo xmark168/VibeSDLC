@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 from sqlmodel import Session, select
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from app.core.agent.llm_factory import get_llm
-from app.core.agent.base_agent import TaskContext, TaskResult
+from app.agents.core.llm_factory import get_llm
+from app.agents.core.base_agent import TaskContext, TaskResult
 from app.models import ArtifactType, Epic, Story
 from app.core.db import engine
 from app.services.artifact_service import ArtifactService

@@ -5,7 +5,7 @@ from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
-from app.core.agent.llm_factory import get_llm
+from app.agents.core.llm_factory import get_llm
 from app.agents.developer.src.schemas import SimplePlanOutput
 from app.agents.developer.src.skills.registry import SkillRegistry
 from app.agents.developer.src.skills import get_plan_prompts

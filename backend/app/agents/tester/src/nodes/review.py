@@ -13,7 +13,7 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.schemas import ReviewDecision
 from app.utils.token_utils import smart_truncate_tokens
-from app.core.agent.llm_factory import get_llm
+from app.agents.core.llm_factory import get_llm
 
 logger = logging.getLogger(__name__)
 

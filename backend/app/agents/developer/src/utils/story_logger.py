@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 from uuid import UUID
 
 if TYPE_CHECKING:
-    from app.core.agent.base_agent import BaseAgent
+    from app.agents.core.base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 

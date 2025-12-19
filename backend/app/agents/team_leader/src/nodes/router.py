@@ -5,8 +5,8 @@ from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.agent.llm_factory import get_llm
-from app.core.agent.prompt_utils import build_system_prompt, build_user_prompt
+from app.agents.core.llm_factory import get_llm
+from app.agents.core.prompt_utils import build_system_prompt, build_user_prompt
 from app.agents.team_leader.src.nodes._utils import ROLE_WIP_MAP, get_callback_config, _PROMPTS, _DEFAULTS
 from app.agents.team_leader.src.schemas import RoutingDecision
 from app.agents.team_leader.src.state import TeamLeaderState

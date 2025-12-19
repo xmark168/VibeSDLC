@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.core.agent.base_agent import BaseAgent
+from app.agents.core.base_agent import BaseAgent
 from app.models import Agent as AgentModel, AgentStatus, AgentPool
 from app.core.db import engine
 from app.services.pool_service import PoolService

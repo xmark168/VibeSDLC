@@ -4,8 +4,8 @@ import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.agent.llm_factory import get_llm
-from app.core.agent.prompt_utils import build_system_prompt
+from app.agents.core.llm_factory import get_llm
+from app.agents.core.prompt_utils import build_system_prompt
 from app.agents.team_leader.src.nodes._utils import get_callback_config, _PROMPTS, _DEFAULTS
 from app.agents.team_leader.src.state import TeamLeaderState
 

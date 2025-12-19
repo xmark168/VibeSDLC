@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Dict, Set
 from uuid import UUID
 from sqlmodel import Session, select
-from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
-from app.core.agent.project_context import ProjectContext
-from app.core.agent.mixins import PausableAgentMixin
+from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+from app.agents.core.project_context import ProjectContext
+from app.agents.core.mixins import PausableAgentMixin
 from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType, Story, Epic, EpicStatus, StoryStatus
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
@@ -918,7 +918,7 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
     async def _save_interview_state(self, task: TaskContext, state: dict) -> None:
         """Save interview state for resume (stored in question's task_context)."""
         try:
-            # State is already saved when question is created via ask_clarification_question
+            # State is already saved when question is created via message_user()
             # This method can be used for additional state persistence if needed
             logger.info(f"[{self.name}] Interview state saved (question index: {state.get('current_question_index', 0)})")
         except Exception as e:

@@ -46,7 +46,6 @@ def langfuse_trace_context(
     tags: Optional[list] = None,
     metadata: Optional[dict] = None
 ):
-    langfuse_handler = None
     langfuse_ctx = None
     langfuse_span = None
     

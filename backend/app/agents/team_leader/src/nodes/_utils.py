@@ -6,8 +6,8 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.agent.llm_factory import get_llm
-from app.core.agent.prompt_utils import build_system_prompt, build_user_prompt, get_task_prompts, load_prompts_yaml
+from app.agents.core.llm_factory import get_llm
+from app.agents.core.prompt_utils import build_system_prompt, build_user_prompt, get_task_prompts, load_prompts_yaml
 
 logger = logging.getLogger(__name__)
 

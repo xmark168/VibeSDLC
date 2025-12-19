@@ -44,25 +44,6 @@ STEP_CONFIG = {
     "default": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 60, "max_tokens": 8192},
 }
 
-# =============================================================================
-# RETRY CONFIGURATION (moved to llm_settings in config.py)
-# =============================================================================
-# These constants are now available via llm_settings:
-# - llm_settings.MAX_RETRIES
-# - llm_settings.RETRY_BACKOFF_MIN
-# - llm_settings.RETRY_BACKOFF_MAX
-# - llm_settings.MAX_CONCURRENT_TASKS
-# - llm_settings.MAX_DEBUG_ATTEMPTS
-# - llm_settings.MAX_DEBUG_REVIEWS_DEVELOPER
-# - llm_settings.MAX_DEBUG_REVIEWS_TESTER
-# - llm_settings.MAX_SCENARIOS_UNIT
-# - llm_settings.MAX_SCENARIOS_INTEGRATION
-# - llm_settings.MAX_REVIEW_CYCLES
-# - llm_settings.MAX_LBTM_PER_FILE
-
-# =============================================================================
-# TOKEN TRACKING (thread-safe with ContextVar)
-# =============================================================================
 
 _token_count: ContextVar[int] = ContextVar('token_count', default=0)
 _llm_call_count: ContextVar[int] = ContextVar('llm_call_count', default=0)
