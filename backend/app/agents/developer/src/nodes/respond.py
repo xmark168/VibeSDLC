@@ -5,7 +5,7 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer.src.state import DeveloperState
-from app.agents.core.llm_factory import get_llm
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
 from app.agents.developer.src.schemas import StoryChatResponse
 from app.agents.developer.src.utils.prompt_utils import build_system_prompt, format_input_template
 
@@ -41,7 +41,7 @@ async def respond(state: DeveloperState, agent=None) -> DeveloperState:
             system_prompt = build_system_prompt("respond", agent=agent)
             user_prompt = format_input_template("respond", user_message=user_message, project_context="")
             
-            fast_llm = get_llm("router")
+            fast_llm = create_fast_llm()
             structured_llm = fast_llm.with_structured_output(StoryChatResponse)
             result = await structured_llm.ainvoke([
                 SystemMessage(content=system_prompt),

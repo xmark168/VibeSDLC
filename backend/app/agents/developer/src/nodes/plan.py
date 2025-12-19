@@ -5,7 +5,7 @@ from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
-from app.agents.core.llm_factory import get_llm
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
 from app.agents.developer.src.schemas import SimplePlanOutput
 from app.agents.developer.src.skills.registry import SkillRegistry
 from app.agents.developer.src.skills import get_plan_prompts
@@ -220,20 +220,7 @@ def create_planning_tools(workspace_path: str):
     
     @tool
     def grep_file_contents(pattern: str, path: str = "src", file_extension: str = "tsx") -> str:
-        """Search for pattern in files to find existing code.
-        
-        Args:
-            pattern: Text or regex pattern to search for (e.g., "BookCard", "Button")
-            path: Directory to search in relative to workspace (default: src)
-            file_extension: File type to search (tsx, ts, prisma, etc.)
-            
-        Returns:
-            Matching files with line numbers and context, or "No matches found"
-            
-        Example:
-            grep_file_contents("BookCard", "src/components", "tsx")
-            → Shows all files using BookCard component
-        """
+        """Search for pattern in files to find existing code."""
         import subprocess
         
         full_path = os.path.join(workspace_path, path)
@@ -333,18 +320,7 @@ def create_planning_tools(workspace_path: str):
     
     @tool
     def list_directory(path: str = "src") -> str:
-        """List contents of a directory to understand structure.
-        
-        Args:
-            path: Directory path relative to workspace (default: src)
-            
-        Returns:
-            Directory tree structure (max depth 3)
-            
-        Example:
-            list_directory("src/components")
-            → Shows all files in components directory
-        """
+        """List contents of a directory to understand structure"""
         full_path = os.path.join(workspace_path, path)
         if not os.path.exists(full_path):
             return f"Directory {path} not found"
@@ -384,19 +360,7 @@ def create_planning_tools(workspace_path: str):
     
     @tool
     def read_specific_file(file_path: str, max_lines: int = 50) -> str:
-        """Read contents of a specific file to understand its implementation.
-        
-        Args:
-            file_path: Path relative to workspace (e.g., "src/components/ui/Button.tsx")
-            max_lines: Maximum lines to return (default: 50)
-            
-        Returns:
-            File contents (truncated if too long)
-            
-        Example:
-            read_specific_file("src/components/ui/Button.tsx")
-            → Shows Button component implementation
-        """
+        """Read contents of a specific file to understand its implementation """
         full_path = os.path.join(workspace_path, file_path)
         if not os.path.exists(full_path):
             return f"File {file_path} not found"
@@ -509,7 +473,7 @@ Create implementation plan."""
         tools = create_planning_tools(workspace_path)
         
         # Bind tools to LLM for exploration
-        fast_llm = get_llm("router")
+        fast_llm = create_fast_llm()
         llm_with_tools = fast_llm.bind_tools(tools)
         
         # Get langfuse callbacks from runtime config

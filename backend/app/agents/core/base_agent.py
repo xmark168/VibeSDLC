@@ -122,9 +122,6 @@ class BaseAgent(ABC):
         self._execution_start_time: Optional[Any] = None  # datetime object
         self._execution_events: list = []  # List of events for current execution
         
-        # Token usage tracking (per execution)
-        self._total_tokens: int = 0
-        self._llm_call_count: int = 0
 
         # Kafka producer (lazy init)
         self._producer: Optional[KafkaProducer] = None
@@ -1291,11 +1288,13 @@ class BaseAgent(ABC):
         return execution_id
     
     async def _complete_execution_record(
-        self, 
-        result: Optional["TaskResult"] = None, 
-        error: Optional[str] = None,
-        error_traceback: Optional[str] = None,
-        success: bool = True
+        self,
+        result=None,
+        success=True,
+        error=None,
+        error_traceback=None,
+        tokens_used: int = 0,
+        llm_calls: int = 0
     ):
         """Update execution record with completion data"""
         if not self._current_execution_id:
@@ -1323,29 +1322,30 @@ class BaseAgent(ABC):
                 error_traceback=error_traceback,
                 events=self._execution_events,
                 duration_ms=duration_ms,
-                token_used=self._total_tokens,
-                llm_calls=self._llm_call_count,
+                token_used=tokens_used,
+                llm_calls=llm_calls,
             )
         
         logger.info(
             f"[{self.name}] Execution {self._current_execution_id} "
             f"{'completed' if success else 'failed'} in {duration_ms}ms "
-            f"with {len(self._execution_events)} events, {self._total_tokens} tokens, {self._llm_call_count} LLM calls"
+            f"with {len(self._execution_events)} events, {tokens_used} tokens, {llm_calls} LLM calls"
         )
         
-        # Record tokens to budget (single source of truth)
-        if self._total_tokens > 0 and self.project_id:
-            await self._record_token_usage(self._total_tokens)
-        
-        # Reset token counters for next execution
-        self._total_tokens = 0
-        self._llm_call_count = 0
-    
-    def track_llm_usage(self, tokens: int, calls: int = 1) -> None:
-        """Track LLM token usage for current execution."""
-        self._total_tokens += tokens
-        self._llm_call_count += calls
-        logger.debug(f"[{self.name}] LLM usage: +{tokens} tokens, +{calls} calls (total: {self._total_tokens} tokens, {self._llm_call_count} calls)")
+        # Record tokens to budget (combined with execution record)
+        if tokens_used > 0 and self.project_id:
+            try:
+                from app.services.singletons import get_token_budget_service
+                budget_service = await get_token_budget_service()
+                await budget_service.record_usage(
+                    project_id=self.project_id,
+                    tokens_used=tokens_used,
+                    agent_id=self.agent_id,
+                    user_id=self._current_user_id
+                )
+            except Exception as e:
+                logger.error(f"[{self.name}] Error recording token usage: {e}", exc_info=True)
+
 
     async def start(self) -> bool:
         """Start the agent's Kafka consumer and task queue worker."""
@@ -1651,7 +1651,7 @@ class BaseAgent(ABC):
             self.state = AgentStatus.busy
             
             # CHECK TOKEN BUDGET BEFORE PROCESSING
-            estimated_tokens = self._estimate_task_tokens(task)
+            estimated_tokens = 5000  # Conservative estimate
             budget_allowed, budget_reason = await self._check_token_budget(estimated_tokens)
             
             if not budget_allowed:
@@ -1690,11 +1690,16 @@ class BaseAgent(ABC):
                 result = await self.handle_task(task)
                 
                 # Get token counts after task completion
-                self._total_tokens = get_token_count()
-                self._llm_call_count = get_llm_call_count()
+                tokens_used = get_token_count()
+                llm_calls = get_llm_call_count()
                 
                 # Update execution record with success (also records tokens to budget)
-                await self._complete_execution_record(result=result, success=True)
+                await self._complete_execution_record(
+                    result=result,
+                    success=True,
+                    tokens_used=tokens_used,
+                    llm_calls=llm_calls
+                )
                 
                 # Update statistics
                 self.total_executions += 1
@@ -1729,7 +1734,9 @@ class BaseAgent(ABC):
                 await self._complete_execution_record(
                     error=str(e),
                     error_traceback=traceback.format_exc(),
-                    success=False
+                    success=False,
+                    tokens_used=get_token_count(),
+                    llm_calls=get_llm_call_count()
                 )
                 
                 # Emit finish signal with error
@@ -1789,51 +1796,7 @@ class BaseAgent(ABC):
     
     # ===== Token Budget Methods =====
     
-    def _estimate_task_tokens(self, task: TaskContext) -> int:
-        """Estimate tokens needed for task.
-        """
-        # Base estimate from content length
-        # Rough approximation: 1 token ~= 4 characters for English
-        content_tokens = len(task.content) // 4
-        
-        # Task type multipliers (accounts for processing complexity)
-        multipliers = {
-            AgentTaskType.MESSAGE: 500,  # Simple messages
-            AgentTaskType.ANALYZE_REQUIREMENTS: 2000,  # Analysis tasks
-            AgentTaskType.CREATE_STORIES: 1500,
-            AgentTaskType.IMPLEMENT_STORY: 3000,  # Code generation
-            AgentTaskType.WRITE_TESTS: 2000,
-            AgentTaskType.CODE_REVIEW: 1500,
-            AgentTaskType.FIX_BUG: 2000,
-            AgentTaskType.REFACTOR: 2500,
-            AgentTaskType.RESUME_WITH_ANSWER: 1000,
-        }
-        
-        base_estimate = multipliers.get(task.task_type, 1000)
-        
-        # Total estimate: base + content-based
-        estimated = base_estimate + content_tokens
-        
-        logger.debug(
-            f"[{self.name}] Estimated {estimated:,} tokens for task "
-            f"(type={task.task_type.value}, content_len={len(task.content)})"
-        )
-        
-        return estimated
     
-    def _extract_token_usage(self, result: TaskResult) -> int:
-        """Extract actual token usage from task result.
-        
-        Looks for token usage in structured_data or estimates from output.
-        
-        Args:
-            result: Task result
-            
-        Returns:
-            Actual tokens used (0 if not available)
-        """
-        if not result:
-            return 0
         
         # Check structured_data for token_usage field
         if result.structured_data:
@@ -1898,133 +1861,11 @@ class BaseAgent(ABC):
         }
         return role_models.get(self.role_type, "claude-sonnet-4-5")
     
-    async def _record_token_usage(self, tokens_used: int) -> None:
-        """Record actual token usage with per-agent tracking and credit deduction.
-        
-        Args:
-            tokens_used: Actual tokens consumed
-        """
-        if not self.project_id:
-            return
-        
-        try:
-            from app.services.singletons import get_token_budget_service
-            
-            # Build context for detailed tracking
-            context = {
-                "project_id": self.project_id,
-                "story_id": getattr(self, "_current_story_id", None),
-                "task_type": getattr(self, "_current_task_type", "unknown"),
-                "execution_id": self._current_execution_id,
-                "model_used": self._get_primary_model_used(),
-                "llm_calls": self._llm_call_count,
-            }
-            
-            budget_service = await get_token_budget_service()
-            await budget_service.record_usage(
-                project_id=self.project_id,
-                tokens_used=tokens_used,
-                agent_id=self.agent_id,
-                user_id=self._current_user_id,
-                deduct_credits=True,
-                context=context
-            )
-                
-        except Exception as e:
-            logger.error(
-                f"[{self.name}] Error recording token usage: {e}",
-                exc_info=True
-            )
-    
-    async def _publish_task_rejection(
-        self,
-        task_id: UUID,
-        reason: str,
-        queue_size: int,
-        max_queue_size: int
-    ) -> None:
-        """Publish task rejection event to router for handling."""
-        try:
-            event = TaskRejectionEvent(
-                task_id=task_id,
-                agent_id=self.agent_id,
-                agent_name=self.name,
-                reason=reason,
-                queue_size=queue_size,
-                max_queue_size=max_queue_size,
-                project_id=str(self.project_id) if self.project_id else None,
-                details={
-                    "agent_role": self.role_type,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }
-            )
-            
-            producer = get_kafka_producer()
-            await producer.publish(topic=KafkaTopics.AGENT_EVENTS, event=event)
-            
-            logger.info(
-                f"[{self.name}] Published task rejection event: "
-                f"task_id={task_id}, reason={reason}, queue={queue_size}/{max_queue_size}"
-            )
-        except Exception as e:
-            logger.error(
-                f"[{self.name}] Failed to publish task rejection event: {e}",
-                exc_info=True
-            )
-    
-    async def _record_execution_metrics(
-        self,
-        task: "TaskContext",
-        result: "TaskResult"
-    ) -> None:
-        """Record execution metrics."""
-        if not self._execution_start_time:
-            return
-        
-        duration_ms = int(
-            (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000
-        )
-        
-        try:
-            # Record to metrics collector
-            from app.agents.core.metrics_collector import (
-                get_metrics_collector,
-                ExecutionMetrics,
-            )
-            
-            collector = get_metrics_collector()
-            
-            metrics = ExecutionMetrics(
-                execution_id=self._current_execution_id,
-                agent_id=self.agent_id,
-                agent_type=self.role_type,
-                project_id=self.project_id,
-                started_at=self._execution_start_time,
-                completed_at=datetime.now(timezone.utc),
-                duration_ms=duration_ms,
-                tokens_used=self._total_tokens,
-                llm_calls=self._llm_call_count,
-                success=result.success if result else False,
-                error_type=result.error_message[:50] if result and result.error_message else None,
-                task_type=task.task_type.value if task.task_type else None,
-            )
-            
-            await collector.record_execution(metrics)
-        except Exception as e:
-            # Don't fail task if metrics recording fails
-            logger.debug(f"[{self.name}] Metrics recording error: {e}")
-
-
-class AgentTaskConsumer:
-    """Internal consumer wrapper that connects BaseAgent to Kafka.
-
-    This is an implementation detail - agents don't interact with this directly.
-    """
-
-    def __init__(self, agent: BaseAgent):
+class AgentTaskConsumer:    
+    def __init__(self, agent: "BaseAgent"):
         """Initialize consumer wrapper.
 
-        Args:
+        Args:   
             agent: BaseAgent instance to process tasks for
         """
         self.agent = agent

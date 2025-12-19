@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 class MessageRouter(BaseKafkaConsumer):
     def __init__(self, seek_to_end: bool = False):
         super().__init__(
-            consumer_id="message_router",
             topics=[KafkaTopics.USER_MESSAGES, KafkaTopics.AGENT_EVENTS],
+            group_id="message_router",
             seek_to_end=seek_to_end
         )
         self.logger = logging.getLogger(__name__)
@@ -101,18 +101,6 @@ async def route_story_event(
     metadata: Optional[Dict[str, Any]] = None
 ) -> bool:
     """Route a story-related event to an available agent.
-    
-    Helper function for triggering agent tasks from API routes.
-    
-    Args:
-        story_id: The story ID
-        project_id: The project ID
-        task_type: The type of task (e.g., REVIEW_PR, IMPLEMENT_STORY)
-        priority: Task priority (low, medium, high)
-        metadata: Additional context for the task
-    
-    Returns:
-        True if task was routed successfully
     """
     from uuid import UUID, uuid4
     from sqlmodel import Session

@@ -6,7 +6,7 @@ from typing import List
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.schemas import ParsedError, ErrorAnalysisOutput
-from app.agents.core.llm_factory import get_llm
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
 from app.core.config import llm_settings
 from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
 from app.agents.developer.src.utils.prompt_utils import build_system_prompt as _build_system_prompt
@@ -163,7 +163,7 @@ async def analyze_error(state: DeveloperState, config: dict = None, agent=None) 
 Analyze the error and provide fix steps."""
 
         # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
-        code_llm = get_llm("implement")
+        code_llm = create_medium_llm()
         structured_llm = code_llm.with_structured_output(ErrorAnalysisOutput)
         result = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 

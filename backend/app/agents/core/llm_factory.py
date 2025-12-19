@@ -24,27 +24,6 @@ MODELS = {
     "complex": "claude-opus-4-5-20251101",
 }
 
-STEP_CONFIG = {
-    # Fast tier
-    "router": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30, "max_tokens": 4096},
-    "clarify": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30, "max_tokens": 4096},
-    "respond": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30, "max_tokens": 4096},
-    "review": {"model": MODELS["fast"], "temperature": 0.1, "timeout": 30, "max_tokens": 8192},
-    
-    # Medium tier
-    "analyze": {"model": MODELS["medium"], "temperature": 0.1, "timeout": 60, "max_tokens": 8192},
-    "plan": {"model": MODELS["medium"], "temperature": 0.1, "timeout": 90, "max_tokens": 8192},
-    "implement": {"model": MODELS["medium"], "temperature": 0, "timeout": 120, "max_tokens": 16384},
-    "debug": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 90, "max_tokens": 16384},
-    
-    # Complex tier
-    "complex": {"model": MODELS["complex"], "temperature": 0, "timeout": 180, "max_tokens": 16384},
-    
-    # Default
-    "default": {"model": MODELS["medium"], "temperature": 0.2, "timeout": 60, "max_tokens": 8192},
-}
-
-
 _token_count: ContextVar[int] = ContextVar('token_count', default=0)
 _llm_call_count: ContextVar[int] = ContextVar('llm_call_count', default=0)
 
@@ -112,16 +91,7 @@ def create_llm(
     max_retries: int | None = None,
     track_tokens: bool = True,
 ) -> BaseChatModel:
-    """Create ChatAnthropic instance.
-    
-    Args:
-        model: Model name
-        temperature: Sampling temperature (defaults to llm_settings.DEFAULT_TEMPERATURE)
-        max_tokens: Max tokens in response (defaults to llm_settings.DEFAULT_MAX_TOKENS)
-        timeout: Request timeout (defaults to llm_settings.DEFAULT_TIMEOUT)
-        max_retries: Retry attempts (defaults to llm_settings.MAX_RETRIES)
-        track_tokens: Whether to inject token tracking callback
-    """
+    """Create ChatAnthropic instance. """
     # Apply defaults from settings
     if temperature is None:
         temperature = llm_settings.DEFAULT_TEMPERATURE
@@ -148,37 +118,6 @@ def create_llm(
     )
 
 
-def get_llm(step: str) -> BaseChatModel:
-    """Get LLM for a step with automatic token tracking.
-    
-    Args:
-        step: Step name (router, plan, implement, etc.)
-    """
-    config = STEP_CONFIG.get(step, STEP_CONFIG["default"])
-    return create_llm(
-        model=config["model"],
-        temperature=config["temperature"],
-        max_tokens=config["max_tokens"],
-        timeout=config["timeout"],
-    )
-
-
-def get_raw_llm(step: str) -> BaseChatModel:
-    """Get LLM without token tracking (for special cases)."""
-    config = STEP_CONFIG.get(step, STEP_CONFIG["default"])
-    return create_llm(
-        model=config["model"],
-        temperature=config["temperature"],
-        max_tokens=config["max_tokens"],
-        timeout=config["timeout"],
-        track_tokens=False,
-    )
-
-
-# =============================================================================
-# CONVENIENCE FUNCTIONS
-# =============================================================================
-
 def create_fast_llm(**kwargs) -> BaseChatModel:
     """Create fast (Haiku) LLM."""
     defaults = {"temperature": 0.1, "timeout": 30, "max_tokens": 4096}
@@ -188,13 +127,13 @@ def create_fast_llm(**kwargs) -> BaseChatModel:
 
 def create_medium_llm(**kwargs) -> BaseChatModel:
     """Create medium (Sonnet) LLM."""
-    defaults = {"temperature": 0.2, "timeout": 60, "max_tokens": 8192}
+    defaults = {"temperature": 0.1, "timeout": 60, "max_tokens": 8192}
     defaults.update(kwargs)
     return create_llm(MODELS["medium"], **defaults)
 
 
 def create_complex_llm(**kwargs) -> BaseChatModel:
     """Create complex (Opus) LLM."""
-    defaults = {"temperature": 0.2, "timeout": 120, "max_tokens": 16384}
+    defaults = {"temperature": 0.1, "timeout": 120, "max_tokens": 16384}
     defaults.update(kwargs)
     return create_llm(MODELS["complex"], **defaults)

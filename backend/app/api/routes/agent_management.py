@@ -26,7 +26,6 @@ from app.services.singletons import (
 )
 from app.schemas.agent_management import (
     SystemStatusResponse,
-    EmergencyActionRequest,
     AgentConfigSchema,
     AgentConfigResponse,
     BulkAgentRequest,
@@ -44,23 +43,8 @@ from app.schemas.agent_management import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agents", tags=["agent-management"])
 
-# Legacy compatibility - get registry through service
-def _get_manager_registry():
-    """Get manager registry (for backward compatibility)."""
-    return get_pool_registry().get_all()
-
-# Legacy wrapper functions removed - use AgentPoolService directly
-
-
 async def initialize_default_pools() -> None:
-    """Initialize agent pools with in-memory management.
-
-    Uses AgentPoolManager with configurable pool strategy:
-    - Creates universal pool per role if no pools exist
-    - Config-driven max_agents and health check intervals
-    - Auto-scaling support via AgentMonitor
-    - Built-in health monitoring
-    """
+    """Initialize agent pools with in-memory management."""
     import logging
 
     from sqlmodel import Session, select

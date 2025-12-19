@@ -18,6 +18,7 @@ from app.agents.developer.src.utils.llm_utils import get_langfuse_span, track_no
 from langgraph.types import interrupt
 from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
 from app.agents.developer.src.utils.story_logger import log_to_story, StoryLogger
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,12 +36,7 @@ def _clear_next_types_cache(workspace_path: str) -> None:
 
 
 def _validate_null_safety(workspace_path: str) -> List[str]:
-    """Quick scan for unsafe operations on API data.
-    
-    Detects patterns like:
-    - `data.items.map()` without null safety
-    - `obj.prop.replace()` without optional chaining
-    """
+    """Quick scan for unsafe operations on API data."""
     import re
     warnings = []
     
