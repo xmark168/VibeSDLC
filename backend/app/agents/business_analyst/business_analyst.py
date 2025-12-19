@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
 from app.core.agent.project_context import ProjectContext
 from app.core.agent.mixins import PausableAgentMixin
-from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType, Story, Epic
+from app.models import Agent as AgentModel, Project, AgentQuestion, QuestionStatus, ArtifactType, Story, Epic, EpicStatus, StoryStatus
 from app.utils.project_files import ProjectFiles
 from app.kafka.event_schemas import AgentTaskType
 from app.core.db import engine
@@ -813,7 +813,7 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
             "retry_count": 0,
             "result": {},
             "is_complete": False,
-            "langfuse_handler": langfuse_handler,
+            # Note: langfuse_handler passed via config callbacks, not state (not serializable)
         }
         
         # Setup graph with checkpointer

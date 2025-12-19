@@ -15,7 +15,6 @@ from app.kafka.event_schemas import (
     AgentTaskType,
     BaseKafkaEvent,
     RouterTaskEvent,
-    UserMessageEvent,
     KafkaTopics,
 )
 from app.kafka.producer import KafkaProducer, get_kafka_producer

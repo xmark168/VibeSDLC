@@ -503,9 +503,6 @@ class BusinessAnalystGraph:
     
     async def resume(self, config: dict) -> dict:
         """Resume graph from checkpoint using Command(resume=True).
-        
-        Args:
-            config: Config with thread_id to identify checkpoint
         """
         if not self._setup_complete:
             await self.setup()
