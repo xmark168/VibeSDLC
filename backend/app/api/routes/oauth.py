@@ -15,32 +15,25 @@ from app.core.security import create_access_token
 from app.core.redis_client import get_redis_client
 from app.models import User, OAuthProvider, LinkedAccount
 from app.services import UserService, LinkedAccountService
+from app.utils.oauth_state import (
+    set_oauth_state,
+    get_oauth_state_data,
+    delete_oauth_state,
+    get_oauth_state as get_oauth_state_provider,
+)
+from app.utils.oauth_providers import (
+    get_google_user_info,
+    get_github_user_info,
+    get_facebook_user_info,
+)
 
 redis_client = get_redis_client()
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["oauth"])
 
-# In-memory store for OAuth state (sufficient for OAuth flow)
-# Note: OAuth state is short-lived (seconds), so Redis is unnecessary
-_oauth_state_store: dict[str, dict] = {}
 
-
-def set_oauth_state(state: str, provider: str, mode: str = "login", user_id: str | None = None):
-    """Save OAuth state to in-memory store"""
-    import time
-    _oauth_state_store[state] = {
-        "provider": provider,
-        "mode": mode,  # "login" or "link"
-        "user_id": user_id,  # Only set for "link" mode
-        "created_at": time.time()
-    }
-    logger.info(f"Saved OAuth state: {state} for {provider} (mode={mode})")
-    # Clean up old states (older than 10 minutes)
-    _cleanup_old_states()
-
-
-def get_oauth_state_data(state: str) -> dict | None:
+def _old_get_oauth_state_data(state: str) -> dict | None:
     """Get full OAuth state data from in-memory store"""
     state_data = _oauth_state_store.get(state)
     if state_data:

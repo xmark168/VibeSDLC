@@ -1,7 +1,5 @@
 """Authentication API."""
 import logging
-import random
-import re
 import secrets
 from datetime import timedelta
 from typing import Annotated
@@ -21,32 +19,14 @@ from app.schemas import (
 )
 from app.services import UserService
 from app.utils import generate_password_reset_email, generate_verification_code_email, send_email
+from app.utils.validators import validate_email, validate_password
+from app.utils.code_generator import generate_verification_code
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["authentication"])
 
 # Redis client
 redis_client = get_redis_client()
-
-
-def validate_email(email: str) -> bool:
-    """Validate email format"""
-    pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-    return bool(re.match(pattern, email))
-
-
-def validate_password(password: str) -> bool:
-    """Validate password: min 8 chars, at least 1 letter and 1 number"""
-    if len(password) < 8:
-        return False
-    has_letter = bool(re.search(r"[a-zA-Z]", password))
-    has_number = bool(re.search(r"\d", password))
-    return has_letter and has_number
-
-
-def generate_verification_code() -> str:
-    """Generate 6-digit verification code"""
-    return str(random.randint(100000, 999999))
 
 
 def assign_free_plan_to_user(session: SessionDep, user: User) -> None:

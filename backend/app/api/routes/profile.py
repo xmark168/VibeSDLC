@@ -1,8 +1,6 @@
 """Profile API routes for user profile management."""
 
 import logging
-import os
-import re
 import uuid
 from io import BytesIO
 
@@ -22,6 +20,8 @@ from app.schemas.profile import (
     ProfileResponse,
     AvatarUploadResponse,
 )
+from app.utils.avatar import get_avatar_url, DEFAULT_AVATAR_URL
+from app.utils.validators import validate_password
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/profile", tags=["profile"])
@@ -30,20 +30,6 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 AVATAR_SIZE = (256, 256)  # Final avatar dimensions
-
-# Default avatar for email users
-DEFAULT_AVATAR_URL = "https://github.com/shadcn.png"
-
-# Uploads directory
-UPLOADS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "uploads")
-AVATARS_DIR = os.path.join(UPLOADS_DIR, "avatars")
-
-
-def get_avatar_url(user) -> str:
-    """Get avatar URL for user, with fallback to default"""
-    if user.avatar_url:
-        return user.avatar_url
-    return DEFAULT_AVATAR_URL
 
 
 @router.get("/me", response_model=ProfileResponse)
@@ -218,15 +204,6 @@ def delete_avatar(
     session.commit()
 
     return {"message": "Avatar deleted", "avatar_url": DEFAULT_AVATAR_URL}
-
-
-def validate_password(password: str) -> bool:
-    """Validate password: min 8 chars, at least 1 letter and 1 number"""
-    if len(password) < 8:
-        return False
-    has_letter = bool(re.search(r"[a-zA-Z]", password))
-    has_number = bool(re.search(r"\d", password))
-    return has_letter and has_number
 
 
 @router.get("/password-status", response_model=PasswordStatusResponse)

@@ -37,7 +37,7 @@ async def git_revert_uncommitted(workspace_path: str) -> bool:
         logger.warning(f"[git] Cannot revert: workspace does not exist: {workspace_path}")
         return False
     
-    # Normalize path for Windows
+    # Normalize path to POSIX format
     workspace_path = str(workspace.resolve())
     
     try:
@@ -63,7 +63,7 @@ async def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
         logger.warning(f"[git] Cannot reset: workspace does not exist: {workspace_path}")
         return False
     
-    # Normalize path for Windows
+    # Normalize path to POSIX format
     workspace_path = str(workspace.resolve())
     
     try:
@@ -97,7 +97,7 @@ async def git_squash_wip_commits(workspace_path: str, base_branch: str = "main",
         logger.warning(f"[git] Cannot squash: workspace does not exist: {workspace_path}")
         return False
     
-    # Normalize path for Windows
+    # Normalize path to POSIX format
     workspace_path = str(workspace.resolve())
     
     try:

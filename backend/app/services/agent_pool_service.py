@@ -1,4 +1,4 @@
-"""Agent Pool Service - Centralized agent pool operations."""
+"""Agent Pool Service -Agent pool operations."""
 
 from typing import Optional, Dict, Type
 from uuid import UUID
@@ -10,13 +10,8 @@ from app.services.singletons import get_pool_registry
 
 logger = logging.getLogger(__name__)
 
-
 class AgentPoolService:
-    """Service for agent pool operations.
-    
-    Provides centralized access to pool management functions,
-    avoiding direct route-to-route dependencies.
-    """
+    """Service for agent pool operations."""
 
     @staticmethod
     def get_role_class_map() -> Dict[str, Type]:
@@ -41,19 +36,6 @@ class AgentPoolService:
     def get_available_pool(role_type: Optional[str] = None) -> Optional[AgentPoolManager]:
         """Get best available pool manager based on priority and load.
         
-        Selection criteria (in order):
-        1. Pool must be active (is_active=True)
-        2. Pool must have capacity (current_agents < max_agents)
-        3. Sort by priority (lower number = higher priority)
-        4. Among same priority, choose pool with least agents (load balancing)
-        
-        Note: role_type is ignored - agents are assigned to pools purely by priority and load.
-        
-        Args:
-            role_type: Ignored, kept for backward compatibility
-            
-        Returns:
-            AgentPoolManager or None if no pools available
         """
         from app.models import AgentPool
         from app.core.db import engine

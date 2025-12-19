@@ -1,4 +1,4 @@
-"""Token Budget Service for cost control and rate limiting."""
+"""Singleton Token Budget Service for cost control and rate limiting."""
 
 import asyncio
 from dataclasses import dataclass
@@ -8,6 +8,7 @@ from uuid import UUID
 import logging
 
 from sqlmodel import Session
+from app.core.db import engine
 from app.models import Project, Agent
 from app.models.base import Role
 
@@ -16,16 +17,13 @@ logger = logging.getLogger(__name__)
 # Token to credit conversion rate (tokens per credit)
 TOKENS_PER_CREDIT = 1000  # 1 credit = 1000 tokens
 
-# Global locks for thread-safe budget operations per project
-_budget_locks: Dict[UUID, asyncio.Lock] = {}
-
 
 @dataclass
 class TokenBudget:
     """Token budget for a project."""
     project_id: UUID
     daily_limit: int = 10000000  # 10M tokens/day default 
-    monthly_limit: int = 20000000  # 2M tokens/month default
+    monthly_limit: int = 20000000  # 20M tokens/month default
     used_today: int = 0
     used_this_month: int = 0
     last_reset_daily: Optional[datetime] = None
@@ -56,30 +54,85 @@ class TokenBudget:
         return (self.used_this_month / self.monthly_limit) * 100
 
 
-class TokenBudgetManager:
-    """Manages token budgets and enforces limits.
-        - Loads budgets from database
-        - Checks if requests can proceed based on budget
-        - Records token usage
-        - Auto-resets counters at period boundaries
-        - Caches budgets in memory for performance
+class TokenBudgetService:
+    """Singleton service for token budget management.
+    
+    This service manages token budgets for all projects in the system.
+    It provides:
+    - Budget checking and enforcement
+    - Token usage tracking
+    - Credit deduction
+    - Cache management for performance
+    - Thread-safe operations with per-project locks
+    
+    Note: This is a singleton to ensure shared cache and proper lock management
+    across all requests.
     """
     
-    def __init__(self, session: Session):
-        """Initialize budget manager. """
-        self.session = session
-        self.cache: Dict[UUID, TokenBudget] = {}
+    _instance: Optional['TokenBudgetService'] = None
+    _init_lock: asyncio.Lock = asyncio.Lock()
     
-    def _is_admin(self, user_id: UUID) -> bool:
-        """Check if user is admin (bypass budget checks)."""
+    def __init__(self):
+        """Private constructor - use get_token_budget_service()."""
+        if TokenBudgetService._instance is not None:
+            raise RuntimeError(
+                "TokenBudgetService is a singleton! "
+                "Use get_token_budget_service() instead."
+            )
+        
+        # Shared cache across all requests
+        self.cache: Dict[UUID, TokenBudget] = {}
+        
+        # Per-project locks for thread-safe operations
+        self.budget_locks: Dict[UUID, asyncio.Lock] = {}
+        
+        logger.info("✓ TokenBudgetService initialized (singleton)")
+    
+    @classmethod
+    async def get_instance(cls) -> 'TokenBudgetService':
+        """Get or create singleton instance (thread-safe).
+        
+        Returns:
+            TokenBudgetService singleton instance
+        """
+        if cls._instance is None:
+            async with cls._init_lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
+    
+    def _get_session(self) -> Session:
+        """Get new database session for each operation.
+        
+        Returns:
+            Fresh SQLModel session
+        """
+        return Session(engine)
+    
+    def _is_admin(self, session: Session, user_id: UUID) -> bool:
+        """Check if user is admin (bypass budget checks).
+        
+        Args:
+            session: Database session
+            user_id: User UUID
+            
+        Returns:
+            True if user is admin
+        """
         from app.models import User
-        user = self.session.get(User, user_id)
+        user = session.get(User, user_id)
         return user and user.role == Role.ADMIN
 
-    def _check_user_credits(self, user_id: UUID, estimated_tokens: int) -> Tuple[bool, str]:
+    def _check_user_credits(
+        self, 
+        session: Session,
+        user_id: UUID, 
+        estimated_tokens: int
+    ) -> Tuple[bool, str]:
         """Check if user has sufficient credits for estimated token usage.
         
         Args:
+            session: Database session
             user_id: User UUID
             estimated_tokens: Estimated tokens for the request
             
@@ -92,7 +145,7 @@ class TokenBudgetManager:
             # Calculate estimated credits needed
             estimated_credits = (estimated_tokens + TOKENS_PER_CREDIT - 1) // TOKENS_PER_CREDIT
             
-            credit_service = CreditService(self.session)
+            credit_service = CreditService(session)
             remaining_credits = credit_service.get_remaining_credits(user_id)
             
             logger.debug(
@@ -128,20 +181,30 @@ class TokenBudgetManager:
         estimated_tokens: int,
         user_id: Optional[UUID] = None
     ) -> Tuple[bool, str]:
-        """Check if project has budget AND user has credits for estimated token usage."""
+        """Check if project has budget AND user has credits for estimated token usage.
+        
+        Args:
+            project_id: Project UUID
+            estimated_tokens: Estimated tokens needed
+            user_id: Optional user ID for credit check
+            
+        Returns:
+            Tuple of (allowed, reason)
+        """
+        session = self._get_session()
         try:
             # Admin bypass - skip all checks
-            if user_id and self._is_admin(user_id):
+            if user_id and self._is_admin(session, user_id):
                 logger.debug(f"Admin user {user_id} bypassing budget check")
                 return True, ""
             
             # Check user credits first (before project budget)
             if user_id:
-                credit_ok, credit_reason = self._check_user_credits(user_id, estimated_tokens)
+                credit_ok, credit_reason = self._check_user_credits(session, user_id, estimated_tokens)
                 if not credit_ok:
                     return False, credit_reason
             
-            budget = await self._get_budget(project_id)
+            budget = await self._get_budget(session, project_id)
             
             # Reset counters if needed
             self._reset_if_needed(budget)
@@ -175,6 +238,8 @@ class TokenBudgetManager:
             logger.error(f"Error checking budget for project {project_id}: {e}", exc_info=True)
             # Fail open (allow request) to avoid blocking on errors
             return True, ""
+        finally:
+            session.close()
     
     async def check_and_reserve(
         self,
@@ -184,7 +249,7 @@ class TokenBudgetManager:
     ) -> Tuple[bool, str]:
         """Atomic check and reserve tokens (thread-safe).
         
-        This method uses asyncio.Lock to ensure that concurrent tasks
+        This method uses per-project locks to ensure that concurrent tasks
         don't exceed the budget due to race conditions.
         
         Args:
@@ -195,13 +260,11 @@ class TokenBudgetManager:
         Returns:
             Tuple of (allowed, reason)
         """
-        global _budget_locks
-        
         # Get or create lock for this project
-        if project_id not in _budget_locks:
-            _budget_locks[project_id] = asyncio.Lock()
+        if project_id not in self.budget_locks:
+            self.budget_locks[project_id] = asyncio.Lock()
         
-        lock = _budget_locks[project_id]
+        lock = self.budget_locks[project_id]
         
         async with lock:
             allowed, reason = await self.check_budget(project_id, estimated_tokens, user_id=user_id)
@@ -209,14 +272,14 @@ class TokenBudgetManager:
             if allowed:
                 # Pre-reserve tokens to prevent concurrent over-allocation
                 try:
-                    budget = await self._get_budget(project_id)
-                    budget.used_today += estimated_tokens
-                    budget.used_this_month += estimated_tokens
-                    # Note: We don't persist here - actual usage is recorded later
-                    # This just updates the in-memory cache to block concurrent requests
-                    logger.debug(
-                        f"[BUDGET] Reserved {estimated_tokens:,} tokens for project {project_id}"
-                    )
+                    # Update cache only (shared across all instances since we're singleton)
+                    if project_id in self.cache:
+                        budget = self.cache[project_id]
+                        budget.used_today += estimated_tokens
+                        budget.used_this_month += estimated_tokens
+                        logger.debug(
+                            f"[BUDGET] Reserved {estimated_tokens:,} tokens for project {project_id}"
+                        )
                 except Exception as e:
                     logger.error(f"Error reserving tokens: {e}")
             
@@ -239,27 +302,31 @@ class TokenBudgetManager:
             agent_id: Optional agent ID for per-agent tracking
             user_id: Optional user ID for credit deduction
             deduct_credits: Whether to deduct credits (default True)
+            context: Optional context dict (model_used, task_type, etc.)
         """
+        session = self._get_session()
         try:
-            budget = await self._get_budget(project_id)
+            budget = await self._get_budget(session, project_id)
             
             # Update project counters
             budget.used_today += tokens_used
             budget.used_this_month += tokens_used
             
             # Persist to database
-            await self._save_budget(budget)
+            await self._save_budget(session, budget)
             
             # Track per-agent usage
             if agent_id:
-                await self._record_agent_usage(agent_id, tokens_used)
+                await self._record_agent_usage(session, agent_id, tokens_used)
             
             # Deduct credits (skip for admins)
             if deduct_credits and user_id and tokens_used > 0:
-                if not self._is_admin(user_id):
-                    await self._deduct_credits(user_id, tokens_used, agent_id, context)
+                if not self._is_admin(session, user_id):
+                    await self._deduct_credits(session, user_id, tokens_used, agent_id, context)
                 else:
                     logger.debug(f"Admin user {user_id} - skipping credit deduction")
+            
+            session.commit()
             
             logger.info(
                 f"Recorded {tokens_used:,} tokens for project {project_id}. "
@@ -270,29 +337,34 @@ class TokenBudgetManager:
             )
             
         except Exception as e:
+            session.rollback()
             logger.error(f"Error recording usage for project {project_id}: {e}", exc_info=True)
+        finally:
+            session.close()
     
-    async def _record_agent_usage(self, agent_id: UUID, tokens_used: int) -> None:
+    async def _record_agent_usage(self, session: Session, agent_id: UUID, tokens_used: int) -> None:
         """Record token usage for a specific agent.
         
         Args:
+            session: Database session
             agent_id: Agent UUID
             tokens_used: Tokens consumed
         """
         try:
-            agent = self.session.get(Agent, agent_id)
+            agent = session.get(Agent, agent_id)
             if agent:
                 agent.tokens_used_total = (agent.tokens_used_total or 0) + tokens_used
                 agent.tokens_used_today = (agent.tokens_used_today or 0) + tokens_used
                 agent.llm_calls_total = (agent.llm_calls_total or 0) + 1
-                self.session.add(agent)
-                self.session.commit()
+                session.add(agent)
+                # Note: Commit is done by caller
                 logger.debug(f"Agent {agent_id} token usage: +{tokens_used} (total: {agent.tokens_used_total})")
         except Exception as e:
             logger.error(f"Error recording agent usage: {e}")
     
     async def _deduct_credits(
-        self, 
+        self,
+        session: Session,
         user_id: UUID, 
         tokens_used: int, 
         agent_id: Optional[UUID] = None,
@@ -301,6 +373,7 @@ class TokenBudgetManager:
         """Deduct credits based on token usage with enhanced tracking.
         
         Args:
+            session: Database session
             user_id: User UUID
             tokens_used: Tokens consumed
             agent_id: Optional agent ID for activity logging
@@ -313,7 +386,7 @@ class TokenBudgetManager:
             credits_to_deduct = (tokens_used + TOKENS_PER_CREDIT - 1) // TOKENS_PER_CREDIT
             
             if credits_to_deduct > 0:
-                credit_service = CreditService(self.session)
+                credit_service = CreditService(session)
                 success = credit_service.deduct_credit(
                     user_id=user_id,
                     amount=credits_to_deduct,
@@ -339,8 +412,9 @@ class TokenBudgetManager:
         Returns:
             Dictionary with budget status
         """
+        session = self._get_session()
         try:
-            budget = await self._get_budget(project_id)
+            budget = await self._get_budget(session, project_id)
             self._reset_if_needed(budget)
             
             return {
@@ -364,6 +438,8 @@ class TokenBudgetManager:
         except Exception as e:
             logger.error(f"Error getting budget status for project {project_id}: {e}", exc_info=True)
             return {"error": str(e)}
+        finally:
+            session.close()
     
     async def update_limits(
         self,
@@ -381,8 +457,9 @@ class TokenBudgetManager:
         Returns:
             True if updated successfully
         """
+        session = self._get_session()
         try:
-            project = self.session.get(Project, project_id)
+            project = session.get(Project, project_id)
             if not project:
                 logger.error(f"Project {project_id} not found")
                 return False
@@ -393,8 +470,8 @@ class TokenBudgetManager:
             if monthly_limit is not None:
                 project.token_budget_monthly = monthly_limit
             
-            self.session.add(project)
-            self.session.commit()
+            session.add(project)
+            session.commit()
             
             # Clear cache to reload new limits
             if project_id in self.cache:
@@ -408,26 +485,29 @@ class TokenBudgetManager:
             
         except Exception as e:
             logger.error(f"Error updating limits for project {project_id}: {e}", exc_info=True)
-            self.session.rollback()
+            session.rollback()
             return False
+        finally:
+            session.close()
     
     # ===== Internal Methods =====
     
-    async def _get_budget(self, project_id: UUID) -> TokenBudget:
+    async def _get_budget(self, session: Session, project_id: UUID) -> TokenBudget:
         """Get budget from cache or load from database.
         
         Args:
+            session: Database session
             project_id: Project UUID
             
         Returns:
             TokenBudget instance
         """
-        # Check cache first
+        # Check cache first (shared across all requests)
         if project_id in self.cache:
             return self.cache[project_id]
         
         # Load from database
-        project = self.session.get(Project, project_id)
+        project = session.get(Project, project_id)
         if not project:
             raise ValueError(f"Project {project_id} not found")
         
@@ -441,18 +521,19 @@ class TokenBudgetManager:
             last_reset_monthly=project.budget_last_reset_monthly,
         )
         
-        # Cache it
+        # Cache it (shared cache)
         self.cache[project_id] = budget
         
         return budget
     
-    async def _save_budget(self, budget: TokenBudget) -> None:
+    async def _save_budget(self, session: Session, budget: TokenBudget) -> None:
         """Save budget to database.
         
         Args:
+            session: Database session
             budget: TokenBudget instance to save
         """
-        project = self.session.get(Project, budget.project_id)
+        project = session.get(Project, budget.project_id)
         if not project:
             raise ValueError(f"Project {budget.project_id} not found")
         
@@ -461,8 +542,8 @@ class TokenBudgetManager:
         project.budget_last_reset_daily = budget.last_reset_daily
         project.budget_last_reset_monthly = budget.last_reset_monthly
         
-        self.session.add(project)
-        self.session.commit()
+        session.add(project)
+        # Note: Commit is done by caller
     
     def _reset_if_needed(self, budget: TokenBudget) -> None:
         """Reset counters if time period has elapsed.
@@ -502,3 +583,16 @@ class TokenBudgetManager:
             )
             budget.used_this_month = 0
             budget.last_reset_monthly = now
+
+
+# Singleton getter
+_token_budget_service: Optional[TokenBudgetService] = None
+
+
+async def get_token_budget_service() -> TokenBudgetService:
+    """Get or create singleton token budget service.
+    
+    Returns:
+        TokenBudgetService singleton instance
+    """
+    return await TokenBudgetService.get_instance()

@@ -286,7 +286,8 @@ def _find_components_for_unit_test(workspace_path: str, keywords: list[str]) -> 
     ]
     
     # UI primitives to exclude (these are too generic)
-    exclude_dirs = ["ui/", "primitives/", "icons/", "ui\\", "primitives\\", "icons\\"]
+    # Path matching is separator-agnostic, no need for both / and \
+    exclude_dirs = ["ui", "primitives", "icons"]
     
     for pattern in component_patterns:
         for file_path in path.glob(pattern):

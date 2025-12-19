@@ -14,11 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class StoryService:
-    """Service for story database operations and business logic.
-
-    Consolidates all story-related DB operations to avoid duplicate code
-    and provide business logic for story management.
-    """
+    """Service for story database operations and business logic."""
 
     def __init__(self, session: Session):
         self.session = session

@@ -586,15 +586,6 @@ def preview_project_deletion(
 
 # ============= Dev Server Endpoints =============
 
-def _get_workspace_path(project_path: str) -> Path:
-    """Convert project path to absolute path."""
-    workspace_path = Path(project_path)
-    if not workspace_path.is_absolute():
-        backend_dir = Path(__file__).parent.parent.parent.parent
-        workspace_path = backend_dir / project_path
-    return workspace_path
-
-
 def _cleanup_dev_server(workspace_path: Path, port: int = None, pid: int = None) -> None:
     """Clean up dev server processes and lock files.
     

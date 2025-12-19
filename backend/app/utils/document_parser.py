@@ -68,7 +68,7 @@ def sanitize_filename(filename: str) -> str:
     if not name:
         name = "document"
     
-    # Limit length (Windows max path is 260, keep some room)
+    # Limit filename length to avoid filesystem issues
     if len(name) > 100:
         name = name[:100]
     

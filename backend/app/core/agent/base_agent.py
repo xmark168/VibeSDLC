@@ -2130,19 +2130,16 @@ class BaseAgent(ABC):
             return True, ""
         
         try:
-            from sqlmodel import Session
-            from app.core.db import engine
-            from app.services.token_budget_service import TokenBudgetManager
+            from app.services.singletons import get_token_budget_service
             
-            with Session(engine) as session:
-                budget_mgr = TokenBudgetManager(session)
-                allowed, reason = await budget_mgr.check_budget(
-                    self.project_id,
-                    estimated_tokens,
-                    user_id=self._current_user_id
-                )
-                
-                return allowed, reason
+            budget_service = await get_token_budget_service()
+            allowed, reason = await budget_service.check_budget(
+                self.project_id,
+                estimated_tokens,
+                user_id=self._current_user_id
+            )
+            
+            return allowed, reason
                 
         except Exception as e:
             logger.error(
@@ -2172,9 +2169,7 @@ class BaseAgent(ABC):
             return
         
         try:
-            from sqlmodel import Session
-            from app.core.db import engine
-            from app.services.token_budget_service import TokenBudgetManager
+            from app.services.singletons import get_token_budget_service
             
             # Build context for detailed tracking
             context = {
@@ -2186,16 +2181,15 @@ class BaseAgent(ABC):
                 "llm_calls": self._llm_call_count,
             }
             
-            with Session(engine) as session:
-                budget_mgr = TokenBudgetManager(session)
-                await budget_mgr.record_usage(
-                    project_id=self.project_id,
-                    tokens_used=tokens_used,
-                    agent_id=self.agent_id,
-                    user_id=self._current_user_id,
-                    deduct_credits=True,
-                    context=context
-                )
+            budget_service = await get_token_budget_service()
+            await budget_service.record_usage(
+                project_id=self.project_id,
+                tokens_used=tokens_used,
+                agent_id=self.agent_id,
+                user_id=self._current_user_id,
+                deduct_credits=True,
+                context=context
+            )
                 
         except Exception as e:
             logger.error(

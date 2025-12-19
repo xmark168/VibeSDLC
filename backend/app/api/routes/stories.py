@@ -15,6 +15,8 @@ from app.schemas import StoryCreate, StoryUpdate, StoryPublic, StoriesPublic
 from app.schemas.story import BulkRankUpdateRequest
 from app.schemas.story import ReviewActionType, ReviewActionRequest
 from app.services.story_service import StoryService
+from app.utils.subprocess_utils import kill_processes_in_worktree
+from app.utils.git_utils import get_story_diffs
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/stories", tags=["stories"])
@@ -690,16 +692,7 @@ async def resume_story_task(
     return {"success": True, "message": "Task resumed"}
 
 
-def _kill_processes_in_worktree(worktree_path: str) -> None:
-    """Kill node processes that might be locking files (Windows only)."""
-    import platform
-    if platform.system() != "Windows":
-        return
-    try:
-        subprocess.run(["taskkill", "/F", "/IM", "node.exe"], capture_output=True, timeout=10)
-    except Exception:
-        pass
-
+# Removed Windows-specific _kill_processes_in_worktree - using utils version instead
 
 def _cleanup_story_resources_sync(
     worktree_path: str | None = None,

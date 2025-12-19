@@ -18,15 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def kill_process(pid: int, force: bool = False) -> bool:
-    """Kill a process by PID.
-    
-    Args:
-        pid: Process ID to kill
-        force: Whether to force kill (SIGKILL vs SIGTERM)
-        
-    Returns:
-        True if successful, False otherwise
-    """
+    """Kill a process by PID."""
     try:
         os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
         return True
@@ -36,14 +28,7 @@ def kill_process(pid: int, force: bool = False) -> bool:
 
 
 def kill_process_on_port(port: int) -> bool:
-    """Kill process(es) listening on a specific port.
-    
-    Args:
-        port: Port number
-        
-    Returns:
-        True if any process was killed, False otherwise
-    """
+    """Kill process(es) listening on a specific port."""
     try:
         result = subprocess.run(
             f'lsof -ti:{port}',
@@ -66,16 +51,7 @@ def force_remove_directory(
     max_retries: int = 2,
     retry_delay: float = 0.1
 ) -> bool:
-    """Force remove a directory with retries.
-    
-    Args:
-        path: Directory path to remove
-        max_retries: Maximum number of retry attempts (default: 2)
-        retry_delay: Delay between retries in seconds (default: 0.1)
-        
-    Returns:
-        True if successfully removed, False otherwise
-    """
+    """Force remove a directory with retries. """
     path = Path(path)
     if not path.exists():
         return True
@@ -103,20 +79,7 @@ async def run_subprocess_async(
     text: bool = True,
     **kwargs
 ) -> subprocess.CompletedProcess:
-    """Run subprocess command asynchronously.
-    
-    Args:
-        cmd: Command to run (list or string)
-        cwd: Working directory
-        capture_output: Whether to capture stdout/stderr
-        timeout: Timeout in seconds
-        shell: Whether to use shell
-        text: Whether to decode output as text
-        **kwargs: Additional subprocess.run kwargs
-        
-    Returns:
-        CompletedProcess result
-    """
+    """Run subprocess command asynchronously. """
     cwd_str = str(cwd) if cwd else None
     
     def _run():
@@ -211,3 +174,41 @@ async def wait_for_port(port: int, timeout: float = 30.0, interval: float = 0.5)
         except (socket.error, socket.timeout):
             await asyncio.sleep(interval)
     return False
+
+
+def kill_processes_in_worktree(worktree_path: str) -> None:
+    """Kill node processes running in specific worktree (Linux).
+    
+    Uses psutil to find and kill node processes that are running in the
+    specified worktree path. This helps clean up processes that may be
+    locking files during cleanup operations.
+    
+    Args:
+        worktree_path: Path to worktree to clean up processes from
+    """
+    import psutil
+    from pathlib import Path
+    
+    try:
+        worktree_norm = str(Path(worktree_path).resolve())
+        killed = 0
+        
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'cwd']):
+            try:
+                # Check if it's a node process
+                if proc.info['name'] and 'node' in proc.info['name'].lower():
+                    cmdline = proc.info.get('cmdline', [])
+                    cwd = proc.info.get('cwd', '')
+                    
+                    # Check if process is running in this worktree
+                    if worktree_norm in ' '.join(cmdline) or worktree_norm in cwd:
+                        logger.info(f"Killing node process {proc.info['pid']} in {worktree_path}")
+                        proc.kill()
+                        killed += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        if killed > 0:
+            logger.info(f"Killed {killed} node process(es) in worktree")
+    except Exception as e:
+        logger.warning(f"Failed to kill processes in worktree: {e}")

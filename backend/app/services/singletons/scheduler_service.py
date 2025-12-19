@@ -1,8 +1,9 @@
-"""Periodic task scheduler for system maintenance."""
+"""Singleton Scheduler Service for periodic system tasks."""
 
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlmodel import Session, select
@@ -11,11 +12,36 @@ logger = logging.getLogger(__name__)
 
 
 class SchedulerService:
-    """Handles periodic system tasks."""
+    """Singleton service for periodic system tasks.
+    
+    Note: This is a singleton to ensure only one scheduler instance
+    runs in the application, preventing duplicate job execution.
+    """
+    
+    _instance: Optional['SchedulerService'] = None
     
     def __init__(self):
+        """Private constructor - use get_scheduler_service()."""
+        if SchedulerService._instance is not None:
+            raise RuntimeError(
+                "SchedulerService is a singleton! "
+                "Use get_scheduler_service() instead."
+            )
+        
         self.scheduler = AsyncIOScheduler()
         self._setup_jobs()
+        logger.info("✓ SchedulerService initialized (singleton)")
+    
+    @classmethod
+    def get_instance(cls) -> 'SchedulerService':
+        """Get or create singleton instance.
+        
+        Returns:
+            SchedulerService singleton instance
+        """
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
     
     def _setup_jobs(self):
         """Setup scheduled jobs."""
@@ -90,10 +116,29 @@ class SchedulerService:
     
     def start(self):
         """Start the scheduler."""
-        self.scheduler.start()
-        logger.info("✓ Scheduler service started")
+        if not self.scheduler.running:
+            self.scheduler.start()
+            logger.info("✓ Scheduler service started")
+        else:
+            logger.warning("Scheduler already running")
     
     def shutdown(self):
         """Shutdown the scheduler gracefully."""
-        self.scheduler.shutdown()
-        logger.info("Scheduler service stopped")
+        if self.scheduler.running:
+            self.scheduler.shutdown()
+            logger.info("Scheduler service stopped")
+        else:
+            logger.warning("Scheduler not running")
+
+
+# Singleton getter
+_scheduler_service: Optional[SchedulerService] = None
+
+
+def get_scheduler_service() -> SchedulerService:
+    """Get or create singleton scheduler service.
+    
+    Returns:
+        SchedulerService singleton instance
+    """
+    return SchedulerService.get_instance()

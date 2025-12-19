@@ -137,8 +137,8 @@ async def lifespan(_: FastAPI):
     await cleanup_stale_story_states()
     
     # Start scheduler for periodic tasks (agent token reset, cleanup)
-    from app.services.scheduler_service import SchedulerService
-    scheduler = SchedulerService()
+    from app.services.singletons import get_scheduler_service
+    scheduler = get_scheduler_service()
     scheduler.start()
 
     from app.kafka import ensure_kafka_topics

@@ -135,18 +135,7 @@ async def create_artifact_version(
     current_user: User = Depends(get_current_user),
     description: Optional[str] = None,
 ):
-    """Create a new version of an artifact.
-    
-    Args:
-        artifact_id: Original artifact UUID
-        new_content: Updated content
-        description: Optional description of changes
-        session: Database session
-        current_user: Current authenticated user
-        
-    Returns:
-        New artifact version
-    """
+    """Create a new version of an artifact."""
     try:
         service = ArtifactService(session)
         new_artifact = service.create_version(
@@ -177,18 +166,7 @@ async def get_latest_artifact(
     current_user: User = Depends(get_current_user),
     title: Optional[str] = Query(None, description="Filter by title"),
 ):
-    """Get the latest version of an artifact.
-    
-    Args:
-        project_id: Project UUID
-        artifact_type: Artifact type
-        title: Optional title filter
-        session: Database session
-        current_user: Current authenticated user
-        
-    Returns:
-        Latest artifact version or None
-    """
+    """Get the latest version of an artifact."""
     try:
         service = ArtifactService(session)
         artifact = service.get_latest_version(

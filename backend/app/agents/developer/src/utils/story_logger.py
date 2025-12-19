@@ -459,7 +459,7 @@ async def git_with_retry(
     if not cwd_path.exists():
         raise OSError(f"Working directory does not exist: {cwd}")
     
-    # Normalize path for Windows compatibility
+    # Normalize path to POSIX format
     cwd = str(cwd_path.resolve())
     
     lock = await _get_git_lock(cwd)

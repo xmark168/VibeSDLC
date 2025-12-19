@@ -558,6 +558,20 @@ def _update_prisma_generate_cache(workspace_path: str) -> None:
 # Workspace manager class
 # =============================================================================
 
+def get_workspace_path(project_path: str) -> Path:
+    """Get workspace path from project path.
+    
+    Converts project path to its workspace subdirectory path.
+    
+    Args:
+        project_path: Path to the project directory
+        
+    Returns:
+        Path to the workspace subdirectory
+    """
+    return Path(project_path) / "workspace"
+
+
 class ProjectWorkspaceManager:
     """Git worktree manager for project workspace paths.
     
