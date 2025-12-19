@@ -1,14 +1,4 @@
-"""
-Utility to ensure all Kafka topics are created at startup.
-
-This module provides a robust way to create all required Kafka topics
-with appropriate configurations before the application starts consuming/producing.
-
-Optimized for fast startup:
-- Short timeouts (2s for check, 5s for creation)
-- Background topic creation (non-blocking)
-- Graceful fallback when Kafka unavailable
-"""
+"""Utility to ensure all Kafka topics are created at startup."""
 import asyncio
 import logging
 from typing import List, Dict, Any, Set

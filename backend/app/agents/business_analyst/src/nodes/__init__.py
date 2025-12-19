@@ -4,8 +4,8 @@ from .utils import _get_llm, _invoke_structured, _cfg, _sys_prompt, _user_prompt
 from .analyze_intent import analyze_intent, analyze_document_content, generate_document_feedback
 from .conversational import respond_conversational
 from .interview import (
-    interview_requirements, ask_one_question, ask_batch_questions,
-    process_batch_answers, process_answer, check_clarity, analyze_domain
+    interview_requirements, ask_batch_questions,
+    process_batch_answers, check_clarity, analyze_domain
 )
 from .prd import generate_prd, update_prd
 from .stories import (
@@ -22,8 +22,8 @@ __all__ = [
     # Conversational
     "respond_conversational",
     # Interview
-    "interview_requirements", "ask_one_question", "ask_batch_questions",
-    "process_batch_answers", "process_answer", "check_clarity", "analyze_domain",
+    "interview_requirements", "ask_batch_questions",
+    "process_batch_answers", "check_clarity", "analyze_domain",
     # PRD
     "generate_prd", "update_prd",
     # Stories

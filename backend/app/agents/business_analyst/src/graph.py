@@ -13,9 +13,7 @@ from .nodes import (
     analyze_intent,
     respond_conversational,
     interview_requirements,
-    ask_one_question,
     ask_batch_questions,
-    process_answer,
     process_batch_answers,
     generate_prd,
     update_prd,
@@ -197,27 +195,6 @@ def should_ask_questions(state: BAState) -> Literal["ask", "save"]:
         return "save"
 
 
-def should_continue_or_wait(state: BAState) -> Literal["wait", "next_question", "generate_prd"]:
-    """Router: After asking/processing, decide next step.
-    
-    - wait: Question sent, waiting for user answer (END this run)
-    - next_question: More questions to ask
-    - generate_prd: All questions answered, generate PRD
-    """
-    waiting = state.get("waiting_for_answer", False)
-    all_answered = state.get("all_questions_answered", False)
-    
-    if waiting:
-        logger.info("[BA Graph] Waiting for user answer, pausing execution")
-        return "wait"
-    elif all_answered:
-        logger.info("[BA Graph] All questions answered, proceeding to PRD generation")
-        return "generate_prd"
-    else:
-        logger.info("[BA Graph] More questions to ask")
-        return "next_question"
-
-
 def batch_after_ask(state: BAState) -> Literal["wait", "generate_prd"]:
     """Router: After asking batch questions, wait or generate PRD."""
     waiting = state.get("waiting_for_answer", False)
@@ -306,10 +283,7 @@ class BusinessAnalystGraph:
         graph.add_node("analyze_intent", partial(analyze_intent, agent=agent))
         graph.add_node("respond_conversational", partial(respond_conversational, agent=agent))
         graph.add_node("interview_requirements", partial(interview_requirements, agent=agent))
-        # Sequential mode nodes (deprecated but kept for compatibility)
-        graph.add_node("ask_one_question", partial(ask_one_question, agent=agent))
-        graph.add_node("process_answer", partial(process_answer, agent=agent))
-        # Batch mode nodes (preferred)
+        # Batch mode nodes
         graph.add_node("ask_batch_questions", partial(ask_batch_questions, agent=agent))
         graph.add_node("process_batch_answers", partial(process_batch_answers, agent=agent))
         # PRD and other nodes
@@ -374,27 +348,6 @@ class BusinessAnalystGraph:
         
         # After domain analysis (research): loop back to ask more questions
         graph.add_edge("analyze_domain", "ask_batch_questions")
-        
-        # Keep sequential mode edges for backward compatibility (not used in main flow)
-        graph.add_conditional_edges(
-            "ask_one_question",
-            should_continue_or_wait,
-            {
-                "wait": END,
-                "next_question": "ask_one_question",
-                "generate_prd": "generate_prd"
-            }
-        )
-        
-        graph.add_conditional_edges(
-            "process_answer",
-            should_continue_or_wait,
-            {
-                "wait": END,
-                "next_question": "ask_one_question",
-                "generate_prd": "generate_prd"
-            }
-        )
         
         # Conversational -> END (no artifacts to save)
         graph.add_edge("respond_conversational", END)

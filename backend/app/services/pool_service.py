@@ -1,16 +1,15 @@
-"""Pool Service - Encapsulates agent pool database operations."""
+"""Pool Service"""
 
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
 from sqlmodel import Session, select
-
 from app.models import AgentPool, AgentPoolMetrics, PoolType
 
 
 class PoolService:
-    """Service for managing agent pool persistence."""
+    """Service for managing agent pool"""
     
     def __init__(self, session: Session):
         self.session = session

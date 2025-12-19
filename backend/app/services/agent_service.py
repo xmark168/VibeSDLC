@@ -6,7 +6,7 @@ from typing import Optional
 from sqlmodel import Session, select, update
 
 from app.models import Agent, AgentStatus, AgentPersonaTemplate
-from app.utils.name_generator import get_display_name
+from app.utils.generators import get_display_name
 
 
 class AgentService:

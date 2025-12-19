@@ -17,8 +17,6 @@ from app.models import Message as MessageModel, AuthorType, MessageVisibility
 
 logger = logging.getLogger(__name__)
 
-
-# Milestones that should persist in chat history (visible to users)
 IMPORTANT_MILESTONES = {
     "analysis_complete",
     "documentation_complete",

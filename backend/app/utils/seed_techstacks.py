@@ -143,13 +143,3 @@ def init_git_repo(project_path: Path) -> bool:
     except Exception as e:
         logger.warning(f"Failed to init git repo: {e}")
         return False
-
-
-if __name__ == "__main__":
-    print("Tech Stack Configurations:")
-    print("=" * 50)
-    for key, config in TECH_STACK_CONFIGS.items():
-        print(f"\n{key}:")
-        print(f"  Name: {config['name']}")
-        print(f"  Boilerplate: {config['boilerplate_dir']}")
-        print(f"  Services: {len(config['service'])}")

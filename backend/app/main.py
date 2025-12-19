@@ -31,8 +31,7 @@ def custom_generate_unique_id(route: APIRoute) -> str:
 
 async def cleanup_stale_story_states():
     """Reset stale story states on backend restart."""
-    from sqlmodel import Session
-    from sqlalchemy import text
+    from sqlmodel import Session, text
 
     
     try:

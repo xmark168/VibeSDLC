@@ -453,7 +453,7 @@ class Developer(BaseAgent, PausableAgentMixin):
                     # Delete all checkpoint data for this thread_id
                     # Must delete in order: checkpoint_writes -> checkpoint_blobs -> checkpoints (due to foreign keys)
                     from app.core.db import engine
-                    from sqlalchemy import text
+                    from sqlmodel import text
                     with engine.connect() as conn:
                         # Delete checkpoint_writes first
                         conn.execute(

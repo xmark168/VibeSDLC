@@ -16,26 +16,11 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectService:
-    """Service for project management."""
-
     def __init__(self, session: Session):
         self.session = session
 
-    # ===== Internal Methods =====
-
     def generate_code(self) -> str:
-        """
-        Generate a unique project code in format PRJ-001, PRJ-002, etc.
-
-        Logic:
-        1. Find the highest existing project code
-        2. Extract the number part
-        3. Increment by 1
-        4. Format as PRJ-XXX (pad to 3 digits)
-
-        Returns:
-            str: Generated project code (e.g., 'PRJ-001')
-        """
+        """ Generate a unique project code in format PRJ-001, PRJ-002, etc.        """
         # Get all project codes from database
         statement = select(Project.code).order_by(Project.code.desc())
         result = self.session.exec(statement).first()

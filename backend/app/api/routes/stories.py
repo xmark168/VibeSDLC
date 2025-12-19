@@ -15,7 +15,6 @@ from app.schemas import StoryCreate, StoryUpdate, StoryPublic, StoriesPublic
 from app.schemas.story import BulkRankUpdateRequest
 from app.schemas.story import ReviewActionType, ReviewActionRequest
 from app.services.story_service import StoryService
-from app.utils.subprocess_utils import kill_processes_in_worktree
 from app.utils.git_utils import get_story_diffs
 
 logger = logging.getLogger(__name__)
@@ -693,105 +692,7 @@ async def resume_story_task(
 
 
 # Removed Windows-specific _kill_processes_in_worktree - using utils version instead
-
-def _cleanup_story_resources_sync(
-    worktree_path: str | None = None,
-    branch_name: str | None = None,
-    main_workspace: str | None = None,
-    checkpoint_thread_id: str | None = None,
-    skip_node_modules: bool = False,
-) -> dict:
-    """Cleanup story resources. Order: checkpoint → kill → prune → remove → delete dir → prune → branch.
-    
-    Args:
-        skip_node_modules: If True, skip deleting node_modules for faster restart (10x speedup)
-    """
-    from pathlib import Path
-    import subprocess, shutil, platform, tempfile, time
-    
-    results = {"checkpoint": False, "worktree": False, "branch": False, "skip_node_modules": skip_node_modules}
-    
-    # Delete checkpoint
-    if checkpoint_thread_id:
-        try:
-            from sqlmodel import Session
-            from sqlalchemy import text
-            from app.core.db import engine
-            with Session(engine) as db:
-                db.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
-                db.execute(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
-                db.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
-                db.commit()
-            results["checkpoint"] = True
-        except Exception:
-            pass
-    
-    if worktree_path:
-        _kill_processes_in_worktree(worktree_path)
-    
-    # Delete node_modules FIRST if not skipped (faster restart when skipped)
-    if worktree_path and not skip_node_modules:
-        worktree = Path(worktree_path)
-        node_modules = worktree / "node_modules"
-        if node_modules.exists():
-            logger.info(f"Deleting node_modules before worktree cleanup...")
-            try:
-                _kill_processes_in_worktree(str(node_modules))
-                # NOTE: This is sync function - blocking rmtree is unavoidable here
-                # Consider calling this via asyncio.to_thread from async caller
-                shutil.rmtree(node_modules, ignore_errors=True)
-                logger.info(f"node_modules deleted")
-            except Exception as e:
-                logger.warning(f"Failed to delete node_modules: {e}")
-    elif skip_node_modules:
-        logger.debug(f"Skipping node_modules delete for faster restart")
-    
-    # Prune first
-    if main_workspace and Path(main_workspace).exists():
-        from app.utils.git_utils import git_worktree_prune
-        git_worktree_prune(Path(main_workspace), timeout=10)
-    
-    # Remove worktree
-    if worktree_path:
-        worktree = Path(worktree_path)
-        if worktree.exists() and main_workspace and Path(main_workspace).exists():
-            from app.utils.git_utils import git_worktree_remove
-            git_worktree_remove(worktree, Path(main_workspace), force=True, timeout=10)  # Reduced from 30s
-        
-        if worktree.exists():
-            for attempt in range(3):
-                try:
-                    # NOTE: This is sync function - blocking rmtree is unavoidable
-                    shutil.rmtree(worktree)
-                    break
-                except Exception as e:
-                    if attempt < 2:
-                        time.sleep(0.1 * (attempt + 1))  # Reduced from 0.5s
-                        _kill_processes_in_worktree(worktree_path)
-                    elif platform.system() == "Windows":
-                        try:
-                            empty_dir = tempfile.mkdtemp()
-                            subprocess.run(["robocopy", empty_dir, str(worktree), "/mir", "/r:0", "/w:0", "/njh", "/njs", "/nc", "/ns", "/np", "/nfl", "/ndl"], capture_output=True, timeout=30)
-                            shutil.rmtree(empty_dir, ignore_errors=True)
-                            shutil.rmtree(worktree, ignore_errors=True)
-                        except Exception:
-                            pass
-        
-        # Prune again
-        if main_workspace and Path(main_workspace).exists():
-            from app.utils.git_utils import git_worktree_prune
-            git_worktree_prune(Path(main_workspace), timeout=10)
-        
-        results["worktree"] = not worktree.exists()
-    
-    # Delete branch
-    if branch_name and main_workspace and Path(main_workspace).exists():
-        from app.utils.git_utils import git_branch_delete
-        success, _ = git_branch_delete(branch_name, Path(main_workspace), force=True, timeout=10)
-        results["branch"] = success
-    
-    return results
-
+# Removed _cleanup_story_resources_sync - consolidated into workspace_utils.cleanup_workspace()
 
 async def cleanup_story_resources(
     worktree_path: str | None = None,
@@ -800,19 +701,35 @@ async def cleanup_story_resources(
     checkpoint_thread_id: str | None = None,
     skip_node_modules: bool = False,
 ) -> dict:
+    """Cleanup story resources (async wrapper for workspace cleanup).
+    
+    Args:
+        worktree_path: Path to worktree
+        branch_name: Git branch name
+        main_workspace: Main repository path
+        checkpoint_thread_id: Checkpoint thread ID
+        skip_node_modules: Skip deleting node_modules for faster restart
+        
+    Returns:
+        dict with cleanup results
+    """
     import asyncio
     from functools import partial
+    from app.utils.workspace_utils import cleanup_workspace
     
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         None,
         partial(
-            _cleanup_story_resources_sync,
-            worktree_path=worktree_path,
+            cleanup_workspace,
+            workspace_path=worktree_path,
+            repo_path=main_workspace,
             branch_name=branch_name,
-            main_workspace=main_workspace,
             checkpoint_thread_id=checkpoint_thread_id,
             skip_node_modules=skip_node_modules,
+            agent_name="Story",
+            max_retries=3,
+            kill_processes=True,
         )
     )
 

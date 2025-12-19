@@ -1,8 +1,7 @@
 """Credit Service - Manages credit deduction for user actions"""
 
 from uuid import UUID
-from sqlmodel import Session, select
-from sqlalchemy import text
+from sqlmodel import Session, select, text
 from app.models import CreditWallet, CreditActivity, Subscription
 from datetime import datetime, timezone
 import logging

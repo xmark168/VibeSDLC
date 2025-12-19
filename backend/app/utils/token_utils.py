@@ -25,16 +25,7 @@ def count_tokens(text: str) -> int:
 
 
 def truncate_to_tokens(text: str, max_tokens: int, keep_end: bool = False) -> str:
-    """Truncate text to max tokens.
-    
-    Args:
-        text: Text to truncate
-        max_tokens: Maximum number of tokens
-        keep_end: If True, keep end of text instead of beginning
-        
-    Returns:
-        Truncated text
-    """
+    """Truncate text to max tokens."""
     if not text:
         return text
         

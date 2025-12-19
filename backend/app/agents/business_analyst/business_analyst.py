@@ -334,20 +334,22 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
     async def _handle_resume_task(self, task: TaskContext, answer: str) -> TaskResult:
         """Handle resume task - user answered question(s).
         
-        Supports both:
-        - Batch mode: All answers at once (is_batch=True in context)
-        - Sequential mode: One answer at a time (legacy)
+        Only batch mode is supported: All answers at once (is_batch=True in context)
         """
         # Check if this is batch mode
         is_batch = task.context.get("is_batch", False) if task.context else False
         batch_answers = task.context.get("batch_answers", []) if task.context else []
         
-        if is_batch:
-            logger.info(f"[{self.name}] Handling RESUME task (BATCH mode, {len(batch_answers)} answers)")
-            return await self._handle_batch_resume(task, batch_answers)
-        else:
-            logger.info(f"[{self.name}] Handling RESUME task (sequential mode)")
-            return await self._handle_sequential_resume(task, answer)
+        if not is_batch:
+            logger.error(f"[{self.name}] Sequential mode is deprecated. Use batch mode.")
+            return TaskResult(
+                success=False,
+                output="",
+                error_message="Sequential mode is no longer supported. Please use batch mode."
+            )
+        
+        logger.info(f"[{self.name}] Handling RESUME task (BATCH mode, {len(batch_answers)} answers)")
+        return await self._handle_batch_resume(task, batch_answers)
     
     async def _handle_batch_resume(self, task: TaskContext, batch_answers: list) -> TaskResult:
         """Handle batch mode resume - all answers at once.
@@ -547,93 +549,6 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
             output=str(state.get("result", {})),
             structured_data=state.get("result", {})
         )
-    
-    async def _handle_sequential_resume(self, task: TaskContext, answer: str) -> TaskResult:
-        """Handle sequential mode resume - one answer at a time (legacy)."""
-        if not answer:
-            logger.error(f"[{self.name}] Empty answer in RESUME task")
-            return TaskResult(
-                success=False,
-                output="",
-                error_message="Empty answer"
-            )
-        
-        # Load interview state from database
-        interview_state = await self._load_interview_state(task)
-        
-        if not interview_state:
-            logger.warning(f"[{self.name}] No interview state found, treating as new task")
-            return await self._handle_new_task(task)
-        
-        # Load existing PRD from database
-        existing_prd = self._load_existing_prd()
-        
-        # Build state from saved interview state + user answer
-        state = {
-            **self._build_base_state(task),
-            "user_message": answer,
-            "collected_info": interview_state.get("collected_info", {}),
-            "existing_prd": existing_prd,
-            "intent": "interview",
-            "questions": interview_state.get("questions", []),
-            "current_question_index": interview_state.get("current_question_index", 0),
-            "collected_answers": interview_state.get("collected_answers", []),
-            "waiting_for_answer": False,
-            "all_questions_answered": False,
-        }
-        
-        # Process the answer
-        logger.info(f"[{self.name}] Processing answer for question {state['current_question_index'] + 1}")
-        state = {**state, **(await process_answer(state, agent=self))}
-        
-        # Check if more questions or generate PRD
-        if state.get("all_questions_answered"):
-            # Check clarity before generating PRD
-            clarity_result = check_clarity(state)
-            is_clear = clarity_result.get("is_clear", False)
-            research_loop_count = state.get("research_loop_count", 0)
-            
-            if not is_clear and research_loop_count < 2:
-                missing_categories = clarity_result.get("missing_categories", [])
-                logger.info(f"[{self.name}] Missing categories: {missing_categories}, doing research")
-                state["missing_categories"] = missing_categories
-                state = {**state, **(await analyze_domain(state, agent=self))}
-                
-                new_questions = state.get("questions", [])
-                if new_questions:
-                    logger.info(f"[{self.name}] Research generated {len(new_questions)} more questions")
-                    state = {**state, **(await ask_batch_questions(state, agent=self))}
-                    if state.get("waiting_for_answer"):
-                        return TaskResult(
-                            success=True,
-                            output="Research questions asked, waiting for answer",
-                            structured_data={"waiting_for_answer": True}
-                        )
-            
-            logger.info(f"[{self.name}] Generating PRD...")
-            state = {**state, **(await generate_prd(state, agent=self))}
-            
-            # Save PRD and wait for user approval before extracting stories
-            state = {**state, **(await save_artifacts(state, agent=self))}
-            
-            return TaskResult(
-                success=True,
-                output=str(state.get("result", {})),
-                structured_data=state.get("result", {})
-            )
-        else:
-            # Ask next question
-            logger.info(f"[{self.name}] Asking next question {state['current_question_index'] + 1}")
-            state = {**state, **(await ask_one_question(state, agent=self))}
-            
-            # Save state for next resume
-            await self._save_interview_state(task, state)
-            
-            return TaskResult(
-                success=True,
-                output="Question asked, waiting for answer",
-                structured_data={"waiting_for_answer": True}
-            )
     
     async def _handle_new_task(self, task: TaskContext) -> TaskResult:
         """Handle new task - run full LangGraph."""

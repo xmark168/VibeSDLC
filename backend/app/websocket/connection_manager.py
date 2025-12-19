@@ -1,11 +1,4 @@
-"""WebSocket Connection Manager for real-time project communication.
-
-Manages WebSocket connections per project room, handling:
-- Connection lifecycle (connect/disconnect)
-- Message broadcasting to project rooms
-- Database status synchronization
-- Graceful cleanup of stale connections
-"""
+"""WebSocket Connection Manager for real-time project communication project based."""
 
 import asyncio
 import logging
@@ -20,21 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
-    """Thread-safe WebSocket connection manager for project rooms.
-    
-    Each project has its own "room" where multiple clients can connect.
-    Messages are broadcast to all clients in the same project room.
-    """
 
     __slots__ = ('_connections', '_socket_to_project')
 
     def __init__(self):
         self._connections: dict[UUID, set[WebSocket]] = {}
         self._socket_to_project: dict[WebSocket, UUID] = {}
-
-    # =========================================================================
-    # Connection Lifecycle
-    # =========================================================================
 
     async def connect(self, websocket: WebSocket, project_id: UUID) -> None:
         """Register a WebSocket connection to a project room."""

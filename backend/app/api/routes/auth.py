@@ -20,7 +20,7 @@ from app.schemas import (
 from app.services import UserService
 from app.utils import generate_password_reset_email, generate_verification_code_email, send_email
 from app.utils.validators import validate_email, validate_password
-from app.utils.code_generator import generate_verification_code
+from app.utils.generators import generate_verification_code
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["authentication"])

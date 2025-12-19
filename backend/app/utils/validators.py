@@ -10,19 +10,7 @@ def validate_email(email: str) -> bool:
     return bool(re.match(pattern, email))
 
 def validate_password(password: str) -> bool:
-    """Validate password strength.
-    
-    Requirements:
-    - Minimum 8 characters
-    - At least 1 letter
-    - At least 1 number
-    
-    Args:
-        password: Password to validate
-        
-    Returns:
-        True if password meets requirements
-    """
+    """Validate password strength."""
     if len(password) < 8:
         return False
     has_letter = bool(re.search(r"[a-zA-Z]", password))

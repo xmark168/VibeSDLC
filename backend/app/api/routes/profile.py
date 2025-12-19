@@ -20,7 +20,7 @@ from app.schemas.profile import (
     ProfileResponse,
     AvatarUploadResponse,
 )
-from app.utils.avatar import get_avatar_url, DEFAULT_AVATAR_URL
+from app.utils.generators import get_avatar_url, DEFAULT_AVATAR_URL
 from app.utils.validators import validate_password
 
 logger = logging.getLogger(__name__)

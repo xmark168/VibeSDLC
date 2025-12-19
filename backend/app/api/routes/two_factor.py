@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.redis_client import get_redis_client
 from app.core.security import verify_password
 from app.models import User
-from app.utils.code_generator import generate_verification_code
+from app.utils.generators import generate_verification_code
 from app.schemas import (
     TwoFactorSetupResponse,
     TwoFactorVerifySetupRequest,

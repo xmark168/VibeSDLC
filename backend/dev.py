@@ -9,9 +9,7 @@ from pathlib import Path
 os.chdir(Path(__file__).parent)
 
 if __name__ == "__main__":
-    print("Starting VibeSDLC Development Server...")
-    print(f"Server: http://localhost:8000 | Docs: http://localhost:8000/docs\n")
-
+   
     cmd = [
         sys.executable, "-m", "uvicorn",
         "app.main:app",
@@ -26,7 +24,6 @@ if __name__ == "__main__":
     try:
         subprocess.run(cmd, check=True)
     except KeyboardInterrupt:
-        print("\nShutting down...")
         sys.exit(0)
     except subprocess.CalledProcessError as e:
         sys.exit(e.returncode)

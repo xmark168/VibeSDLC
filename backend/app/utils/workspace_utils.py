@@ -14,102 +14,151 @@ from sqlmodel import Session
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
 # Git worktree management
-# =============================================================================
+
+
+def _delete_checkpoint(checkpoint_thread_id: str) -> bool:
+    """Delete checkpoint from database.
+    
+    Args:
+        checkpoint_thread_id: Checkpoint thread ID to delete
+        
+    Returns:
+        True if deletion succeeded, False otherwise
+    """
+    try:
+        from sqlmodel import Session, text
+        from app.core.db import engine
+        
+        with Session(engine) as db:
+            db.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), 
+                      {"tid": checkpoint_thread_id})
+            db.execute(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), 
+                      {"tid": checkpoint_thread_id})
+            db.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), 
+                      {"tid": checkpoint_thread_id})
+            db.commit()
+        logger.debug(f"Deleted checkpoint {checkpoint_thread_id}")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to delete checkpoint {checkpoint_thread_id}: {e}")
+        return False
+
+
+def _delete_with_retry(
+    path: Path, 
+    max_retries: int = 3,
+    kill_processes_func=None,
+    agent_name: str = "Agent"
+) -> bool:
+    """Delete directory with retry and optional process killing.
+    
+    Args:
+        path: Path to directory to delete
+        max_retries: Number of retry attempts
+        kill_processes_func: Optional function to call to kill processes
+        agent_name: Agent name for logging
+        
+    Returns:
+        True if deletion succeeded, False otherwise
+    """
+    if not path.exists():
+        return True
+    
+    for attempt in range(max_retries):
+        try:
+            shutil.rmtree(path)
+            logger.debug(f"[{agent_name}] Deleted {path}")
+            return True
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(0.1 * (attempt + 1))
+                if kill_processes_func:
+                    try:
+                        kill_processes_func(str(path))
+                    except Exception as kill_error:
+                        logger.debug(f"[{agent_name}] Process kill failed: {kill_error}")
+            else:
+                logger.warning(f"[{agent_name}] Failed to delete {path} after {max_retries} attempts: {e}")
+                return False
+    return False
 
 def cleanup_workspace(
     workspace_path: str | Path,
     repo_path: str | Path = None,
     branch_name: str = None,
+    checkpoint_thread_id: str = None,
     skip_node_modules: bool = False,
-    agent_name: str = "Agent"
-) -> None:
-    """Unified workspace cleanup function.
-    """
+    agent_name: str = "Agent",
+    max_retries: int = 3,
+    kill_processes: bool = True,
+) -> dict:
+    """Unified workspace cleanup with retry and process killing. """
     cleanup_start_time = time.time()
-    
     workspace_path = Path(workspace_path)
     
-    # STEP 1: Git cleanup FIRST (always run, even if directory doesn't exist)
-    # This handles stale worktree registrations in .git/worktrees/
+    results = {
+        "checkpoint": False,
+        "worktree": False,
+        "branch": False,
+        "skip_node_modules": skip_node_modules
+    }
+    
+    if checkpoint_thread_id:
+        results["checkpoint"] = _delete_checkpoint(checkpoint_thread_id)
+    
+    # Step 3: Git prune (cleanup stale worktree entries)
     if repo_path:
         repo_path = Path(repo_path)
+        from app.utils.git_utils import git_worktree_prune, git_branch_delete
         
-        # Remove worktree from git's tracking
-        try:
-            subprocess.run(
-                ["git", "worktree", "remove", str(workspace_path), "--force"],
-                cwd=str(repo_path),
-                capture_output=True,
-                timeout=10
-            )
-        except Exception:
-            pass
-        
-        # Prune stale worktree entries
-        try:
-            subprocess.run(
-                ["git", "worktree", "prune"],
-                cwd=str(repo_path),
-                capture_output=True,
-                timeout=5
-            )
-        except Exception:
-            pass
-        
-        # Delete branch (if branch_name provided)
-        if branch_name:
-            try:
-                subprocess.run(
-                    ["git", "branch", "-D", branch_name],
-                    cwd=str(repo_path),
-                    capture_output=True,
-                    timeout=10
-                )
-            except Exception:
-                pass
+        git_worktree_prune(repo_path, timeout=10)
     
-    # STEP 2: Check if workspace directory exists
-    if not workspace_path.exists():
-        logger.debug(f"[{agent_name}] Git cleaned, workspace directory doesn't exist")
-        cleanup_elapsed = time.time() - cleanup_start_time
-        logger.info(f"[{agent_name}] Workspace cleanup completed in {cleanup_elapsed:.1f}s")
-        return
-    
-    # STEP 3: Delete node_modules
-    if not skip_node_modules:
+    # Step 4: Delete node_modules (with retry and process killing)
+    if not skip_node_modules and workspace_path.exists():
         node_modules_path = workspace_path / "node_modules"
         if node_modules_path.exists():
             logger.info(f"[{agent_name}] Deleting node_modules...")
-            try:
-                start_time = time.time()
-                # NOTE: This is sync function - blocking rmtree unavoidable
-                # Callers should wrap cleanup_workspace() in asyncio.to_thread()
-                shutil.rmtree(node_modules_path, ignore_errors=True)
+            start_time = time.time()
+            
+            # Delete with retry
+            if _delete_with_retry(
+                node_modules_path, 
+                max_retries=max_retries,
+                kill_processes_func=kill_processes_in_worktree if kill_processes else None,
+                agent_name=agent_name
+            ):
                 elapsed = time.time() - start_time
-                
-                if not node_modules_path.exists():
-                    logger.info(f"[{agent_name}] node_modules deleted in {elapsed:.1f}s")
-                else:
-                    logger.warning(f"[{agent_name}] node_modules partially deleted")
-            except Exception as e:
-                logger.warning(f"[{agent_name}] Failed to delete node_modules: {e}")
+                logger.info(f"[{agent_name}] node_modules deleted in {elapsed:.1f}s")
     else:
         logger.debug(f"[{agent_name}] Skipping node_modules delete")
     
-    # STEP 4: Delete workspace directory
+    # Step 5: Delete workspace directory (with retry and process killing)
     if workspace_path.exists():
-        try:
-            # NOTE: Blocking operation - callers should wrap in asyncio.to_thread()
-            shutil.rmtree(workspace_path)
-            logger.debug(f"[{agent_name}] Workspace deleted")
-        except Exception as e:
-            logger.warning(f"[{agent_name}] Failed to remove workspace: {e}")
+        from app.utils.subprocess_utils import kill_processes_in_worktree
+        results["worktree"] = _delete_with_retry(
+            workspace_path,
+            max_retries=max_retries,
+            kill_processes_func=kill_processes_in_worktree if kill_processes else None,
+            agent_name=agent_name
+        )
+    else:
+        results["worktree"] = True  # Already deleted
     
-    # Log cleanup time for performance monitoring
+    # Step 6: Git cleanup (second pass - prune stale entries)
+    if repo_path:
+        git_worktree_prune(repo_path, timeout=10)
+    
+    # Step 7: Delete git branch
+    if branch_name and repo_path:
+        success, _ = git_branch_delete(branch_name, repo_path, force=True, timeout=10)
+        results["branch"] = success
+    
+    # Log cleanup time
     cleanup_elapsed = time.time() - cleanup_start_time
     logger.info(f"[{agent_name}] Workspace cleanup completed in {cleanup_elapsed:.1f}s")
+    
+    return results
 
 
 def setup_git_worktree(

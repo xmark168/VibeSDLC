@@ -1,11 +1,4 @@
-"""Base Agent Class - Abstracts Kafka complexity from agent implementations.
-
-This is the new simplified agent architecture where:
-- Agents inherit from BaseAgent
-- Implement handle_task() method
-- Kafka consumer/producer logic is hidden
-- Simple API: message_user() for all communications
-"""
+"""Base Agent Class - Abstracts Kafka consumer and agent behaviour"""
 
 import asyncio
 import logging
@@ -21,18 +14,14 @@ from app.kafka.event_schemas import (
     AgentTaskType,
     DelegationRequestEvent,
     KafkaTopics,
-    RouterTaskEvent,
     TaskRejectionEvent,
 )
 from app.models import Agent as AgentModel, AgentStatus
 from datetime import datetime, timezone
 from app.core.langfuse_client import (
     get_langfuse_client,
-    get_langfuse_context,
     flush_langfuse, 
-    create_session_id,
     score_current,
-    update_current_trace,
     update_current_observation,
     format_llm_usage,
     format_chat_messages,
@@ -55,7 +44,7 @@ class TaskContext:
     project_id: Optional[UUID] = None
     content: str = ""
     message_type: str = "text"
-    execution_mode: str = "interactive"  # NEW: "interactive" | "background" | "silent"
+    execution_mode: str = "interactive"  
     context: Dict[str, Any] = None
 
     def __post_init__(self):
@@ -70,17 +59,6 @@ class TaskResult:
     structured_data: Optional[Dict[str, Any]] = None  
     requires_approval: bool = False  
     error_message: Optional[str] = None
-
-
-# Cross-agent collaboration exceptions
-class CollaborationError(Exception):
-    """Base exception for collaboration failures."""
-    pass
-
-
-class CollaborationTimeoutError(CollaborationError):
-    """Raised when collaboration request times out."""
-    pass
 
 
 class BaseAgent(ABC):
@@ -163,9 +141,6 @@ class BaseAgent(ABC):
         self.langfuse_client = get_langfuse_client()
         self._current_trace_id: Optional[str] = None
         self._current_trace: Optional[Any] = None  # Current Langfuse trace object
-
-        # Cross-agent collaboration
-        self._pending_collaborations: Dict[UUID, asyncio.Future] = {}
 
         # Signal handling for cancel/pause (pushed from pool manager)
         self._pending_signals: Dict[str, str] = {}  # story_id -> signal ('cancel', 'pause')
@@ -1130,147 +1105,6 @@ class BaseAgent(ABC):
             )
 
     # =========================================================================
-    # CROSS-AGENT COLLABORATION
-    # =========================================================================
-
-    async def ask_specialist(
-        self,
-        target_role: str,
-        question: str,
-        request_type: str = "clarification",
-        context: Dict[str, Any] = None,
-        timeout: int = 300,
-    ) -> str:
-        """Ask another specialist agent directly for collaboration.
-        """
-        from app.kafka.event_schemas import AgentCollaborationRequest
-        
-        request_id = uuid4()
-        
-        # Create future to wait for response
-        loop = asyncio.get_event_loop()
-        future = loop.create_future()
-        self._pending_collaborations[request_id] = future
-        
-        try:
-            producer = await self._get_producer()
-            
-            # Build collaboration request
-            request = AgentCollaborationRequest(
-                request_id=request_id,
-                from_agent_id=self.agent_id,
-                from_agent_role=self.role_type,
-                to_agent_role=target_role,
-                request_type=request_type,
-                question=question,
-                context={
-                    "task_id": str(self._current_task_id) if self._current_task_id else None,
-                    "project_id": str(self.project_id),
-                    **(context or {})
-                },
-                project_id=str(self.project_id),
-                user_id=str(self._current_user_id) if self._current_user_id else None,
-            )
-            
-            # Publish request
-            await producer.publish(
-                topic=KafkaTopics.AGENT_COLLABORATION,
-                event=request
-            )
-            
-            logger.info(
-                f"[{self.name}] Sent collaboration request to {target_role}: "
-                f"{question[:50]}..."
-            )
-            
-            # Wait for response with timeout
-            response = await asyncio.wait_for(future, timeout=timeout)
-            
-            logger.info(f"[{self.name}] Received collaboration response from {target_role}")
-            return response
-            
-        except asyncio.TimeoutError:
-            # Clean up pending collaboration
-            self._pending_collaborations.pop(request_id, None)
-            error_msg = f"No response from {target_role} after {timeout}s"
-            logger.warning(f"[{self.name}] Collaboration timeout: {error_msg}")
-            raise CollaborationTimeoutError(error_msg)
-            
-        except Exception as e:
-            self._pending_collaborations.pop(request_id, None)
-            logger.error(f"[{self.name}] Collaboration error: {e}", exc_info=True)
-            raise CollaborationError(f"Collaboration failed: {str(e)}")
-
-    async def handle_collaboration_request(
-        self,
-        request_id: UUID,
-        question: str,
-        request_type: str,
-        from_agent_role: str,
-        context: Dict[str, Any]
-    ) -> str:
-        """Handle incoming collaboration request from another agent."""
-        logger.info(f"[{self.name}] Handling {request_type} request from {from_agent_role}: {question[:50]}...")
-        return f"[{self.role_type}] Acknowledged request. Context received: {len(context)} items."
-
-    async def _send_collaboration_response(
-        self,
-        request_id: str,
-        to_agent_id: str,
-        response: str,
-        success: bool = True,
-        error: str = None
-    ) -> None:
-        """Send response to a collaboration request."""
-        from app.kafka.event_schemas import AgentCollaborationResponse
-        
-        producer = await self._get_producer()
-        
-        response_event = AgentCollaborationResponse(
-            request_id=UUID(request_id) if isinstance(request_id, str) else request_id,
-            from_agent_id=self.agent_id,
-            to_agent_id=UUID(to_agent_id) if isinstance(to_agent_id, str) else to_agent_id,
-            response=response,
-            success=success,
-            error=error,
-            project_id=str(self.project_id),
-        )
-        
-        await producer.publish(
-            topic=KafkaTopics.AGENT_COLLABORATION,
-            event=response_event
-        )
-        
-        logger.info(f"[{self.name}] Sent collaboration response for request {request_id}")
-
-    async def _handle_collaboration_response(
-        self,
-        request_id: UUID,
-        response: str,
-        success: bool,
-        error: str = None
-    ) -> None:
-        """Handle incoming collaboration response (resume waiting agent)."""
-        future = self._pending_collaborations.pop(request_id, None)
-        
-        if future is None:
-            logger.warning(
-                f"[{self.name}] Received response for unknown request {request_id}"
-            )
-            return
-        
-        if future.done():
-            logger.warning(
-                f"[{self.name}] Future for request {request_id} already completed"
-            )
-            return
-        
-        if success:
-            future.set_result(response)
-        else:
-            future.set_exception(CollaborationError(error or "Collaboration failed"))
-
-    # =========================================================================
     # SIGNAL HANDLING (for cancel/pause from pool manager)
     # =========================================================================
 
@@ -2043,15 +1877,6 @@ class BaseAgent(ABC):
     
     def _estimate_task_tokens(self, task: TaskContext) -> int:
         """Estimate tokens needed for task.
-        
-        Simple estimation based on content length and task type.
-        For more accurate estimation, subclasses can override this.
-        
-        Args:
-            task: Task context
-            
-        Returns:
-            Estimated tokens (conservative estimate)
         """
         # Base estimate from content length
         # Rough approximation: 1 token ~= 4 characters for English
@@ -2204,14 +2029,7 @@ class BaseAgent(ABC):
         queue_size: int,
         max_queue_size: int
     ) -> None:
-        """Publish task rejection event to router for handling.
-        
-        Args:
-            task_id: ID of rejected task
-            reason: Rejection reason (e.g., "queue_full")
-            queue_size: Current queue size
-            max_queue_size: Maximum queue capacity
-        """
+        """Publish task rejection event to router for handling."""
         try:
             event = TaskRejectionEvent(
                 task_id=task_id,
@@ -2245,12 +2063,7 @@ class BaseAgent(ABC):
         task: "TaskContext",
         result: "TaskResult"
     ) -> None:
-        """Record execution metrics.
-        
-        Args:
-            task: Task context
-            result: Task result
-        """
+        """Record execution metrics."""
         if not self._execution_start_time:
             return
         

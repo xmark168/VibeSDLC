@@ -85,20 +85,6 @@ class WebSocketKafkaBridge:
             self.consumer.register_handler("story.status.changed", self.story_handler.handle_story_status_changed)
             self.consumer.register_handler("story.agent_state.changed", self.story_handler.handle_story_agent_state_changed)
 
-            # Register flow handlers
-            self.consumer.register_handler("flow.started", self.flow_handler.handle_flow_event)
-            self.consumer.register_handler("flow.in_progress", self.flow_handler.handle_flow_event)
-            self.consumer.register_handler("flow.completed", self.flow_handler.handle_flow_event)
-            self.consumer.register_handler("flow.failed", self.flow_handler.handle_flow_event)
-
-            # Register task handlers
-            self.consumer.register_handler("agent.task.assigned", self.task_handler.handle_task_assigned)
-            self.consumer.register_handler("agent.task.started", self.task_handler.handle_task_started)
-            self.consumer.register_handler("agent.task.progress", self.task_handler.handle_task_progress)
-            self.consumer.register_handler("agent.task.completed", self.task_handler.handle_task_completed)
-            self.consumer.register_handler("agent.task.failed", self.task_handler.handle_task_failed)
-            self.consumer.register_handler("agent.task.cancelled", self.task_handler.handle_task_cancelled)
-
             # Start consumer
             await self.consumer.start()
 
