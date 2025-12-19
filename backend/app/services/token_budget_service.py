@@ -223,7 +223,8 @@ class TokenBudgetManager:
         tokens_used: int,
         agent_id: Optional[UUID] = None,
         user_id: Optional[UUID] = None,
-        deduct_credits: bool = True
+        deduct_credits: bool = True,
+        context: Optional[dict] = None
     ) -> None:
         """Record actual token usage for a project.
         
@@ -251,7 +252,7 @@ class TokenBudgetManager:
             # Deduct credits (skip for admins)
             if deduct_credits and user_id and tokens_used > 0:
                 if not self._is_admin(user_id):
-                    await self._deduct_credits(user_id, tokens_used, agent_id)
+                    await self._deduct_credits(user_id, tokens_used, agent_id, context)
                 else:
                     logger.debug(f"Admin user {user_id} - skipping credit deduction")
             
@@ -285,13 +286,20 @@ class TokenBudgetManager:
         except Exception as e:
             logger.error(f"Error recording agent usage: {e}")
     
-    async def _deduct_credits(self, user_id: UUID, tokens_used: int, agent_id: Optional[UUID] = None) -> None:
-        """Deduct credits based on token usage.
+    async def _deduct_credits(
+        self, 
+        user_id: UUID, 
+        tokens_used: int, 
+        agent_id: Optional[UUID] = None,
+        context: Optional[dict] = None
+    ) -> None:
+        """Deduct credits based on token usage with enhanced tracking.
         
         Args:
             user_id: User UUID
             tokens_used: Tokens consumed
             agent_id: Optional agent ID for activity logging
+            context: Optional dict with model_used, task_type, etc.
         """
         try:
             from app.services.credit_service import CreditService
@@ -305,10 +313,13 @@ class TokenBudgetManager:
                     user_id=user_id,
                     amount=credits_to_deduct,
                     reason=f"llm_tokens_{tokens_used}",
-                    agent_id=agent_id
+                    agent_id=agent_id,
+                    tokens_used=tokens_used,
+                    context=context
                 )
                 if success:
-                    logger.info(f"Deducted {credits_to_deduct} credits for {tokens_used} tokens (user: {user_id})")
+                    task_info = f", task: {context.get('task_type')}" if context and context.get('task_type') else ""
+                    logger.info(f"Deducted {credits_to_deduct} credits for {tokens_used} tokens (user: {user_id}{task_info})")
                 else:
                     logger.warning(f"Failed to deduct credits for user {user_id}")
         except Exception as e:

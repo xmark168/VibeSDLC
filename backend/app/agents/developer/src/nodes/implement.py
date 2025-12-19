@@ -14,7 +14,7 @@ from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg
 from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
 from app.agents.developer.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
 from app.utils.token_utils import truncate_to_tokens
-from app.agents.developer.src.nodes._llm import implement_llm
+from app.core.agent.llm_factory import get_llm
 from app.agents.developer.src.skills import SkillRegistry
 from app.core.agent.llm_factory import (
     MAX_CONCURRENT_TASKS as MAX_CONCURRENT,
@@ -350,6 +350,7 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
         # Use structured output
+        implement_llm = get_llm("implement")
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
         output = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
@@ -466,6 +467,7 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
         
         # Use structured output
         # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
+        implement_llm = get_llm("implement")
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
         output = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 

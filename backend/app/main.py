@@ -144,6 +144,11 @@ async def lifespan(app: FastAPI):
 
     # Cleanup stale story states from previous run
     await cleanup_stale_story_states()
+    
+    # Start scheduler for periodic tasks (agent token reset, cleanup)
+    from app.services.scheduler_service import SchedulerService
+    scheduler = SchedulerService()
+    scheduler.start()
 
     from app.kafka import ensure_kafka_topics
     try:
@@ -195,6 +200,12 @@ async def lifespan(app: FastAPI):
     yield
 
     try:
+        # Shutdown scheduler
+        try:
+            scheduler.shutdown()
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error stopping scheduler: {e}")
+        
         try:
             await websocket_kafka_bridge.stop()
         except (Exception, asyncio.CancelledError) as e:

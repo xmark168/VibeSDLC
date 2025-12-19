@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from app.api.routes import (
-    agent_management, agents, artifacts, auth, chat, files, kanban,
+    agent_management, agents, artifacts, auth, chat, credits, files, kanban,
     linked_accounts, messages, oauth, payments, personas, plans,
     profile, project_rules, projects, sepay, stories, tech_stacks,
     two_factor, users,
@@ -14,6 +14,6 @@ for router in [
     messages.router, files.router, kanban.router, artifacts.router,
     project_rules.router, agent_management.router, agents.router,
     personas.router, plans.router, payments.router, sepay.router,
-    tech_stacks.router, chat.router,
+    tech_stacks.router, chat.router, credits.router,
 ]:
     api_router.include_router(router)

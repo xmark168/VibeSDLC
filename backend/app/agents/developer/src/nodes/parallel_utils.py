@@ -39,7 +39,7 @@ def get_layer_priority(file_path: str) -> int:
     if "/actions/" in fp:
         return 5  
     if "/components/" in fp:
-        return 6  # All components same base layer, dependencies determine sub-order
+        return 6  
     if "page.tsx" in fp or "page.ts" in fp:
         return 7  
     return 5 

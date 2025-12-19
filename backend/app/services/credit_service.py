@@ -73,7 +73,9 @@ class CreditService:
         user_id: UUID,
         amount: int = 1,
         reason: str = "chat_message",
-        agent_id: UUID | None = None
+        agent_id: UUID | None = None,
+        tokens_used: int | None = None,
+        context: dict | None = None
     ) -> bool:
         """
         Deduct credits from user's wallets with priority:
@@ -113,14 +115,21 @@ class CreditService:
                 subscription_wallet.used_credits = (subscription_wallet.used_credits or 0) + deduct_from_sub
                 self.session.add(subscription_wallet)
                 
-                # Log activity
+                # Log activity with enhanced tracking
                 activity = CreditActivity(
                     user_id=user_id,
                     agent_id=agent_id,
                     wallet_id=subscription_wallet.id,
                     amount=-deduct_from_sub,
                     reason=reason,
-                    activity_type="deduct"
+                    activity_type="deduct",
+                    tokens_used=tokens_used,
+                    model_used=context.get("model_used") if context else None,
+                    llm_calls=context.get("llm_calls", 0) if context else 0,
+                    project_id=context.get("project_id") if context else None,
+                    story_id=context.get("story_id") if context else None,
+                    task_type=context.get("task_type") if context else None,
+                    execution_id=context.get("execution_id") if context else None,
                 )
                 self.session.add(activity)
                 
@@ -137,14 +146,21 @@ class CreditService:
                 purchased_wallet.used_credits = (purchased_wallet.used_credits or 0) + deduct_from_purchased
                 self.session.add(purchased_wallet)
                 
-                # Log activity
+                # Log activity with enhanced tracking
                 activity = CreditActivity(
                     user_id=user_id,
                     agent_id=agent_id,
                     wallet_id=purchased_wallet.id,
                     amount=-deduct_from_purchased,
                     reason=reason,
-                    activity_type="deduct"
+                    activity_type="deduct",
+                    tokens_used=tokens_used,
+                    model_used=context.get("model_used") if context else None,
+                    llm_calls=context.get("llm_calls", 0) if context else 0,
+                    project_id=context.get("project_id") if context else None,
+                    story_id=context.get("story_id") if context else None,
+                    task_type=context.get("task_type") if context else None,
+                    execution_id=context.get("execution_id") if context else None,
                 )
                 self.session.add(activity)
                 

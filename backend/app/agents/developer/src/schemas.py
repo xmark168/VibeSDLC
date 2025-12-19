@@ -1,5 +1,6 @@
 """Developer V2 Schemas"""
 
+from dataclasses import dataclass
 from typing import Optional, List, Literal
 from pydantic import BaseModel, Field
 
@@ -37,3 +38,25 @@ class StoryChatResponse(BaseModel):
     response: str = Field(description="Reply message to user in Vietnamese")
     action: str = Field(default="none", description="'pause' | 'cancel' | 'info' | 'none'")
     details: str = Field(default="", description="Additional context if action needed")
+
+
+# Error Analysis Schemas
+
+@dataclass
+class ParsedError:
+    """Parsed error information from build/test logs."""
+    file_path: str
+    line: Optional[int]
+    column: Optional[int]
+    error_code: Optional[str]
+    error_type: str
+    message: str
+
+
+class ErrorAnalysisOutput(BaseModel):
+    """Structured output for error analysis."""
+    error_type: Literal["TEST_ERROR", "SOURCE_ERROR", "IMPORT_ERROR", "CONFIG_ERROR", "UNFIXABLE"] = Field(description="Error category")
+    file_to_fix: str = Field(description="Primary file to fix")
+    root_cause: str = Field(description="Brief root cause explanation")
+    should_continue: bool = Field(description="True if error is fixable")
+    fix_steps: List[PlanStep] = Field(default_factory=list, description="Steps to fix the error")

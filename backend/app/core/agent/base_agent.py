@@ -2152,6 +2152,16 @@ class BaseAgent(ABC):
             # Fail open - allow task on error to avoid blocking
             return True, ""
     
+    def _get_primary_model_used(self) -> str:
+        """Get primary model used in this execution based on agent role."""
+        role_models = {
+            "developer": "claude-sonnet-4-5",
+            "tester": "claude-sonnet-4-5",
+            "business_analyst": "claude-sonnet-4-5",
+            "team_leader": "claude-haiku-4-5",
+        }
+        return role_models.get(self.role_type, "claude-sonnet-4-5")
+    
     async def _record_token_usage(self, tokens_used: int) -> None:
         """Record actual token usage with per-agent tracking and credit deduction.
         
@@ -2166,6 +2176,16 @@ class BaseAgent(ABC):
             from app.core.db import engine
             from app.services.token_budget_service import TokenBudgetManager
             
+            # Build context for detailed tracking
+            context = {
+                "project_id": self.project_id,
+                "story_id": getattr(self, "_current_story_id", None),
+                "task_type": getattr(self, "_current_task_type", "unknown"),
+                "execution_id": self._current_execution_id,
+                "model_used": self._get_primary_model_used(),
+                "llm_calls": self._llm_call_count,
+            }
+            
             with Session(engine) as session:
                 budget_mgr = TokenBudgetManager(session)
                 await budget_mgr.record_usage(
@@ -2173,7 +2193,8 @@ class BaseAgent(ABC):
                     tokens_used=tokens_used,
                     agent_id=self.agent_id,
                     user_id=self._current_user_id,
-                    deduct_credits=True
+                    deduct_credits=True,
+                    context=context
                 )
                 
         except Exception as e:

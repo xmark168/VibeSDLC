@@ -5,7 +5,7 @@ from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
-from app.agents.developer.src.nodes._llm import  fast_llm
+from app.core.agent.llm_factory import get_llm
 from app.agents.developer.src.schemas import SimplePlanOutput
 from app.agents.developer.src.skills.registry import SkillRegistry
 from app.agents.developer.src.skills import get_plan_prompts
@@ -509,6 +509,7 @@ Create implementation plan."""
         tools = create_planning_tools(workspace_path)
         
         # Bind tools to LLM for exploration
+        fast_llm = get_llm("router")
         llm_with_tools = fast_llm.bind_tools(tools)
         
         # Get langfuse callbacks from runtime config

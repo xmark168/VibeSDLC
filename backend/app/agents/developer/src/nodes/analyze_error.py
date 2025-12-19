@@ -2,38 +2,16 @@
 import logging
 import os
 import re
-from dataclasses import dataclass
+from typing import List
 from langchain_core.messages import SystemMessage, HumanMessage
-from pydantic import BaseModel, Field
-from typing import Literal, List, Optional
 from app.agents.developer.src.state import DeveloperState
-from app.agents.developer.src.schemas import PlanStep
-from app.core.agent.llm_factory import MAX_DEBUG_ATTEMPTS
+from app.agents.developer.src.schemas import ParsedError, ErrorAnalysisOutput
+from app.core.agent.llm_factory import MAX_DEBUG_ATTEMPTS, get_llm
 from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
 from app.agents.developer.src.utils.prompt_utils import build_system_prompt as _build_system_prompt
-from app.agents.developer.src.nodes._llm import code_llm
 from app.agents.developer.src.skills import SkillRegistry
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ParsedError:
-    file_path: str
-    line: Optional[int]
-    column: Optional[int]
-    error_code: Optional[str]
-    error_type: str
-    message: str
-
-
-class ErrorAnalysisOutput(BaseModel):
-    """Structured output for error analysis."""
-    error_type: Literal["TEST_ERROR", "SOURCE_ERROR", "IMPORT_ERROR", "CONFIG_ERROR", "UNFIXABLE"] = Field(description="Error category")
-    file_to_fix: str = Field(description="Primary file to fix")
-    root_cause: str = Field(description="Brief root cause explanation")
-    should_continue: bool = Field(description="True if error is fixable")
-    fix_steps: List[PlanStep] = Field(default_factory=list, description="Steps to fix the error")
 
 
 def _parse_errors(logs: str) -> List[ParsedError]:
@@ -184,6 +162,7 @@ async def analyze_error(state: DeveloperState, config: dict = None, agent=None) 
 Analyze the error and provide fix steps."""
 
         # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
+        code_llm = get_llm("implement")
         structured_llm = code_llm.with_structured_output(ErrorAnalysisOutput)
         result = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 

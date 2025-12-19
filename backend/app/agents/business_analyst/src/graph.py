@@ -27,6 +27,9 @@ from .nodes import (
     save_artifacts,
     check_clarity,
 )
+from app.core.config import settings
+import psycopg_pool
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +53,7 @@ async def get_postgres_checkpointer() -> AsyncPostgresSaver:
             pass
     
     if _postgres_checkpointer is None:
-        from app.core.config import settings
-        import psycopg_pool
-        import asyncio
+       
         
         # Build connection string from settings
         db_url = str(settings.DATABASE_URL)

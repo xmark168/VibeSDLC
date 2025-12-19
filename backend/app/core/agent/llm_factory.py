@@ -52,7 +52,7 @@ RETRY_BACKOFF_MIN = 1  # seconds
 RETRY_BACKOFF_MAX = 10  # seconds
 
 # Parallel execution limits
-MAX_CONCURRENT_TASKS = 5
+MAX_CONCURRENT_TASKS = 10
 
 # Debug/fix loop limits
 MAX_DEBUG_ATTEMPTS = 3
