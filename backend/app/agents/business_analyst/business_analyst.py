@@ -206,8 +206,7 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
             with Session(engine) as session:
                 # Build query for epics
                 query = select(Epic).where(
-                    Epic.project_id == self.project_id,
-                    Epic.epic_status != EpicStatus.DELETED
+                    Epic.project_id == self.project_id
                 )
                 
                 # Selective loading for performance (e.g., only load epics to delete)
@@ -224,7 +223,6 @@ class BusinessAnalyst(BaseAgent, PausableAgentMixin):
                     stories = session.exec(
                         select(Story)
                         .where(Story.epic_id == epic.id)
-                        .where(Story.story_status != StoryStatus.DELETED)
                     ).all()
                     
                     epic_dict = {
