@@ -2,7 +2,7 @@
 """
 
 import logging
-from contextvars import ContextVar
+import threading
 from typing import Any
 
 from langchain_anthropic import ChatAnthropic
@@ -24,24 +24,65 @@ MODELS = {
     "complex": "claude-opus-4-5-20251101",
 }
 
-_token_count: ContextVar[int] = ContextVar('token_count', default=0)
-_llm_call_count: ContextVar[int] = ContextVar('llm_call_count', default=0)
+# =============================================================================
+# TOKEN TRACKING - Thread-Safe Global Counter
+# =============================================================================
+# FIXED: Replaced ContextVar with global counter to work across async contexts
+# ContextVar was causing token loss when LLM callbacks ran in different context
+
+class TokenCounter:
+    """Thread-safe global token counter that works across async contexts."""
+    
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._tokens = 0
+        self._calls = 0
+    
+    def reset(self):
+        """Reset counters to zero."""
+        with self._lock:
+            self._tokens = 0
+            self._calls = 0
+    
+    def add_tokens(self, tokens: int):
+        """Add tokens and increment call count."""
+        with self._lock:
+            self._tokens += tokens
+            self._calls += 1
+    
+    def get_tokens(self) -> int:
+        """Get total tokens counted."""
+        with self._lock:
+            return self._tokens
+    
+    def get_calls(self) -> int:
+        """Get total LLM calls counted."""
+        with self._lock:
+            return self._calls
+
+# Global singleton counter
+_token_counter = TokenCounter()
 
 
 def get_token_count() -> int:
-    """Get total tokens used in current context."""
-    return _token_count.get()
+    """Get total tokens used (thread-safe, works across async contexts)."""
+    count = _token_counter.get_tokens()
+    logger.info(f"[TOKEN_DEBUG] get_token_count() → {count}")
+    return count
 
 
 def get_llm_call_count() -> int:
-    """Get total LLM calls in current context."""
-    return _llm_call_count.get()
+    """Get total LLM calls (thread-safe, works across async contexts)."""
+    count = _token_counter.get_calls()
+    logger.info(f"[TOKEN_DEBUG] get_llm_call_count() → {count}")
+    return count
 
 
 def reset_token_count() -> None:
     """Reset token counter for new task."""
-    _token_count.set(0)
-    _llm_call_count.set(0)
+    logger.info(f"[TOKEN_DEBUG] reset_token_count() BEFORE → tokens={_token_counter.get_tokens()}, calls={_token_counter.get_calls()}")
+    _token_counter.reset()
+    logger.info(f"[TOKEN_DEBUG] reset_token_count() AFTER → tokens={_token_counter.get_tokens()}, calls={_token_counter.get_calls()}")
 
 
 class TokenTrackingCallback(BaseCallbackHandler):
@@ -51,10 +92,14 @@ class TokenTrackingCallback(BaseCallbackHandler):
         """Called when LLM call ends - extract and track tokens."""
         tokens = 0
         
+        # DEBUG: Log callback execution
+        logger.info(f"[TOKEN_DEBUG] on_llm_end called")
+        
         # Try to get tokens from llm_output (standard location)
         if response.llm_output:
             usage = response.llm_output.get('usage', {})
             tokens = usage.get('input_tokens', 0) + usage.get('output_tokens', 0)
+            logger.info(f"[TOKEN_DEBUG] llm_output.usage: {usage}, tokens={tokens}")
         
         # Fallback: try to get from generations metadata
         if tokens == 0 and response.generations:
@@ -63,16 +108,24 @@ class TokenTrackingCallback(BaseCallbackHandler):
                     if hasattr(gen, 'generation_info') and gen.generation_info:
                         usage = gen.generation_info.get('usage', {})
                         tokens += usage.get('input_tokens', 0) + usage.get('output_tokens', 0)
+                        if tokens > 0:
+                            logger.info(f"[TOKEN_DEBUG] generation_info.usage: {usage}, tokens={tokens}")
         
-        # Update counters
+        # DEBUG: Log extraction result
+        logger.info(f"[TOKEN_DEBUG] Extracted {tokens} tokens from LLM response")
+        
+        # Update global counter (thread-safe, works across async contexts)
         if tokens > 0:
-            current = _token_count.get()
-            _token_count.set(current + tokens)
+            before_tokens = _token_counter.get_tokens()
+            logger.info(f"[TOKEN_DEBUG] TokenCounter BEFORE: {before_tokens}")
+            _token_counter.add_tokens(tokens)
+            after_tokens = _token_counter.get_tokens()
+            logger.info(f"[TOKEN_DEBUG] TokenCounter AFTER: {after_tokens}")
+        else:
+            # Still increment call count even if no tokens
+            _token_counter.add_tokens(0)
         
-        current_calls = _llm_call_count.get()
-        _llm_call_count.set(current_calls + 1)
-        
-        logger.debug(f"[TOKEN] LLM call tracked: +{tokens} tokens (total: {_token_count.get()})")
+        logger.info(f"[TOKEN_DEBUG] LLM call tracked: +{tokens} tokens (total: {_token_counter.get_tokens()}, calls: {_token_counter.get_calls()})")
 
 
 # Singleton callback instance

@@ -67,10 +67,28 @@ def flush_langfuse():
         pass
 
 
+async def async_flush_langfuse():
+    """Async flush langfuse client - non-blocking."""
+    try:
+        from langfuse import get_client
+        await get_client().async_api.flush()
+    except Exception:
+        pass
+
+
 def shutdown_langfuse():
     try:
         from langfuse import get_client
         get_client().shutdown()
+    except Exception:
+        pass
+
+
+async def async_shutdown_langfuse():
+    """Async shutdown langfuse client - non-blocking."""
+    try:
+        from langfuse import get_client
+        await get_client().async_api.shutdown()
     except Exception:
         pass
 

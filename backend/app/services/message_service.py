@@ -1,11 +1,12 @@
 """Message Service - Encapsulates message database operations."""
 
 from uuid import UUID
-from typing import Optional
+from typing import List, Optional
 
 from sqlmodel import Session, select
 
-from app.models import Message as MessageModel, AuthorType, MessageVisibility
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.models import Message as MessageModel, Message, AuthorType, MessageVisibility
 
 
 class MessageService:
@@ -268,3 +269,53 @@ class MessageService:
             self.session.commit()
             return True
         return False
+
+
+# ============================================================================
+# ASYNC MESSAGE SERVICE - New async implementation
+# ============================================================================
+
+class AsyncMessageService:
+    """Async message service for high-performance operations."""
+    
+    def __init__(self, session: AsyncSession):
+        self.session = session
+    
+    async def get_by_id(self, message_id: UUID) -> Optional[Message]:
+        """Get message by ID (async)."""
+        result = await self.session.execute(
+            select(Message).where(Message.id == message_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def create_message(self, message_data: dict) -> Message:
+        """Create new message (async)."""
+        message = Message(**message_data)
+        self.session.add(message)
+        await self.session.flush()
+        await self.session.refresh(message)
+        return message
+    
+    async def get_by_project(
+        self,
+        project_id: UUID,
+        limit: int = 50
+    ) -> List[Message]:
+        """Get messages for a project (async)."""
+        result = await self.session.execute(
+            select(Message)
+            .where(Message.project_id == project_id)
+            .order_by(Message.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+    
+    async def delete_message(self, message_id: UUID) -> bool:
+        """Delete message (async)."""
+        message = await self.get_by_id(message_id)
+        if not message:
+            return False
+        
+        await self.session.delete(message)
+        await self.session.commit()
+        return True

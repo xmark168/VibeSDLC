@@ -59,13 +59,13 @@ class ProfileResponse(BaseModel):
     """Complete user profile response."""
     id: UUID
     email: str
-    full_name: str | None
-    bio: str | None
-    avatar_url: str | None
-    is_active: bool
-    is_verified: bool
-    created_at: datetime
-    updated_at: datetime
+    full_name: str | None = None
+    bio: str | None = None
+    avatar_url: str | None = None
+    is_active: bool = True
+    is_verified: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
     
     class Config:
         from_attributes = True

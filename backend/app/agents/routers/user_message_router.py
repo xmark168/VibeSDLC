@@ -93,8 +93,13 @@ class UserMessageRouter(BaseEventRouter):
             await self._route_to_team_leader(event_dict, project_id)
 
     def _get_timeout_for_project(self, project: Project) -> int:
+        # Fallback defaults if router_settings not initialized
+        TIMEOUT_ONLINE = 30  # minutes
+        TIMEOUT_OFFLINE = 60  # minutes
+        GRACE_PERIOD = 300  # 5 minutes in seconds
+        
         if project.websocket_connected:
-            return self.router_settings.CONTEXT_TIMEOUT_ONLINE_MINUTES
+            return getattr(self, 'router_settings', None) and self.router_settings.CONTEXT_TIMEOUT_ONLINE_MINUTES or TIMEOUT_ONLINE
         if project.websocket_last_seen:
             websocket_last_seen = project.websocket_last_seen
             if websocket_last_seen.tzinfo is None:
@@ -102,10 +107,11 @@ class UserMessageRouter(BaseEventRouter):
             
             offline_duration = datetime.now(timezone.utc) - websocket_last_seen
             
-            if offline_duration.total_seconds() < self.router_settings.GRACE_PERIOD_SECONDS:
-                return self.router_settings.CONTEXT_TIMEOUT_ONLINE_MINUTES
+            grace_period = getattr(self, 'router_settings', None) and self.router_settings.GRACE_PERIOD_SECONDS or GRACE_PERIOD
+            if offline_duration.total_seconds() < grace_period:
+                return getattr(self, 'router_settings', None) and self.router_settings.CONTEXT_TIMEOUT_ONLINE_MINUTES or TIMEOUT_ONLINE
         
-        return self.router_settings.CONTEXT_TIMEOUT_OFFLINE_MINUTES
+        return getattr(self, 'router_settings', None) and self.router_settings.CONTEXT_TIMEOUT_OFFLINE_MINUTES or TIMEOUT_OFFLINE
 
     async def _route_with_mention(
         self, event_dict: Dict[str, Any], mentioned_name: str, project_id: UUID

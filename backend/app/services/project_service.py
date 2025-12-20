@@ -3,8 +3,9 @@
 import logging
 import re
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlmodel import Session, select, func
 
@@ -42,16 +43,7 @@ class ProjectService:
         return f"PRJ-{next_number:03d}"
 
     def create(self, project_in: ProjectCreate, owner_id: UUID) -> Project:
-        """
-        Create a new project with auto-generated code.
-
-        Args:
-            project_in: Project creation schema
-            owner_id: UUID of the project owner
-
-        Returns:
-            Project: Created project instance
-        """
+        """Create a new project with auto-generated code.        """
         # Generate unique project code
         project_code = self.generate_code()
 
@@ -344,3 +336,59 @@ class ProjectService:
         
         logger.info(f"Cleaned up {deleted_count} worktrees for project {project_id}")
         return deleted_count
+
+
+# ============================================================================
+# ASYNC PROJECT SERVICE - New async implementation
+# ============================================================================
+
+class AsyncProjectService:
+    """Async project service for high-performance operations."""
+    
+    def __init__(self, session: AsyncSession):
+        self.session = session
+    
+    async def get_by_id(self, project_id: UUID) -> Optional[Project]:
+        """Get project by ID (async)."""
+        result = await self.session.execute(
+            select(Project).where(Project.id == project_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def get_by_user(self, user_id: UUID) -> List[Project]:
+        """Get all projects for a user (async)."""
+        result = await self.session.execute(
+            select(Project).where(Project.owner_id == user_id)
+        )
+        return list(result.scalars().all())
+    
+    async def create_project(self, project_data: dict) -> Project:
+        """Create new project (async)."""
+        project = Project(**project_data)
+        self.session.add(project)
+        await self.session.flush()
+        await self.session.refresh(project)
+        return project
+    
+    async def update_project(self, project_id: UUID, update_data: dict) -> Optional[Project]:
+        """Update project (async)."""
+        project = await self.get_by_id(project_id)
+        if not project:
+            return None
+        
+        for key, value in update_data.items():
+            setattr(project, key, value)
+        
+        await self.session.commit()
+        await self.session.refresh(project)
+        return project
+    
+    async def delete_project(self, project_id: UUID) -> bool:
+        """Delete project (async)."""
+        project = await self.get_by_id(project_id)
+        if not project:
+            return False
+        
+        await self.session.delete(project)
+        await self.session.commit()
+        return True

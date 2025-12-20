@@ -3,7 +3,7 @@ import subprocess
 import os
 import asyncio
 from pathlib import Path
-
+import sys
 # Linux-only deployment, no Windows-specific event loop policy needed
 
 os.chdir(Path(__file__).parent)

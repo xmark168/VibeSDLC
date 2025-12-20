@@ -1,6 +1,8 @@
 import logging
 
 from sqlmodel import Session, create_engine, select
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings, database_settings
 from app.models import Plan, Role, TechStack, User
@@ -9,8 +11,28 @@ from app.services import UserService
 
 logger = logging.getLogger(__name__)
 
-# Main engine for FastAPI master process
+# Main engine for FastAPI master process (sync - for gradual migration)
 engine = create_engine(str(database_settings.SQLALCHEMY_DATABASE_URI))
+
+# NEW: Async engine for async operations
+async_engine = create_async_engine(
+    str(database_settings.SQLALCHEMY_DATABASE_URI).replace(
+        "postgresql+psycopg://",
+        "postgresql+asyncpg://"
+    ),
+    echo=False,
+    pool_size=20,
+    max_overflow=50,
+    pool_pre_ping=True,
+    pool_recycle=3600,
+)
+
+# Async session factory
+async_session_maker = sessionmaker(
+    async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 
 
 def get_worker_engine(pool_size: int = 5, max_overflow: int = 10):

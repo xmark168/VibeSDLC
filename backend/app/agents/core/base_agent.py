@@ -20,7 +20,8 @@ from app.models import Agent as AgentModel, AgentStatus
 from datetime import datetime, timezone
 from app.core.langfuse_client import (
     get_langfuse_client,
-    flush_langfuse, 
+    flush_langfuse,
+    async_flush_langfuse,  # Async version for non-blocking flush
     score_current,
     update_current_observation,
     format_llm_usage,
@@ -151,15 +152,14 @@ class BaseAgent(ABC):
             f"(tech_stack: {self.tech_stack}, style: {self.communication_style or 'N/A'}, traits: {', '.join(self.personality_traits[:2]) if self.personality_traits else 'N/A'})"
         )
 
-    def _load_tech_stack(self) -> str:
+    async def _load_tech_stack(self) -> str:
         """Load tech stack from project (called once during init)."""
         try:
-            from sqlmodel import Session
-            from app.core.db import engine
+            from app.core.db import async_session_maker
             from app.models import Project
             
-            with Session(engine) as session:
-                project = session.get(Project, self.project_id)
+            async with async_session_maker() as session:
+                project = await session.get(Project, self.project_id)
                 if project and project.tech_stack:
                     return project.tech_stack
         except Exception as e:
@@ -393,7 +393,9 @@ class BaseAgent(ABC):
             )
         
         # Create artifact
-        with Session(engine) as session:
+        from app.core.db import async_session_maker
+        
+        async with async_session_maker() as session:
             service = ArtifactService(session)
             artifact = service.create_artifact(
                 project_id=self.project_id,
@@ -490,7 +492,9 @@ class BaseAgent(ABC):
         }
         
         # Save to database (dual storage: agent_questions + messages)
-        with Session(engine) as session:
+        from app.core.db import async_session_maker
+        
+        async with async_session_maker() as session:
             # 1. Save to agent_questions table (for workflow)
             db_question = AgentQuestion(
                 id=question_id,
@@ -589,13 +593,12 @@ class BaseAgent(ABC):
         Returns:
             UUID: The message ID that was created
         """
-        from sqlmodel import Session
-        from app.core.db import engine
+        from app.core.db import async_session_maker
         from app.models import Message, AuthorType
         
         message_id = uuid4()
         
-        with Session(engine) as session:
+        async with async_session_maker() as session:
             message = Message(
                 id=message_id,
                 project_id=self.project_id,
@@ -612,7 +615,7 @@ class BaseAgent(ABC):
                 }
             )
             session.add(message)
-            session.commit()
+            await session.commit()
         
         return message_id
     
@@ -756,7 +759,9 @@ class BaseAgent(ABC):
         # Save all questions to database
         batch_message_id = uuid4()  # Single message ID for the entire batch
         
-        with Session(engine) as session:
+        from app.core.db import async_session_maker
+        
+        async with async_session_maker() as session:
             # 1. Save individual AgentQuestion records (for workflow tracking)
             for idx, q_data in enumerate(questions):
                 question_id = uuid4()
@@ -953,8 +958,10 @@ class BaseAgent(ABC):
         
         try:
             # 1. Update DB
-            with Session(engine) as session:
-                story = session.get(Story, story_id)
+            from app.core.db import async_session_maker
+            
+            async with async_session_maker() as session:
+                story = await session.get(Story, story_id)
                 if not story:
                     raise ValueError(f"Story not found: {story_id}")
                 
@@ -962,7 +969,7 @@ class BaseAgent(ABC):
                 story.agent_state = state_enum
                 story.assigned_agent_id = self.agent_id
                 session.add(story)
-                session.commit()
+                await session.commit()
                 
                 project_id = str(story.project_id)
             
@@ -1270,8 +1277,10 @@ class BaseAgent(ABC):
             trigger_msg_id = task.message_id
         
         # Use ExecutionService for async-safe execution creation
-        with Session(engine) as db:
-            execution_service = ExecutionService(db)
+        from app.core.db import async_session_maker
+        
+        async with async_session_maker() as session:
+            execution_service = ExecutionService(session)
             execution_id = await execution_service.create_execution(
                 project_id=self.project_id,
                 agent_name=self.name,
@@ -1310,9 +1319,12 @@ class BaseAgent(ABC):
                 (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000
             )
         
-        # Use ExecutionService for async-safe execution completion
-        with Session(engine) as db:
-            execution_service = ExecutionService(db)
+        # ✅ NEW: Use async ExecutionService - ELIMINATES STUCK AGENTS!
+        # This change activates the async migration fix.
+        from app.core.db import async_session_maker
+        
+        async with async_session_maker() as session:
+            execution_service = ExecutionService(session)
             await execution_service.complete_execution(
                 execution_id=self._current_execution_id,
                 success=success,
@@ -1784,7 +1796,7 @@ class BaseAgent(ABC):
                 duration_ms = (datetime.now(timezone.utc) - self._execution_start_time).total_seconds() * 1000 if self._execution_start_time else 0
                 task_success = not task_failed if 'task_failed' in locals() else True
                 self.score_current_task(success=task_success, duration_ms=duration_ms)
-                flush_langfuse()
+                await async_flush_langfuse()  # Async flush - non-blocking!
             except Exception as e:
                 logger.debug(f"[{self.name}] Langfuse cleanup: {e}")
             

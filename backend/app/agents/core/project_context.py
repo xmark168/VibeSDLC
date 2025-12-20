@@ -220,7 +220,8 @@ Write 2-4 sentences maximum."""
             with Session(engine) as session:
                 kanban_service = KanbanService(session)
                 self._kanban_board_state = kanban_service.get_dynamic_wip_with_usage(self.project_id)
-                self._kanban_flow_metrics = kanban_service.get_project_flow_metrics(self.project_id)
+                # TODO: Re-implement get_project_flow_metrics
+                self._kanban_flow_metrics = {}  # kanban_service.get_project_flow_metrics(self.project_id)
                 self._kanban_wip_available = {
                     col: data.get("available", 0) 
                     for col, data in self._kanban_board_state.items()

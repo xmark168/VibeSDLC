@@ -5,7 +5,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.agents.developer.src.state import DeveloperState
 from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
 from app.agents.developer.src.schemas import SimpleReviewOutput
-from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
+from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, async_flush_langfuse, track_node
 from app.agents.developer.src.utils.prompt_utils import (
     format_input_template as _format_input_template,
     build_system_prompt as _build_system_prompt,

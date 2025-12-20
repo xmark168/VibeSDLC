@@ -282,11 +282,11 @@ async def websocket_endpoint(
                                 "project_id": str(project_id),
                                 "content": content,
                                 "author_type": "user",
-                                "created_at": db_message.created_at.isoformat(),
-                                "updated_at": db_message.updated_at.isoformat(),
+                                "created_at": to_utc_isoformat(db_message.created_at),
+                                "updated_at": to_utc_isoformat(db_message.updated_at),
                                 "user_id": str(user.id),
                                 "message_type": message.get("message_type", "text"),
-                                "timestamp": db_message.created_at.isoformat(),
+                                "timestamp": to_utc_isoformat(db_message.created_at),
                             },
                             project_id
                         )

@@ -1,10 +1,11 @@
 """Pool Service"""
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
 from sqlmodel import Session, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AgentPool, AgentPoolMetrics, PoolType
 
 
@@ -227,3 +228,34 @@ class PoolService:
             self.session.commit()
         
         return count
+
+
+class AsyncPoolService:
+    """Async pool service for high-performance operations."""
+    
+    def __init__(self, session: AsyncSession):
+        self.session = session
+    
+    async def get_by_id(self, pool_id: UUID) -> Optional[AgentPool]:
+        """Get pool by ID (async)."""
+        result = await self.session.execute(
+            select(AgentPool).where(AgentPool.id == pool_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def create_pool(self, pool_data: dict) -> AgentPool:
+        """Create new pool (async)."""
+        pool = AgentPool(**pool_data)
+        self.session.add(pool)
+        await self.session.flush()
+        await self.session.refresh(pool)
+        return pool
+    
+    async def get_available_pools(self, project_id: UUID) -> List[AgentPool]:
+        """Get available pools for a project (async)."""
+        result = await self.session.execute(
+            select(AgentPool)
+            .where(AgentPool.project_id == project_id)
+            .where(AgentPool.is_active == True)
+        )
+        return list(result.scalars().all())

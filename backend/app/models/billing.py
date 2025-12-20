@@ -165,7 +165,7 @@ class Invoice(BaseModel, table=True):
     currency: str = Field(default="VND", nullable=False)
 
     issue_date: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc), nullable=False
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False  # Strip timezone for asyncpg
     )
     status: InvoiceStatus = Field(default=InvoiceStatus.DRAFT, nullable=False)
 

@@ -105,12 +105,32 @@ def get_user_credit_activities(
     )
     all_activities = session.exec(all_activities_stmt).all()
     
+    # Get top agent by token usage
+    agent_usage = {}
+    for a in all_activities:
+        if a.agent_id and a.tokens_used:
+            agent_usage[a.agent_id] = agent_usage.get(a.agent_id, 0) + (a.tokens_used or 0)
+    
+    top_agent_name = None
+    if agent_usage:
+        top_agent_id = max(agent_usage, key=agent_usage.get)
+        top_agent = session.get(Agent, top_agent_id)
+        top_agent_name = top_agent.human_name if top_agent else None
+    
+    # Get top model by usage
+    model_usage = {}
+    for a in all_activities:
+        if a.model_used and a.tokens_used:
+            model_usage[a.model_used] = model_usage.get(a.model_used, 0) + (a.tokens_used or 0)
+    
+    top_model = max(model_usage, key=model_usage.get) if model_usage else None
+    
     summary = {
         "total_credits_spent": sum(abs(a.amount or 0) for a in all_activities if (a.amount or 0) < 0),
         "total_tokens_used": sum(a.tokens_used or 0 for a in all_activities),
         "total_llm_calls": sum(a.llm_calls or 0 for a in all_activities),
-        "top_agent": _get_top_agent(all_activities, session),
-        "top_model": _get_top_model(all_activities),
+        "top_agent": top_agent_name,
+        "top_model": top_model,
     }
     
     return CreditActivityResponse(

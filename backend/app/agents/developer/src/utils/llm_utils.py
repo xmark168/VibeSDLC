@@ -138,6 +138,17 @@ def flush_langfuse(config: dict) -> None:
                 pass
 
 
+async def async_flush_langfuse(config: dict) -> None:
+    """Async flush langfuse client if available in config callbacks - non-blocking."""
+    callbacks = config.get("callbacks", []) if config else []
+    for cb in callbacks:
+        if hasattr(cb, 'langfuse') and hasattr(cb.langfuse, 'async_api'):
+            try:
+                await cb.langfuse.async_api.flush()
+            except Exception:
+                pass
+
+
 def get_langfuse_span(config: dict, name: str, input_data: dict = None):
     """Get langfuse span if callbacks are available."""
     callbacks = config.get("callbacks", []) if config else []
