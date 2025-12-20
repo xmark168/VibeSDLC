@@ -12,27 +12,11 @@ from ..schemas import (
     PRDOutput,
     PRDUpdateOutput
 )
-from app.agents.core.prompt_utils import (
-    load_prompts_yaml
-)
-
-# Load prompts from YAML (same pattern as Developer V2)
-PROMPTS = load_prompts_yaml(Path(__file__).parent.parent / "prompts.yaml")
-
-# Default values for BA agent persona
-BA_DEFAULTS = {
-    "name": "Business Analyst",
-    "role": "Business Analyst / Requirements Specialist",
-    "goal": "Phân tích requirements, tạo PRD và user stories",
-    "description": "Chuyên gia phân tích yêu cầu phần mềm",
-    "personality": "Thân thiện, kiên nhẫn, giỏi lắng nghe",
-    "communication_style": "Đơn giản, dễ hiểu, tránh thuật ngữ kỹ thuật",
-}
 from app.core.db import engine
 
 logger = logging.getLogger(__name__)
 
-from .utils import  _invoke_structured, _cfg, _sys_prompt, _user_prompt, _save_interview_state_to_question, _default_llm
+from .utils import BA_DEFAULTS, PROMPTS, _cfg, _default_llm, _invoke_structured, _save_interview_state_to_question, _sys_prompt, _user_prompt
 
 async def generate_prd(state: BAState, agent=None) -> dict:
     """Node: Generate PRD document.

@@ -9,16 +9,9 @@ from ..schemas import (
     DocumentAnalysisOutput,
     DocumentFeedbackOutput
 )
-from app.agents.core.prompt_utils import (
-    load_prompts_yaml
-)
-
-# Load prompts from YAML 
-PROMPTS = load_prompts_yaml(Path(__file__).parent.parent / "prompts.yaml")
-
 logger = logging.getLogger(__name__)
 
-from .utils import _invoke_structured, _cfg, _sys_prompt, _user_prompt, _fast_llm, _default_llm
+from .utils import PROMPTS, _cfg, _default_llm, _fast_llm, _invoke_structured, _sys_prompt, _user_prompt
 
 
 def _build_context_summary(features: list, epics: list) -> tuple[str, str]:

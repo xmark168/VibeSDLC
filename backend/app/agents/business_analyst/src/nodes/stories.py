@@ -15,28 +15,9 @@ from ..schemas import (
     EpicsOnlyOutput,
     StoriesForEpicOutput,
     FullStoriesOutput,
-    VerifyStoryOutput,
-    DocumentFeedbackOutput,
     SingleStoryEditOutput,
     FeatureClarityOutput,
 )
-from app.agents.core.prompt_utils import (
-    load_prompts_yaml,
-    extract_agent_personality,
-)
-
-# Load prompts from YAML (same pattern as Developer V2)
-PROMPTS = load_prompts_yaml(Path(__file__).parent.parent / "prompts.yaml")
-
-# Default values for BA agent persona
-BA_DEFAULTS = {
-    "name": "Business Analyst",
-    "role": "Business Analyst / Requirements Specialist",
-    "goal": "Phân tích requirements, tạo PRD và user stories",
-    "description": "Chuyên gia phân tích yêu cầu phần mềm",
-    "personality": "Thân thiện, kiên nhẫn, giỏi lắng nghe",
-    "communication_style": "Đơn giản, dễ hiểu, tránh thuật ngữ kỹ thuật",
-}
 from app.core.db import engine
 from app.core.config import settings
 from app.models import  Epic, Story, StoryStatus, StoryType, EpicStatus, ArtifactType
@@ -44,7 +25,7 @@ from app.services.artifact_service import ArtifactService
 
 logger = logging.getLogger(__name__)
 
-from .utils import  _invoke_structured, _cfg, _sys_prompt, _user_prompt, _save_interview_state_to_question, _default_llm, _fast_llm, _story_llm
+from .utils import BA_DEFAULTS, PROMPTS, _cfg, _default_llm, _fast_llm, _invoke_structured, _save_interview_state_to_question, _story_llm, _sys_prompt, _user_prompt
 
 async def _generate_stories_for_epic(
     epic: dict,

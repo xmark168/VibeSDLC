@@ -7,14 +7,11 @@ from sqlmodel import Session
 
 from ..state import BAState
 from ..schemas import VerifyStoryOutput
-from app.agents.core.prompt_utils import load_prompts_yaml
-
 from app.core.db import engine
 from app.models import Epic, Story, StoryStatus, EpicStatus
 
 from .utils import _invoke_structured, _cfg, _sys_prompt, _user_prompt, _default_llm
 
-PROMPTS = load_prompts_yaml(Path(__file__).parent.parent / "prompts.yaml")
 logger = logging.getLogger(__name__)
 
 async def verify_story_simple(state: dict, agent=None) -> dict:

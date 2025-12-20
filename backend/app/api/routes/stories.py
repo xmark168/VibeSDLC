@@ -690,10 +690,6 @@ async def resume_story_task(
     
     return {"success": True, "message": "Task resumed"}
 
-
-# Removed Windows-specific _kill_processes_in_worktree - using utils version instead
-# Removed _cleanup_story_resources_sync - consolidated into workspace_utils.cleanup_workspace()
-
 async def cleanup_story_resources(
     worktree_path: str | None = None,
     branch_name: str | None = None,
@@ -1809,7 +1805,7 @@ async def merge_story_to_main(
 async def _trigger_merge_task(story_id: str, project_id: str, branch_name: str, worktree_path: str | None, main_workspace: str):
     """Background task: Trigger Developer agent to merge branch."""
     try:
-        from app.agents.routers.message_router import route_story_event
+        from app.agents.routers.router_service import route_story_event
         from app.kafka.event_schemas import AgentTaskType
         
         # Small delay to ensure DB commit is visible

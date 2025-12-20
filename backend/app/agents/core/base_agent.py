@@ -1712,7 +1712,7 @@ class BaseAgent(ABC):
                     self._consecutive_failures += 1
                     self._last_activity_at = datetime.now(timezone.utc)
                 
-                await self._record_execution_metrics(task, result)
+                # Execution metrics recording removed - handled by execution service
                 
                 # Emit finish signal (commented out to avoid duplicate messages)
                 # if result.success:

@@ -95,6 +95,11 @@ def cleanup_workspace(
 ) -> dict:
     """Unified workspace cleanup with retry and process killing. """
     cleanup_start_time = time.time()
+    # Handle None workspace_path
+    if workspace_path is None:
+        logger.warning("cleanup_workspace called with None workspace_path - skipping")
+        return {"checkpoint": False, "worktree": False, "branch": False, "skip_node_modules": skip_node_modules}
+
     workspace_path = Path(workspace_path)
     
     results = {
@@ -125,9 +130,9 @@ def cleanup_workspace(
             if _delete_with_retry(
                 node_modules_path, 
                 max_retries=max_retries,
-                kill_processes_func=kill_processes_in_worktree if kill_processes else None,
+                kill_processes_func=None,
                 agent_name=agent_name
-            ):
+            ):  
                 elapsed = time.time() - start_time
                 logger.info(f"[{agent_name}] node_modules deleted in {elapsed:.1f}s")
     else:
@@ -135,11 +140,10 @@ def cleanup_workspace(
     
     # Step 5: Delete workspace directory (with retry and process killing)
     if workspace_path.exists():
-        from app.utils.subprocess_utils import kill_processes_in_worktree
         results["worktree"] = _delete_with_retry(
             workspace_path,
             max_retries=max_retries,
-            kill_processes_func=kill_processes_in_worktree if kill_processes else None,
+            kill_processes_func=None,
             agent_name=agent_name
         )
     else:

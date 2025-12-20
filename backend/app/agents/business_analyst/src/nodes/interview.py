@@ -8,23 +8,6 @@ from ..state import BAState
 from ..schemas import (
     QuestionsOutput
 )
-from app.agents.core.prompt_utils import (
-    load_prompts_yaml,
-    extract_agent_personality,
-)
-
-# Load prompts from YAML (same pattern as Developer V2)
-PROMPTS = load_prompts_yaml(Path(__file__).parent.parent / "prompts.yaml")
-
-# Default values for BA agent persona
-BA_DEFAULTS = {
-    "name": "Business Analyst",
-    "role": "Business Analyst / Requirements Specialist",
-    "goal": "Phân tích requirements, tạo PRD và user stories",
-    "description": "Chuyên gia phân tích yêu cầu phần mềm",
-    "personality": "Thân thiện, kiên nhẫn, giỏi lắng nghe",
-    "communication_style": "Đơn giản, dễ hiểu, tránh thuật ngữ kỹ thuật",
-}
 from app.core.db import engine
 from app.core.config import settings
 from app.kafka import KafkaTopics, get_kafka_producer
@@ -32,7 +15,7 @@ from app.kafka.event_schemas import AgentEvent
 
 logger = logging.getLogger(__name__)
 
-from .utils import _invoke_structured, _cfg, _sys_prompt, _user_prompt, _save_interview_state_to_question, _default_llm, REQUIRED_CATEGORIES
+from .utils import BA_DEFAULTS, PROMPTS, REQUIRED_CATEGORIES, _cfg, _default_llm, _invoke_structured, _save_interview_state_to_question, _sys_prompt, _user_prompt
 
 async def interview_requirements(state: BAState, agent=None) -> dict:
     """Uses structured output for reliable parsing"""

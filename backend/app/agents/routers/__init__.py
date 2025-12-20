@@ -1,7 +1,7 @@
 """Message routing system - routes events to appropriate agents."""
 
 from app.agents.routers.base import BaseEventRouter
-from app.agents.routers.message_router import MessageRouter
+from app.agents.routers.router_service import MessageRouter
 from app.agents.routers.user_message_router import UserMessageRouter
 from app.agents.routers.agent_message_router import AgentMessageRouter
 from app.agents.routers.task_completion_router import TaskCompletionRouter

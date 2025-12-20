@@ -20,14 +20,18 @@ logger = logging.getLogger(__name__)
 class MessageRouter(BaseKafkaConsumer):
     def __init__(self, seek_to_end: bool = False):
         super().__init__(
-            topics=[KafkaTopics.USER_MESSAGES.value, KafkaTopics.AGENT_EVENTS.value],
+            topics=[
+                KafkaTopics.USER_MESSAGES.value,
+                KafkaTopics.AGENT_EVENTS.value,
+                KafkaTopics.STORY_EVENTS.value,
+            ],
             group_id="message_router"
         )
         self.seek_to_end = seek_to_end
         self.logger = logging.getLogger(__name__)
 
     async def start(self, seek_to_end: bool = False) -> None:
-        producer = get_kafka_producer()
+        producer = await get_kafka_producer()
         try:
             self.routers = [
                 UserMessageRouter(producer),
@@ -64,7 +68,7 @@ class MessageRouter(BaseKafkaConsumer):
         """Handle incoming Kafka message and route to appropriate router."""
         event_dict = event if isinstance(event, dict) else event.model_dump()
         event_type = event_dict.get("event_type", "unknown")
-        self.logger.debug(f"Routing event: {event_type} from topic {topic}")
+        self.logger.info(f"📨 Router received: {event_type} from topic {topic}")
 
         for router in self.routers:
             if router.should_handle(event):
@@ -160,7 +164,7 @@ async def route_story_event(
                 context=context,
             )
             
-            producer = get_kafka_producer()
+            producer = await get_kafka_producer()
             await producer.publish(topic=KafkaTopics.AGENT_TASKS, event=task)
             
             logger.info(f"[route_story_event] Routed {task_type.value} for story {story_id} to {developer.name}")

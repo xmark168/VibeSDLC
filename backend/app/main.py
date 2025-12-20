@@ -148,7 +148,7 @@ async def lifespan(_: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to ensure Kafka topics: {e}")
 
-    from app.agents.routers.message_router import start_router_service, stop_router_service
+    from app.agents.routers.router_service import start_router_service, stop_router_service
     try:
         await start_router_service()
     except Exception as e:
