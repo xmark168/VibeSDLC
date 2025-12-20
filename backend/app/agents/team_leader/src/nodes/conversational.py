@@ -5,6 +5,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.team_leader.src.state import TeamLeaderState
 from app.agents.core.prompt_utils import get_task_prompts
+from app.agents.core.llm_factory import create_fast_llm
 from app.agents.team_leader.src.nodes._utils import detect_specialist_completion, get_callback_config, _PROMPTS
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ async def conversational(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         specialist_role = detect_specialist_completion(conversation_history)
 
         # Build context for LLM
-        prompts = get_task_prompts(_PROMPTS, "conversational")
+        prompts = get_task_prompts(_PROMPTS, "conversation")
         sys_prompt = prompts["system_prompt"]
 
         # Add specialist completion context if detected

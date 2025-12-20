@@ -197,9 +197,25 @@ class LLMSettings(BaseSettings):
     """LLM and AI model configuration."""
     model_config = SettingsConfigDict(env_prefix="LLM_", extra="ignore")
     
-    # API Configuration
+    # Provider Selection
+    PROVIDER: Literal["anthropic", "openrouter"] = Field(
+        default="anthropic", 
+        description="LLM provider: anthropic or openrouter"
+    )
+    
+    # Anthropic API Configuration
     API_KEY: str = Field(default="", description="Anthropic API key")
     API_BASE: str = Field(default="https://api.anthropic.com", description="API base URL")
+    
+    # OpenRouter Configuration (used when PROVIDER=openrouter)
+    OPENROUTER_API_KEY: str = Field(
+        default="", 
+        description="OpenRouter API key"
+    )
+    OPENROUTER_API_BASE: str = Field(
+        default="https://openrouter.ai/api/v1", 
+        description="OpenRouter API base URL"
+    )
     
     # Default LLM Parameters
     DEFAULT_TEMPERATURE: float = Field(default=0.2, description="Default temperature for LLM")

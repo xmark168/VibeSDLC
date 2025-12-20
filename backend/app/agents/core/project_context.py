@@ -132,7 +132,7 @@ class ProjectContext:
     async def _create_summary(self):
         """Summarize messages and CLEAR them from memory."""
         try:
-            from langchain_openai import ChatOpenAI
+            from app.agents.core.llm_factory import create_fast_llm
             from langchain_core.messages import HumanMessage, SystemMessage
             
             # Take first project_context_settings.SUMMARY_THRESHOLD messages to summarize
@@ -165,7 +165,7 @@ Create an updated summary that merges the previous context with the new conversa
 Keep IDs (like US-017, EPIC-001) and important decisions.
 Write 2-4 sentences maximum."""
 
-            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, timeout=30)
+            llm = create_fast_llm(temperature=0.3, timeout=30, track_tokens=False)
             response = await llm.ainvoke([
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=prompt)

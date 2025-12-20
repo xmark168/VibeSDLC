@@ -129,20 +129,27 @@ class AutoScalingRuleCreate(BaseModel):
 # ===== Token Monitoring Schemas =====
 
 class AgentTokenStats(BaseModel):
-    """Token usage stats for agent type."""
-    agent_type: str
-    total_tokens: int
-    total_cost_usd: float
-    execution_count: int
-    average_tokens_per_execution: float
+    """Token usage stats for individual agent."""
+    agent_id: str
+    agent_name: str
+    role_type: str
+    pool_name: str
+    tokens_used_total: int
+    tokens_used_today: int
+    llm_calls_total: int
+    status: str
+    created_at: datetime
 
 
 class PoolTokenStats(BaseModel):
     """Token usage stats for pool."""
+    pool_id: str
     pool_name: str
-    agents: list[AgentTokenStats]
-    total_tokens: int
-    total_cost_usd: float
+    role_type: str
+    total_tokens_used: int
+    total_llm_calls: int
+    total_agents: int
+    agents_stats: list[AgentTokenStats]
 
 
 class SystemTokenSummary(BaseModel):

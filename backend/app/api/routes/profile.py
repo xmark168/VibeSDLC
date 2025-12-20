@@ -1,6 +1,7 @@
 """Profile API routes for user profile management."""
 
 import logging
+import os
 import uuid
 from io import BytesIO
 
@@ -27,6 +28,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/profile", tags=["profile"])
 
 # Avatar settings
+UPLOADS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "uploads")
+AVATARS_DIR = os.path.join(UPLOADS_DIR, "avatars")
+os.makedirs(AVATARS_DIR, exist_ok=True)
+
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 AVATAR_SIZE = (256, 256)  # Final avatar dimensions
