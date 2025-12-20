@@ -1,7 +1,6 @@
 """Two-Factor Authentication API routes."""
 
 import logging
-import random
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -14,6 +13,7 @@ from app.core.config import settings
 from app.core.redis_client import get_redis_client
 from app.core.security import verify_password
 from app.models import User
+from app.utils.generators import generate_verification_code
 from app.schemas import (
     TwoFactorSetupResponse,
     TwoFactorVerifySetupRequest,
@@ -108,11 +108,6 @@ def verify_2fa_setup(
         message="Two-factor authentication enabled successfully",
         backup_codes=backup_codes
     )
-
-
-def generate_verification_code() -> str:
-    """Generate 6-digit verification code"""
-    return str(random.randint(100000, 999999))
 
 
 def mask_email(email: str) -> str:

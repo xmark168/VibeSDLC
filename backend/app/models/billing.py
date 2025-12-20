@@ -94,13 +94,28 @@ class CreditActivity(BaseModel, table=True):
     agent_id: UUID | None = Field(default=None, foreign_key="agents.id", ondelete="CASCADE")
     wallet_id: UUID | None = Field(default=None, foreign_key="credit_wallets.id", ondelete="CASCADE")
 
+    # Credit and reason
     amount: int | None = Field(default=None)
     reason: str | None = Field(default=None, sa_column=Column(Text))
     activity_type: str | None = Field(default=None, sa_column=Column(Text))
+    
+    # Token tracking details
+    tokens_used: int | None = Field(default=None)
+    model_used: str | None = Field(default=None, sa_column=Column(Text))
+    llm_calls: int | None = Field(default=0)
+    
+    # Context for better monitoring
+    project_id: UUID | None = Field(default=None, foreign_key="projects.id", ondelete="CASCADE")
+    story_id: UUID | None = Field(default=None, foreign_key="stories.id", ondelete="SET NULL")
+    task_type: str | None = Field(default=None, sa_column=Column(Text))
+    execution_id: UUID | None = Field(default=None, foreign_key="agent_executions.id", ondelete="SET NULL")
 
+    # Relationships
     user: Optional["User"] = Relationship()
     agent: Optional["Agent"] = Relationship()
     wallet: Optional[CreditWallet] = Relationship(back_populates="credit_activities")
+    project: Optional["Project"] = Relationship()
+    story: Optional["Story"] = Relationship()
 
 
 class Order(BaseModel, table=True):
@@ -150,7 +165,7 @@ class Invoice(BaseModel, table=True):
     currency: str = Field(default="VND", nullable=False)
 
     issue_date: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc), nullable=False
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False  # Strip timezone for asyncpg
     )
     status: InvoiceStatus = Field(default=InvoiceStatus.DRAFT, nullable=False)
 

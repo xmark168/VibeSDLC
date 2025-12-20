@@ -17,34 +17,71 @@ import { SearchBar } from '@/components/SearchBar';
 ```
 
 **Rules:**
-- Check "Component Imports" section in context for exact paths
+- Check "Component Imports" section in plan context for exact paths
+  - This section appears after file tree, shows: `ComponentName → import path`
+  - Example: `SearchBar → import { SearchBar } from '@/components/search/SearchBar'`
 - Path must match file location: `src/components/[folder]/[Name].tsx` → `@/components/[folder]/[Name]`
-- Never guess import paths - use paths from context
+- Never guess import paths - always use exact paths from "Component Imports" section
 
 ## ⚠️ PROPS MATCHING - MOST CRITICAL
 
-**Before using ANY component, you MUST:**
-1. READ the component file first
-2. Find `interface XxxProps { ... }`
-3. Pass props EXACTLY as defined
+**🚨 MANDATORY WORKFLOW - DO NOT SKIP:**
 
+**Step 1: ALWAYS read the component file from Pre-loaded Code or Dependencies**
+```typescript
+// BEFORE using <CategoryNavigation mobile={true} onCategoryClick={...} />
+// YOU MUST find CategoryNavigation.tsx and read its Props interface!
+
+// Example: Found in Pre-loaded Code:
+interface CategoriesDropdownProps {
+  mobile?: boolean;
+  onCategoryClick?: () => void;
+}
+
+// Now you know EXACTLY what props to pass
+<CategoriesDropdown mobile={true} onCategoryClick={handleClick} />
+```
+
+**Step 2: Pass ONLY props that exist in the interface**
 ```tsx
 // Component file defines:
 interface BookCardProps {
   book: Book;  // Expects OBJECT, not individual fields!
 }
 
-// WRONG - passing individual fields
+// ❌ WRONG - passing individual fields
 <BookCard id={book.id} title={book.title} author={book.author} />
 
-//  CORRECT - pass the object
+// ✅ CORRECT - pass the object
 <BookCard book={book} />
 ```
 
+**Step 3: If component NOT in Pre-loaded Code → DON'T use it!**
+```tsx
+// ❌ WRONG - guessing props for component you haven't read
+<CategoryNavigation mobile={true} onCategoryClick={...} />
+// What if CategoryNavigation doesn't accept these props?
+
+// ✅ CORRECT - only use components you've verified in Pre-loaded Code
+// Or use built-in shadcn components instead!
+```
+
+**TypeScript error TS2322 means WRONG PROPS!**
+```
+error TS2322: Type '{ mobile: boolean; onCategoryClick: () => void; }' 
+is not assignable to type 'IntrinsicAttributes'.
+Property 'mobile' does not exist on type 'IntrinsicAttributes'.
+```
+
+**This error means:**
+1. Component doesn't accept `mobile` prop
+2. You're passing props that don't exist in Props interface
+3. **You FORGOT to read the component file first!**
+
 **Common mistakes:**
+- **NOT reading Props interface before using component** ← #1 cause of errors!
 - Passing `{ name, slug, count }` when component expects `{ category: Category }`
 - Passing individual fields when component expects an object prop
-- Not reading the Props interface before using component
 - Missing required props: `<Banner />` instead of `<Banner title="Sale" />`
 - **INVENTING props that don't exist** - component may self-fetch data internally!
 
@@ -76,6 +113,65 @@ interface FilterPanelProps {
 - `TS2741: Property 'X' is missing` → Add the required prop
 - `TS2353: 'X' does not exist` → **REMOVE the prop - it's not in interface!**
 - `TS2322: Type 'X' is not assignable` → Check if server action includes relations
+
+## ⚠️ Using Zustand Stores - CRITICAL
+
+**BEFORE using any store hook (`useXxxStore()`), CHECK the store file in Pre-loaded Code!**
+
+```typescript
+// ❌ WRONG - assuming store interface without checking
+const { paymentMethod, bankDetails, orderCode } = usePaymentStore();
+// What if PaymentState doesn't have bankDetails or orderCode?
+
+// ✅ CORRECT - check Pre-loaded Code first
+// 1. Find src/lib/payment-store.ts in Pre-loaded Code section
+// 2. Read PaymentState interface to see available fields
+// 3. ONLY destructure fields that EXIST in the interface
+
+// Example: If PaymentState only has { paymentMethod, setPaymentMethod }
+const { paymentMethod, setPaymentMethod } = usePaymentStore();  // Only use what exists!
+```
+
+**Common store files and locations:**
+- Payment: `src/lib/payment-store.ts` → `usePaymentStore()`
+- Cart: `src/lib/cart-store.ts` → `useCartStore()`
+- Auth: `src/lib/auth-store.ts` → `useAuthStore()` (if exists)
+
+**Rules:**
+1. **Always check store file BEFORE using the hook**
+2. **Only destructure fields that exist** in the interface
+3. **If store file is NOT in Pre-loaded Code**:
+   - Use minimal assumptions (only `paymentMethod` for payment, only `items` for cart)
+   - Or request the store file as a dependency
+4. **Never invent store fields** - read the actual interface!
+
+**Example - Reading store interface:**
+```typescript
+// In Pre-loaded Code: src/lib/cart-store.ts
+interface CartState {
+  items: CartItem[];
+  addItem: (item: CartItem) => void;
+  removeItem: (id: string) => void;
+  // NO 'total' or 'count' fields!
+}
+
+// ✅ CORRECT - only use what exists
+const { items, addItem, removeItem } = useCartStore();
+const total = items.reduce((sum, item) => sum + item.price, 0);  // Calculate yourself
+
+// ❌ WRONG - assuming fields that don't exist
+const { items, total, count } = useCartStore();  // TS ERROR!
+```
+
+**Why this matters:**
+- TypeScript will error on non-existent fields: `Property 'X' does not exist on type 'YState'`
+- Component will fail to compile
+- Wastes time debugging obvious errors
+
+**If you get TS error about store fields:**
+1. Check Pre-loaded Code for the store file
+2. Read the actual interface
+3. Only use fields that are defined there
 
 ## ⚠️ Data Fetching - Self-Fetch Pattern
 
@@ -172,8 +268,8 @@ function MyComponent() {
 import { useState } from 'react';
 'use client';  // ERROR: Must be first line!
 
-//  CORRECT - 'use client' at FIRST LINE, use import
-'use client';
+// ✅ CORRECT - 'use client' at FIRST LINE (line 1!)
+'use client';  // This MUST be the very first line
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -190,7 +286,198 @@ export function BookCard() {
 - onClick, onChange, onSubmit, onHover
 - useRouter, usePathname, useSearchParams
 
-### 2. Layout - NO header in pages
+### 2. String Quotes - CRITICAL for JSX Text ⚠️
+
+**RULE: Use DOUBLE QUOTES for JSX strings with apostrophes/contractions**
+
+```tsx
+// ❌ WRONG - Single quotes with apostrophe causes TypeScript error
+<p>{'Thank you! We'll send you a confirmation.'}</p>
+//              ^ ERROR: Unexpected token
+
+<Alert>{"Don't worry, we've got you covered!"}</Alert>
+//        ^ ERROR: String breaks at apostrophe
+
+// ✅ CORRECT - Double quotes for outer string
+<p>{"Thank you! We'll send you a confirmation."}</p>
+<Alert>{"Don't worry, we've got you covered!"}</Alert>
+
+// ✅ ALSO CORRECT - Template literals (if no variables)
+<p>{`Thank you! We'll send you a confirmation.`}</p>
+```
+
+**When to use each quote style:**
+
+| Quote Type | Use For | Example |
+|------------|---------|---------|
+| Double `"` | JSX text with contractions (we'll, don't, it's) | `{"We'll contact you soon"}` |
+| Single `'` | Simple JSX text WITHOUT apostrophes | `{'Hello'}` or `{'Submit'}` |
+| Template `` ` `` | Strings with variables or multi-line | `` {`Hello ${name}`} `` |
+
+**Common contractions to watch for:**
+- we'll, you'll, I'll, they'll
+- don't, won't, can't, shouldn't
+- it's, that's, here's, there's
+- I've, we've, you've
+
+**CRITICAL: JSX expression strings with apostrophes MUST use double quotes or template literals**
+
+```tsx
+// ❌ WRONG - Will break TypeScript
+{showMessage 
+  ? 'We'll send confirmation'  // ERROR
+  : 'Don't worry'}             // ERROR
+
+// ✅ CORRECT - Double quotes
+{showMessage 
+  ? "We'll send confirmation"
+  : "Don't worry"}
+
+// ✅ ALSO CORRECT - Template literals  
+{showMessage 
+  ? `We'll send confirmation`
+  : `Don't worry`}
+```
+
+**Exception - Plain text in JSX (no braces):**
+```tsx
+// These are OK (React escapes apostrophes automatically)
+<p>We'll send you a confirmation.</p>
+<Alert>Don't worry!</Alert>
+```
+
+### 3. Type Annotations - React 19 + Next.js 16
+
+**Use `React.ReactElement`, NOT `JSX.Element`:**
+
+```tsx
+// ❌ WRONG - JSX namespace not available with new JSX transform
+const renderStars = (rating: number): JSX.Element[] => {
+  return Array.from({ length: 5 }, (_, i) => <Star key={i} />);
+};
+
+// ✅ CORRECT - Use React.ReactElement
+const renderStars = (rating: number): React.ReactElement[] => {
+  return Array.from({ length: 5 }, (_, i) => <Star key={i} />);
+};
+
+// ✅ ALSO CORRECT - Let TypeScript infer (simplest)
+const renderStars = (rating: number) => {
+  return Array.from({ length: 5 }, (_, i) => <Star key={i} />);
+};
+```
+
+**Rules:**
+- With React 19 + Next.js 16 (`jsx: "react-jsx"`), use `React.ReactElement` for JSX type annotations
+- `JSX.Element` requires separate import and is deprecated pattern
+- Best practice: Let TypeScript infer return types when obvious
+- For function params expecting JSX: use `React.ReactNode` or `React.ReactElement`
+
+**Common patterns:**
+```tsx
+// Function returning single element
+const Header = (): React.ReactElement => <h1>Title</h1>;
+
+// Function returning array of elements  
+const renderItems = (items: Item[]): React.ReactElement[] => 
+  items.map(item => <div key={item.id}>{item.name}</div>);
+
+// Component prop accepting JSX
+interface Props {
+  icon: React.ReactElement;  // Single element
+  children: React.ReactNode; // Any renderable content
+}
+```
+
+**TypeScript config context:**
+```json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",  // New transform - JSX namespace not auto-available
+  }
+}
+```
+
+### 4. Event Handler Errors - Server vs Client Components
+
+**Error:** "Event handlers cannot be passed to Client Component props"
+
+**Cause:** You're passing a function from Server Component to Client Component.
+
+```tsx
+// ❌ PROBLEM - Server Component passing handler to Client Component
+// page.tsx (Server Component by default - no 'use client')
+export default function Page() {
+  const handleSort = (sort: string) => { ... };  // Function in Server Component
+  
+  return <KanbanBoard onSortChange={handleSort} />;  // ❌ Passing to Client Component
+}
+
+// kanban-board.tsx
+'use client';
+export function KanbanBoard({ onSortChange }: { onSortChange: (sort: string) => void }) {
+  return <button onClick={() => onSortChange('date')}>Sort</button>;
+}
+```
+
+**Solution A - Convert parent to Client Component (Simple):**
+
+Use this when the page doesn't need server-side data fetching or server actions.
+
+```tsx
+// page.tsx - Add 'use client' to make it a Client Component
+'use client';  // ← Add this at first line!
+
+export default function Page() {
+  const handleSort = (sort: string) => { ... };  // ✅ Now OK - function in Client Component
+  return <KanbanBoard onSortChange={handleSort} />;  // ✅ Can pass handlers
+}
+
+// kanban-board.tsx - No changes needed
+'use client';
+export function KanbanBoard({ onSortChange }: { onSortChange: (sort: string) => void }) {
+  return <button onClick={() => onSortChange('date')}>Sort</button>;
+}
+```
+
+**Solution B - Move logic down (Better for SEO/SSR):**
+
+Use this when you need server-side data fetching (`async` component) or server actions.
+
+```tsx
+// page.tsx - Keep as Server Component
+export default async function Page() {
+  const data = await fetchData();  // Server-side data fetching preserved
+  return <KanbanBoard initialData={data} />;  // Pass data, not handlers
+}
+
+// kanban-board.tsx - Handle state + events internally
+'use client';
+
+export function KanbanBoard({ initialData }: { initialData: Data[] }) {
+  const [sort, setSort] = useState('date');
+  const [data, setData] = useState(initialData);
+  
+  const handleSort = (newSort: string) => {  // ✅ Handler in Client Component
+    setSort(newSort);
+    // Sort logic here
+  };
+  
+  return <button onClick={() => handleSort('date')}>Sort</button>;
+}
+```
+
+**When to use which:**
+- **Solution A (Add 'use client' to parent)**: Simple pages with no server data fetching, no form actions
+- **Solution B (Move handler to child)**: Pages with `async` data fetching, forms with server actions, or when you want to preserve SSR benefits
+
+**CRITICAL RULES:**
+- ✅ **DO** add `'use client'` to parent if it's a simple page
+- ✅ **DO** move handler logic into child component if parent needs to stay server component
+- ❌ **NEVER** remove `'use client'` from child components that use hooks/events
+- ❌ **NEVER** try to pass functions from Server Components to Client Components
+
+### 5. Layout - NO header in pages
 Root `layout.tsx` has `<Navigation />`. Pages only have content:
 ```tsx
 //  CORRECT
@@ -199,7 +486,7 @@ export default function Page() {
 }
 ```
 
-### 2.1 Container & Text Centering
+### 5.1 Container & Text Centering
 ```tsx
 // WRONG - container not centered
 <div className="container">
@@ -225,31 +512,85 @@ export default function Page() {
 - Centered text sections: parent `text-center`, children `block` (not inline-block)
 - Long text: add `mx-auto max-w-2xl` to constrain width
 
-### 3. Null Safety - CRITICAL ⚠️
-API responses may have undefined nested arrays/objects!
+### 6. Null Safety - CRITICAL FOR SSR/SSG BUILDS ⚠️
+
+**CRITICAL: Next.js builds (SSR/SSG) CRASH on undefined property access!**
+
+**Why this matters:**
+- ✅ **Dev mode** (`npm run dev`): Errors caught, page still loads
+- ❌ **Production build** (`npm run build`): **ENTIRE BUILD FAILS**
+- ❌ Error message: "TypeError: Cannot read properties of undefined (reading 'toLocaleString')" at cryptic location in `.next/server/chunks/...`
+
+**Date/Time Methods - MUST use `?.`**
 
 ```tsx
-// CRASHES at runtime (category.books could be undefined)
-category.books.filter(b => b.coverImage)
-data.items.map(item => ...)
+// ❌ WRONG - Build crashes with "Cannot read 'toLocaleString' of undefined"
+<p>{book.publishedAt.toLocaleString()}</p>
+<span>{order.createdAt.toLocaleDateString()}</span>
+<time dateTime={new Date(post.date).toISOString()}>...</time>
 
-//  ALWAYS defensive - use ?? [] or ?.
-(category.books ?? []).filter(b => b.coverImage)
-(data?.items ?? []).map(item => ...)
-data?.items?.length ?? 0
-
-// Props default
-function List({ items = [] }: Props) { ... }
+// ✅ CORRECT - Safe for SSR/SSG
+<p>{book.publishedAt?.toLocaleString() ?? 'N/A'}</p>
+<span>{order.createdAt?.toLocaleDateString() ?? ''}</span>
+<time dateTime={post.date ? new Date(post.date).toISOString() : ''}>...</time>
 ```
 
-**RULE:** Any `.map()`, `.filter()`, `.slice()` on API/fetched data MUST have `?? []` or optional chaining
+**Number Methods - MUST use `?.`**
 
 ```tsx
-// State init - always default to empty array
-const [items, setItems] = useState<Item[]>([]);
+// ❌ WRONG - Build crashes if undefined
+<p>${product.price.toFixed(2)}</p>
+<span>{rating.toPrecision(2)}</span>
+
+// ✅ CORRECT
+<p>${product.price?.toFixed(2) ?? '0.00'}</p>
+<span>{rating?.toPrecision(2) ?? 'N/A'}</span>
 ```
 
-### 4. Type Casting - Filter/Toggle Functions ⚠️
+**String Methods - MUST use `?.`**
+
+```tsx
+// ❌ WRONG - Build crashes if value is null/undefined
+{order.paymentMethod.replace('_', ' ')}
+{category.name.toLowerCase()}
+{user.email.split('@')[0]}
+
+// ✅ CORRECT - safe with optional chaining
+{order.paymentMethod?.replace('_', ' ') ?? 'N/A'}
+{category.name?.toLowerCase() ?? ''}
+{user.email?.split('@')[0] ?? ''}
+```
+
+**Array Methods - MUST use `?? []`**
+
+```tsx
+// ❌ WRONG - Build crashes if undefined
+{books.map(book => <Card key={book.id} {...book} />)}
+{categories.filter(c => c.active)}
+{items.slice(0, 5)}
+
+// ✅ CORRECT
+{(books ?? []).map(book => <Card key={book.id} {...book} />)}
+{(categories ?? []).filter(c => c.active)}
+{(items ?? []).slice(0, 5)}
+```
+
+**SSR/SSG Rule Summary:**
+
+For pages that pre-render (catalog, search, product listings):
+
+1. **ASSUME all fetched/props data can be undefined** during build
+2. **ALWAYS use `?.`** before calling ANY method (.toLocaleString, .toLowerCase, .toFixed, etc.)
+3. **ALWAYS provide fallback** with `?? 'default'` or `?? []`
+4. **State initialization:** Always default arrays to `[]`: `const [items, setItems] = useState<Item[]>([]);`
+
+**Exception - Skip `?.` only if value is guaranteed:**
+- Local const: `const name = "John"; name.toLowerCase()` ✅
+- Literal: `"hello".toUpperCase()` ✅
+- Form input: `e.target.value.trim()` ✅ (guaranteed string)
+- After null check: `if (data) { data.toLowerCase() }` ✅
+
+### 7. Type Casting - Filter/Toggle Functions ⚠️
 
 Filter values from UI components are often union types:
 
@@ -286,18 +627,21 @@ toggleCategory(String(filter.value));
 
 **RULE:** When filter.value/item.value has union type, cast before passing to typed functions
 
-### 5. Route Navigation - USE EXACT PATHS
+### 8. Route Navigation - USE EXACT PATHS
 Check the plan/context for existing page routes before using `router.push()` or `<Link>`:
 
 ```tsx
-// WRONG - guessing route that doesn't exist
+// ❌ WRONG - guessing route that doesn't exist
 router.push(`/books?search=${query}`);  // 404 if /books/page.tsx doesn't exist!
 
 //  CORRECT - use route from plan
 router.push(`/search?q=${query}`);  // /search/page.tsx exists in plan
 ```
 
-**RULE:** Always check Dependencies section for existing page paths before navigation.
+**RULES:** 
+- Always check Dependencies section for existing page paths before navigation
+- **Use `q` for search query parameter** (NOT `search`, `query`, or other names)
+- Standard pattern: `/search?q={query}` for search pages
 
 ## Page with Dynamic Params
 
@@ -412,9 +756,14 @@ export function SearchPage() {
 
 ## NEVER
 - `'use client'` when not needed
-- Guess props without reading component
+- **Use components without checking if they're in Pre-loaded Code or Dependencies first**
+- **Guess component props when you can't find the component file**
+- Guess props without reading component interface
+- **Call .toLocaleString()/.toLocaleDateString()/.toFixed() without `?.`**
+- **Call .toLowerCase()/.toUpperCase()/.replace()/.split() without `?.` on object properties**
+- **Use .map()/.filter()/.slice() on arrays without `?? []`**
 - Forget `await params` in dynamic routes
-- Access array/object without null checks
+- Access array/object without null checks in SSR/SSG pages
 - Add Header in pages (already in layout)
 - Import from `'./badge'` - use `'@/components/ui/badge'`
 - Create UI components that already exist in shadcn/ui

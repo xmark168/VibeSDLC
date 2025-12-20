@@ -14,8 +14,8 @@ from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.nodes.helpers import send_message, generate_user_message, get_llm_config as _cfg
 from app.agents.tester.src.schemas import FixStep, ErrorAnalysisOutput
 from app.utils.token_utils import truncate_error_logs
-from app.core.agent.llm_factory import get_llm
-from app.agents.tester.src.config import MAX_DEBUG_ATTEMPTS
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
+from app.core.config import llm_settings
 from app.agents.tester.src.nodes.plan import _get_existing_routes
 
 logger = logging.getLogger(__name__)
@@ -310,7 +310,7 @@ def _format_parsed_errors(errors: List[ParsedTestError]) -> str:
     
     return "\n".join(lines)
 
-_llm = get_llm("analyze")
+_llm = create_medium_llm()
 
 
 def _cfg(config: dict, name: str) -> dict:

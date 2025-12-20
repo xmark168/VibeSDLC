@@ -25,16 +25,7 @@ def count_tokens(text: str) -> int:
 
 
 def truncate_to_tokens(text: str, max_tokens: int, keep_end: bool = False) -> str:
-    """Truncate text to max tokens.
-    
-    Args:
-        text: Text to truncate
-        max_tokens: Maximum number of tokens
-        keep_end: If True, keep end of text instead of beginning
-        
-    Returns:
-        Truncated text
-    """
+    """Truncate text to max tokens."""
     if not text:
         return text
         
@@ -57,16 +48,7 @@ def smart_truncate_tokens(
     max_tokens: int, 
     head_ratio: float = 0.7
 ) -> tuple[str, bool]:
-    """Smart truncate showing head + tail by tokens.
-    
-    Args:
-        text: Text to truncate
-        max_tokens: Maximum number of tokens
-        head_ratio: Ratio of tokens to keep from head (default 70%)
-        
-    Returns:
-        tuple: (truncated_text, was_truncated)
-    """
+    """Smart truncate showing head + tail by tokens."""
     if not text:
         return text, False
         

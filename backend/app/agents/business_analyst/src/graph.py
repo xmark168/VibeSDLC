@@ -13,9 +13,7 @@ from .nodes import (
     analyze_intent,
     respond_conversational,
     interview_requirements,
-    ask_one_question,
     ask_batch_questions,
-    process_answer,
     process_batch_answers,
     generate_prd,
     update_prd,
@@ -27,6 +25,9 @@ from .nodes import (
     save_artifacts,
     check_clarity,
 )
+from app.core.config import settings
+import psycopg_pool
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -39,38 +40,76 @@ async def get_postgres_checkpointer() -> AsyncPostgresSaver:
     """Get or create a PostgresSaver checkpointer for persistent state."""
     global _postgres_checkpointer, _connection_pool
     
-    if _postgres_checkpointer is None:
+    # Health check: Reset if pool is closed/stale
+    if _connection_pool is not None:
         try:
-            from app.core.config import settings
-            import psycopg_pool
-            
-            # Build connection string from settings
-            db_url = str(settings.SQLALCHEMY_DATABASE_URI)
-            if db_url.startswith("postgresql+psycopg"):
-                db_url = db_url.replace("postgresql+psycopg", "postgresql")
-            
-            logger.info(f"[BA Graph] Creating PostgresSaver with connection pool...")
-            
-            # Create connection pool
-            _connection_pool = psycopg_pool.AsyncConnectionPool(
-                conninfo=db_url,
-                max_size=5,
-                min_size=1,
-                open=False,
-            )
-            await _connection_pool.open()
-            
-            # Create checkpointer
-            _postgres_checkpointer = AsyncPostgresSaver(_connection_pool)
-            
-            # Setup tables if needed
-            await _postgres_checkpointer.setup()
-            
-            logger.info("[BA Graph] PostgresSaver initialized successfully")
-            
-        except Exception as e:
-            logger.error(f"[BA Graph] Failed to create PostgresSaver: {e}, falling back to MemorySaver")
-            return None
+            if _connection_pool.closed:
+                logger.warning("[BA Graph] Connection pool is closed, reinitializing...")
+                _postgres_checkpointer = None
+                _connection_pool = None
+        except Exception:
+            pass
+    
+    if _postgres_checkpointer is None:
+       
+        
+        # Build connection string from settings
+        db_url = str(settings.DATABASE_URL)
+        if db_url.startswith("postgresql+psycopg"):
+            db_url = db_url.replace("postgresql+psycopg", "postgresql")
+        
+        # Retry logic with exponential backoff
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"[BA Graph] Creating connection pool (attempt {attempt + 1}/{max_retries})...")
+                
+                # Create connection pool with larger size and timeout
+                _connection_pool = psycopg_pool.AsyncConnectionPool(
+                    conninfo=db_url,
+                    max_size=10,  # Increased from 5
+                    min_size=2,   # Increased from 1
+                    open=False,
+                    kwargs={
+                        "autocommit": True,
+                        "connect_timeout": 5,
+                    },
+                )
+                
+                # Open with timeout to prevent indefinite hang
+                await asyncio.wait_for(
+                    _connection_pool.open(),
+                    timeout=10.0
+                )
+                logger.info("[BA Graph] Connection pool opened successfully")
+                
+                # Create checkpointer
+                _postgres_checkpointer = AsyncPostgresSaver(_connection_pool)
+                
+                # Setup tables if needed
+                await _postgres_checkpointer.setup()
+                logger.info("[BA Graph] PostgresSaver initialized successfully")
+                break
+                
+            except asyncio.TimeoutError:
+                logger.warning(f"[BA Graph] Connection pool open timeout (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    backoff = 2 ** attempt
+                    logger.info(f"[BA Graph] Retrying in {backoff}s...")
+                    await asyncio.sleep(backoff)
+                else:
+                    logger.error("[BA Graph] Failed to connect after 3 retries, falling back to None")
+                    return None
+                    
+            except Exception as e:
+                logger.error(f"[BA Graph] PostgresSaver setup failed: {e}")
+                if attempt < max_retries - 1:
+                    backoff = 2 ** attempt
+                    logger.info(f"[BA Graph] Retrying in {backoff}s...")
+                    await asyncio.sleep(backoff)
+                else:
+                    logger.error(f"[BA Graph] Failed to create PostgresSaver after retries, falling back to None")
+                    return None
     
     return _postgres_checkpointer
 
@@ -154,27 +193,6 @@ def should_ask_questions(state: BAState) -> Literal["ask", "save"]:
     else:
         logger.info("[BA Graph] No questions, skipping to save")
         return "save"
-
-
-def should_continue_or_wait(state: BAState) -> Literal["wait", "next_question", "generate_prd"]:
-    """Router: After asking/processing, decide next step.
-    
-    - wait: Question sent, waiting for user answer (END this run)
-    - next_question: More questions to ask
-    - generate_prd: All questions answered, generate PRD
-    """
-    waiting = state.get("waiting_for_answer", False)
-    all_answered = state.get("all_questions_answered", False)
-    
-    if waiting:
-        logger.info("[BA Graph] Waiting for user answer, pausing execution")
-        return "wait"
-    elif all_answered:
-        logger.info("[BA Graph] All questions answered, proceeding to PRD generation")
-        return "generate_prd"
-    else:
-        logger.info("[BA Graph] More questions to ask")
-        return "next_question"
 
 
 def batch_after_ask(state: BAState) -> Literal["wait", "generate_prd"]:
@@ -265,10 +283,7 @@ class BusinessAnalystGraph:
         graph.add_node("analyze_intent", partial(analyze_intent, agent=agent))
         graph.add_node("respond_conversational", partial(respond_conversational, agent=agent))
         graph.add_node("interview_requirements", partial(interview_requirements, agent=agent))
-        # Sequential mode nodes (deprecated but kept for compatibility)
-        graph.add_node("ask_one_question", partial(ask_one_question, agent=agent))
-        graph.add_node("process_answer", partial(process_answer, agent=agent))
-        # Batch mode nodes (preferred)
+        # Batch mode nodes
         graph.add_node("ask_batch_questions", partial(ask_batch_questions, agent=agent))
         graph.add_node("process_batch_answers", partial(process_batch_answers, agent=agent))
         # PRD and other nodes
@@ -333,27 +348,6 @@ class BusinessAnalystGraph:
         
         # After domain analysis (research): loop back to ask more questions
         graph.add_edge("analyze_domain", "ask_batch_questions")
-        
-        # Keep sequential mode edges for backward compatibility (not used in main flow)
-        graph.add_conditional_edges(
-            "ask_one_question",
-            should_continue_or_wait,
-            {
-                "wait": END,
-                "next_question": "ask_one_question",
-                "generate_prd": "generate_prd"
-            }
-        )
-        
-        graph.add_conditional_edges(
-            "process_answer",
-            should_continue_or_wait,
-            {
-                "wait": END,
-                "next_question": "ask_one_question",
-                "generate_prd": "generate_prd"
-            }
-        )
         
         # Conversational -> END (no artifacts to save)
         graph.add_edge("respond_conversational", END)
@@ -462,9 +456,6 @@ class BusinessAnalystGraph:
     
     async def resume(self, config: dict) -> dict:
         """Resume graph from checkpoint using Command(resume=True).
-        
-        Args:
-            config: Config with thread_id to identify checkpoint
         """
         if not self._setup_complete:
             await self.setup()

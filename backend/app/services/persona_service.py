@@ -19,15 +19,7 @@ class PersonaService:
         role_type: str,
         exclude_ids: Optional[list[UUID]] = None
     ) -> Optional[AgentPersonaTemplate]:
-        """Get random active persona for role type.
-        
-        Args:
-            role_type: Agent role type
-            exclude_ids: Personas already used in project (for diversity)
-            
-        Returns:
-            Random persona or None if no personas available
-        """
+        """Get random active persona for role type."""
         query = (
             select(AgentPersonaTemplate)
             .where(AgentPersonaTemplate.role_type == role_type)
@@ -45,14 +37,7 @@ class PersonaService:
         return random.choice(personas)
     
     def get_all_by_role(self, role_type: str) -> list[AgentPersonaTemplate]:
-        """Get all active personas for role.
-        
-        Args:
-            role_type: Agent role type
-            
-        Returns:
-            List of personas ordered by display_order
-        """
+        """Get all active personas for role."""
         return self.session.exec(
             select(AgentPersonaTemplate)
             .where(AgentPersonaTemplate.role_type == role_type)
@@ -65,15 +50,7 @@ class PersonaService:
         name: str, 
         role_type: str
     ) -> Optional[AgentPersonaTemplate]:
-        """Get specific persona by name and role.
-        
-        Args:
-            name: Persona name
-            role_type: Agent role type
-            
-        Returns:
-            Persona or None if not found
-        """
+        """Get specific persona by name and role."""
         return self.session.exec(
             select(AgentPersonaTemplate)
             .where(AgentPersonaTemplate.name == name)
@@ -81,14 +58,7 @@ class PersonaService:
         ).first()
     
     def get_by_id(self, persona_id: UUID) -> Optional[AgentPersonaTemplate]:
-        """Get persona by ID.
-        
-        Args:
-            persona_id: Persona template UUID
-            
-        Returns:
-            Persona or None if not found
-        """
+        """Get persona by ID."""
         return self.session.get(AgentPersonaTemplate, persona_id)
     
     def get_all_active(self) -> list[AgentPersonaTemplate]:

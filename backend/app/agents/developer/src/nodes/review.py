@@ -3,9 +3,9 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.developer.src.state import DeveloperState
-from app.agents.developer.src.nodes._llm import get_llm
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
 from app.agents.developer.src.schemas import SimpleReviewOutput
-from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, flush_langfuse, track_node
+from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg, async_flush_langfuse, track_node
 from app.agents.developer.src.utils.prompt_utils import (
     format_input_template as _format_input_template,
     build_system_prompt as _build_system_prompt,
@@ -113,8 +113,7 @@ async def review(state: DeveloperState, config: dict = None, agent=None) -> Deve
             HumanMessage(content=input_text)
         ]
         
-        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
-        structured_llm = get_llm("review").with_structured_output(SimpleReviewOutput)
+        structured_llm = create_medium_llm().with_structured_output(SimpleReviewOutput)
         result = await structured_llm.ainvoke(messages, config=_cfg(config, "review"))
         flush_langfuse(config)
         review_result = result.model_dump()

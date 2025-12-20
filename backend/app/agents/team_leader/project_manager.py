@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 from sqlmodel import Session, select
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from app.core.agent.llm_factory import get_llm
-from app.core.agent.base_agent import TaskContext, TaskResult
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
+from app.agents.core.base_agent import TaskContext, TaskResult
 from app.models import ArtifactType, Epic, Story
 from app.core.db import engine
 from app.services.artifact_service import ArtifactService
@@ -74,7 +74,7 @@ Phân loại câu trả lời thành 1 trong 4 actions:
 - "replace": User muốn THAY THẾ/TẠO LẠI project hoàn toàn mới
 - "keep": User muốn GIỮ NGUYÊN, không thay đổi gì"""
 
-            structured_llm = get_llm("router").with_structured_output(ConfirmationAction)
+            structured_llm = create_fast_llm().with_structured_output(ConfirmationAction)
             result = await structured_llm.ainvoke([
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=f"User answer: {answer}")

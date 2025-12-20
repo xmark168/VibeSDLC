@@ -141,10 +141,10 @@ class BaseModel(SQLModel):
     """Base model with common fields."""
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc), nullable=False
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False  # Strip timezone for asyncpg
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),  # Strip timezone for asyncpg
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc).replace(tzinfo=None)},  # Strip timezone for asyncpg
         nullable=False,
     )

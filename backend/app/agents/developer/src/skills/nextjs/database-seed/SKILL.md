@@ -49,6 +49,85 @@ async function validateSchema() {
 }
 ```
 
+## 🖼️ IMAGE PLACEHOLDER BEST PRACTICES
+
+### ✅ USE LOREM PICSUM (RECOMMENDED)
+
+Lorem Picsum provides high-quality, responsive images perfect for seed data:
+
+```typescript
+// ✅ CORRECT - Lorem Picsum with custom dimensions
+const products = productData.map((product, index) => ({
+  ...product,
+  // Use seed parameter for consistent images across refreshes
+  coverImage: `https://picsum.photos/seed/${100 + index}/800/1200`,
+  thumbnailImage: `https://picsum.photos/seed/${100 + index}/400/600`,
+}));
+
+// ✅ FAKER + PICSUM for variety
+import { faker } from '@faker-js/faker';
+
+const items = Array.from({ length: 50 }, (_, index) => ({
+  title: faker.commerce.productName(),
+  image: `https://picsum.photos/seed/${faker.number.int({ min: 100, max: 999 })}/800/1200`,
+  price: faker.number.float({ min: 9.99, max: 99.99 }),
+}));
+```
+
+**URL Format:**
+- `https://picsum.photos/seed/{id}/{width}/{height}` - Consistent image per seed ID
+- `https://picsum.photos/{width}/{height}` - Random image (changes on reload)
+
+**Recommended Dimensions:**
+- **Product covers/cards:** 400x600, 600x900
+- **Hero banners:** 1920x1080, 1600x900
+- **Thumbnails:** 200x300, 150x150
+- **Book covers:** 400x600, 300x450
+- **Profile avatars:** 200x200, 150x150
+
+### ❌ AVOID UNSPLASH URLs
+
+Unsplash URLs in seed data have issues:
+- ❌ URLs break easily (require API keys for production)
+- ❌ Rate limits in CI/CD pipelines
+- ❌ Inconsistent image quality
+- ❌ Slower load times
+
+```typescript
+// ❌ WRONG - Unsplash URLs
+coverImage: 'https://images.unsplash.com/photo-...'
+
+// ✅ CORRECT - Lorem Picsum
+coverImage: `https://picsum.photos/seed/${index}/800/1200`
+```
+
+### 🎨 COMPLETE SEED EXAMPLE WITH IMAGES
+
+```typescript
+import { PrismaClient } from '@prisma/client';
+import { faker } from '@faker-js/faker';
+
+const prisma = new PrismaClient();
+
+async function seedProducts() {
+  // 50 products with beautiful cover images
+  const products = Array.from({ length: 50 }, (_, index) => ({
+    title: faker.commerce.productName(),
+    description: faker.commerce.productDescription(),
+    price: parseFloat(faker.commerce.price({ min: 10, max: 100 })),
+    // High-quality 800x1200 cover images
+    coverImage: `https://picsum.photos/seed/${100 + index}/800/1200`,
+    // Matching thumbnail (same seed, smaller size)
+    thumbnail: `https://picsum.photos/seed/${100 + index}/400/600`,
+    category: faker.helpers.arrayElement(categories).id,
+    isFeatured: index < 10, // First 10 are featured
+  }));
+
+  await prisma.product.createMany({ data: products });
+  console.log(`✅ Created ${products.length} products with Lorem Picsum images`);
+}
+```
+
 ## 📋 STEP-BY-STEP SAFE SEED TEMPLATE
 
 ```typescript

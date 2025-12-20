@@ -1,10 +1,6 @@
 import asyncio
 import logging
 import os
-import sys
-
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import sentry_sdk
 from contextlib import asynccontextmanager
@@ -34,14 +30,8 @@ def custom_generate_unique_id(route: APIRoute) -> str:
 
 
 async def cleanup_stale_story_states():
-    """Reset stale story states on backend restart.
-    
-    When backend restarts, any stories in PENDING/PROCESSING state
-    are stale (no agent is actually processing them). Reset to null
-    and clear checkpoints.
-    """
-    from sqlmodel import Session
-    from sqlalchemy import text
+    """Reset stale story states on backend restart."""
+    from sqlmodel import Session, text
 
     
     try:
@@ -49,7 +39,7 @@ async def cleanup_stale_story_states():
             # Find stories with stale states (any non-finished state)
             stale_stories = session.exec(
                 text("""
-                    SELECT id, checkpoint_thread_id 
+                    SELECT id, checkpoint_thread_id, worktree_path, branch_name, project_id, status
                     FROM stories 
                     WHERE agent_state IN ('PENDING', 'PROCESSING', 'PAUSED', 'CANCEL_REQUESTED')
                 """)
@@ -60,22 +50,64 @@ async def cleanup_stale_story_states():
                 return
             
             story_ids = [str(s[0]) for s in stale_stories]
-            checkpoint_ids = [s[1] for s in stale_stories if s[1]]
+            
+            # Count stories by status for logging
+            status_counts = {}
+            for story in stale_stories:
+                status = story[5]  # status is 6th field
+                status_counts[status] = status_counts.get(status, 0) + 1
             
             logger.info(f"🧹 Cleaning up {len(stale_stories)} stale stories: {story_ids}")
+            logger.info(f"   Status breakdown: {status_counts}")
             
-            # Reset agent_state to null and clear assigned_agent_id
+            # Step 1: Cleanup workspaces (worktree + branch)
+            from app.utils.workspace_utils import cleanup_workspace
+            from app.models import Project
+            from pathlib import Path
+            
+            cleanup_count = 0
+            for story in stale_stories:
+                story_id, _, worktree_path, branch_name, project_id = story
+                
+                # Check if worktree exists
+                if worktree_path and Path(worktree_path).exists():
+                    try:
+                        # Get project repo path
+                        project = session.get(Project, project_id)
+                        if project and project.repo_path:
+                            # Cleanup worktree + branch
+                            cleanup_workspace(
+                                repo_path=project.repo_path,
+                                worktree_path=worktree_path,
+                                branch_name=branch_name
+                            )
+                            cleanup_count += 1
+                            logger.debug(f"Cleaned workspace for story {story_id}")
+                    except Exception as e:
+                        # Non-critical - continue cleanup
+                        logger.warning(f"Failed to cleanup workspace for story {story_id}: {e}")
+            
+            if cleanup_count > 0:
+                logger.info(f"✓ Cleaned {cleanup_count} workspaces")
+            
+            # Step 2: Prepare checkpoint IDs for clearing
+            checkpoint_ids = [s[1] for s in stale_stories if s[1]]
+            
+            # Step 3: Move incomplete stories to Todo and reset agent_state
             session.exec(
                 text("""
                     UPDATE stories 
-                    SET agent_state = NULL,
+                    SET status = 'Todo',
+                        agent_state = NULL,
                         checkpoint_thread_id = NULL,
-                        assigned_agent_id = NULL
+                        assigned_agent_id = NULL,
+                        worktree_path = NULL,
+                        branch_name = NULL
                     WHERE agent_state IN ('PENDING', 'PROCESSING', 'PAUSED', 'CANCEL_REQUESTED')
                 """)
             )
             
-            # Clear checkpoint data for these stories
+            # Step 4: Clear checkpoint data
             if checkpoint_ids:
                 for tid in checkpoint_ids:
                     try:
@@ -86,29 +118,37 @@ async def cleanup_stale_story_states():
                         logger.warning(f"Failed to delete checkpoint {tid}: {e}")
             
             session.commit()
-            logger.info(f"✓ Reset {len(stale_stories)} stale story states and cleared {len(checkpoint_ids)} checkpoints")
+            logger.info(
+                f"✓ Moved {len(stale_stories)} incomplete stories to Todo, "
+                f"cleared {len(checkpoint_ids)} checkpoints"
+            )
             
     except Exception as e:
         logger.error(f"Failed to cleanup stale story states: {e}")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_: FastAPI):
     with Session(engine) as session:
         init_db(session)
 
     # Cleanup stale story states from previous run
     await cleanup_stale_story_states()
+    
+    # Start scheduler for periodic tasks (agent token reset, cleanup)
+    from app.services.singletons import get_scheduler_service
+    scheduler = get_scheduler_service()
+    scheduler.start()
 
     from app.kafka import ensure_kafka_topics
     try:
         topics_ok = await ensure_kafka_topics()
         if not topics_ok:
-            logger.warning("⚠️  Some Kafka topics failed to create")
+            logger.warning("[SYSTEM] Some Kafka topics failed to create")
     except Exception as e:
         logger.warning(f"Failed to ensure Kafka topics: {e}")
 
-    from app.core.agent.router import start_router_service, stop_router_service
+    from app.agents.routers.router_service import start_router_service, stop_router_service
     try:
         await start_router_service()
     except Exception as e:
@@ -124,9 +164,11 @@ async def lifespan(app: FastAPI):
     try:
         await initialize_default_pools()
     except Exception as e:
+        import traceback
         logger.warning(f"⚠️ Failed to initialize agent pools: {e}")
+        logger.debug(f"Traceback: {traceback.format_exc()}")
 
-    from app.core.agent import get_agent_monitor
+    from app.agents.core import get_agent_monitor
     try:
         monitor = get_agent_monitor()
         await monitor.start(monitor_interval=30)
@@ -148,6 +190,12 @@ async def lifespan(app: FastAPI):
     yield
 
     try:
+        # Shutdown scheduler
+        try:
+            scheduler.shutdown()
+        except (Exception, asyncio.CancelledError) as e:
+            logger.error(f"Error stopping scheduler: {e}")
+        
         try:
             await websocket_kafka_bridge.stop()
         except (Exception, asyncio.CancelledError) as e:
@@ -164,14 +212,15 @@ async def lifespan(app: FastAPI):
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down monitoring system: {e}")
 
-        from app.api.routes.agent_management import _manager_registry
+        from app.services.pool_registry_service import get_pool_registry
         try:
-            for pool_name, manager in list(_manager_registry.items()):
+            registry = get_pool_registry()
+            for pool_name, manager in list(registry.items()):
                 try:
                     await manager.stop(graceful=True)
                 except (Exception, asyncio.CancelledError) as e:
                     logger.error(f"Error stopping pool '{pool_name}': {e}")
-            _manager_registry.clear()
+            registry.clear()
         except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Error shutting down agent pools: {e}")
         

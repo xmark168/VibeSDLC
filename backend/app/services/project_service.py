@@ -3,8 +3,9 @@
 import logging
 import re
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from sqlmodel import Session, select, func
 
@@ -16,26 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectService:
-    """Service for project management."""
-
     def __init__(self, session: Session):
         self.session = session
 
-    # ===== Internal Methods =====
-
     def generate_code(self) -> str:
-        """
-        Generate a unique project code in format PRJ-001, PRJ-002, etc.
-
-        Logic:
-        1. Find the highest existing project code
-        2. Extract the number part
-        3. Increment by 1
-        4. Format as PRJ-XXX (pad to 3 digits)
-
-        Returns:
-            str: Generated project code (e.g., 'PRJ-001')
-        """
+        """ Generate a unique project code in format PRJ-001, PRJ-002, etc.        """
         # Get all project codes from database
         statement = select(Project.code).order_by(Project.code.desc())
         result = self.session.exec(statement).first()
@@ -57,16 +43,7 @@ class ProjectService:
         return f"PRJ-{next_number:03d}"
 
     def create(self, project_in: ProjectCreate, owner_id: UUID) -> Project:
-        """
-        Create a new project with auto-generated code.
-
-        Args:
-            project_in: Project creation schema
-            owner_id: UUID of the project owner
-
-        Returns:
-            Project: Created project instance
-        """
+        """Create a new project with auto-generated code.        """
         # Generate unique project code
         project_code = self.generate_code()
 
@@ -274,51 +251,18 @@ class ProjectService:
             project_id: UUID of the project to delete
         """
         import shutil
-        import stat
-        import os
         import time
-        import subprocess
-        import sys
         
-        def force_remove_tree(path: Path, max_retries: int = 3) -> bool:
-            """Force remove directory tree with multiple strategies."""
-            path_str = str(path)
-            
-            # On Windows, use extended path prefix for long paths
-            if sys.platform == 'win32' and not path_str.startswith('\\\\?\\'):
-                path_str = '\\\\?\\' + os.path.abspath(path_str)
-            
-            def remove_readonly(func, fpath, excinfo):
-                """Handle Windows readonly files."""
-                try:
-                    os.chmod(fpath, stat.S_IWRITE | stat.S_IREAD)
-                    func(fpath)
-                except Exception:
-                    pass
-            
-            for attempt in range(max_retries):
-                try:
-                    if path.exists():
-                        shutil.rmtree(path, onerror=remove_readonly)
-                    return True
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        time.sleep(0.5)  # Wait before retry
-                        # On Windows, try using rmdir /s /q as fallback
-                        if sys.platform == 'win32':
-                            try:
-                                subprocess.run(
-                                    ['cmd', '/c', 'rmdir', '/s', '/q', str(path)],
-                                    capture_output=True,
-                                    timeout=60
-                                )
-                                if not path.exists():
-                                    return True
-                            except Exception:
-                                pass
-                    else:
-                        logger.warning(f"Failed to remove {path} after {max_retries} attempts: {e}")
-            return False
+        def force_remove_tree(path: Path) -> bool:
+            """Force remove directory tree."""
+            if not path.exists():
+                return True
+            try:
+                shutil.rmtree(path)
+                return True
+            except Exception as e:
+                logger.warning(f"Failed to remove {path}: {e}")
+                return False
         
         db_project = self.session.get(Project, project_id)
         if not db_project:
@@ -365,13 +309,6 @@ class ProjectService:
             int: Number of worktrees deleted
         """
         import shutil
-        import stat
-        import os
-        
-        def remove_readonly(func, path, excinfo):
-            """Handle Windows readonly files."""
-            os.chmod(path, stat.S_IWRITE)
-            func(path)
         
         db_project = self.session.get(Project, project_id)
         if not db_project or not db_project.project_path:
@@ -391,7 +328,7 @@ class ProjectService:
         for item in parent_dir.iterdir():
             if item.is_dir() and item.name.startswith(f"{project_name}_"):
                 try:
-                    shutil.rmtree(item, onerror=remove_readonly)
+                    shutil.rmtree(item)
                     logger.info(f"Deleted worktree: {item}")
                     deleted_count += 1
                 except Exception as e:
@@ -399,3 +336,59 @@ class ProjectService:
         
         logger.info(f"Cleaned up {deleted_count} worktrees for project {project_id}")
         return deleted_count
+
+
+# ============================================================================
+# ASYNC PROJECT SERVICE - New async implementation
+# ============================================================================
+
+class AsyncProjectService:
+    """Async project service for high-performance operations."""
+    
+    def __init__(self, session: AsyncSession):
+        self.session = session
+    
+    async def get_by_id(self, project_id: UUID) -> Optional[Project]:
+        """Get project by ID (async)."""
+        result = await self.session.execute(
+            select(Project).where(Project.id == project_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def get_by_user(self, user_id: UUID) -> List[Project]:
+        """Get all projects for a user (async)."""
+        result = await self.session.execute(
+            select(Project).where(Project.owner_id == user_id)
+        )
+        return list(result.scalars().all())
+    
+    async def create_project(self, project_data: dict) -> Project:
+        """Create new project (async)."""
+        project = Project(**project_data)
+        self.session.add(project)
+        await self.session.flush()
+        await self.session.refresh(project)
+        return project
+    
+    async def update_project(self, project_id: UUID, update_data: dict) -> Optional[Project]:
+        """Update project (async)."""
+        project = await self.get_by_id(project_id)
+        if not project:
+            return None
+        
+        for key, value in update_data.items():
+            setattr(project, key, value)
+        
+        await self.session.commit()
+        await self.session.refresh(project)
+        return project
+    
+    async def delete_project(self, project_id: UUID) -> bool:
+        """Delete project (async)."""
+        project = await self.get_by_id(project_id)
+        if not project:
+            return False
+        
+        await self.session.delete(project)
+        await self.session.commit()
+        return True

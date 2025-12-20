@@ -3,8 +3,8 @@
 import logging
 from pathlib import Path
 from sqlmodel import Session
-from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
-from app.core.agent.project_context import ProjectContext
+from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+from app.agents.core.project_context import ProjectContext
 from app.models import Agent as AgentModel, ArtifactType, Epic, Story, Project
 from app.agents.team_leader.src import TeamLeaderGraph, generate_response_message, check_cancel_intent
 from app.agents.team_leader.project_manager import ProjectManager

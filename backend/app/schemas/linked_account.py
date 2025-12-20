@@ -53,3 +53,9 @@ class LinkCallbackResponse(BaseModel):
     message: str
     provider: str
     provider_email: str
+
+
+class InitiateLinkResponse(BaseModel):
+    """Response containing OAuth URL for account linking."""
+    auth_url: str
+    provider: str

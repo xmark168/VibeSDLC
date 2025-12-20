@@ -2,6 +2,7 @@
 import os
 import re
 import logging
+import time
 from typing import Dict, Optional
 from uuid import UUID
 from testcontainers.postgres import PostgresContainer
@@ -16,18 +17,46 @@ os.environ["TESTCONTAINERS_RYUK_DISABLED"] = "true"
 _containers: Dict[str, any] = {}
 
 
-def start_postgres_container(story_id: Optional[str] = None) -> Dict[str, str]:
+def start_postgres_container(story_id: Optional[str] = None, project_id: Optional[str] = None) -> Dict[str, str]:
     """
     Start a postgres container and return connection info.
+    Args:
+        story_id: Story ID for worktree-specific containers
+        project_id: Project ID for main workspace containers
     """
+    # Use project_id if provided, otherwise story_id
+    container_key = project_id or story_id
     
     container = PostgresContainer("postgres:16")
     container.start()
     
-    if story_id:
-        _containers[story_id] = container
+    # Wait for PostgreSQL to be ready (fix race condition on first load)
+    logger.info("[db_container] Waiting for PostgreSQL to accept connections...")
+    max_wait = 30  # seconds
+    start_time = time.time()
+    ready = False
     
-    info = get_connection_info(story_id, container)
+    while time.time() - start_time < max_wait:
+        try:
+            # Check if PostgreSQL is ready to accept connections
+            result = container.exec("pg_isready -U test")
+            if result[0] == 0:  # exit code 0 means ready
+                ready = True
+                logger.info(f"[db_container] PostgreSQL is ready! (took {time.time() - start_time:.1f}s)")
+                break
+        except Exception as e:
+            # Container might not have exec available yet, ignore
+            pass
+        
+        time.sleep(0.5)
+    
+    if not ready:
+        logger.warning(f"[db_container] PostgreSQL not ready after {max_wait}s, continuing anyway...")
+    
+    if container_key:
+        _containers[container_key] = container
+    
+    info = get_connection_info(container_key, container)
     return info
 
 
@@ -59,9 +88,11 @@ def get_database_url(story_id: Optional[str] = None) -> str:
     return f"postgresql://{info['user']}:{info['password']}@{info['host']}:{info['port']}/{info['database']}"
 
 
-def update_env_file(workspace_path: str, story_id: Optional[str] = None) -> bool:
-    """Update .env file with database URL."""
-    info = get_connection_info(story_id)
+def update_env_file(workspace_path: str, story_id: Optional[str] = None, project_id: Optional[str] = None, dev_port: Optional[int] = None) -> bool:
+    """Update .env file with database URL and NextAuth config."""
+    # Use project_id if provided, otherwise story_id
+    container_key = project_id or story_id
+    info = get_connection_info(container_key)
     if not info:
         return False
     
@@ -73,10 +104,38 @@ def update_env_file(workspace_path: str, story_id: Optional[str] = None) -> bool
         with open(env_path, 'r', encoding='utf-8') as f:
             env_content = f.read()
     
+    # Update or add DATABASE_URL
     if "DATABASE_URL=" in env_content:
         env_content = re.sub(r'DATABASE_URL=.*', f'DATABASE_URL="{database_url}"', env_content)
     else:
         env_content += f'\nDATABASE_URL="{database_url}"\n'
+    
+    # Determine app URL (use dev_port if provided, otherwise default to 3000)
+    app_url = f"http://localhost:{dev_port}" if dev_port else "http://localhost:3000"
+    
+    # Update or add APP_URL (server-side env var)
+    if "APP_URL=" in env_content:
+        env_content = re.sub(r'APP_URL=.*', f'APP_URL="{app_url}"', env_content)
+    else:
+        env_content += f'APP_URL="{app_url}"\n'
+    
+    # Update or add NEXT_PUBLIC_APP_URL (client-side env var)
+    if "NEXT_PUBLIC_APP_URL=" in env_content:
+        env_content = re.sub(r'NEXT_PUBLIC_APP_URL=.*', f'NEXT_PUBLIC_APP_URL="{app_url}"', env_content)
+    else:
+        env_content += f'NEXT_PUBLIC_APP_URL="{app_url}"\n'
+    
+    # Update or add NEXTAUTH_URL
+    if "NEXTAUTH_URL=" in env_content:
+        env_content = re.sub(r'NEXTAUTH_URL=.*', f'NEXTAUTH_URL="{app_url}"', env_content)
+    else:
+        env_content += f'NEXTAUTH_URL="{app_url}"\n'
+    
+    # Generate or reuse NEXTAUTH_SECRET
+    if "NEXTAUTH_SECRET=" not in env_content:
+        import secrets
+        secret = secrets.token_urlsafe(32)
+        env_content += f'NEXTAUTH_SECRET="{secret}"\n'
     
     with open(env_path, 'w', encoding='utf-8') as f:
         f.write(env_content)

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
+from pydantic import field_serializer
 from sqlmodel import SQLModel
 
 from app.models import AuthorType
@@ -41,6 +42,11 @@ class ChatMessagePublic(SQLModel):
     attachments: Optional[list[dict]] = None
     created_at: datetime
     updated_at: datetime
+    
+    @field_serializer('created_at', 'updated_at')
+    def serialize_datetime(self, dt: datetime) -> str:
+        """Serialize datetime as UTC ISO format with Z indicator."""
+        return dt.isoformat() + 'Z' if dt else None
 
 
 class ChatMessagesPublic(SQLModel):

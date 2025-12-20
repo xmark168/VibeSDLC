@@ -4,10 +4,10 @@ import logging
 from typing import Dict, List, Optional, Set
 from uuid import UUID
 
-from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
-from app.core.agent.project_context import ProjectContext
-from app.core.agent.mixins import PausableAgentMixin, StoryStoppedException
-from app.core.agent.graph_helpers import get_or_create_thread_id
+from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+from app.agents.core.project_context import ProjectContext
+from app.agents.core.mixins import PausableAgentMixin, StoryStoppedException
+from app.agents.core.graph_helpers import get_or_create_thread_id
 from app.models import Agent as AgentModel
 from app.models.base import StoryAgentState
 from app.agents.developer.src import DeveloperGraph
@@ -445,6 +445,36 @@ class Developer(BaseAgent, PausableAgentMixin):
                 "configurable": {"thread_id": thread_id},
                 "callbacks": [langfuse_handler] if langfuse_handler else [],
             }
+            
+            # Clear old checkpoints if starting fresh (not resuming)
+            if not is_resume:
+                try:
+                    logger.info(f"[{self.name}] Clearing old checkpoints for thread {thread_id}")
+                    # Delete all checkpoint data for this thread_id
+                    # Must delete in order: checkpoint_writes -> checkpoint_blobs -> checkpoints (due to foreign keys)
+                    from app.core.db import engine
+                    from sqlmodel import text
+                    with engine.connect() as conn:
+                        # Delete checkpoint_writes first
+                        conn.execute(
+                            text("DELETE FROM checkpoint_writes WHERE thread_id = :thread_id"),
+                            {"thread_id": thread_id}
+                        )
+                        # Delete checkpoint_blobs
+                        conn.execute(
+                            text("DELETE FROM checkpoint_blobs WHERE thread_id = :thread_id"),
+                            {"thread_id": thread_id}
+                        )
+                        # Delete checkpoints
+                        result = conn.execute(
+                            text("DELETE FROM checkpoints WHERE thread_id = :thread_id"),
+                            {"thread_id": thread_id}
+                        )
+                        conn.commit()
+                        logger.info(f"[{self.name}] Deleted {result.rowcount} old checkpoints and related data")
+                except Exception as e:
+                    logger.warning(f"[{self.name}] Failed to clear old checkpoints: {e}")
+                    # Continue anyway - worst case is we resume from old state
 
             # Check if resuming from pause
             if is_resume:
@@ -513,12 +543,12 @@ class Developer(BaseAgent, PausableAgentMixin):
                     from app.agents.developer.src.nodes.implement import git_revert_uncommitted, git_reset_all
                     if reason == "pause":
                         # Revert uncommitted changes (keep commits)
-                        git_revert_uncommitted(workspace_path)
+                        await git_revert_uncommitted(workspace_path)
                         logger.info(f"[{self.name}] Reverted uncommitted changes on pause")
                     elif reason == "cancel":
                         # Reset all changes to base branch
                         base_branch = final_state.get("base_branch", "main")
-                        git_reset_all(workspace_path, base_branch)
+                        await git_reset_all(workspace_path, base_branch)
                         logger.info(f"[{self.name}] Reset all changes on cancel")
                 
                 # Cleanup langfuse
@@ -571,7 +601,7 @@ class Developer(BaseAgent, PausableAgentMixin):
                         from app.agents.developer.src.nodes.implement import git_squash_wip_commits
                         story_title = initial_state.get("title", "implement story")
                         base_branch = final_state.get("base_branch", "main")
-                        git_squash_wip_commits(workspace_path, base_branch, f"feat: {story_title}")
+                        await git_squash_wip_commits(workspace_path, base_branch, f"feat: {story_title}")
                         logger.info(f"[{self.name}] Squashed WIP commits")
                     except Exception as squash_err:
                         # Git squash is non-critical, don't fail the whole story
@@ -1018,6 +1048,18 @@ class Developer(BaseAgent, PausableAgentMixin):
                     story.branch_name = None
                     session.add(story)
                     session.commit()
+            
+            # 4. Stop and remove database container
+            try:
+                from app.agents.developer.src.utils.db_container import stop_container
+                
+                if stop_container(story_id):
+                    logger.info(f"[{self.name}] Stopped database container for story {story_id}")
+                else:
+                    logger.debug(f"[{self.name}] No container found for story {story_id}")
+            except Exception as e:
+                logger.warning(f"[{self.name}] Failed to stop container: {e}")
+                # Non-fatal - don't block merge completion
                     
         except Exception as e:
             logger.error(f"[{self.name}] Cleanup error: {e}")

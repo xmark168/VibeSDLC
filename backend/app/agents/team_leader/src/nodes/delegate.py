@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 async def delegate(state: TeamLeaderState, agent=None) -> TeamLeaderState:
     """Delegate task to specialist agent."""
     if agent:
-        from app.core.agent.base_agent import TaskContext
+        from app.agents.core.base_agent import TaskContext
         from app.kafka.event_schemas import AgentTaskType
 
         msg = state.get("message") or f"Chuyển cho @{state['target_role']} nhé!"

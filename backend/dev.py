@@ -1,19 +1,15 @@
 #!/usr/bin/env python
 import subprocess
-import sys
 import os
 import asyncio
 from pathlib import Path
-
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+import sys
+# Linux-only deployment, no Windows-specific event loop policy needed
 
 os.chdir(Path(__file__).parent)
 
 if __name__ == "__main__":
-    print("Starting VibeSDLC Development Server...")
-    print(f"Server: http://localhost:8000 | Docs: http://localhost:8000/docs\n")
-
+   
     cmd = [
         sys.executable, "-m", "uvicorn",
         "app.main:app",
@@ -28,7 +24,6 @@ if __name__ == "__main__":
     try:
         subprocess.run(cmd, check=True)
     except KeyboardInterrupt:
-        print("\nShutting down...")
         sys.exit(0)
     except subprocess.CalledProcessError as e:
         sys.exit(e.returncode)

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { User, CreditCard, LogOut, Pencil, Info, Sun, Moon, Monitor, AlertTriangle, ShieldCheck, Camera, Check, X, Loader2 } from "lucide-react"
+import { User, CreditCard, LogOut, Pencil, Info, Sun, Moon, Monitor, AlertTriangle, ShieldCheck, Camera, Check, X, Loader2, Activity } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ import { TwoFactorSettings } from "./two-factor-settings"
 import { LinkedAccountsSettings } from "./linked-accounts-settings"
 import { AvatarUploadDialog } from "./avatar-upload-dialog"
 import { PasswordSettings } from "./password-settings"
+import { CreditUsageHistory } from "./credit-usage-history"
 import { useProfile, useUpdateProfile } from "@/queries/profile"
 import { format } from "date-fns"
 import { useQueryClient } from "@tanstack/react-query"
@@ -33,7 +34,7 @@ interface SettingsDialogProps {
   defaultTab?: SettingsTab
 }
 
-type SettingsTab = "profile" | "security" | "billing" | "theme"
+type SettingsTab = "profile" | "security" | "billing" | "usage" | "theme"
 
 export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialogProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(defaultTab || "profile")
@@ -61,8 +62,12 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
   const avatarUrl = import.meta.env.VITE_API_URL + profile?.avatar_url || DEFAULT_AVATAR
 
   const handleLogout = () => {
-    logout.mutate()
+    // Close dialog first to prevent queries from refetching during logout
     onOpenChange(false)
+    // Small delay to ensure dialog unmount completes
+    setTimeout(() => {
+      logout.mutate()
+    }, 50)
   }
 
   const handleStartEditName = () => {
@@ -202,6 +207,19 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
               >
                 <CreditCard className="h-4 w-4" />
                 Plans and Billing
+              </button>
+
+              <button
+                onClick={() => setActiveTab("usage")}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  activeTab === "usage"
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:bg-secondary/50"
+                )}
+              >
+                <Activity className="h-4 w-4" />
+                Usage History
               </button>
 
               <button
@@ -464,6 +482,13 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
               </div>
             )}
 
+            {activeTab === "usage" && (
+              <div className="flex-1 flex flex-col overflow-y-auto min-h-0">
+                <div className="p-8">
+                  <CreditUsageHistory />
+                </div>
+              </div>
+            )}
             {activeTab === "theme" && (
               <div className="flex-1 flex flex-col overflow-y-auto min-h-0">
                 <div className="p-8 pb-6">

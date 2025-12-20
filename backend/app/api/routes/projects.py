@@ -23,6 +23,37 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 DEFAULT_AGENT_ROLES = ["team_leader", "business_analyst", "developer", "tester"]
 
 
+@router.get("/{project_id}/token-budget")
+async def get_project_token_budget(
+    project_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> dict[str, Any]:
+    """Get token budget status for a project.
+    
+    Returns daily and monthly token usage and limits.
+    """
+    # Force reload trigger
+    from app.services.singletons import get_token_budget_service
+    
+    # Check project exists and user has access
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if project.owner_id != current_user.id and current_user.role != Role.ADMIN:
+        raise HTTPException(status_code=403, detail="Not authorized to access this project")
+    
+    # Get budget status
+    budget_service = await get_token_budget_service()
+    budget_status = await budget_service.get_budget_status(project_id)
+    
+    if "error" in budget_status:
+        raise HTTPException(status_code=500, detail=budget_status["error"])
+    
+    return budget_status
+
+
 @router.get("/", response_model=ProjectsPublic)
 def list_projects(
     session: SessionDep,
@@ -254,14 +285,14 @@ async def create_project(
         )
         
         # Auto-spawn agents after project creation
-        from app.api.routes.agent_management import get_available_pool, get_role_class_map
+        from app.services.agent_pool_service import AgentPoolService
         
-        role_class_map = get_role_class_map()
+        role_class_map = AgentPoolService.get_role_class_map()
         spawned_count = 0
         
         for agent in created_agents:
             # Get pool for this agent's role (role-specific > universal > any)
-            pool_manager = get_available_pool(role_type=agent.role_type)
+            pool_manager = AgentPoolService.get_available_pool(role_type=agent.role_type)
             if not pool_manager:
                 logger.warning(f"No pool available for {agent.role_type}, skipping spawn")
                 continue
@@ -434,10 +465,10 @@ async def _cleanup_project_files_and_agents(
     
     # Terminate agents in parallel
     if agents_info:
-        from app.api.routes.agent_management import get_available_pool
+        from app.services.agent_pool_service import AgentPoolService
         
         async def terminate_agent(agent: dict):
-            pool_manager = get_available_pool(role_type=agent["role_type"])
+            pool_manager = AgentPoolService.get_available_pool(role_type=agent["role_type"])
             if pool_manager:
                 try:
                     await pool_manager.terminate_agent(agent["id"])
@@ -586,118 +617,74 @@ def preview_project_deletion(
 
 # ============= Dev Server Endpoints =============
 
-def _get_workspace_path(project_path: str) -> Path:
-    """Convert project path to absolute path."""
-    workspace_path = Path(project_path)
-    if not workspace_path.is_absolute():
-        backend_dir = Path(__file__).parent.parent.parent.parent
-        workspace_path = backend_dir / project_path
-    return workspace_path
-
-
-def kill_processes_using_directory(directory: str) -> int:
-    """Kill all node/pnpm processes. Returns count killed."""
-    import subprocess
-    import sys
-    
-    killed = 0
-    is_windows = sys.platform == 'win32'
-    
-    if is_windows:
-        try:
-            CREATE_NO_WINDOW = 0x08000000
-            result = subprocess.run(
-                'powershell -Command "Get-Process | Where-Object {$_.Path -like \'*node*\' -or $_.Path -like \'*pnpm*\'} | ForEach-Object { $_.Id }"',
-                shell=True, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
-            )
-            for pid_str in result.stdout.strip().split('\n'):
-                if pid_str.strip().isdigit():
-                    try:
-                        subprocess.run(f"taskkill /F /PID {pid_str.strip()} /T", shell=True, capture_output=True, creationflags=CREATE_NO_WINDOW)
-                        killed += 1
-                    except:
-                        pass
-        except:
-            pass
-    else:
-        # Unix: find and kill node/pnpm processes
-        try:
-            result = subprocess.run(
-                "ps aux | grep -E '(node|pnpm)' | grep -v grep | awk '{print $2}'",
-                shell=True, capture_output=True, text=True
-            )
-            for pid_str in result.stdout.strip().split('\n'):
-                if pid_str.strip().isdigit():
-                    try:
-                        import os
-                        os.kill(int(pid_str.strip()), 9)
-                        killed += 1
-                    except:
-                        pass
-        except:
-            pass
-    
-    return killed
-
-
 def _cleanup_dev_server(workspace_path: Path, port: int = None, pid: int = None) -> None:
-    """Clean up dev server processes and lock files."""
+    """Clean up dev server processes and lock files.
+    
+    SAFETY: Only kills processes by specific PID or port.
+    Does NOT use pkill which could kill all Node processes system-wide.
+    """
     import subprocess
-    import sys
+    import signal
+    import time
     
-    is_windows = sys.platform == 'win32'
-    
-    # Kill by PID (with tree kill on Windows)
+    # Kill by PID (graceful then force)
     if pid:
         try:
-            if is_windows:
-                # /T kills child processes too
-                CREATE_NO_WINDOW = 0x08000000
-                subprocess.run(f"taskkill /F /PID {pid} /T", shell=True, capture_output=True, creationflags=CREATE_NO_WINDOW)
-            else:
-                os.kill(pid, 9)
-            logger.info(f"Killed process PID {pid}")
+            # Try graceful shutdown first
+            os.kill(pid, signal.SIGTERM)
+            logger.info(f"Sent SIGTERM to process PID {pid}")
+            time.sleep(0.5)
+            
+            # Force kill if still alive
+            try:
+                os.kill(pid, signal.SIGKILL)
+                logger.info(f"Force killed process PID {pid}")
+            except ProcessLookupError:
+                logger.debug(f"Process {pid} already terminated")
+        except ProcessLookupError:
+            logger.debug(f"Process {pid} not found")
         except Exception as e:
             logger.warning(f"Failed to kill process {pid}: {e}")
     
-    # Kill by port - more aggressive approach
+    # Kill by port using lsof (graceful then force)
     if port:
         try:
-            if is_windows:
-                # Find all processes using this port
-                CREATE_NO_WINDOW = 0x08000000
-                result = subprocess.run(
-                    f'netstat -ano | findstr :{port} | findstr LISTENING',
-                    shell=True, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
+            # Find PIDs using the port
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.stdout.strip():
+                pids = result.stdout.strip().split('\n')
+                
+                # Graceful shutdown first
+                for pid_str in pids:
+                    try:
+                        pid_int = int(pid_str)
+                        os.kill(pid_int, signal.SIGTERM)
+                        logger.info(f"Sent SIGTERM to process on port {port}: PID {pid_str}")
+                    except:
+                        pass
+                
+                # Wait for graceful shutdown
+                time.sleep(0.5)
+                
+                # Force kill if still alive
+                result2 = subprocess.run(
+                    ["lsof", "-ti", f":{port}"],
+                    capture_output=True, text=True, timeout=5
                 )
-                killed_pids = set()
-                for line in result.stdout.strip().split('\n'):
-                    parts = line.split()
-                    if len(parts) >= 5:
+                if result2.stdout.strip():
+                    for pid_str in result2.stdout.strip().split('\n'):
                         try:
-                            target_pid = int(parts[-1])
-                            if target_pid not in killed_pids:
-                                subprocess.run(f"taskkill /F /PID {target_pid} /T", shell=True, capture_output=True, creationflags=CREATE_NO_WINDOW)
-                                killed_pids.add(target_pid)
-                        except ValueError:
-                            pass
-                if killed_pids:
-                    logger.info(f"Killed processes on port {port}: {killed_pids}")
-            else:
-                result = subprocess.run(
-                    f'lsof -ti:{port}',
-                    shell=True, capture_output=True, text=True
-                )
-                if result.stdout.strip():
-                    for pid_str in result.stdout.strip().split('\n'):
-                        try:
-                            os.kill(int(pid_str), 9)
+                            os.kill(int(pid_str), signal.SIGKILL)
+                            logger.info(f"Force killed process on port {port}: PID {pid_str}")
                         except:
                             pass
         except Exception as e:
             logger.warning(f"Failed to kill processes on port {port}: {e}")
     
-    # Always clean up Next.js artifacts
+    # Clean up Next.js artifacts (file cleanup only, NO process killing)
     if workspace_path and workspace_path.exists():
         # Remove lock file
         lock_file = workspace_path / ".next" / "dev" / "lock"
@@ -718,11 +705,10 @@ def _cleanup_dev_server(workspace_path: Path, port: int = None, pid: int = None)
             except Exception:
                 pass
     
-    # Kill all node/pnpm processes using workspace
-    if workspace_path and workspace_path.exists():
-        killed = kill_processes_using_directory(str(workspace_path))
-        if killed > 0:
-            logger.info(f"Killed {killed} node/pnpm processes")
+    # NOTE: Removed kill_processes_using_directory() call - DANGEROUS!
+    # Old code used 'pkill -9 -f node|pnpm' which kills ALL node processes system-wide,
+    # including backend server, other projects, and system tools.
+    # PID and port-based killing is sufficient and safe.
 
 
 @router.post("/{project_id}/dev-server/start")
@@ -748,19 +734,53 @@ async def start_project_dev_server(
     if not project.project_path:
         raise HTTPException(status_code=400, detail="No workspace path for this project")
     
-    # Get absolute workspace path
-    workspace_path = _get_workspace_path(project.project_path)
+    # Get absolute workspace path (project_path is relative like "projects/{id}")
+    # __file__ = .../backend/app/api/routes/projects.py -> need 4x parent to get backend/
+    backend_root = Path(__file__).resolve().parent.parent.parent.parent
+    workspace_path = backend_root / project.project_path
     
     if not workspace_path.exists():
         raise HTTPException(status_code=400, detail=f"Project workspace not found: {workspace_path}")
-    
-    is_windows = sys.platform == 'win32'
     
     # Helper: Find free port
     def find_free_port():
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(('', 0))
             return s.getsockname()[1]
+    
+    # Helper: Update .env.local with new port
+    def update_env_local_port(port: int):
+        """Update NEXT_PUBLIC_API_URL in .env.local with new port."""
+        env_local_path = workspace_path / ".env.local"
+        
+        try:
+            if env_local_path.exists():
+                content = env_local_path.read_text(encoding='utf-8')
+                
+                # Update or add NEXT_PUBLIC_API_URL
+                import re
+                pattern = r'NEXT_PUBLIC_API_URL=.*'
+                new_value = f'NEXT_PUBLIC_API_URL=http://localhost:{port}'
+                
+                if re.search(pattern, content):
+                    # Update existing
+                    content = re.sub(pattern, new_value, content)
+                else:
+                    # Add new line at the beginning
+                    content = f"{new_value}\n{content}"
+                
+                env_local_path.write_text(content, encoding='utf-8')
+                logger.info(f"Updated .env.local with port {port}")
+            else:
+                # Create .env.local if not exists
+                env_local_path.write_text(
+                    f"# Auto-generated by app preview\n"
+                    f"NEXT_PUBLIC_API_URL=http://localhost:{port}\n",
+                    encoding='utf-8'
+                )
+                logger.info(f"Created .env.local with port {port}")
+        except Exception as e:
+            logger.warning(f"Failed to update .env.local: {e}")
     
     # Helper: Wait for port async
     async def wait_for_port_async(port: int, timeout: float = 30.0) -> bool:
@@ -772,7 +792,7 @@ async def start_project_dev_server(
                     s.connect(('127.0.0.1', port))
                     return True
             except (socket.error, socket.timeout):
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1.0)  # Increased from 0.5s - reduce CPU usage
         return False
     
     # ===== CLEANUP: Always clean up before starting =====
@@ -782,7 +802,7 @@ async def start_project_dev_server(
         port=project.dev_server_port,
         pid=project.dev_server_pid
     )
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.1)  # Reduced from 0.5s
     
     # ===== 0. Ensure next.config.ts has iframe headers =====
     next_config_path = workspace_path / "next.config.ts"
@@ -841,10 +861,10 @@ async def start_project_dev_server(
                 update_env_file,
             )
             
-            container_info = start_postgres_container(str(project_id))
+            container_info = start_postgres_container(project_id=str(project_id))
             if container_info:
                 # Update .env with DATABASE_URL
-                update_env_file(str(workspace_path), str(project_id))
+                update_env_file(str(workspace_path), project_id=str(project_id))
                 
                 # Store container info in project
                 project.db_container_id = container_info.get("container_id")
@@ -865,13 +885,11 @@ async def start_project_dev_server(
         # Run in thread to avoid blocking event loop (can take 5+ minutes)
         install_result = await asyncio.to_thread(
             subprocess.run,
-            "pnpm install" if is_windows else ["pnpm", "install"],
+            ["pnpm", "install"],
             cwd=str(workspace_path),
-            shell=is_windows,
             capture_output=True,
             text=True,
-            timeout=300,  # 5 minutes timeout for install
-            creationflags=0x08000000 if is_windows else 0,
+            timeout=120,  # 2 minutes timeout (reduced from 5 min)
         )
         if install_result.returncode != 0:
             await broadcast_log("Failed to install dependencies", "error")
@@ -888,13 +906,11 @@ async def start_project_dev_server(
             # Push schema to database
             db_push_result = await asyncio.to_thread(
                 subprocess.run,
-                "pnpm prisma db push --skip-generate" if is_windows else ["pnpm", "prisma", "db", "push", "--skip-generate"],
+                ["pnpm", "prisma", "db", "push", "--skip-generate"],
                 cwd=str(workspace_path),
-                shell=is_windows,
                 capture_output=True,
                 text=True,
-                timeout=60,
-                creationflags=0x08000000 if is_windows else 0,
+                timeout=45,  # Reduced from 60s
             )
             if db_push_result.returncode == 0:
                 await broadcast_log("Database schema ready", "success")
@@ -908,13 +924,11 @@ async def start_project_dev_server(
             logger.info("Running Prisma generate...")
             generate_result = await asyncio.to_thread(
                 subprocess.run,
-                "pnpm prisma generate" if is_windows else ["pnpm", "prisma", "generate"],
+                ["pnpm", "prisma", "generate"],
                 cwd=str(workspace_path),
-                shell=is_windows,
                 capture_output=True,
                 text=True,
-                timeout=60,
-                creationflags=0x08000000 if is_windows else 0,
+                timeout=45,  # Reduced from 60s
             )
             if generate_result.returncode == 0:
                 await broadcast_log("Prisma client generated", "success")
@@ -944,7 +958,6 @@ async def start_project_dev_server(
                     capture_output=True,
                     text=True,
                     timeout=120,
-                    creationflags=0x08000000 if is_windows else 0,
                 )
                 if seed_result.returncode == 0:
                     await broadcast_log("Database seeded", "success")
@@ -958,6 +971,19 @@ async def start_project_dev_server(
             logger.warning(f"Prisma setup failed: {e}")
     
     port = find_free_port()
+    update_env_local_port(port)
+    
+    # Clean .next cache to avoid stale builds
+    next_cache = workspace_path / ".next"
+    if next_cache.exists():
+        await broadcast_log("Cleaning Next.js cache...", "running")
+        try:
+            import shutil
+            await asyncio.to_thread(shutil.rmtree, str(next_cache))
+            logger.info(f"Removed .next cache for project {project_id}")
+        except Exception as e:
+            logger.warning(f"Failed to remove .next cache: {e}")
+    
     await broadcast_log("Starting development server...", "running")
     logger.info(f"Starting dev server for project {project_id} on port {port}")
     
@@ -968,13 +994,11 @@ async def start_project_dev_server(
     for attempt in range(max_attempts):
         try:
             process = subprocess.Popen(
-                f"pnpm dev --port {port} --hostname 0.0.0.0" if is_windows else ["pnpm", "dev", "--port", str(port), "--hostname", "0.0.0.0"],
+                ["pnpm", "dev", "--port", str(port), "--hostname", "0.0.0.0"],
                 cwd=str(workspace_path),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
-                shell=is_windows,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if is_windows else 0,
                 env={**os.environ, "FORCE_COLOR": "0"},
             )
             
@@ -982,12 +1006,16 @@ async def start_project_dev_server(
             await broadcast_log(f"Waiting for server to be ready on port {port}...")
             logger.info(f"Waiting for dev server on port {port}...")
             
-            if await wait_for_port_async(port, timeout=60.0) and process.poll() is None:
+            if await wait_for_port_async(port, timeout=90.0) and process.poll() is None:  # Increased for Next.js 16 + Turbopack boot time
                 # Store in project
                 project.dev_server_port = port
                 project.dev_server_pid = process.pid
                 session.add(project)
                 session.commit()
+                
+                # Update .env with actual dev server port
+                from app.agents.developer.src.utils.db_container import update_env_file
+                update_env_file(str(workspace_path), dev_port=port)
                 
                 logger.info(f"Dev server started on port {port} (PID: {process.pid})")
                 await broadcast_log(f"Server ready on port {port}", "success")
@@ -1006,7 +1034,7 @@ async def start_project_dev_server(
                 if process.poll() is not None:
                     raise Exception(f"Process exited with code {process.returncode}")
                 else:
-                    raise Exception(f"Server started but port {port} not responding after 60s")
+                    raise Exception(f"Server started but port {port} not responding after 90s")
                     
         except Exception as e:
             last_error = e
@@ -1014,16 +1042,13 @@ async def start_project_dev_server(
             await broadcast_log(f"Attempt {attempt + 1}/{max_attempts} failed: {str(e)}", "warning")
             
             if attempt < max_attempts - 1:
-                # Kill processes using the directory
-                await broadcast_log(f"Killing processes using directory...")
-                killed = kill_processes_using_directory(str(workspace_path))
-                if killed:
-                    await broadcast_log(f"Killed {killed} processes")
-                    logger.info(f"Killed {killed} processes")
-                await asyncio.sleep(1)
+                # Clean up and retry with new port
+                await broadcast_log(f"Cleaning up for retry...")
+                await asyncio.sleep(0.2)
                 
                 # Try new port
                 port = find_free_port()
+                update_env_local_port(port)
                 await broadcast_log(f"Retrying with port {port}...")
                 logger.info(f"Retrying with port {port}...")
     
@@ -1063,7 +1088,8 @@ async def stop_project_dev_server(
     # Get workspace path for cleanup
     workspace_path = None
     if project.project_path:
-        workspace_path = _get_workspace_path(project.project_path)
+        backend_root = Path(__file__).resolve().parent.parent.parent.parent
+        workspace_path = backend_root / project.project_path
     
     # Clean up dev server processes and files
     await broadcast_log("Cleaning up processes...")
@@ -1151,18 +1177,10 @@ def get_project_dev_server_status(
     # Verify process is actually running
     is_running = False
     if project.dev_server_port and project.dev_server_pid:
-        is_windows = sys.platform == 'win32'
         try:
-            if is_windows:
-                CREATE_NO_WINDOW = 0x08000000
-                result = subprocess.run(
-                    f'tasklist /FI "PID eq {project.dev_server_pid}"',
-                    shell=True, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW
-                )
-                is_running = str(project.dev_server_pid) in result.stdout
-            else:
-                os.kill(project.dev_server_pid, 0)  # Check if process exists
-                is_running = True
+            import signal
+            os.kill(project.dev_server_pid, 0)  # Check if process exists
+            is_running = True
         except Exception:
             is_running = False
         
@@ -1170,7 +1188,8 @@ def get_project_dev_server_status(
         if not is_running:
             workspace_path = None
             if project.project_path:
-                workspace_path = _get_workspace_path(project.project_path)
+                backend_root = Path(__file__).resolve().parent.parent.parent.parent
+                workspace_path = backend_root / project.project_path
             _cleanup_dev_server(workspace_path=workspace_path, port=project.dev_server_port, pid=None)
             
             project.dev_server_port = None
@@ -1203,9 +1222,9 @@ async def restart_project_dev_server(
         project_id=project_id
     )
     
-    # Wait a bit for cleanup
+    # Brief wait for cleanup
     import asyncio
-    await asyncio.sleep(1)
+    await asyncio.sleep(0.1)  # Reduced from 1s
     
     # Start again
     return await start_project_dev_server(
@@ -1240,7 +1259,8 @@ async def clean_project_dev_server(
     
     # Deep clean workspace
     if project.project_path:
-        workspace_path = _get_workspace_path(project.project_path)
+        backend_root = Path(__file__).resolve().parent.parent.parent.parent
+        workspace_path = backend_root / project.project_path
         if workspace_path.exists():
             # Remove .next folder completely
             next_dir = workspace_path / ".next"
@@ -1328,7 +1348,8 @@ async def seed_project_database(
     if not project.project_path:
         raise HTTPException(status_code=400, detail="Project has no workspace")
     
-    workspace_path = _get_workspace_path(project.project_path)
+    backend_root = Path(__file__).resolve().parent.parent.parent.parent
+    workspace_path = backend_root / project.project_path
     if not workspace_path.exists():
         raise HTTPException(status_code=400, detail="Workspace not found")
     
@@ -1338,14 +1359,12 @@ async def seed_project_database(
     if not seed_file.exists() and not seed_file_js.exists():
         raise HTTPException(status_code=400, detail="No seed file found (prisma/seed.ts or prisma/seed.js)")
     
-    is_windows = sys.platform == "win32"
-    
-    # Use prisma db seed - works on all platforms
+    # Use prisma db seed
     if seed_file.exists():
-        seed_args = "pnpm prisma db seed"
+        seed_args = ["pnpm", "prisma", "db", "seed"]
     else:
-        seed_args = "node prisma/seed.js"
-    use_shell = True
+        seed_args = ["node", "prisma/seed.js"]
+    use_shell = False
     
     # Broadcast start
     from app.websocket.connection_manager import connection_manager

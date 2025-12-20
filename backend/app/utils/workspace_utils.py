@@ -1,19 +1,10 @@
-"""Shared workspace utilities for all agents (Developer, Tester, BA, etc.)
-
-This module provides unified workspace management functions including:
-- Git worktree setup and cleanup
-- Context file reading (AGENTS.md, README.md, etc.)
-- Workspace commit operations
-- ProjectWorkspaceManager class for workspace path management
-"""
+"""Shared workspace utilities for all agents (Developer, Tester, BA, etc.)"""
 
 import hashlib
 import json
 import logging
-import os
 import shutil
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 from uuid import UUID
@@ -23,129 +14,175 @@ from sqlmodel import Session
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
 # Git worktree management
-# =============================================================================
 
-def _kill_processes_in_directory(directory: Path, agent_name: str = "Agent") -> None:
-    """Kill node processes that might be locking files (Windows only)."""
-    import platform
-    if platform.system() != "Windows":
-        return
+
+def _delete_checkpoint(checkpoint_thread_id: str) -> bool:
+    """Delete checkpoint from database.
+    
+    Args:
+        checkpoint_thread_id: Checkpoint thread ID to delete
+        
+    Returns:
+        True if deletion succeeded, False otherwise
+    """
     try:
-        subprocess.run(["taskkill", "/F", "/IM", "node.exe"], capture_output=True, timeout=10)
-    except Exception:
-        pass
+        from sqlmodel import Session, text
+        from app.core.db import engine
+        
+        with Session(engine) as db:
+            db.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), 
+                      {"tid": checkpoint_thread_id})
+            db.execute(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), 
+                      {"tid": checkpoint_thread_id})
+            db.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), 
+                      {"tid": checkpoint_thread_id})
+            db.commit()
+        logger.debug(f"Deleted checkpoint {checkpoint_thread_id}")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to delete checkpoint {checkpoint_thread_id}: {e}")
+        return False
 
 
-def cleanup_old_worktree(
-    main_workspace: Path,
-    branch_name: str,
-    worktree_path: Path,
+def _delete_with_retry(
+    path: Path, 
+    max_retries: int = 3,
+    kill_processes_func=None,
     agent_name: str = "Agent"
-) -> None:
-    """
-    Clean up worktree and branch
-    """
-    import platform
+) -> bool:
+    """Delete directory with retry and optional process killing.
     
-    # Prune first
-    try:
-        subprocess.run(
-            ["git", "worktree", "prune"],
-            cwd=str(main_workspace),
-            capture_output=True,
-            timeout=10
-        )
-    except Exception:
-        pass
-    
-    if worktree_path.exists():
-        _kill_processes_in_directory(worktree_path, agent_name)
+    Args:
+        path: Path to directory to delete
+        max_retries: Number of retry attempts
+        kill_processes_func: Optional function to call to kill processes
+        agent_name: Agent name for logging
         
+    Returns:
+        True if deletion succeeded, False otherwise
+    """
+    if not path.exists():
+        return True
+    
+    for attempt in range(max_retries):
         try:
-            subprocess.run(
-                ["git", "worktree", "remove", str(worktree_path), "--force"],
-                cwd=str(main_workspace),
-                capture_output=True,
-                timeout=30
-            )
-        except Exception:
-            pass
-        
-        if worktree_path.exists():
-            for attempt in range(3):
-                try:
-                    shutil.rmtree(worktree_path)
-                    break
-                except Exception as e:
-                    if attempt < 2:
-                        time.sleep(0.5 * (attempt + 1))
-                        _kill_processes_in_directory(worktree_path, agent_name)
-                    elif platform.system() == "Windows":
-                        try:
-                            empty_dir = tempfile.mkdtemp()
-                            subprocess.run(
-                                ["robocopy", empty_dir, str(worktree_path), "/mir", "/r:0", "/w:0",
-                                 "/njh", "/njs", "/nc", "/ns", "/np", "/nfl", "/ndl"],
-                                capture_output=True,
-                                timeout=30
-                            )
-                            shutil.rmtree(empty_dir, ignore_errors=True)
-                            shutil.rmtree(worktree_path, ignore_errors=True)
-                        except Exception:
-                            logger.error(f"[{agent_name}] Failed to remove directory: {e}")
+            shutil.rmtree(path)
+            logger.debug(f"[{agent_name}] Deleted {path}")
+            return True
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(0.1 * (attempt + 1))
+                if kill_processes_func:
+                    try:
+                        kill_processes_func(str(path))
+                    except Exception as kill_error:
+                        logger.debug(f"[{agent_name}] Process kill failed: {kill_error}")
+            else:
+                logger.warning(f"[{agent_name}] Failed to delete {path} after {max_retries} attempts: {e}")
+                return False
+    return False
+
+def cleanup_workspace(
+    workspace_path: str | Path,
+    repo_path: str | Path = None,
+    branch_name: str = None,
+    checkpoint_thread_id: str = None,
+    skip_node_modules: bool = False,
+    agent_name: str = "Agent",
+    max_retries: int = 3,
+    kill_processes: bool = True,
+) -> dict:
+    """Unified workspace cleanup with retry and process killing. """
+    cleanup_start_time = time.time()
+    # Handle None workspace_path
+    if workspace_path is None:
+        logger.warning("cleanup_workspace called with None workspace_path - skipping")
+        return {"checkpoint": False, "worktree": False, "branch": False, "skip_node_modules": skip_node_modules}
+
+    workspace_path = Path(workspace_path)
     
-    # Prune again + delete branch
-    try:
-        subprocess.run(
-            ["git", "worktree", "prune"],
-            cwd=str(main_workspace),
-            capture_output=True,
-            timeout=10
+    results = {
+        "checkpoint": False,
+        "worktree": False,
+        "branch": False,
+        "skip_node_modules": skip_node_modules
+    }
+    
+    if checkpoint_thread_id:
+        results["checkpoint"] = _delete_checkpoint(checkpoint_thread_id)
+    
+    # Step 3: Git prune (cleanup stale worktree entries)
+    if repo_path:
+        repo_path = Path(repo_path)
+        from app.utils.git_utils import git_worktree_prune, git_branch_delete
+        
+        git_worktree_prune(repo_path, timeout=10)
+    
+    # Step 4: Delete node_modules (with retry and process killing)
+    if not skip_node_modules and workspace_path.exists():
+        node_modules_path = workspace_path / "node_modules"
+        if node_modules_path.exists():
+            logger.info(f"[{agent_name}] Deleting node_modules...")
+            start_time = time.time()
+            
+            # Delete with retry
+            if _delete_with_retry(
+                node_modules_path, 
+                max_retries=max_retries,
+                kill_processes_func=None,
+                agent_name=agent_name
+            ):  
+                elapsed = time.time() - start_time
+                logger.info(f"[{agent_name}] node_modules deleted in {elapsed:.1f}s")
+    else:
+        logger.debug(f"[{agent_name}] Skipping node_modules delete")
+    
+    # Step 5: Delete workspace directory (with retry and process killing)
+    if workspace_path.exists():
+        results["worktree"] = _delete_with_retry(
+            workspace_path,
+            max_retries=max_retries,
+            kill_processes_func=None,
+            agent_name=agent_name
         )
-    except Exception:
-        pass
-    try:
-        subprocess.run(
-            ["git", "branch", "-D", branch_name],
-            cwd=str(main_workspace),
-            capture_output=True,
-            timeout=10
-        )
-    except Exception:
-        pass
+    else:
+        results["worktree"] = True  # Already deleted
+    
+    # Step 6: Git cleanup (second pass - prune stale entries)
+    if repo_path:
+        git_worktree_prune(repo_path, timeout=10)
+    
+    # Step 7: Delete git branch
+    if branch_name and repo_path:
+        success, _ = git_branch_delete(branch_name, repo_path, force=True, timeout=10)
+        results["branch"] = success
+    
+    # Log cleanup time
+    cleanup_elapsed = time.time() - cleanup_start_time
+    logger.info(f"[{agent_name}] Workspace cleanup completed in {cleanup_elapsed:.1f}s")
+    
+    return results
 
 
 def setup_git_worktree(
     story_code: str,
     main_workspace: Path | str,
     worktree_type: str = "story",
-    agent_name: str = "Agent"
+    agent_name: str = "Agent",
+    skip_node_modules: bool = False
 ) -> dict:
+    """Setup git worktree for agent tasks.
     """
-    Setup git worktree for agent tasks.
-    """
+    setup_start_time = time.time()
     main_workspace = Path(main_workspace).resolve()
     safe_code = story_code.replace('/', '-').replace('\\', '-')
-    short_id = story_code.split('-')[-1][:8] if '-' in story_code else story_code[:8]
     
-    # Determine branch name and worktree path based on type
-    if worktree_type == "story":
-        branch_name = f"story_{safe_code}"
-        worktrees_dir = main_workspace / ".worktrees"
-        worktrees_dir.mkdir(exist_ok=True)
-        worktree_path = (worktrees_dir / safe_code).resolve()
-    elif worktree_type == "test":
-        branch_name = f"test_{short_id}"
-        worktree_path = (main_workspace.parent / f"ws_test_{short_id}").resolve()
-    elif worktree_type == "ba":
-        branch_name = f"ba_{safe_code}"
-        worktrees_dir = main_workspace / ".worktrees"
-        worktrees_dir.mkdir(exist_ok=True)
-        worktree_path = (worktrees_dir / f"ba_{safe_code}").resolve()
-    else:
-        raise ValueError(f"Unknown worktree_type: {worktree_type}")
+    # Determine branch name and worktree path 
+    branch_name = f"story_{safe_code}"
+    worktrees_dir = main_workspace / ".worktrees"
+    worktrees_dir.mkdir(exist_ok=True)
+    worktree_path = (worktrees_dir / safe_code).resolve()
     
     if not main_workspace.exists():
         logger.error(f"[{agent_name}] Workspace does not exist: {main_workspace}")
@@ -174,8 +211,55 @@ def setup_git_worktree(
             "workspace_ready": False,
         }
     
-    # Clean up old worktree
-    cleanup_old_worktree(main_workspace, branch_name, worktree_path, agent_name)
+    # Always clean up old worktree to ensure fresh state
+    # Note: skip_node_modules can be used for faster cleanup if dependencies don't change
+    cleanup_workspace(
+        workspace_path=worktree_path,
+        repo_path=main_workspace,
+        branch_name=branch_name,
+        skip_node_modules=skip_node_modules,
+        agent_name=agent_name
+    )
+    # ===== CRITICAL FIX: Ensure repository has at least one commit =====
+    # Check if repo has any commits (required for branch creation)
+    has_commits_result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=str(main_workspace),
+        capture_output=True,
+        timeout=10,
+    )
+    
+    if has_commits_result.returncode != 0:
+        logger.warning(f"[{agent_name}] Repository has no commits, creating initial commit...")
+        
+        # Stage all files
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=str(main_workspace),
+            capture_output=True,
+            timeout=30,
+        )
+        
+        # Create initial commit
+        commit_result = subprocess.run(
+            ["git", "commit", "-m", "Initial commit (auto-created by agent)"],
+            cwd=str(main_workspace),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        
+        if commit_result.returncode == 0:
+            logger.info(f"[{agent_name}] Initial commit created successfully")
+        else:
+            logger.error(f"[{agent_name}] Failed to create initial commit: {commit_result.stderr}")
+            # Cannot proceed without commits - return failure
+            return {
+                "workspace_path": str(main_workspace),
+                "branch_name": branch_name,
+                "main_workspace": str(main_workspace),
+                "workspace_ready": False,
+            }
     
     # Auto-commit uncommitted files so worktree has them (story type only)
     if worktree_type == "story":
@@ -216,15 +300,31 @@ def setup_git_worktree(
     )
     current_branch = result.stdout.strip() if result.returncode == 0 else "main"
     
-    # Create new branch from current
+    # Delete branch if exists (ensure clean state for new worktree)
     subprocess.run(
+        ["git", "branch", "-D", branch_name],
+        cwd=str(main_workspace),
+        capture_output=True,
+        timeout=10,
+    )
+    
+    # ===== FIX: Create new branch with error checking =====
+    branch_result = subprocess.run(
         ["git", "branch", branch_name, current_branch],
         cwd=str(main_workspace),
         capture_output=True,
+        text=True,
         timeout=30,
     )
     
-    # Create worktree
+    if branch_result.returncode != 0:
+        logger.error(f"[{agent_name}] Failed to create branch '{branch_name}': {branch_result.stderr}")
+        # Cannot create worktree without valid branch - return failure
+        raise RuntimeError(f"Failed to create branch '{branch_name}': {branch_result.stderr}")
+    
+    logger.debug(f"[{agent_name}] Branch '{branch_name}' created from '{current_branch}'")
+    
+    # ===== FIX: Create worktree with better error handling and fallback =====
     worktree_result = subprocess.run(
         ["git", "worktree", "add", str(worktree_path), branch_name],
         cwd=str(main_workspace),
@@ -233,13 +333,38 @@ def setup_git_worktree(
         timeout=60,
     )
     
-    logger.info(f"[{agent_name}] Result: {worktree_result.stdout or worktree_result.stderr}")
+    workspace_ready = False
     
-    workspace_ready = worktree_path.exists() and worktree_path.is_dir()
+    if worktree_result.returncode != 0:
+        logger.warning(f"[{agent_name}] Worktree creation failed: {worktree_result.stderr}")
+        
+        # Try alternative method: create branch and worktree in one command
+        logger.info(f"[{agent_name}] Trying alternative worktree creation method...")
+        alt_result = subprocess.run(
+            ["git", "worktree", "add", "-b", branch_name, str(worktree_path), "HEAD"],
+            cwd=str(main_workspace),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        
+        if alt_result.returncode == 0:
+            logger.info(f"[{agent_name}] Worktree created successfully (alternative method)")
+            workspace_ready = True
+        else:
+            logger.error(f"[{agent_name}] Alternative method also failed: {alt_result.stderr}")
+            raise RuntimeError(f"Failed to create worktree at {worktree_path}: {alt_result.stderr}")
+    else:
+        logger.info(f"[{agent_name}] Worktree created successfully")
+        workspace_ready = True
     
+    # Final validation
     if not workspace_ready:
-        logger.warning(f"[{agent_name}] Worktree not created, using main workspace")
-        worktree_path = main_workspace
+        workspace_ready = worktree_path.exists() and worktree_path.is_dir()
+    
+    # Log total setup time for performance monitoring
+    setup_elapsed = time.time() - setup_start_time
+    logger.info(f"[{agent_name}] Workspace setup completed in {setup_elapsed:.1f}s")
     
     return {
         "workspace_path": str(worktree_path),
@@ -478,6 +603,20 @@ def _update_prisma_generate_cache(workspace_path: str) -> None:
 # =============================================================================
 # Workspace manager class
 # =============================================================================
+
+def get_workspace_path(project_path: str) -> Path:
+    """Get workspace path from project path.
+    
+    Converts project path to its workspace subdirectory path.
+    
+    Args:
+        project_path: Path to the project directory
+        
+    Returns:
+        Path to the workspace subdirectory
+    """
+    return Path(project_path) / "workspace"
+
 
 class ProjectWorkspaceManager:
     """Git worktree manager for project workspace paths.

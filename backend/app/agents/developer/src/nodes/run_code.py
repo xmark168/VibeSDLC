@@ -4,17 +4,21 @@ import concurrent.futures
 import hashlib
 import json
 import logging
+import os
 import shutil
 import socket
+import subprocess
 from pathlib import Path
 from typing import Tuple, Optional, List
 from app.agents.developer.src.state import DeveloperState
 from app.agents.developer.src.utils.shell_utils import run_shell
 from app.agents.developer.src.utils.llm_utils import get_langfuse_span, track_node
 
+
 from langgraph.types import interrupt
 from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
 from app.agents.developer.src.utils.story_logger import log_to_story, StoryLogger
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,10 +36,7 @@ def _clear_next_types_cache(workspace_path: str) -> None:
 
 
 def _validate_null_safety(workspace_path: str) -> List[str]:
-    """Quick scan for unsafe array operations on API data.
-    
-    Detects patterns like `data.items.map()` without null safety.
-    """
+    """Quick scan for unsafe operations on API data."""
     import re
     warnings = []
     
@@ -47,11 +48,32 @@ def _validate_null_safety(workspace_path: str) -> List[str]:
         try:
             content = tsx_file.read_text(encoding="utf-8")
             for i, line in enumerate(content.split('\n')):
-                # Pattern: obj.prop.filter/map/slice without ?? or ?.
+                # Pattern 1: Array methods without null safety
                 if re.search(r'\w+\.\w+\.(filter|map|slice|reduce)\(', line):
                     if '??' not in line and '|| []' not in line and '?.' not in line:
                         rel_path = tsx_file.relative_to(workspace_path)
-                        warnings.append(f"{rel_path}:{i+1}")
+                        warnings.append(f"{rel_path}:{i+1} [array]")
+                
+                # Pattern 2: String methods without optional chaining
+                # Match: obj.prop.replace/toLowerCase/etc but NOT e.target.value or "string".method
+                if re.search(r'(?<!target\.value)\b\w+\.\w+\.(replace|toLowerCase|toUpperCase|split|trim|substring|slice)\(', line):
+                    if '?.' not in line or not re.search(r'\?\.(replace|toLowerCase|toUpperCase|split|trim)', line):
+                        # Exclude safe patterns:
+                        # - Literal strings: "string".method()
+                        # - Form inputs: e.target.value, event.target.value
+                        # - Function parameters in standalone statements: method.split(), param.toLowerCase()
+                        # - Array method callbacks: .map((item) => item.method())
+                        safe_patterns = [
+                            'target.value',
+                            r'["\'].*\.(replace|toLowerCase)',
+                            r'\(([\w]+)\)\s*=>\s*\1\.',  # Arrow function param usage
+                            r'^\s*(const|let|var)\s+\w+\s*=\s*\w+\.',  # Simple variable assignments from params
+                        ]
+                        is_safe = any(re.search(pattern, line) for pattern in safe_patterns)
+                        
+                        if not is_safe:
+                            rel_path = tsx_file.relative_to(workspace_path)
+                            warnings.append(f"{rel_path}:{i+1} [string]")
         except Exception:
             pass
     
@@ -70,53 +92,120 @@ def _has_script(workspace_path: str, script_name: str) -> bool:
     return False
 
 # Thread pool for parallel shell commands
-_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+# Increased from 4 to 10 to support more concurrent stories
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=10, thread_name_prefix="runcode_worker")
 
 
-def _should_skip_seed(workspace_path: str) -> bool:
-    """Check if seed can be skipped (seed.ts unchanged)."""
-    seed_file = Path(workspace_path) / "prisma" / "seed.ts"
-    cache_file = Path(workspace_path) / ".seed_cache"
-    
-    if not seed_file.exists():
-        return True  # No seed file, nothing to run
-    
-    try:
-        current_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
-        if cache_file.exists():
-            cached_hash = cache_file.read_text().strip()
-            if cached_hash == current_hash:
-                return True
-    except Exception:
-        pass
-    
-    return False
+# Seed cache disabled - always run seed to ensure fresh data
+# def _should_skip_seed(workspace_path: str) -> bool:
+#     """Check if seed can be skipped (seed.ts AND schema.prisma unchanged)."""
+#     return False  # Always run seed
+
+# def _update_seed_cache(workspace_path: str) -> None:
+#     """Update seed cache after successful seed (combined seed.ts + schema.prisma hash)."""
+#     pass  # Cache disabled
 
 
-def _update_seed_cache(workspace_path: str) -> None:
-    """Update seed cache after successful seed."""
-    seed_file = Path(workspace_path) / "prisma" / "seed.ts"
-    cache_file = Path(workspace_path) / ".seed_cache"
+def _run_prisma_generate(workspace_path: str) -> bool:
+    """Run prisma generate (blocking). Returns True if successful."""
+    schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
+    if not os.path.exists(schema_path):
+        return True  # No schema, nothing to generate
     
     try:
-        if seed_file.exists():
-            current_hash = hashlib.md5(seed_file.read_bytes()).hexdigest()
-            cache_file.write_text(current_hash)
-    except Exception:
-        pass
+        result = subprocess.run(
+            ["pnpm", "exec", "prisma", "generate"],
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=60,
+        )
+        if result.returncode == 0:
+            logger.debug("[run_code] prisma generate successful")
+            return True
+        else:
+            logger.warning(f"[run_code] prisma generate failed: {result.stderr[:200] if result.stderr else 'unknown'}")
+            return False
+    except subprocess.TimeoutExpired:
+        logger.warning("[run_code] prisma generate timed out")
+        return False
+    except Exception as e:
+        logger.warning(f"[run_code] prisma generate error: {e}")
+        return False
+
+
+def _run_prisma_db_push(workspace_path: str) -> bool:
+    """Run prisma db push (blocking). Returns True if successful."""
+    schema_path = os.path.join(workspace_path, "prisma", "schema.prisma")
+    if not os.path.exists(schema_path):
+        return True  # No schema, nothing to push
+    
+    try:
+        result = subprocess.run(
+            "pnpm exec prisma db push --skip-generate --accept-data-loss",
+            cwd=workspace_path,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=120,
+            shell=True,
+        )
+        if result.returncode == 0:
+            logger.debug("[run_code] prisma db push successful")
+            return True
+        else:
+            logger.warning(f"[run_code] prisma db push failed: {result.stderr[:200] if result.stderr else 'unknown'}")
+            return False
+    except subprocess.TimeoutExpired:
+        logger.warning("[run_code] prisma db push timed out")
+        return False
+    except Exception as e:
+        logger.warning(f"[run_code] prisma db push error: {e}")
+        return False
 
 
 def _run_seed(workspace_path: str) -> Tuple[bool, str, str]:
-    """Run database seed (blocking). Returns (success, stdout, stderr)."""
+    """Run database seed (blocking). Always runs, auto-fixes config.
+    
+    Returns (success, stdout, stderr)
+    """
     seed_file = Path(workspace_path) / "prisma" / "seed.ts"
     
     if not seed_file.exists():
+        logger.debug("[run_code] No seed file, skipping")
         return True, "", ""
     
-    if _should_skip_seed(workspace_path):
-        logger.debug("[run_code] Skipping seed (cached)")
-        return True, "", ""
+    # Auto-fix: Ensure package.json has prisma.seed config
+    package_json_path = Path(workspace_path) / "package.json"
+    if package_json_path.exists():
+        import json
+        try:
+            pkg = json.loads(package_json_path.read_text())
+            
+            # Check if prisma.seed config exists
+            needs_fix = False
+            if "prisma" not in pkg:
+                pkg["prisma"] = {}
+                needs_fix = True
+            
+            if "seed" not in pkg.get("prisma", {}):
+                pkg["prisma"]["seed"] = "tsx prisma/seed.ts"
+                needs_fix = True
+            
+            if needs_fix:
+                # Write back with proper formatting
+                package_json_path.write_text(
+                    json.dumps(pkg, indent=2, ensure_ascii=False) + "\n",
+                    encoding='utf-8'
+                )
+                logger.info("[run_code] Auto-fixed: Added prisma.seed config to package.json")
+        except Exception as e:
+            logger.warning(f"[run_code] Could not check/fix package.json: {e}")
     
+    # Seed cache disabled - always run seed to ensure fresh data
     logger.debug("[run_code] Running database seed...")
     # Use prisma db seed command - handles compiler-options automatically
     success, stdout, stderr = _run_step(
@@ -125,7 +214,6 @@ def _run_seed(workspace_path: str) -> Tuple[bool, str, str]:
     )
     
     if success:
-        _update_seed_cache(workspace_path)
         logger.debug("[run_code] Database seeded successfully")
     else:
         logger.error(f"[run_code] Seed FAILED: {stderr[:500] if stderr else stdout[:500] if stdout else 'unknown'}")
@@ -242,7 +330,14 @@ async def _run_service_build(
         # Quick null safety validation
         null_warnings = _validate_null_safety(workspace_path)
         if null_warnings:
-            logger.warning(f"[run_code] Null safety warnings ({len(null_warnings)}): {null_warnings[:5]}")
+            array_warnings = [w for w in null_warnings if '[array]' in w]
+            string_warnings = [w for w in null_warnings if '[string]' in w]
+            msg = f"[run_code] Null safety warnings ({len(null_warnings)}): "
+            if array_warnings:
+                msg += f"{len(array_warnings)} array, "
+            if string_warnings:
+                msg += f"{len(string_warnings)} string"
+            logger.warning(msg + f" | Examples: {null_warnings[:5]}")
         
         loop = asyncio.get_event_loop()
         tasks = []
@@ -379,29 +474,82 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         await log(f"Found {len(services)} service(s): {', '.join(service_names)}")
         
         # =====================================================================
+        # Step 0: Prisma Generate + DB Push
+        # =====================================================================
+        schema_file = Path(workspace_path) / "prisma" / "schema.prisma"
+        if schema_file.exists():
+            await log("🗄️ Checking Prisma client...")
+            
+            loop = asyncio.get_event_loop()
+            
+            # Check if Prisma client needs regeneration
+            client_index = Path(workspace_path) / "node_modules" / ".prisma" / "client" / "index.d.ts"
+            needs_generate = False
+            
+            if not client_index.exists():
+                await log("Prisma client not generated, generating...")
+                needs_generate = True
+            else:
+                # Check if schema is newer than generated client
+                schema_mtime = schema_file.stat().st_mtime
+                client_mtime = client_index.stat().st_mtime
+                
+                if schema_mtime > client_mtime:
+                    await log("Schema changed, regenerating Prisma client...")
+                    needs_generate = True
+            
+            # Regenerate if needed
+            if needs_generate:
+                gen_success = await loop.run_in_executor(_executor, _run_prisma_generate, workspace_path)
+                if gen_success:
+                    await log("✅ Prisma client generated")
+                else:
+                    await log("⚠️ Prisma generate failed (continuing anyway)", "warning")
+            else:
+                await log("✅ Prisma client up-to-date")
+            
+            # DB push (sync schema to database)
+            await log("Syncing database schema...")
+            push_success = await loop.run_in_executor(_executor, _run_prisma_db_push, workspace_path)
+            
+            if not push_success:
+                await log("❌ Prisma DB push failed", "error")
+                await story_logger.message("❌ Prisma DB push failed - schema sync issue")
+                if run_code_span:
+                    run_code_span.end(output={"status": "FAIL", "step": "prisma_db_push"})
+                return {
+                    **state,
+                    "run_status": "FAIL",
+                    "run_result": {"status": "FAIL", "step": "prisma_db_push", "summary": "Prisma DB push failed"},
+                    "action": "ANALYZE_ERROR"
+                }
+            
+            await log("Database schema synced ✓", "success")
+        else:
+            await log("No schema.prisma found, skipping DB sync", "debug")
+        
+        # =====================================================================
         # Step 1: Database Seed (if prisma/seed.ts exists)
         # =====================================================================
         seed_file = Path(workspace_path) / "prisma" / "seed.ts"
         if seed_file.exists():
             await log("🌱 Running database seed...")
-            if _should_skip_seed(workspace_path):
-                await log("Seed skipped (no changes detected)", "debug")
+            # Always run seed (cache disabled for fresh data)
+            loop = asyncio.get_event_loop()
+            seed_success, seed_stdout, seed_stderr = await loop.run_in_executor(_executor, _run_seed, workspace_path)
+            if seed_success:
+                await log("Database seed completed", "success")
             else:
-                loop = asyncio.get_event_loop()
-                seed_success, seed_stdout, seed_stderr = await loop.run_in_executor(_executor, _run_seed, workspace_path)
-                if seed_success:
-                    await log("Database seed completed", "success")
-                else:
-                    # Seed failed - return to ANALYZE_ERROR for fixing
-                    error_output = seed_stderr or seed_stdout or "Unknown seed error"
-                    await log(f"Database seed FAILED: {error_output[:500]}", "error")
-                    await story_logger.message(f"Seed failed - analyzing error...")
-                    if run_code_span:
-                        run_code_span.end(output={"status": "FAIL", "step": "seed", "error": error_output[:500]})
-                    return {
-                        **state,
-                        "run_status": "FAIL",
-                        "run_result": {
+                # Seed failed - return to ANALYZE_ERROR for fixing
+                error_output = seed_stderr or seed_stdout or "Unknown seed error"
+                await log(f"❌ Database seed FAILED: {error_output[:500]}", "error")
+                await story_logger.message(f"❌ Seed failed - analyzing error...")
+                if run_code_span:
+                    run_code_span.end(output={"status": "FAIL", "step": "seed", "error": error_output[:500]})
+                return {
+                    **state,
+                    "run_status": "FAIL",
+                    "run_result": {
                             "status": "FAIL",
                             "step": "seed",
                             "summary": "Database seed failed",
@@ -447,7 +595,14 @@ async def run_code(state: DeveloperState, agent=None) -> DeveloperState:
         await log("Running null safety validation...", "debug")
         null_warnings = _validate_null_safety(workspace_path)
         if null_warnings:
-            await log(f"Found {len(null_warnings)} potential null safety issue(s): {', '.join(null_warnings[:5])}", "warning")
+            array_warnings = [w for w in null_warnings if '[array]' in w]
+            string_warnings = [w for w in null_warnings if '[string]' in w]
+            msg = f"Found {len(null_warnings)} null safety issues: "
+            if array_warnings:
+                msg += f"{len(array_warnings)} array methods, "
+            if string_warnings:
+                msg += f"{len(string_warnings)} string methods"
+            await log(msg + f". Examples: {', '.join(null_warnings[:5])}", "warning")
         else:
             await log("No null safety issues detected", "debug")
         

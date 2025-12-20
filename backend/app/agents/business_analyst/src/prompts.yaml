@@ -86,10 +86,10 @@ tasks:
       | interview | Vague request, missing details, need clarification, NO existing PRD |
       | prd_create | User provides comprehensive requirements for NEW PRD |
       | prd_update | Add MAJOR NEW FEATURE not in PRD, change objectives/users |
-      | extract_stories | User wants stories from PRD (e.g., "tạo stories", "phê duyệt PRD") |
+      | extract_stories | User wants to CREATE/GENERATE new stories from PRD (first time) |
       | story_edit_single | Edit ONE SPECIFIC story (user mentions story title/ID + specific change) |
       | stories_update | Refine/add details to EXISTING feature (UI elements, sub-features, flows) |
-      | stories_approve | User approves stories for backlog |
+      | stories_approve | User says "Approve Stories", "Phê duyệt Stories", wants to save generated stories to database/backlog |
       | domain_analysis | User wants business/domain analysis |
       </intents>
       
@@ -124,7 +124,8 @@ tasks:
       - No collected_info yet AND no PRD → prefer "interview"
       - Document uploaded + has PRD → default "prd_update" (unless user says "tạo mới")
       - Document uploaded + no PRD → "prd_create" or "interview"
-      - "phê duyệt PRD", "PRD ok" → extract_stories
+      - "Approve Stories", "Phê duyệt Stories", "save stories" → stories_approve
+      - "tạo stories", "generate stories", "PRD ok tạo stories" → extract_stories
       - ALWAYS check existing features/epics context before deciding between prd_update vs stories_update
       </rules>
 

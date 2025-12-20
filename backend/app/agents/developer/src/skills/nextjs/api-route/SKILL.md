@@ -16,6 +16,53 @@ API routes live in the `app/api/` directory:
 
 **CRITICAL**: In Next.js 16, dynamic route params are async. You MUST `await params` before using them.
 
+## ⚠️ API Response Pattern - CRITICAL
+
+**ALWAYS use named function imports, NEVER use object-style:**
+
+```typescript
+//  CORRECT - named functions
+import { successResponse, errorResponse, handleError, ApiErrors } from '@/lib/api-response';
+
+return successResponse(data);                    // Success response
+return successResponse(data, 'Created', 201);    // With message & status
+return errorResponse(ApiErrors.notFound('User'), 404);  // Error response
+return handleError(error);                       // Auto-handle any error
+
+// ❌ WRONG - apiResponse object DOES NOT EXIST
+import { apiResponse } from '@/lib/api-response';  // TS ERROR!
+return apiResponse.success(data);                  // NO such method
+return apiResponse.error('message', 500);          // NO such method
+```
+
+**Why?** The `@/lib/api-response` module exports individual helper functions, not an object. Using `apiResponse.xxx()` will cause TypeScript compilation errors.
+
+**Available imports:**
+- `successResponse(data, message?, status?)` - Return success with data
+- `errorResponse(error, status?)` - Return error response
+- `handleError(error)` - Auto-detect error type and format response
+- `ApiErrors` - Predefined error creators (unauthorized, notFound, etc.)
+- `HttpStatus` - HTTP status code enum
+
+**Pattern summary:**
+```typescript
+// Success cases
+return successResponse(items);                        // 200 OK
+return successResponse(item, 'Created', 201);         // 201 Created
+
+// Error cases - use ApiErrors helpers
+throw ApiErrors.unauthorized();                       // 401
+throw ApiErrors.notFound('User');                     // 404
+throw ApiErrors.validation('Invalid email');          // 422
+
+// Catch all errors with handleError
+try {
+  // ... your code
+} catch (error) {
+  return handleError(error);  // Auto-formats Zod, ApiException, generic errors
+}
+```
+
 ## ⚠️ Prisma Import Pattern - CRITICAL
 
 ```typescript

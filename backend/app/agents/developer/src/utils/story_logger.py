@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 from uuid import UUID
 
 if TYPE_CHECKING:
-    from app.core.agent.base_agent import BaseAgent
+    from app.agents.core.base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
 
@@ -403,37 +403,38 @@ def node_with_timeout(timeout: int = NODE_TIMEOUT_SECONDS):
 
 import subprocess
 import time
-import threading
+import asyncio
 from pathlib import Path
 
 # Per-directory locks to serialize git operations
-_git_locks: dict = {}
-_git_locks_lock = threading.Lock()
+# CHANGED: Use asyncio.Lock instead of threading.Lock for async compatibility
+_git_locks: dict[str, asyncio.Lock] = {}
+_git_locks_lock = asyncio.Lock()
 
 
-def _get_git_lock(cwd: str) -> threading.Lock:
-    """Get or create a lock for a specific git working directory."""
+async def _get_git_lock(cwd: str) -> asyncio.Lock:
+    """Get or create an async lock for a specific git working directory."""
     # Normalize path to avoid duplicate locks for same dir
     if not cwd:
         cwd = "."
     cwd_normalized = str(Path(cwd).resolve())
     
-    with _git_locks_lock:
+    async with _git_locks_lock:
         if cwd_normalized not in _git_locks:
-            _git_locks[cwd_normalized] = threading.Lock()
+            _git_locks[cwd_normalized] = asyncio.Lock()
         return _git_locks[cwd_normalized]
 
 
-def git_with_retry(
+async def git_with_retry(
     cmd: list,
     cwd: str,
     max_retries: int = 3,
     backoff_base: float = 1.0,
     timeout: int = 30
 ) -> subprocess.CompletedProcess:
-    """Execute git command with retry, exponential backoff, and directory lock.
+    """Execute git command with retry, exponential backoff, and async directory lock.
     
-    Uses per-directory locking to prevent concurrent git operations in the same
+    Uses per-directory async locking to prevent concurrent git operations in the same
     working directory which can cause index.lock conflicts.
     
     Args:
@@ -458,13 +459,13 @@ def git_with_retry(
     if not cwd_path.exists():
         raise OSError(f"Working directory does not exist: {cwd}")
     
-    # Normalize path for Windows compatibility
+    # Normalize path to POSIX format
     cwd = str(cwd_path.resolve())
     
-    lock = _get_git_lock(cwd)
+    lock = await _get_git_lock(cwd)
     last_error = None
     
-    with lock:  # Serialize git operations for this directory
+    async with lock:  # Serialize git operations for this directory
         for attempt in range(max_retries):
             try:
                 result = subprocess.run(
@@ -482,7 +483,7 @@ def git_with_retry(
                 if "lock" in stderr.lower() or "index.lock" in stderr.lower():
                     wait_time = backoff_base * (2 ** attempt)
                     logger.warning(f"[git] Retry {attempt + 1}/{max_retries} after {wait_time}s: {stderr[:100]}")
-                    time.sleep(wait_time)
+                    await asyncio.sleep(wait_time)
                     # Try to remove stale lock file
                     lock_file = Path(cwd) / ".git" / "index.lock"
                     if lock_file.exists():
@@ -498,7 +499,7 @@ def git_with_retry(
                 last_error = e
                 wait_time = backoff_base * (2 ** attempt)
                 logger.warning(f"[git] Timeout, retry {attempt + 1}/{max_retries} after {wait_time}s")
-                time.sleep(wait_time)
+                await asyncio.sleep(wait_time)
     
     # All retries failed
     raise last_error

@@ -4,8 +4,7 @@ import logging
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.agent.llm_factory import get_llm
-from app.core.agent.prompt_utils import build_system_prompt
+from app.agents.core.prompt_utils import build_system_prompt
 from app.agents.team_leader.src.nodes._utils import get_callback_config, _PROMPTS, _DEFAULTS
 from app.agents.team_leader.src.state import TeamLeaderState
 
@@ -29,7 +28,7 @@ Hãy viết MỘT câu hỏi clarification thân thiện, tự nhiên để hi�
 - Gợi ý cụ thể user cần cung cấp gì (feature name, error message, steps...)
 - Dùng emoji phù hợp"""
 
-        response = await get_llm("respond").ainvoke(
+        response = await create_fast_llm().ainvoke(
             [SystemMessage(content=sys_prompt), HumanMessage(content=user_prompt)],
             config=get_callback_config(state, "clarify")
         )

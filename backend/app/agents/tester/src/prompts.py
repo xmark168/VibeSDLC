@@ -6,7 +6,7 @@ from typing import Optional, Any
 
 import yaml
 
-from app.core.agent.prompt_utils import (
+from app.agents.core.prompt_utils import (
     extract_agent_personality,
     build_system_prompt as _core_build_system_prompt,
 )

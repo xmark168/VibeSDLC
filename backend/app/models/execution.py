@@ -69,7 +69,7 @@ class AgentMetricsSnapshot(BaseModel, table=True):
     __tablename__ = "agent_metrics_snapshots"
 
     snapshot_timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None),  # Strip timezone for asyncpg
         nullable=False,
         index=True
     )

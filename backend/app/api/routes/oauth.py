@@ -15,65 +15,22 @@ from app.core.security import create_access_token
 from app.core.redis_client import get_redis_client
 from app.models import User, OAuthProvider, LinkedAccount
 from app.services import UserService, LinkedAccountService
+from app.utils.oauth_state import (
+    set_oauth_state,
+    get_oauth_state_data,
+    delete_oauth_state,
+    get_oauth_state as get_oauth_state_provider,
+)
+from app.utils.oauth_providers import (
+    get_google_user_info,
+    get_github_user_info,
+    get_facebook_user_info,
+)
 
 redis_client = get_redis_client()
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["oauth"])
-
-# In-memory store for OAuth state (sufficient for OAuth flow)
-# Note: OAuth state is short-lived (seconds), so Redis is unnecessary
-_oauth_state_store: dict[str, dict] = {}
-
-
-def set_oauth_state(state: str, provider: str, mode: str = "login", user_id: str | None = None):
-    """Save OAuth state to in-memory store"""
-    import time
-    _oauth_state_store[state] = {
-        "provider": provider,
-        "mode": mode,  # "login" or "link"
-        "user_id": user_id,  # Only set for "link" mode
-        "created_at": time.time()
-    }
-    logger.info(f"Saved OAuth state: {state} for {provider} (mode={mode})")
-    # Clean up old states (older than 10 minutes)
-    _cleanup_old_states()
-
-
-def get_oauth_state_data(state: str) -> dict | None:
-    """Get full OAuth state data from in-memory store"""
-    state_data = _oauth_state_store.get(state)
-    if state_data:
-        logger.info(f"Retrieved OAuth state: {state} for {state_data['provider']} (mode={state_data.get('mode', 'login')})")
-        return state_data
-    logger.warning(f"OAuth state not found: {state}")
-    return None
-
-
-def get_oauth_state(state: str) -> str | None:
-    """Get OAuth provider from state (backward compatible)"""
-    state_data = get_oauth_state_data(state)
-    return state_data["provider"] if state_data else None
-
-
-def delete_oauth_state(state: str):
-    """Delete OAuth state"""
-    _oauth_state_store.pop(state, None)
-    logger.info(f"Deleted OAuth state: {state}")
-
-
-def _cleanup_old_states():
-    """Remove OAuth states older than 10 minutes"""
-    import time
-    current_time = time.time()
-    expired_states = [
-        state for state, data in _oauth_state_store.items()
-        if current_time - data["created_at"] > 600  # 10 minutes
-    ]
-    for state in expired_states:
-        _oauth_state_store.pop(state, None)
-    if expired_states:
-        logger.info(f"Cleaned up {len(expired_states)} expired OAuth states")
 
 
 # OAuth configurations (add to .env)
@@ -186,7 +143,7 @@ async def oauth_callback(
     state_data = get_oauth_state_data(state)
 
     if not state_data:
-        logger.error(f"Invalid OAuth state - Available states: {len(_oauth_state_store)}")
+        logger.error(f"Invalid OAuth state")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired OAuth state. Please try again.",

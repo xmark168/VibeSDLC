@@ -5,17 +5,6 @@ from functools import wraps
 def track_node(node_name: str):
     """
     Decorator to track node execution in Langfuse with detailed logging.
-    
-    Creates a span that captures:
-    - Input: story info, current step, plan details
-    - Output: result status, files modified, errors
-    - Metadata: node name, story_id, complexity, timing
-    - Nested LLM calls via CallbackHandler
-    
-    Usage:
-        @track_node("plan")
-        async def plan(state, config):
-            # ... node logic ...
     """
     def decorator(func):
         @wraps(func)
@@ -129,21 +118,7 @@ def track_node(node_name: str):
 
 
 def get_callback_config(config: dict, name: str) -> dict | None:
-    """Get callback config for Langfuse tracing from LangGraph runtime config.
-    
-    Returns LangChain CallbackHandler for detailed LLM tracking.
-    Handler bridges LangChain → Langfuse, capturing tokens, cost, model info.
-    
-    NOTE: Callbacks are passed via LangGraph config (not state) to avoid
-    serialization issues with PostgresSaver checkpoint.
-    
-    Args:
-        config: LangGraph runtime config containing 'callbacks'
-        name: Name for this specific LLM call (observation name)
-        
-    Returns:
-        Config dict with callbacks and run_name, or None if no callbacks
-    """
+    """Get callback config for Langfuse tracing from LangGraph runtime config."""
     callbacks = config.get("callbacks", []) if config else []
     return {"callbacks": callbacks, "run_name": name} if callbacks else None
 
@@ -159,6 +134,17 @@ def flush_langfuse(config: dict) -> None:
         if hasattr(cb, 'langfuse') and hasattr(cb.langfuse, 'flush'):
             try:
                 cb.langfuse.flush()
+            except Exception:
+                pass
+
+
+async def async_flush_langfuse(config: dict) -> None:
+    """Async flush langfuse client if available in config callbacks - non-blocking."""
+    callbacks = config.get("callbacks", []) if config else []
+    for cb in callbacks:
+        if hasattr(cb, 'langfuse') and hasattr(cb.langfuse, 'async_api'):
+            try:
+                await cb.langfuse.async_api.flush()
             except Exception:
                 pass
 

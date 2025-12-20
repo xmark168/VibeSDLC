@@ -135,11 +135,12 @@ export function ResetPasswordForm() {
       className="w-full max-w-md space-y-8"
     >
       {/* Mobile logo */}
-      <div className="lg:hidden flex items-center gap-2 mb-8">
-        <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-          <span className="text-primary-foreground font-bold text-xl">M</span>
-        </div>
-        <span className="text-2xl font-bold">MGX</span>
+      <div className="lg:hidden flex items-center justify-center mb-8">
+        <img 
+          src="/assets/images/logov2.png" 
+          alt="VibeSDLC Logo" 
+          className="h-12 w-auto"
+        />
       </div>
 
       <div className="space-y-2">

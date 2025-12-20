@@ -1,19 +1,57 @@
-.venv
-__pycache__
-*.pyc
-*.pyo
-*.egg-info
-.git
-.gitignore
-.env
-.env.*
-!.env.example
-logs/
-*.log
-.pytest_cache
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
 .coverage
 htmlcov/
-.mypy_cache
-.ruff_cache
-projects/
-uploads/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+
+# Project specific
+uploads/*
+projects/*
+!projects/.gitkeep
+!uploads/.gitkeep
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Documentation
+README.md
+docs/
+
+# Development
+dev.py
+*.md
