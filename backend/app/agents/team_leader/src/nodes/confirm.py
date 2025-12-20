@@ -1,10 +1,8 @@
 """Confirmation nodes for handling user confirmations about project actions."""
 
 import logging
-from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.agents.team_leader.src.state import TeamLeaderState
-from app.agents.core.llm_factory import get_llm
 from app.agents.core.prompt_utils import get_task_prompts
 from app.agents.team_leader.src.nodes._utils import _PROMPTS
 

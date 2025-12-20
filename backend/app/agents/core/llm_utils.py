@@ -1,5 +1,4 @@
-"""LLM utilities with token tracking.
-"""
+"""LLM utilities with token tracking."""
 
 import logging
 from typing import Any, Optional, List
@@ -40,9 +39,7 @@ async def tracked_ainvoke(
 
 
 def extract_tokens_from_response(response: Any) -> int:
-    """
-    Extract token count from LLM response.
-    """
+    """Extract token count from LLM response."""
     if not hasattr(response, 'response_metadata'):
         return 0
     

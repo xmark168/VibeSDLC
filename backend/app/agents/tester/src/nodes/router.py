@@ -10,13 +10,13 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.schemas import RoutingDecision
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.nodes.helpers import get_llm_config, query_stories_from_db
-from app.agents.core.llm_factory import get_llm
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
 from app.core.db import engine
 from app.models import Project
 
 logger = logging.getLogger(__name__)
 
-_llm = get_llm("router")  # Fast model (Haiku)
+_llm = create_fast_llm()  # Fast model (Haiku)
 
 
 async def router(state: TesterState, agent=None) -> dict:

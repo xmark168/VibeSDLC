@@ -5,7 +5,6 @@ from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.agents.core.llm_factory import get_llm
 from app.agents.core.prompt_utils import build_system_prompt, build_user_prompt
 from app.agents.team_leader.src.nodes._utils import ROLE_WIP_MAP, get_callback_config, _PROMPTS, _DEFAULTS
 from app.agents.team_leader.src.schemas import RoutingDecision
@@ -30,7 +29,7 @@ VÍ DỤ: "Website bán sách" + "tạo website quản lý công việc" = KHÁC
 
 Trả lời CHỈ một từ: SAME hoặc DIFFERENT"""
 
-        response = await get_llm("router").ainvoke(
+        response = await create_fast_llm().ainvoke(
             [HumanMessage(content=prompt)],
             config=get_callback_config(state, "check_domain_change")
         )
@@ -71,7 +70,7 @@ async def router(state: TeamLeaderState, agent=None) -> TeamLeaderState:
             ))
         ]
 
-        structured_llm = get_llm("router").with_structured_output(RoutingDecision)
+        structured_llm = create_fast_llm().with_structured_output(RoutingDecision)
         decision = await structured_llm.ainvoke(messages, config=get_callback_config(state, "router"))
         logger.info(f"[router] Decision: action={decision.action}, target={decision.target_role}")
         result = decision.model_dump()

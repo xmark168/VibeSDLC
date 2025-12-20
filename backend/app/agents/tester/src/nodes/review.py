@@ -13,11 +13,11 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt, get_user_prompt
 from app.agents.tester.src.schemas import ReviewDecision
 from app.utils.token_utils import smart_truncate_tokens
-from app.agents.core.llm_factory import get_llm
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
 
 logger = logging.getLogger(__name__)
 
-_llm = get_llm("review")
+_llm = create_medium_llm()
 
 # Config
 MAX_REVIEW_TOKENS = 8000

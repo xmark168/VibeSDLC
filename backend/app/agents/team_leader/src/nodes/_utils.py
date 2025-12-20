@@ -6,7 +6,6 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.agents.core.llm_factory import get_llm
 from app.agents.core.prompt_utils import build_system_prompt, build_user_prompt, get_task_prompts, load_prompts_yaml
 
 logger = logging.getLogger(__name__)
@@ -103,7 +102,7 @@ async def generate_response_message(
             extra_info=extra_info or "N/A"
         )
 
-        response = await get_llm("respond").ainvoke(
+        response = await create_fast_llm().ainvoke(
             [SystemMessage(content=sys_prompt), HumanMessage(content=user_prompt)]
         )
         return response.content.strip()
@@ -119,7 +118,7 @@ async def check_cancel_intent(user_message: str, agent=None) -> bool:
         system_prompt = prompts["system_prompt"]
         user_prompt = prompts["user_prompt"].replace("{user_message}", user_message)
 
-        response = await get_llm("router").ainvoke([
+        response = await create_fast_llm().ainvoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt)
         ])

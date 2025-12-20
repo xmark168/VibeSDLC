@@ -1,6 +1,6 @@
 """Business Analyst nodes - modular structure."""
 
-from .utils import _get_llm, _invoke_structured, _cfg, _sys_prompt, _user_prompt
+from .utils import _invoke_structured, _cfg, _sys_prompt, _user_prompt
 from .analyze_intent import analyze_intent, analyze_document_content, generate_document_feedback
 from .conversational import respond_conversational
 from .interview import (
@@ -16,7 +16,7 @@ from .verify import verify_story_simple, send_review_action_response
 
 __all__ = [
     # Utils
-    "_get_llm", "_invoke_structured", "_cfg", "_sys_prompt", "_user_prompt",
+    "", "_invoke_structured", "_cfg", "_sys_prompt", "_user_prompt",
     # Intent
     "analyze_intent", "analyze_document_content", "generate_document_feedback",
     # Conversational

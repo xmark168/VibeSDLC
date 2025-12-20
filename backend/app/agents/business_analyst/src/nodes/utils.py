@@ -9,21 +9,11 @@ from langchain_core.language_models import BaseChatModel
 from sqlmodel import Session, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.agents.core.llm_factory import get_llm, create_llm, MODELS
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm, create_complex_llm
 
 from ..state import BAState
 from ..schemas import (
-    IntentOutput,
-    QuestionsOutput,
-    PRDOutput,
-    PRDUpdateOutput,
-    DocumentAnalysisOutput,
-    EpicsOnlyOutput,
-    StoriesForEpicOutput,
-    FullStoriesOutput,
-    VerifyStoryOutput,
-    DocumentFeedbackOutput,
-    SingleStoryEditOutput,
+
     FeatureClarityOutput,
 )
 from app.agents.core.prompt_utils import (
@@ -57,22 +47,10 @@ MAX_LLM_RETRIES = 2  # Total 3 attempts (initial + 2 retries)
 RETRY_BACKOFF_BASE = 1.0  # Linear backoff: 1s, 2s
 
 # Step mappings for BA agent
-BA_STEP_MAP = {
-    "fast": "router",      # Intent, simple tasks
-    "default": "analyze",  # PRD, questions
-    "complex": "implement", # Stories
-}
-
-def _get_llm(tier: str = "default"):
-    """Get LLM instance by tier. Tokens auto-tracked via LangChain callback."""
-    step = BA_STEP_MAP.get(tier, "analyze")
-    return get_llm(step)
-
-
-# Pre-configured LLM instances
-_fast_llm = _get_llm("fast")
-_default_llm = _get_llm("default")
-_story_llm = _get_llm("complex")
+# Pre-configured LLM instances (direct from factory)
+_fast_llm = create_fast_llm()      # For intent analysis, simple tasks
+_default_llm = create_medium_llm()  # For PRD, questions
+_story_llm = create_complex_llm()   # For story creation
 
 
 

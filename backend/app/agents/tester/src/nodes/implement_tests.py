@@ -14,7 +14,7 @@ from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.nodes.helpers import send_message, generate_user_message
 from app.agents.tester.src.schemas import TestFileOutput
 from app.utils.token_utils import truncate_to_tokens
-from app.agents.core.llm_factory import get_llm
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
 from app.core.config import llm_settings
 MAX_RETRIES = llm_settings.MAX_RETRIES
 RETRY_DELAY = llm_settings.RETRY_BACKOFF_MIN
@@ -23,7 +23,7 @@ MAX_CONCURRENT = llm_settings.MAX_CONCURRENT_TASKS
 
 logger = logging.getLogger(__name__)
 
-_llm = get_llm("implement")
+_llm = create_medium_llm()
 
 
 def git_commit_tests(workspace_path: str, description: str, files: List[str] = None) -> bool:
@@ -519,7 +519,7 @@ Scan the source code above and list what you found:
         logger.info(f"[implement_tests] Step {step_index + 1}: {description[:50]}... (skills: {step_skills})")
         
         # Get implement LLM
-        step_llm = get_llm("implement")
+        step_llm = create_medium_llm()
         structured_llm = step_llm.with_structured_output(TestFileOutput)
         # Pass config from runtime (not state) to avoid checkpoint serialization issues
         result = await _invoke_with_retry(
