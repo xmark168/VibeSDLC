@@ -511,7 +511,7 @@ class BaseAgent(ABC):
                 task_id=self._current_task_id,
                 execution_id=self._current_execution_id,
                 task_context=task_context_data,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                expires_at=(datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None),
             )
             session.add(db_question)
             
@@ -786,7 +786,7 @@ class BaseAgent(ABC):
                         "batch_total": len(questions),
                         "question_context": q_data.get("context"),
                     },
-                    expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                    expires_at=(datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None),
                 )
                 session.add(db_question)
             
@@ -826,7 +826,7 @@ class BaseAgent(ABC):
             )
             session.add(batch_message)
             
-            session.commit()
+            await session.commit()
         
         # Publish batch event to Kafka (will add event schema next)
         producer = await self._get_producer()
@@ -1673,6 +1673,19 @@ class BaseAgent(ABC):
                     f"[{self.name}] Task {task_id} rejected: {budget_reason}"
                 )
                 
+                # Log to story so user can see the error with current budget info
+                story_id = context.get("story_id")
+                if story_id:
+                    from app.agents.developer.src.utils.story_logger import log_to_story
+                    await log_to_story(
+                        str(story_id),  # Convert UUID to string
+                        str(self.project_id),  # Convert UUID to string
+                        f"⚠️ **Token Budget Exceeded**\n\n{budget_reason}\n\n"
+                        f"Please contact your project admin to increase limits or try again later.",
+                        "error",
+                        "budget_check"
+                    )
+                
                 await self.message_user(
                     "error",
                     f"⚠️ **Token Budget Exceeded**\n\n{budget_reason}\n\n"
@@ -1767,8 +1780,8 @@ class BaseAgent(ABC):
                     await self.message_user("idle", "Task completed")
 
             # Log completion (only if task didn't raise exception)
-            if not task_failed:
-                if result   .success:
+            if not task_failed and 'result' in locals():
+                if result.success:
                     pass
                 else:
                     logger.error(
@@ -1808,28 +1821,6 @@ class BaseAgent(ABC):
             self._current_trace = None
     
     # ===== Token Budget Methods =====
-    
-    
-        
-        # Check structured_data for token_usage field
-        if result.structured_data:
-            tokens = result.structured_data.get("token_usage") or \
-                    result.structured_data.get("tokens_used") or \
-                    result.structured_data.get("total_tokens")
-            
-            if tokens and isinstance(tokens, int):
-                return tokens
-        
-        # Fallback: Estimate from output length
-        if result.output:
-            estimated = len(result.output) // 4
-            logger.debug(
-                f"[{self.name}] Estimated {estimated:,} tokens from output length "
-                f"(no explicit token_usage in result)"
-            )
-            return estimated
-        
-        return 0
     
     async def _check_token_budget(self, estimated_tokens: int) -> Tuple[bool, str]:
         """Check if project has token budget for task.

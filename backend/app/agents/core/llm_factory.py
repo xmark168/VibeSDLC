@@ -173,20 +173,20 @@ def create_llm(
 
 def create_fast_llm(**kwargs) -> BaseChatModel:
     """Create fast (Haiku) LLM."""
-    defaults = {"temperature": 0.1, "timeout": 30, "max_tokens": 4096}
+    defaults = {"temperature": 0.1, "timeout": 30, "max_tokens": 8192}
     defaults.update(kwargs)
     return create_llm(MODELS["fast"], **defaults)
 
 
 def create_medium_llm(**kwargs) -> BaseChatModel:
     """Create medium (Sonnet) LLM."""
-    defaults = {"temperature": 0.1, "timeout": 60, "max_tokens": 8192}
+    defaults = {"temperature": 0.1, "timeout": 60, "max_tokens": 16384}
     defaults.update(kwargs)
     return create_llm(MODELS["medium"], **defaults)
 
 
 def create_complex_llm(**kwargs) -> BaseChatModel:
     """Create complex (Opus) LLM."""
-    defaults = {"temperature": 0.1, "timeout": 120, "max_tokens": 16384}
+    defaults = {"temperature": 0.1, "timeout": 120, "max_tokens": 32768}
     defaults.update(kwargs)
     return create_llm(MODELS["complex"], **defaults)

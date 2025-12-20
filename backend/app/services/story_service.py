@@ -860,6 +860,64 @@ class StoryService:
             "wip_limits": wip_limits
         }
 
+    def _find_and_compute_affected_stories(
+        self,
+        completed_story_id: UUID,
+        project_id: UUID
+    ) -> List[Dict[str, Any]]:
+        """Find stories that depend on the completed story and compute their new blocked state.
+
+        Args:
+            completed_story_id: ID of the story that was just completed
+            project_id: Project ID to limit the search
+
+        Returns:
+            List of dicts with story_id, is_blocked, and blocked_by_count
+        """
+        # Find all stories in project that have this story in their dependencies
+        statement = select(Story).where(
+            Story.project_id == project_id,
+            Story.status.not_in([StoryStatus.DONE, StoryStatus.ARCHIVED])
+        )
+        all_stories = self.session.exec(statement).all()
+        
+        # Build set of completed story IDs for the project
+        completed_statement = select(Story.id).where(
+            Story.project_id == project_id,
+            Story.status.in_([StoryStatus.DONE, StoryStatus.ARCHIVED])
+        )
+        completed_story_ids = {str(sid) for sid in self.session.exec(completed_statement).all()}
+        
+        affected_stories = []
+        completed_story_str = str(completed_story_id)
+        
+        for story in all_stories:
+            if not story.dependencies:
+                continue
+            
+            # Check if this story depends on the completed story
+            if completed_story_str in story.dependencies:
+                # Recompute blocked state
+                blocked_by_count = 0
+                for dep_id in story.dependencies:
+                    if dep_id and dep_id not in completed_story_ids:
+                        blocked_by_count += 1
+                
+                is_blocked = blocked_by_count > 0
+                
+                affected_stories.append({
+                    "story_id": str(story.id),
+                    "is_blocked": is_blocked,
+                    "blocked_by_count": blocked_by_count,
+                    "title": story.title,
+                    "status": story.status.value
+                })
+        
+        logger.info(
+            f"Story {completed_story_id} completed: {len(affected_stories)} dependent stories affected"
+        )
+        return affected_stories
+
     def assign(
         self,
         story_id: UUID,
@@ -1049,6 +1107,14 @@ class StoryService:
         self.session.commit()
         self.session.refresh(story)
 
+        # Find affected stories if moving to DONE
+        affected_stories = []
+        if new_status == StoryStatus.DONE and old_status != StoryStatus.DONE:
+            affected_stories = self._find_and_compute_affected_stories(
+                completed_story_id=story_id,
+                project_id=story.project_id
+            )
+
         # Log activity
         activity = IssueActivity(
             issue_id=story.id,
@@ -1067,7 +1133,8 @@ class StoryService:
             old_status=old_status,
             new_status=new_status,
             user_id=user_id,
-            user_email=user_email
+            user_email=user_email,
+            affected_stories=affected_stories
         )
 
         return story
@@ -1192,25 +1259,32 @@ class StoryService:
         old_status: StoryStatus,
         new_status: StoryStatus,
         user_id: UUID,
-        user_email: str
+        user_email: str,
+        affected_stories: Optional[List[Dict[str, Any]]] = None
     ) -> None:
         """Publish story status changed event to Kafka with retry."""
         from app.kafka import get_kafka_producer, KafkaTopics, StoryEvent
 
         async def publish():
             producer = await get_kafka_producer()
+            event_data = {
+                "event_type": "story.status.changed",
+                "project_id": str(story.project_id),
+                "user_id": str(user_id),
+                "story_id": story.id,
+                "old_status": old_status.value,
+                "new_status": new_status.value,
+                "changed_by": str(user_id),
+                "transition_reason": f"Updated by {user_email}",
+            }
+            
+            # Add affected_stories if provided (when story moves to DONE)
+            if affected_stories:
+                event_data["affected_stories"] = affected_stories
+            
             await producer.publish(
                 topic=KafkaTopics.STORY_EVENTS,
-                event=StoryEvent(
-                    event_type="story.status.changed",
-                    project_id=str(story.project_id),
-                    user_id=str(user_id),
-                    story_id=story.id,
-                    old_status=old_status.value,
-                    new_status=new_status.value,
-                    changed_by=str(user_id),
-                    transition_reason=f"Updated by {user_email}",
-                ),
+                event=StoryEvent(**event_data),
             )
         
         await self._publish_with_retry(publish)

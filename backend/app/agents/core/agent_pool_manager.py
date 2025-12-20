@@ -232,9 +232,11 @@ class AgentPoolManager:
 
     # ===== Story Signal Management =====
 
-    def signal_agent(self, agent_id: UUID, story_id: str, signal: str) -> bool:
+    def signal_agent(self, agent_id: UUID, story_id: str | UUID, signal: str) -> bool:
         """Send signal directly to an agent for a story."""
-        logger.info(f"[Pool] [SIGNAL] signal_agent called: agent={agent_id}, story={story_id[:8]}, signal={signal}")
+        # Convert UUID to string if needed
+        story_id_str = str(story_id)
+        logger.info(f"[Pool] [SIGNAL] signal_agent called: agent={agent_id}, story={story_id_str[:8]}, signal={signal}")
         logger.info(f"[Pool] [SIGNAL] Current agents in pool: {list(self.agents.keys())}")
         
         agent = self.agents.get(agent_id)
@@ -243,11 +245,11 @@ class AgentPoolManager:
             return False
         
         # Direct push to agent - instant delivery
-        logger.info(f"[Pool] [SIGNAL] Calling agent.receive_signal({story_id[:8]}, {signal})")
-        agent.receive_signal(story_id, signal)
+        logger.info(f"[Pool] [SIGNAL] Calling agent.receive_signal({story_id_str[:8]}, {signal})")
+        agent.receive_signal(story_id_str, signal)
         
         # Verify signal was stored
-        stored_signal = agent.check_signal(story_id)
+        stored_signal = agent.check_signal(story_id_str)
         logger.info(f"[Pool] [SIGNAL] Signal stored in agent._pending_signals: {stored_signal}")
         logger.info(f"[Pool] [SIGNAL] Agent._pending_signals = {agent._pending_signals}")
         

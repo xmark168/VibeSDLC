@@ -25,28 +25,63 @@ import { SearchBar } from '@/components/SearchBar';
 
 ## ⚠️ PROPS MATCHING - MOST CRITICAL
 
-**Before using ANY component, you MUST:**
-1. READ the component file first
-2. Find `interface XxxProps { ... }`
-3. Pass props EXACTLY as defined
+**🚨 MANDATORY WORKFLOW - DO NOT SKIP:**
 
+**Step 1: ALWAYS read the component file from Pre-loaded Code or Dependencies**
+```typescript
+// BEFORE using <CategoryNavigation mobile={true} onCategoryClick={...} />
+// YOU MUST find CategoryNavigation.tsx and read its Props interface!
+
+// Example: Found in Pre-loaded Code:
+interface CategoriesDropdownProps {
+  mobile?: boolean;
+  onCategoryClick?: () => void;
+}
+
+// Now you know EXACTLY what props to pass
+<CategoriesDropdown mobile={true} onCategoryClick={handleClick} />
+```
+
+**Step 2: Pass ONLY props that exist in the interface**
 ```tsx
 // Component file defines:
 interface BookCardProps {
   book: Book;  // Expects OBJECT, not individual fields!
 }
 
-// WRONG - passing individual fields
+// ❌ WRONG - passing individual fields
 <BookCard id={book.id} title={book.title} author={book.author} />
 
-//  CORRECT - pass the object
+// ✅ CORRECT - pass the object
 <BookCard book={book} />
 ```
 
+**Step 3: If component NOT in Pre-loaded Code → DON'T use it!**
+```tsx
+// ❌ WRONG - guessing props for component you haven't read
+<CategoryNavigation mobile={true} onCategoryClick={...} />
+// What if CategoryNavigation doesn't accept these props?
+
+// ✅ CORRECT - only use components you've verified in Pre-loaded Code
+// Or use built-in shadcn components instead!
+```
+
+**TypeScript error TS2322 means WRONG PROPS!**
+```
+error TS2322: Type '{ mobile: boolean; onCategoryClick: () => void; }' 
+is not assignable to type 'IntrinsicAttributes'.
+Property 'mobile' does not exist on type 'IntrinsicAttributes'.
+```
+
+**This error means:**
+1. Component doesn't accept `mobile` prop
+2. You're passing props that don't exist in Props interface
+3. **You FORGOT to read the component file first!**
+
 **Common mistakes:**
+- **NOT reading Props interface before using component** ← #1 cause of errors!
 - Passing `{ name, slug, count }` when component expects `{ category: Category }`
 - Passing individual fields when component expects an object prop
-- Not reading the Props interface before using component
 - Missing required props: `<Banner />` instead of `<Banner title="Sale" />`
 - **INVENTING props that don't exist** - component may self-fetch data internally!
 

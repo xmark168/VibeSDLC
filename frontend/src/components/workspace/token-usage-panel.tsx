@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { useCurrentSubscription } from "@/queries/subscription"
 import { useCreditActivities } from "@/queries/credits"
+import { useProjectTokenBudget } from "@/queries/projects"
 import { formatDistanceToNow } from "date-fns"
 import { 
   Table,
@@ -24,7 +25,9 @@ import {
   Bot, 
   Coins,
   Search,
-  RefreshCcw
+  RefreshCcw,
+  Calendar,
+  CalendarDays
 } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 
@@ -48,6 +51,19 @@ export function TokenUsagePanel({ projectId }: TokenUsagePanelProps) {
     offset: (currentPage - 1) * ITEMS_PER_PAGE,
     project_id: projectId,
   })
+  
+  // Fetch token budget for project
+  const { data: tokenBudget, isLoading: budgetLoading, error: budgetError, refetch: refetchBudget } = useProjectTokenBudget(projectId)
+  
+  // Debug: Log token budget data
+  useEffect(() => {
+    if (projectId) {
+      console.log('[TokenUsagePanel] projectId:', projectId)
+      console.log('[TokenUsagePanel] tokenBudget:', tokenBudget)
+      console.log('[TokenUsagePanel] budgetLoading:', budgetLoading)
+      console.log('[TokenUsagePanel] budgetError:', budgetError)
+    }
+  }, [projectId, tokenBudget, budgetLoading, budgetError])
   
   // Calculate total credits
   const subRemainingCredits = subscriptionData?.credit_wallet?.remaining_credits || 0
@@ -91,6 +107,7 @@ export function TokenUsagePanel({ projectId }: TokenUsagePanelProps) {
   const handleRefresh = () => {
     refetchSubscription()
     refetchActivities()
+    refetchBudget()
   }
   
   // Listen for real-time credit updates via WebSocket
@@ -147,6 +164,92 @@ export function TokenUsagePanel({ projectId }: TokenUsagePanelProps) {
             Refresh
           </Button>
         </div>
+
+        {/* Token Budget Cards (only show if projectId is provided) */}
+        {projectId && (
+          budgetLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Skeleton className="h-48" />
+              <Skeleton className="h-48" />
+            </div>
+          ) : tokenBudget ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Daily Token Budget */}
+            <Card className="border-2 border-blue-500/20 bg-gradient-to-br from-blue-500/5 to-transparent">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
+                  <Calendar className="w-5 h-5 text-blue-500" />
+                  Daily Token Budget
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-bold text-gray-900 dark:text-foreground">
+                      {tokenBudget.daily.remaining.toLocaleString()}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      / {tokenBudget.daily.limit.toLocaleString()}
+                    </span>
+                  </div>
+                  <Progress 
+                    value={100 - tokenBudget.daily.usage_percentage} 
+                    className="h-2"
+                  />
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{(100 - tokenBudget.daily.usage_percentage).toFixed(1)}% remaining</span>
+                    <span>Resets at midnight UTC</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground pt-2 border-t">
+                    Used today: {tokenBudget.daily.used.toLocaleString()} tokens ({tokenBudget.daily.usage_percentage.toFixed(1)}%)
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Monthly Token Budget */}
+            <Card className="border-2 border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-transparent">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
+                  <CalendarDays className="w-5 h-5 text-purple-500" />
+                  Monthly Token Budget
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-bold text-gray-900 dark:text-foreground">
+                      {tokenBudget.monthly.remaining.toLocaleString()}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      / {tokenBudget.monthly.limit.toLocaleString()}
+                    </span>
+                  </div>
+                  <Progress 
+                    value={100 - tokenBudget.monthly.usage_percentage} 
+                    className="h-2"
+                  />
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{(100 - tokenBudget.monthly.usage_percentage).toFixed(1)}% remaining</span>
+                    <span>Resets on 1st of month</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground pt-2 border-t">
+                    Used this month: {tokenBudget.monthly.used.toLocaleString()} tokens ({tokenBudget.monthly.usage_percentage.toFixed(1)}%)
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+          ) : (
+            <Card className="border-yellow-500/20">
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground text-center">
+                  Failed to load token budget. Click refresh to retry.
+                </p>
+              </CardContent>
+            </Card>
+          )
+        )}
 
         {/* Credit Balance Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

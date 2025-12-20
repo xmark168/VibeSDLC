@@ -133,6 +133,7 @@ class StoryEvent(BaseKafkaEvent):
     updated_by: Optional[str] = None
     changed_by: Optional[str] = None
     assigned_by: Optional[str] = None
+    affected_stories: Optional[List[Dict[str, Any]]] = None  # Stories unblocked when this story completes
 
 
 class StoryAgentStateEvent(BaseKafkaEvent):

@@ -4,7 +4,7 @@
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlmodel import Session
 

@@ -203,7 +203,7 @@ class LLMSettings(BaseSettings):
     
     # Default LLM Parameters
     DEFAULT_TEMPERATURE: float = Field(default=0.2, description="Default temperature for LLM")
-    DEFAULT_MAX_TOKENS: int = Field(default=8192, description="Default max tokens")
+    DEFAULT_MAX_TOKENS: int = Field(default=16384, description="Default max tokens")
     DEFAULT_TIMEOUT: int = Field(default=60, description="Default timeout in seconds")
     
     # Retry Settings

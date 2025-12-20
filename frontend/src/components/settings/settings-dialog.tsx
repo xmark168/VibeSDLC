@@ -62,8 +62,12 @@ export function SettingsDialog({ open, onOpenChange, defaultTab }: SettingsDialo
   const avatarUrl = import.meta.env.VITE_API_URL + profile?.avatar_url || DEFAULT_AVATAR
 
   const handleLogout = () => {
-    logout.mutate()
+    // Close dialog first to prevent queries from refetching during logout
     onOpenChange(false)
+    // Small delay to ensure dialog unmount completes
+    setTimeout(() => {
+      logout.mutate()
+    }, 50)
   }
 
   const handleStartEditName = () => {

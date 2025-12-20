@@ -1215,7 +1215,63 @@ async def approve_stories(state: BAState, agent=None) -> dict:
                 f"{len(existing_stories_map)} existing stories in DB"
             )
 
-            # 1. UPSERT Epics
+            # ====== STEP 1: DELETE first (to avoid duplicate key errors) ======
+            
+            # 1a. DELETE epics that are NOT in the new artifact (user deleted them)
+            deleted_epics = []
+            epics_in_artifact = {e.get("id") for e in epics_data if e.get("id")}
+
+            for existing_epic in existing_epics_db:
+                epic_code = existing_epic.epic_code
+                if epic_code and epic_code not in epics_in_artifact:
+                    # Epic was in DB but NOT in artifact → User deleted it
+                    logger.info(f"[BA] DELETING epic from DB: {epic_code} (not in artifact)")
+                    # Delete all stories in this epic first
+                    epic_stories = [s for s in existing_stories_db if s.epic_id == existing_epic.id]
+                    for story in epic_stories:
+                        session.delete(story)
+                        logger.debug(f"[BA]   Deleting story {story.story_code} (part of deleted epic)")
+                    # Then delete the epic
+                    session.delete(existing_epic)
+                    deleted_epics.append({
+                        "id": str(existing_epic.id),
+                        "epic_code": epic_code,
+                        "title": existing_epic.title,
+                        "stories_deleted": len(epic_stories),
+                        "action": "deleted"
+                    })
+
+            if deleted_epics:
+                logger.info(f"[BA] Deleted {len(deleted_epics)} epics from DB (including their stories)")
+
+            # 1b. DELETE stories that are NOT in the new artifact (user deleted them)
+            deleted_stories = []
+            stories_in_artifact = {s.get("id") for s in stories_data if s.get("id")}
+
+            for existing_story in existing_stories_db:
+                story_code = existing_story.story_code
+                if story_code and story_code not in stories_in_artifact:
+                    # Story was in DB but NOT in artifact → User deleted it
+                    logger.info(f"[BA] DELETING story from DB: {story_code} (not in artifact)")
+                    session.delete(existing_story)
+                    deleted_stories.append({
+                        "id": str(existing_story.id),
+                        "string_id": story_code,
+                        "title": existing_story.title,
+                        "action": "deleted"
+                    })
+
+            if deleted_stories:
+                logger.info(f"[BA] Deleted {len(deleted_stories)} stories from DB")
+            
+            # CRITICAL: Flush deletions BEFORE any new inserts to avoid duplicate key errors
+            if deleted_epics or deleted_stories:
+                logger.info(f"[BA] Flushing deletions to DB before UPSERT")
+                session.flush()
+
+            # ====== STEP 2: UPSERT (after deletions are flushed) ======
+
+            # 2a. UPSERT Epics
             for epic_data in epics_data:
                 epic_string_id = epic_data.get("id", "")  # e.g., "EPIC-001"
                 existing_epic = existing_epics_map.get(epic_string_id)
@@ -1259,7 +1315,7 @@ async def approve_stories(state: BAState, agent=None) -> dict:
 
             logger.info(f"[BA] Epics: {len(created_epics)} created, {len(updated_epics)} updated")
 
-            # 2. UPSERT Stories
+            # 2b. UPSERT Stories
             # Get max rank for new stories
             max_rank_result = session.exec(
                 select(func.max(Story.rank)).where(
@@ -1337,55 +1393,7 @@ async def approve_stories(state: BAState, agent=None) -> dict:
 
             logger.info(f"[BA] Stories: {len(created_stories)} created, {len(updated_stories)} updated")
 
-            # 3. DELETE epics that are NOT in the new artifact (user deleted them)
-            deleted_epics = []
-            epics_in_artifact = {e.get("epic_code") for e in epics_data if e.get("epic_code")}
-
-            for existing_epic in existing_epics_db:
-                epic_code = existing_epic.epic_code
-                if epic_code and epic_code not in epics_in_artifact:
-                    # Epic was in DB but NOT in artifact → User deleted it
-                    logger.info(f"[BA] DELETING epic from DB: {epic_code} (not in artifact)")
-                    # Delete all stories in this epic first
-                    epic_stories = [s for s in existing_stories_db if s.epic_id == existing_epic.id]
-                    for story in epic_stories:
-                        session.delete(story)
-                        logger.debug(f"[BA]   Deleting story {story.story_code} (part of deleted epic)")
-                    # Then delete the epic
-                    session.delete(existing_epic)
-                    deleted_epics.append({
-                        "id": str(existing_epic.id),
-                        "epic_code": epic_code,
-                        "title": existing_epic.title,
-                        "stories_deleted": len(epic_stories),
-                        "action": "deleted"
-                    })
-
-            if deleted_epics:
-                logger.info(f"[BA] Deleted {len(deleted_epics)} epics from DB (including their stories)")
-
-            # 4. DELETE stories that are NOT in the new artifact (user deleted them)
-            # This handles the case where user says "xóa story X"
-            deleted_stories = []
-            stories_in_artifact = {s.get("id") for s in stories_data if s.get("id")}
-
-            for existing_story in existing_stories_db:
-                story_code = existing_story.story_code
-                if story_code and story_code not in stories_in_artifact:
-                    # Story was in DB but NOT in artifact → User deleted it
-                    logger.info(f"[BA] DELETING story from DB: {story_code} (not in artifact)")
-                    session.delete(existing_story)
-                    deleted_stories.append({
-                        "id": str(existing_story.id),
-                        "string_id": story_code,
-                        "title": existing_story.title,
-                        "action": "deleted"
-                    })
-
-            if deleted_stories:
-                logger.info(f"[BA] Deleted {len(deleted_stories)} stories from DB")
-
-            # 4. Resolve dependencies for all stories (both new and updated)
+            # 3. Resolve dependencies for all stories (both new and updated)
             deps_resolved = 0
             for story, string_id, original_deps in story_objects_for_deps:
                 if original_deps:

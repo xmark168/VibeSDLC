@@ -513,8 +513,8 @@ class TokenBudgetService:
         
         budget = TokenBudget(
             project_id=project_id,
-            daily_limit=project.token_budget_daily or 100000,
-            monthly_limit=project.token_budget_monthly or 2000000,
+            daily_limit=project.token_budget_daily or 10000000,
+            monthly_limit=project.token_budget_monthly or 200000000,
             used_today=project.tokens_used_today or 0,
             used_this_month=project.tokens_used_this_month or 0,
             last_reset_daily=project.budget_last_reset_daily,

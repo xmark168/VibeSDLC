@@ -319,13 +319,8 @@ def setup_git_worktree(
     
     if branch_result.returncode != 0:
         logger.error(f"[{agent_name}] Failed to create branch '{branch_name}': {branch_result.stderr}")
-        # Cannot create worktree without valid branch - return failure with main workspace
-        return {
-            "workspace_path": str(main_workspace),
-            "branch_name": current_branch,  # Use current branch instead
-            "main_workspace": str(main_workspace),
-            "workspace_ready": False,
-        }
+        # Cannot create worktree without valid branch - return failure
+        raise RuntimeError(f"Failed to create branch '{branch_name}': {branch_result.stderr}")
     
     logger.debug(f"[{agent_name}] Branch '{branch_name}' created from '{current_branch}'")
     
@@ -358,9 +353,7 @@ def setup_git_worktree(
             workspace_ready = True
         else:
             logger.error(f"[{agent_name}] Alternative method also failed: {alt_result.stderr}")
-            logger.warning(f"[{agent_name}] Using main workspace as fallback")
-            worktree_path = main_workspace
-            workspace_ready = False
+            raise RuntimeError(f"Failed to create worktree at {worktree_path}: {alt_result.stderr}")
     else:
         logger.info(f"[{agent_name}] Worktree created successfully")
         workspace_ready = True

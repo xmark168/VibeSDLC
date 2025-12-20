@@ -43,6 +43,7 @@ async def run_subprocess_async(*args, **kwargs):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, lambda: subprocess.run(*args, **kwargs))
 
+@router.post("/", response_model=StoryPublic)
 async def create_story(
     *,
     session: SessionDep,

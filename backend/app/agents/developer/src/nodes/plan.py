@@ -190,6 +190,19 @@ def _auto_detect_dependencies(file_path: str, all_steps: list = None) -> list:
                 other = step.get("file_path", "").lower()
                 if other != fp and other.endswith(".tsx") and ("section" in other or "card" in other):
                     deps.append(step.get("file_path", ""))
+        
+        # Auto-detect subfolder components (e.g., Navigation → navigation/*)
+        if "/components/" in fp:
+            filename = file_path.split("/")[-1].replace(".tsx", "").lower()
+            component_dir = "/".join(file_path.split("/")[:-1])
+            potential_subfolder = f"{component_dir}/{filename}/"
+            
+            for step in all_steps:
+                other = step.get("file_path", "")
+                # If other component is in subfolder named after this component
+                if other.startswith(potential_subfolder) and other.endswith(".tsx"):
+                    deps.append(other)
+    
     return list(set(deps))
 
 

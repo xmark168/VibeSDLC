@@ -350,7 +350,11 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
         # Use structured output
-        implement_llm = create_medium_llm()
+        # Use Haiku for seed files (template-based), Sonnet for complex logic
+        if is_seed_file:
+            implement_llm = create_medium_llm(max_tokens=16384)  # Higher limit for full seed template
+        else:
+            implement_llm = create_medium_llm()
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
         output = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
@@ -467,7 +471,11 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
         
         # Use structured output
         # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
-        implement_llm = create_medium_llm()
+        # Use Haiku for seed files (template-based), Sonnet for complex logic
+        if is_seed_file:
+            implement_llm = create_fast_llm(max_tokens=16384)  # Higher limit for full seed template
+        else:
+            implement_llm = create_medium_llm()
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
         output = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
