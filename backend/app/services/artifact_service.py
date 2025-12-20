@@ -55,7 +55,6 @@ class ArtifactService:
                 logger.info(f"Saved artifact to file: {file_path}")
             except Exception as e:
                 logger.warning(f"Failed to save artifact to file: {e}")
-                # Continue anyway - DB save is more important
         
         self.session.add(artifact)
         self.session.commit()

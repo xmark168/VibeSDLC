@@ -1048,6 +1048,18 @@ class Developer(BaseAgent, PausableAgentMixin):
                     story.branch_name = None
                     session.add(story)
                     session.commit()
+            
+            # 4. Stop and remove database container
+            try:
+                from app.agents.developer.src.utils.db_container import stop_container
+                
+                if stop_container(story_id):
+                    logger.info(f"[{self.name}] Stopped database container for story {story_id}")
+                else:
+                    logger.debug(f"[{self.name}] No container found for story {story_id}")
+            except Exception as e:
+                logger.warning(f"[{self.name}] Failed to stop container: {e}")
+                # Non-fatal - don't block merge completion
                     
         except Exception as e:
             logger.error(f"[{self.name}] Cleanup error: {e}")

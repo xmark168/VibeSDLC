@@ -1791,7 +1791,8 @@ async def merge_story_to_main(
         str(story.project_id),
         story.branch_name,
         story.worktree_path,
-        main_workspace
+        main_workspace,
+        str(current_user.id)
     ))
     
     logger.info(f"[merge-to-main] Triggered merge for story {story_id}")
@@ -1803,7 +1804,7 @@ async def merge_story_to_main(
     }
 
 
-async def _trigger_merge_task(story_id: str, project_id: str, branch_name: str, worktree_path: str | None, main_workspace: str):
+async def _trigger_merge_task(story_id: str, project_id: str, branch_name: str, worktree_path: str | None, main_workspace: str, user_id: str):
     """Background task: Trigger Developer agent to merge branch."""
     try:
         from app.agents.routers.router_service import route_story_event
@@ -1818,6 +1819,7 @@ async def _trigger_merge_task(story_id: str, project_id: str, branch_name: str, 
             project_id=project_id,
             task_type=AgentTaskType.REVIEW_PR,
             priority="high",
+            user_id=user_id,
             metadata={
                 "branch_name": branch_name,
                 "worktree_path": worktree_path,

@@ -48,16 +48,7 @@ def smart_truncate_tokens(
     max_tokens: int, 
     head_ratio: float = 0.7
 ) -> tuple[str, bool]:
-    """Smart truncate showing head + tail by tokens.
-    
-    Args:
-        text: Text to truncate
-        max_tokens: Maximum number of tokens
-        head_ratio: Ratio of tokens to keep from head (default 70%)
-        
-    Returns:
-        tuple: (truncated_text, was_truncated)
-    """
+    """Smart truncate showing head + tail by tokens."""
     if not text:
         return text, False
         

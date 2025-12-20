@@ -512,55 +512,83 @@ export default function Page() {
 - Centered text sections: parent `text-center`, children `block` (not inline-block)
 - Long text: add `mx-auto max-w-2xl` to constrain width
 
-### 6. Null Safety - CRITICAL ⚠️
-API responses may have undefined nested arrays/objects!
+### 6. Null Safety - CRITICAL FOR SSR/SSG BUILDS ⚠️
+
+**CRITICAL: Next.js builds (SSR/SSG) CRASH on undefined property access!**
+
+**Why this matters:**
+- ✅ **Dev mode** (`npm run dev`): Errors caught, page still loads
+- ❌ **Production build** (`npm run build`): **ENTIRE BUILD FAILS**
+- ❌ Error message: "TypeError: Cannot read properties of undefined (reading 'toLocaleString')" at cryptic location in `.next/server/chunks/...`
+
+**Date/Time Methods - MUST use `?.`**
 
 ```tsx
-// CRASHES at runtime (category.books could be undefined)
-category.books.filter(b => b.coverImage)
-data.items.map(item => ...)
+// ❌ WRONG - Build crashes with "Cannot read 'toLocaleString' of undefined"
+<p>{book.publishedAt.toLocaleString()}</p>
+<span>{order.createdAt.toLocaleDateString()}</span>
+<time dateTime={new Date(post.date).toISOString()}>...</time>
 
-//  ALWAYS defensive - use ?? [] or ?.
-(category.books ?? []).filter(b => b.coverImage)
-(data?.items ?? []).map(item => ...)
-data?.items?.length ?? 0
-
-// Props default
-function List({ items = [] }: Props) { ... }
+// ✅ CORRECT - Safe for SSR/SSG
+<p>{book.publishedAt?.toLocaleString() ?? 'N/A'}</p>
+<span>{order.createdAt?.toLocaleDateString() ?? ''}</span>
+<time dateTime={post.date ? new Date(post.date).toISOString() : ''}>...</time>
 ```
 
-**RULE:** Any `.map()`, `.filter()`, `.slice()` on API/fetched data MUST have `?? []` or optional chaining
+**Number Methods - MUST use `?.`**
 
 ```tsx
-// State init - always default to empty array
-const [items, setItems] = useState<Item[]>([]);
+// ❌ WRONG - Build crashes if undefined
+<p>${product.price.toFixed(2)}</p>
+<span>{rating.toPrecision(2)}</span>
+
+// ✅ CORRECT
+<p>${product.price?.toFixed(2) ?? '0.00'}</p>
+<span>{rating?.toPrecision(2) ?? 'N/A'}</span>
 ```
 
-**String Methods - ALWAYS use optional chaining:**
+**String Methods - MUST use `?.`**
 
 ```tsx
-// ❌ WRONG - crashes if value is null/undefined
+// ❌ WRONG - Build crashes if value is null/undefined
 {order.paymentMethod.replace('_', ' ')}
-category.name.toLowerCase()
-user.email.split('@')[0]
+{category.name.toLowerCase()}
+{user.email.split('@')[0]}
 
 // ✅ CORRECT - safe with optional chaining
-{order.paymentMethod?.replace('_', ' ')}
-{category.name?.toLowerCase()}
-{user.email?.split('@')[0]}
-
-// ✅ CORRECT - with fallback
 {order.paymentMethod?.replace('_', ' ') ?? 'N/A'}
 {category.name?.toLowerCase() ?? ''}
+{user.email?.split('@')[0] ?? ''}
 ```
 
-**RULE:** Any string method (`.replace()`, `.toLowerCase()`, `.toUpperCase()`, `.split()`, `.trim()`, etc.) 
-on object properties or API data MUST use optional chaining `?.`
+**Array Methods - MUST use `?? []`**
 
-**Exception:** Only skip `?.` if value is guaranteed non-null:
-- Local variables: `const name = "John"; name.toLowerCase()` ✅
-- Literal strings: `"hello".toUpperCase()` ✅
-- Form inputs: `e.target.value.replace(...)` ✅ (guaranteed string)
+```tsx
+// ❌ WRONG - Build crashes if undefined
+{books.map(book => <Card key={book.id} {...book} />)}
+{categories.filter(c => c.active)}
+{items.slice(0, 5)}
+
+// ✅ CORRECT
+{(books ?? []).map(book => <Card key={book.id} {...book} />)}
+{(categories ?? []).filter(c => c.active)}
+{(items ?? []).slice(0, 5)}
+```
+
+**SSR/SSG Rule Summary:**
+
+For pages that pre-render (catalog, search, product listings):
+
+1. **ASSUME all fetched/props data can be undefined** during build
+2. **ALWAYS use `?.`** before calling ANY method (.toLocaleString, .toLowerCase, .toFixed, etc.)
+3. **ALWAYS provide fallback** with `?? 'default'` or `?? []`
+4. **State initialization:** Always default arrays to `[]`: `const [items, setItems] = useState<Item[]>([]);`
+
+**Exception - Skip `?.` only if value is guaranteed:**
+- Local const: `const name = "John"; name.toLowerCase()` ✅
+- Literal: `"hello".toUpperCase()` ✅
+- Form input: `e.target.value.trim()` ✅ (guaranteed string)
+- After null check: `if (data) { data.toLowerCase() }` ✅
 
 ### 7. Type Casting - Filter/Toggle Functions ⚠️
 
@@ -728,9 +756,14 @@ export function SearchPage() {
 
 ## NEVER
 - `'use client'` when not needed
-- Guess props without reading component
+- **Use components without checking if they're in Pre-loaded Code or Dependencies first**
+- **Guess component props when you can't find the component file**
+- Guess props without reading component interface
+- **Call .toLocaleString()/.toLocaleDateString()/.toFixed() without `?.`**
+- **Call .toLowerCase()/.toUpperCase()/.replace()/.split() without `?.` on object properties**
+- **Use .map()/.filter()/.slice() on arrays without `?? []`**
 - Forget `await params` in dynamic routes
-- Access array/object without null checks
+- Access array/object without null checks in SSR/SSG pages
 - Add Header in pages (already in layout)
 - Import from `'./badge'` - use `'@/components/ui/badge'`
 - Create UI components that already exist in shadcn/ui

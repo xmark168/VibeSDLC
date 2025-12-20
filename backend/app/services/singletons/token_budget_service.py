@@ -55,19 +55,7 @@ class TokenBudget:
 
 
 class TokenBudgetService:
-    """Singleton service for token budget management.
-    
-    This service manages token budgets for all projects in the system.
-    It provides:
-    - Budget checking and enforcement
-    - Token usage tracking
-    - Credit deduction
-    - Cache management for performance
-    - Thread-safe operations with per-project locks
-    
-    Note: This is a singleton to ensure shared cache and proper lock management
-    across all requests.
-    """
+    """Singleton service for token budget management."""
     
     _instance: Optional['TokenBudgetService'] = None
     _init_lock: asyncio.Lock = asyncio.Lock()
@@ -85,8 +73,6 @@ class TokenBudgetService:
         
         # Per-project locks for thread-safe operations
         self.budget_locks: Dict[UUID, asyncio.Lock] = {}
-        
-        logger.info("✓ TokenBudgetService initialized (singleton)")
     
     @classmethod
     async def get_instance(cls) -> 'TokenBudgetService':
@@ -102,23 +88,11 @@ class TokenBudgetService:
         return cls._instance
     
     def _get_session(self) -> Session:
-        """Get new database session for each operation.
-        
-        Returns:
-            Fresh SQLModel session
-        """
+        """Get new database session for each operation."""
         return Session(engine)
     
     def _is_admin(self, session: Session, user_id: UUID) -> bool:
-        """Check if user is admin (bypass budget checks).
-        
-        Args:
-            session: Database session
-            user_id: User UUID
-            
-        Returns:
-            True if user is admin
-        """
+        """Check if user is admin (bypass budget checks)."""
         from app.models import User
         user = session.get(User, user_id)
         return user and user.role == Role.ADMIN
@@ -129,16 +103,7 @@ class TokenBudgetService:
         user_id: UUID, 
         estimated_tokens: int
     ) -> Tuple[bool, str]:
-        """Check if user has sufficient credits for estimated token usage.
-        
-        Args:
-            session: Database session
-            user_id: User UUID
-            estimated_tokens: Estimated tokens for the request
-            
-        Returns:
-            Tuple of (allowed, reason)
-        """
+        """Check if user has sufficient credits for estimated token usage."""
         try:
             from app.services.credit_service import CreditService
             
@@ -181,19 +146,10 @@ class TokenBudgetService:
         estimated_tokens: int,
         user_id: Optional[UUID] = None
     ) -> Tuple[bool, str]:
-        """Check if project has budget AND user has credits for estimated token usage.
-        
-        Args:
-            project_id: Project UUID
-            estimated_tokens: Estimated tokens needed
-            user_id: Optional user ID for credit check
-            
-        Returns:
-            Tuple of (allowed, reason)
-        """
+        """Check if project has budget AND user has credits for estimated token usage."""
         session = self._get_session()
         try:
-            # Admin bypass - skip all checks
+            logger.info(user_id)
             if user_id and self._is_admin(session, user_id):
                 logger.debug(f"Admin user {user_id} bypassing budget check")
                 return True, ""
@@ -247,19 +203,7 @@ class TokenBudgetService:
         estimated_tokens: int,
         user_id: Optional[UUID] = None
     ) -> Tuple[bool, str]:
-        """Atomic check and reserve tokens (thread-safe).
-        
-        This method uses per-project locks to ensure that concurrent tasks
-        don't exceed the budget due to race conditions.
-        
-        Args:
-            project_id: Project UUID
-            estimated_tokens: Estimated tokens to reserve
-            user_id: Optional user ID for credit check
-            
-        Returns:
-            Tuple of (allowed, reason)
-        """
+        """Atomic check and reserve tokens (thread-safe)."""
         # Get or create lock for this project
         if project_id not in self.budget_locks:
             self.budget_locks[project_id] = asyncio.Lock()
@@ -370,15 +314,7 @@ class TokenBudgetService:
         agent_id: Optional[UUID] = None,
         context: Optional[dict] = None
     ) -> None:
-        """Deduct credits based on token usage with enhanced tracking.
-        
-        Args:
-            session: Database session
-            user_id: User UUID
-            tokens_used: Tokens consumed
-            agent_id: Optional agent ID for activity logging
-            context: Optional dict with model_used, task_type, etc.
-        """
+        """Deduct credits based on token usage with enhanced tracking."""
         try:
             from app.services.credit_service import CreditService
             
@@ -447,16 +383,7 @@ class TokenBudgetService:
         daily_limit: Optional[int] = None,
         monthly_limit: Optional[int] = None
     ) -> bool:
-        """Update budget limits for a project.
-        
-        Args:
-            project_id: Project UUID
-            daily_limit: New daily limit (None = no change)
-            monthly_limit: New monthly limit (None = no change)
-            
-        Returns:
-            True if updated successfully
-        """
+        """Update budget limits for a project."""
         session = self._get_session()
         try:
             project = session.get(Project, project_id)
@@ -546,11 +473,7 @@ class TokenBudgetService:
         # Note: Commit is done by caller
     
     def _reset_if_needed(self, budget: TokenBudget) -> None:
-        """Reset counters if time period has elapsed.
-        
-        Args:
-            budget: TokenBudget instance to check and reset
-        """
+        """Reset counters if time period has elapsed."""
         now = datetime.now(timezone.utc)
         
         # Reset daily counter
@@ -590,9 +513,5 @@ _token_budget_service: Optional[TokenBudgetService] = None
 
 
 async def get_token_budget_service() -> TokenBudgetService:
-    """Get or create singleton token budget service.
-    
-    Returns:
-        TokenBudgetService singleton instance
-    """
+    """Get or create singleton token budget service."""
     return await TokenBudgetService.get_instance()
