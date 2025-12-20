@@ -16,18 +16,23 @@ os.environ["TESTCONTAINERS_RYUK_DISABLED"] = "true"
 _containers: Dict[str, any] = {}
 
 
-def start_postgres_container(story_id: Optional[str] = None) -> Dict[str, str]:
+def start_postgres_container(story_id: Optional[str] = None, project_id: Optional[str] = None) -> Dict[str, str]:
     """
     Start a postgres container and return connection info.
+    Args:
+        story_id: Story ID for worktree-specific containers
+        project_id: Project ID for main workspace containers
     """
+    # Use project_id if provided, otherwise story_id
+    container_key = project_id or story_id
     
     container = PostgresContainer("postgres:16")
     container.start()
     
-    if story_id:
-        _containers[story_id] = container
+    if container_key:
+        _containers[container_key] = container
     
-    info = get_connection_info(story_id, container)
+    info = get_connection_info(container_key, container)
     return info
 
 
@@ -59,9 +64,11 @@ def get_database_url(story_id: Optional[str] = None) -> str:
     return f"postgresql://{info['user']}:{info['password']}@{info['host']}:{info['port']}/{info['database']}"
 
 
-def update_env_file(workspace_path: str, story_id: Optional[str] = None, dev_port: Optional[int] = None) -> bool:
+def update_env_file(workspace_path: str, story_id: Optional[str] = None, project_id: Optional[str] = None, dev_port: Optional[int] = None) -> bool:
     """Update .env file with database URL and NextAuth config."""
-    info = get_connection_info(story_id)
+    # Use project_id if provided, otherwise story_id
+    container_key = project_id or story_id
+    info = get_connection_info(container_key)
     if not info:
         return False
     

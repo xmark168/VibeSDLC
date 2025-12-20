@@ -300,14 +300,17 @@ async def websocket_endpoint(
                         approved = message.get("approved")
                         modified_data = message.get("modified_data")
                         
+                        logger.info(f"[WS] Received question_answer: question_id={question_id_str}, answer={answer}, selected_options={selected_options}")
+                        
                         if not question_id_str:
+                            logger.error(f"[WS] Missing question_id in question_answer message")
                             await websocket.send_json({
                                 "type": "error",
                                 "message": "question_id is required"
                             })
                             continue
                         
-                        logger.info(f"[WS] User {user.id} answered question {question_id_str}")
+                        logger.info(f"[WS] User {user.id} answered question {question_id_str} with answer='{answer}', selected_options={selected_options}")
                         
                         # Load question to get agent info
                         from app.core.db import engine
@@ -361,8 +364,9 @@ async def websocket_endpoint(
                                     "question_id": question_id_str,
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                 })
+                                logger.info(f"[WS] Sent question_answer_received ack to user")
                             except Exception as e:
-                                logger.error(f"Failed to publish question answer: {e}")
+                                logger.error(f"[WS] Failed to publish question answer: {e}", exc_info=True)
                                 await websocket.send_json({
                                     "type": "error",
                                     "message": f"Failed to process answer: {str(e)}"

@@ -28,15 +28,17 @@ class QuestionAnswerRouter(BaseEventRouter):
         answer = event_dict.get("answer")
         selected_options = event_dict.get("selected_options")
         
+        self.logger.info(f"[QUESTION_ANSWER_ROUTER] Received event: {event_dict}")
+        
         if not question_id or not agent_id_raw:
-            self.logger.error(f"Missing required fields: question_id={question_id}, agent_id={agent_id_raw}")
+            self.logger.error(f"[QUESTION_ANSWER_ROUTER] Missing required fields: question_id={question_id}, agent_id={agent_id_raw}")
             return
         
         agent_id = UUID(agent_id_raw) if isinstance(agent_id_raw, str) else agent_id_raw
         
         self.logger.info(
-            f"[QUESTION_ANSWER_ROUTER] Routing answer for question {question_id} "
-            f"back to agent {agent_id}"
+            f"[QUESTION_ANSWER_ROUTER] Routing answer for question {question_id} to agent {agent_id}, "
+            f"answer='{answer}', selected_options={selected_options}"
         )
         
         from app.models import AgentQuestion, QuestionStatus, QuestionType, Agent
@@ -119,6 +121,18 @@ class QuestionAnswerRouter(BaseEventRouter):
             agent = session.get(Agent, agent_id)
             if agent:
                 agent_name = agent.human_name or agent.name or "Agent"
+        
+        # First, send question_answer_received to update UI immediately
+        await connection_manager.broadcast_to_project(
+            {
+                "type": "question_answer_received",
+                "question_id": str(question_id),
+                "answer": answer or "",
+                "selected_options": selected_options or [],
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            project_id
+        )
         
         await connection_manager.broadcast_to_project(
             {

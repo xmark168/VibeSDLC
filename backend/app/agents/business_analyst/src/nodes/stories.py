@@ -1268,6 +1268,17 @@ async def approve_stories(state: BAState, agent=None) -> dict:
             if deleted_epics or deleted_stories:
                 logger.info(f"[BA] Flushing deletions to DB before UPSERT")
                 session.flush()
+                
+                # IMPORTANT: Rebuild maps after deletions to reflect current DB state
+                existing_epics_db = session.exec(
+                    select(Epic).where(Epic.project_id == agent.project_id)
+                ).all()
+                existing_stories_db = session.exec(
+                    select(Story).where(Story.project_id == agent.project_id)
+                ).all()
+                existing_epics_map = {e.epic_code: e for e in existing_epics_db if e.epic_code}
+                existing_stories_map = {s.story_code: s for s in existing_stories_db if s.story_code}
+                logger.info(f"[BA] Rebuilt maps: {len(existing_epics_map)} epics, {len(existing_stories_map)} stories")
 
             # ====== STEP 2: UPSERT (after deletions are flushed) ======
 

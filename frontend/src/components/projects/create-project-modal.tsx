@@ -274,7 +274,7 @@ export function CreateProjectModal({
         : undefined
 
       const dataProjectCreate: ProjectCreate = {
-        name: projectName,
+        name: projectName.trim(),
         tech_stack: techStack ? [techStack] : null,
         agent_personas: agentPersonas && Object.keys(agentPersonas).length > 0 ? agentPersonas : null,
       }

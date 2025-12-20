@@ -734,8 +734,10 @@ async def start_project_dev_server(
     if not project.project_path:
         raise HTTPException(status_code=400, detail="No workspace path for this project")
     
-    # Get absolute workspace path
-    workspace_path = _get_workspace_path(project.project_path)
+    # Get absolute workspace path (project_path is relative like "projects/{id}")
+    # __file__ = .../backend/app/api/routes/projects.py -> need 4x parent to get backend/
+    backend_root = Path(__file__).resolve().parent.parent.parent.parent
+    workspace_path = backend_root / project.project_path
     
     if not workspace_path.exists():
         raise HTTPException(status_code=400, detail=f"Project workspace not found: {workspace_path}")
@@ -825,10 +827,10 @@ async def start_project_dev_server(
                 update_env_file,
             )
             
-            container_info = start_postgres_container(str(project_id))
+            container_info = start_postgres_container(project_id=str(project_id))
             if container_info:
                 # Update .env with DATABASE_URL
-                update_env_file(str(workspace_path), str(project_id))
+                update_env_file(str(workspace_path), project_id=str(project_id))
                 
                 # Store container info in project
                 project.db_container_id = container_info.get("container_id")
@@ -1038,7 +1040,8 @@ async def stop_project_dev_server(
     # Get workspace path for cleanup
     workspace_path = None
     if project.project_path:
-        workspace_path = _get_workspace_path(project.project_path)
+        backend_root = Path(__file__).resolve().parent.parent.parent.parent
+        workspace_path = backend_root / project.project_path
     
     # Clean up dev server processes and files
     await broadcast_log("Cleaning up processes...")
@@ -1137,7 +1140,8 @@ def get_project_dev_server_status(
         if not is_running:
             workspace_path = None
             if project.project_path:
-                workspace_path = _get_workspace_path(project.project_path)
+                backend_root = Path(__file__).resolve().parent.parent.parent.parent
+                workspace_path = backend_root / project.project_path
             _cleanup_dev_server(workspace_path=workspace_path, port=project.dev_server_port, pid=None)
             
             project.dev_server_port = None
@@ -1207,7 +1211,8 @@ async def clean_project_dev_server(
     
     # Deep clean workspace
     if project.project_path:
-        workspace_path = _get_workspace_path(project.project_path)
+        backend_root = Path(__file__).resolve().parent.parent.parent.parent
+        workspace_path = backend_root / project.project_path
         if workspace_path.exists():
             # Remove .next folder completely
             next_dir = workspace_path / ".next"
@@ -1295,7 +1300,8 @@ async def seed_project_database(
     if not project.project_path:
         raise HTTPException(status_code=400, detail="Project has no workspace")
     
-    workspace_path = _get_workspace_path(project.project_path)
+    backend_root = Path(__file__).resolve().parent.parent.parent.parent
+    workspace_path = backend_root / project.project_path
     if not workspace_path.exists():
         raise HTTPException(status_code=400, detail="Workspace not found")
     

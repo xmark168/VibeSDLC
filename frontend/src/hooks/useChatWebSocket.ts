@@ -795,18 +795,23 @@ export function useChatWebSocket(
     selected_options?: string[]
   ) => {
     if (readyState !== ReadyState.OPEN) {
+      console.error('[WebSocket] Cannot send - connection not open. ReadyState:', readyState)
       return false
     }
     
     try {
-      sendJsonMessage({
+      const payload = {
         type: 'question_answer',
         question_id,
         answer: answer || '',
         selected_options: selected_options || [],
-      })
+      }
+      console.log('[WebSocket] Sending question_answer:', payload)
+      sendJsonMessage(payload)
+      console.log('[WebSocket] Message sent successfully')
       return true
     } catch (error) {
+      console.error('[WebSocket] Error sending question_answer:', error)
       return false
     }
   }
