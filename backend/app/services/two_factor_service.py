@@ -55,8 +55,10 @@ class TwoFactorService:
     
     def verify_totp_code(self, secret: str, code: str) -> bool:
         """Verify a TOTP code against the secret."""
+        # Normalize code: remove spaces and dashes
+        normalized_code = code.replace(" ", "").replace("-", "").strip()
         totp = pyotp.TOTP(secret)
-        return totp.verify(code, valid_window=1)
+        return totp.verify(normalized_code, valid_window=1)
     
     def generate_backup_codes(self) -> Tuple[list[str], list[str]]:
         """Generate backup codes."""
@@ -73,7 +75,8 @@ class TwoFactorService:
     
     def _hash_backup_code(self, code: str) -> str:
         """Hash a backup code for secure storage."""
-        normalized = code.replace("-", "").upper()
+        # Remove all spaces, dashes, and convert to uppercase
+        normalized = code.replace("-", "").replace(" ", "").strip().upper()
         return hashlib.sha256(normalized.encode()).hexdigest()
     
     def verify_backup_code(self, user: User, code: str) -> bool:
