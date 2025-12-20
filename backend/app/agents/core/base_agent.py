@@ -1292,7 +1292,8 @@ class BaseAgent(ABC):
                 agent_id=self.agent_id,
                 pool_id=self.pool_id,
             )
-        
+            # Commit to persist the execution record before session closes
+            await session.commit()
 
         return execution_id
     

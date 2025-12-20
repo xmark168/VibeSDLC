@@ -39,7 +39,7 @@ class QuestionAnswerRouter(BaseEventRouter):
             f"back to agent {agent_id}"
         )
         
-        from app.models import AgentQuestion, QuestionStatus, QuestionType
+        from app.models import AgentQuestion, QuestionStatus, QuestionType, Agent
         
         with Session(engine) as session:
             question = session.get(AgentQuestion, question_id)

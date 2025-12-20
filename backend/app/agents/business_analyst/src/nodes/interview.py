@@ -9,6 +9,7 @@ from ..schemas import (
     QuestionsOutput
 )
 from app.core.db import engine
+from sqlmodel import Session
 from app.core.config import settings
 from app.kafka import KafkaTopics, get_kafka_producer
 from app.kafka.event_schemas import AgentEvent

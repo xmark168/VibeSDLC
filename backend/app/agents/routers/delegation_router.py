@@ -4,12 +4,12 @@
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlmodel import Session, select
 
-from app.kafka.event_schemas import AgentTaskType, BaseKafkaEvent
-from app.kafka.producer import KafkaProducer
+from app.kafka.event_schemas import AgentTaskType, BaseKafkaEvent, RouterTaskEvent, KafkaTopics
+from app.kafka.producer import KafkaProducer, get_kafka_producer
 from app.models import Agent, Project
 from app.core.db import engine
 from app.agents.routers.base import BaseEventRouter

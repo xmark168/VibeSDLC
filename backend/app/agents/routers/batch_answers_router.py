@@ -47,7 +47,7 @@ class BatchAnswersRouter(BaseEventRouter):
         if isinstance(project_id, str):
             project_id = UUID(project_id)
         
-        from app.models import AgentQuestion, Message, QuestionStatus
+        from app.models import AgentQuestion, Message, QuestionStatus, Agent
         
         with Session(engine) as session:
             first_question = None

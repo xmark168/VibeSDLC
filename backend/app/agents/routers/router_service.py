@@ -24,6 +24,8 @@ class MessageRouter(BaseKafkaConsumer):
                 KafkaTopics.USER_MESSAGES.value,
                 KafkaTopics.AGENT_EVENTS.value,
                 KafkaTopics.STORY_EVENTS.value,
+                KafkaTopics.DELEGATION_REQUESTS.value,
+                KafkaTopics.QUESTION_ANSWERS.value,
             ],
             group_id="message_router"
         )
