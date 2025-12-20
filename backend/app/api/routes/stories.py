@@ -1118,6 +1118,18 @@ async def start_dev_server(
         return False
     
     port = find_free_port()
+    
+    # Clean .next cache to avoid stale builds
+    next_cache = os.path.join(story.worktree_path, ".next")
+    if os.path.exists(next_cache):
+        await log_to_story("Cleaning Next.js cache...")
+        try:
+            import shutil
+            await asyncio.to_thread(shutil.rmtree, next_cache)
+            logger.info(f"Removed .next cache for story {story_id}")
+        except Exception as e:
+            logger.warning(f"Failed to remove .next cache: {e}")
+    
     await log_to_story(f"Starting dev server on port {port}...")
     
     # Start dev server with retry logic

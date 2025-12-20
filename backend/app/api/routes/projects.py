@@ -971,6 +971,19 @@ async def start_project_dev_server(
             logger.warning(f"Prisma setup failed: {e}")
     
     port = find_free_port()
+    update_env_local_port(port)
+    
+    # Clean .next cache to avoid stale builds
+    next_cache = workspace_path / ".next"
+    if next_cache.exists():
+        await broadcast_log("Cleaning Next.js cache...", "running")
+        try:
+            import shutil
+            await asyncio.to_thread(shutil.rmtree, str(next_cache))
+            logger.info(f"Removed .next cache for project {project_id}")
+        except Exception as e:
+            logger.warning(f"Failed to remove .next cache: {e}")
+    
     await broadcast_log("Starting development server...", "running")
     logger.info(f"Starting dev server for project {project_id} on port {port}")
     

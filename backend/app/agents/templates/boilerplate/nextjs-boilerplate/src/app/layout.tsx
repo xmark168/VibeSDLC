@@ -4,6 +4,7 @@ import "./globals.css";
 import { Navigation } from "@/components/Navigation";
 import { SessionProvider } from "@/components/SessionProvider";
 import { Toaster } from "@/components/ui/sonner";
+import { URLSync } from "@/components/URLSync";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,6 +32,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <SessionProvider>
+          <URLSync />
           <Navigation />
           {children}
           <Toaster />
