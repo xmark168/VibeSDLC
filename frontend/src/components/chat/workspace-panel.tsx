@@ -712,9 +712,7 @@ export function WorkspacePanel({ chatCollapsed, onExpandChat, kanbanData, projec
           <div>
             <div>
             </div>
-            <Button  size="sm" className="h-8 text-xs bg-[#6366f1] hover:bg-[#5558e3]">
-              Publish
-            </Button>
+           
           </div>
         </div>
       </div>
