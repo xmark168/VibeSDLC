@@ -1354,7 +1354,12 @@ class BaseAgent(ABC):
                     project_id=self.project_id,
                     tokens_used=tokens_used,
                     agent_id=self.agent_id,
-                    user_id=self._current_user_id
+                    user_id=self._current_user_id,
+                    context={
+                        'llm_calls': llm_calls,  # ✅ Pass llm_calls to context
+                        'model_used': None,  # Can be enhanced later
+                        'task_type': None,  # Can be enhanced later
+                    }
                 )
             except Exception as e:
                 logger.error(f"[{self.name}] Error recording token usage: {e}", exc_info=True)

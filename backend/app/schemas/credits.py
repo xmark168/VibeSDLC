@@ -1,6 +1,6 @@
 """Credit and token usage schemas."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from uuid import UUID
 from datetime import datetime
 from enum import Enum
@@ -28,6 +28,17 @@ class CreditActivityItem(BaseModel):
     project_name: str | None
     story_title: str | None
     task_type: str | None
+    
+    @field_serializer('created_at')
+    def serialize_datetime(self, dt: datetime) -> str:
+        """Serialize datetime as UTC ISO format with Z indicator."""
+        if dt is None:
+            return None
+        # Ensure timezone-aware datetime
+        if dt.tzinfo is None:
+            from datetime import timezone
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.isoformat()
 
 
 class CreditActivityResponse(BaseModel):

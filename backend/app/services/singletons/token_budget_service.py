@@ -386,6 +386,11 @@ class TokenBudgetService:
             credits_to_deduct = (tokens_used + TOKENS_PER_CREDIT - 1) // TOKENS_PER_CREDIT
             
             if credits_to_deduct > 0:
+                # Ensure context includes llm_calls (default 1 if not provided)
+                enhanced_context = context.copy() if context else {}
+                if 'llm_calls' not in enhanced_context:
+                    enhanced_context['llm_calls'] = 1  # At least 1 LLM call if we have tokens
+                
                 credit_service = CreditService(session)
                 success = credit_service.deduct_credit(
                     user_id=user_id,
@@ -393,7 +398,7 @@ class TokenBudgetService:
                     reason=f"llm_tokens_{tokens_used}",
                     agent_id=agent_id,
                     tokens_used=tokens_used,
-                    context=context
+                    context=enhanced_context
                 )
                 if success:
                     task_info = f", task: {context.get('task_type')}" if context and context.get('task_type') else ""
