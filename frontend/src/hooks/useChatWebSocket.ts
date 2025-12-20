@@ -470,6 +470,16 @@ export function useChatWebSocket(
       return updated
     })
     
+    // Dispatch custom event for Usage tab to refetch data
+    const event = new CustomEvent('agent_response_complete', {
+      detail: {
+        agent_name: msg.agent_name,
+        timestamp: msg.timestamp,
+        execution_context: msg.execution_context,
+      }
+    })
+    window.dispatchEvent(event)
+    
     // Mark background task as completed (if any)
     const taskId = msg.execution_context?.task_id || msg.task_id
     if (taskId && displayMode === 'progress_bar') {

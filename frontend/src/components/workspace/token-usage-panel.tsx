@@ -3,6 +3,7 @@ import { useCurrentSubscription } from "@/queries/subscription"
 import { useCreditActivities } from "@/queries/credits"
 import { useProjectTokenBudget } from "@/queries/projects"
 import { formatDistanceToNow } from "date-fns"
+import { useQueryClient } from "@tanstack/react-query"
 import { 
   Table,
   TableBody,
@@ -16,6 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -27,11 +29,27 @@ import {
   Search,
   RefreshCcw,
   Calendar,
-  CalendarDays
+  CalendarDays,
+  AlertCircle
 } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 
 const ITEMS_PER_PAGE = 15
+
+interface TokenBudgetData {
+  daily: {
+    limit: number
+    used: number
+    remaining: number
+    usage_percentage: number
+  }
+  monthly: {
+    limit: number
+    used: number
+    remaining: number
+    usage_percentage: number
+  }
+}
 
 interface TokenUsagePanelProps {
   projectId?: string
@@ -41,19 +59,27 @@ export function TokenUsagePanel({ projectId }: TokenUsagePanelProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState("")
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [filterByProject, setFilterByProject] = useState(false)
+  
+  const queryClient = useQueryClient()
   
   // Fetch subscription data for credit balance
   const { data: subscriptionData, isLoading: subLoading, refetch: refetchSubscription } = useCurrentSubscription()
   
   // Fetch credit activities (optionally filtered by project)
-  const { data: activitiesData, isLoading: activitiesLoading, refetch: refetchActivities } = useCreditActivities({
+  const { data: activitiesData, isLoading: activitiesLoading, error: activitiesError, refetch: refetchActivities } = useCreditActivities({
     limit: ITEMS_PER_PAGE,
     offset: (currentPage - 1) * ITEMS_PER_PAGE,
-    project_id: projectId,
+    project_id: filterByProject ? projectId : undefined,
   })
   
   // Fetch token budget for project
-  const { data: tokenBudget, isLoading: budgetLoading, error: budgetError, refetch: refetchBudget } = useProjectTokenBudget(projectId)
+  const { data: tokenBudget, isLoading: budgetLoading, error: budgetError, refetch: refetchBudget } = useProjectTokenBudget(projectId) as {
+    data: TokenBudgetData | null | undefined
+    isLoading: boolean
+    error: Error | null
+    refetch: () => void
+  }
   
   // Debug: Log token budget data
   useEffect(() => {
@@ -64,6 +90,46 @@ export function TokenUsagePanel({ projectId }: TokenUsagePanelProps) {
       console.log('[TokenUsagePanel] budgetError:', budgetError)
     }
   }, [projectId, tokenBudget, budgetLoading, budgetError])
+  
+  // Debug: Log activities data
+  useEffect(() => {
+    console.log('[TokenUsagePanel] Usage History Debug:', {
+      projectId,
+      filterByProject,
+      activitiesData,
+      isLoading: activitiesLoading,
+      error: activitiesError,
+      itemsCount: activitiesData?.items?.length,
+      total: activitiesData?.total
+    })
+  }, [projectId, filterByProject, activitiesData, activitiesLoading, activitiesError])
+  
+  // Reset page to 1 when filter changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [filterByProject, searchQuery])
+  
+  // Listen for agent responses to refetch data
+  useEffect(() => {
+    const handleAgentFinish = (event: CustomEvent) => {
+      console.log('[TokenUsagePanel] Agent finished, refetching all data...', event.detail)
+      
+      // Invalidate all queries to trigger refetch
+      queryClient.invalidateQueries({ queryKey: ['subscription'] })
+      queryClient.invalidateQueries({ queryKey: ['credits'] })
+      queryClient.invalidateQueries({ queryKey: ['project-token-budget'] })
+      
+      // Update last update timestamp
+      setLastUpdate(new Date())
+    }
+    
+    // Listen to custom event dispatched by chat WebSocket
+    window.addEventListener('agent_response_complete', handleAgentFinish as EventListener)
+    
+    return () => {
+      window.removeEventListener('agent_response_complete', handleAgentFinish as EventListener)
+    }
+  }, [queryClient])
   
   // Calculate total credits
   const subRemainingCredits = subscriptionData?.credit_wallet?.remaining_credits || 0
@@ -172,6 +238,20 @@ export function TokenUsagePanel({ projectId }: TokenUsagePanelProps) {
               <Skeleton className="h-48" />
               <Skeleton className="h-48" />
             </div>
+          ) : budgetError ? (
+            <Card className="border-red-500/20">
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center gap-2">
+                  <AlertCircle className="w-8 h-8 text-red-500" />
+                  <p className="text-sm text-red-600 dark:text-red-400 font-medium">Failed to load token budget</p>
+                  <p className="text-xs text-muted-foreground">{(budgetError as Error)?.message || 'Unknown error'}</p>
+                  <Button size="sm" onClick={() => refetchBudget()}>
+                    <RefreshCcw className="w-4 h-4 mr-2" />
+                    Retry
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ) : tokenBudget ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Daily Token Budget */}
@@ -322,7 +402,21 @@ export function TokenUsagePanel({ projectId }: TokenUsagePanelProps) {
         </div>
 
         {/* Usage Summary Statistics */}
-        {activitiesData && (
+        {activitiesLoading ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <Card key={i}>
+                <CardHeader className="pb-2">
+                  <Skeleton className="h-4 w-24" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-8 w-16 mb-2" />
+                  <Skeleton className="h-3 w-12" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : activitiesData && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -392,14 +486,26 @@ export function TokenUsagePanel({ projectId }: TokenUsagePanelProps) {
                   Detailed breakdown of your credit and token usage
                 </CardDescription>
               </div>
-              <div className="relative w-64">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search activities..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 h-9"
-                />
+              <div className="flex items-center gap-3">
+                {projectId && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/50">
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">This project only</span>
+                    <Switch
+                      checked={filterByProject}
+                      onCheckedChange={setFilterByProject}
+                      className="scale-75"
+                    />
+                  </div>
+                )}
+                <div className="relative w-64">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search activities..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 h-9"
+                  />
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -410,12 +516,39 @@ export function TokenUsagePanel({ projectId }: TokenUsagePanelProps) {
                   <Skeleton key={i} className="h-16 w-full" />
                 ))}
               </div>
+            ) : activitiesError ? (
+              <Card className="border-red-500/20">
+                <CardContent className="pt-6">
+                  <div className="flex flex-col items-center gap-2">
+                    <AlertCircle className="w-8 h-8 text-red-500" />
+                    <p className="text-sm text-red-600 dark:text-red-400 font-medium">
+                      Failed to load usage history
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {(activitiesError as Error)?.message || 'Unknown error'}
+                    </p>
+                    <Button size="sm" onClick={() => refetchActivities()}>
+                      <RefreshCcw className="w-4 h-4 mr-2" />
+                      Retry
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             ) : filteredActivities.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <Coins className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                <p className="font-medium">No activities found</p>
-                {searchQuery && (
-                  <p className="text-sm mt-1">Try adjusting your search</p>
+                {!searchQuery ? (
+                  <>
+                    <p className="font-medium">No credit activities yet</p>
+                    <p className="text-sm mt-2">
+                      Start chatting with agents to see your usage history here
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium">No activities match "{searchQuery}"</p>
+                    <p className="text-sm mt-2">Try a different search term</p>
+                  </>
                 )}
               </div>
             ) : (

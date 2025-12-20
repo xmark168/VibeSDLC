@@ -269,7 +269,7 @@ def change_password(
 
     logger.info(f"Password changed for user {current_user.id}")
 
-    return PasswordChangeResponse(message="Đổi mật khẩu thành công")
+    return PasswordChangeResponse(success=True, message="Đổi mật khẩu thành công")
 
 
 @router.post("/set-password", response_model=PasswordChangeResponse)
@@ -310,4 +310,7 @@ def set_password(
 
     logger.info(f"Password set for OAuth user {current_user.id}")
 
-    return PasswordChangeResponse(message="Tạo mật khẩu thành công. Bạn có thể đăng nhập bằng email và mật khẩu.")
+    return PasswordChangeResponse(
+        success=True,
+        message="Tạo mật khẩu thành công. Bạn có thể đăng nhập bằng email và mật khẩu."
+    )
