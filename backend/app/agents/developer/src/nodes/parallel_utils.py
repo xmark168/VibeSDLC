@@ -62,7 +62,9 @@ def group_steps_by_layer(steps: List[Dict]) -> Dict[float, List[Dict]]:
         step_deps = step.get("dependencies", [])
         has_component_dep = any(dep in component_paths for dep in step_deps)
         
-        if has_component_dep and base_layer >= 7:
+        # Adjust layer for components AND pages with component dependencies
+        # This ensures components run AFTER their dependencies (no parallel conflicts)
+        if has_component_dep and base_layer >= 6:
             dep_layers = [get_layer_priority(d) for d in step_deps if d in component_paths]
             if dep_layers:
                 base_layer = max(base_layer, max(dep_layers) + 0.1)

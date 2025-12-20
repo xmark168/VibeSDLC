@@ -2,6 +2,7 @@
 import os
 import re
 import logging
+import time
 from typing import Dict, Optional
 from uuid import UUID
 from testcontainers.postgres import PostgresContainer
@@ -28,6 +29,29 @@ def start_postgres_container(story_id: Optional[str] = None, project_id: Optiona
     
     container = PostgresContainer("postgres:16")
     container.start()
+    
+    # Wait for PostgreSQL to be ready (fix race condition on first load)
+    logger.info("[db_container] Waiting for PostgreSQL to accept connections...")
+    max_wait = 30  # seconds
+    start_time = time.time()
+    ready = False
+    
+    while time.time() - start_time < max_wait:
+        try:
+            # Check if PostgreSQL is ready to accept connections
+            result = container.exec("pg_isready -U test")
+            if result[0] == 0:  # exit code 0 means ready
+                ready = True
+                logger.info(f"[db_container] PostgreSQL is ready! (took {time.time() - start_time:.1f}s)")
+                break
+        except Exception as e:
+            # Container might not have exec available yet, ignore
+            pass
+        
+        time.sleep(0.5)
+    
+    if not ready:
+        logger.warning(f"[db_container] PostgreSQL not ready after {max_wait}s, continuing anyway...")
     
     if container_key:
         _containers[container_key] = container
@@ -89,7 +113,13 @@ def update_env_file(workspace_path: str, story_id: Optional[str] = None, project
     # Determine app URL (use dev_port if provided, otherwise default to 3000)
     app_url = f"http://localhost:{dev_port}" if dev_port else "http://localhost:3000"
     
-    # Update or add NEXT_PUBLIC_APP_URL
+    # Update or add APP_URL (server-side env var)
+    if "APP_URL=" in env_content:
+        env_content = re.sub(r'APP_URL=.*', f'APP_URL="{app_url}"', env_content)
+    else:
+        env_content += f'APP_URL="{app_url}"\n'
+    
+    # Update or add NEXT_PUBLIC_APP_URL (client-side env var)
     if "NEXT_PUBLIC_APP_URL=" in env_content:
         env_content = re.sub(r'NEXT_PUBLIC_APP_URL=.*', f'NEXT_PUBLIC_APP_URL="{app_url}"', env_content)
     else:

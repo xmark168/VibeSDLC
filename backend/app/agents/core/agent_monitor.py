@@ -116,14 +116,7 @@ class AgentMonitor:
         }
 
     async def get_pool_stats(self, pool_name: str) -> Optional[Dict[str, Any]]:
-        """Get statistics for a specific pool.
-        
-        Args:
-            pool_name: Name of the pool
-            
-        Returns:
-            Pool statistics dictionary or None if pool not found
-        """
+        """Get statistics for a specific pool."""
         manager = self.manager_registry.get(pool_name)
         if not manager:
             logger.warning(f"Pool '{pool_name}' not found in registry")
@@ -165,12 +158,7 @@ class AgentMonitor:
     # ===== Background Task =====
 
     async def _monitoring_loop(self) -> None:
-        """Periodic monitoring loop that logs system statistics and triggers auto-scaling.
-        
-        This handles:
-        - System-wide observability and logging
-        - Auto-scaling when pool load exceeds threshold
-        """
+        """Periodic monitoring loop that logs system statistics and triggers auto-scaling"""
         logger.info("AgentMonitor loop started")
         
         while self.running:

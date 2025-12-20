@@ -13,15 +13,13 @@ from app.kafka.event_schemas import (
     AgentEvent,
     AgentTaskType,
     DelegationRequestEvent,
-    KafkaTopics,
-    TaskRejectionEvent,
+    KafkaTopics
 )
 from app.models import Agent as AgentModel, AgentStatus
 from datetime import datetime, timezone
 from app.core.langfuse_client import (
     get_langfuse_client,
-    flush_langfuse,
-    async_flush_langfuse,  # Async version for non-blocking flush
+    async_flush_langfuse,
     score_current,
     update_current_observation,
     format_llm_usage,
@@ -63,13 +61,7 @@ class TaskResult:
 
 
 class BaseAgent(ABC):
-    """Abstract base class for all agents.
-
-    Architecture:
-    - Kafka consumer/producer logic hidden from subclasses
-    - Agents only implement handle_task()
-    - Helpers for progress tracking and publishing
-    """
+    """Abstract base class for all agents."""
 
     def __init__(self, agent_model: AgentModel, **kwargs):
         """Initialize base agent with persona attributes.
@@ -84,10 +76,10 @@ class BaseAgent(ABC):
         self.tech_stack = self._load_tech_stack()
         
         # Name (short and display)
-        self.name = agent_model.human_name  # "Sarah"
-        self.display_name = agent_model.name  # "Sarah (Business Analyst)"
+        self.name = agent_model.human_name  
+        self.display_name = agent_model.name  
         
-        # Persona attributes (simplified - easy access for subclasses)
+        # Persona attributes 
         self.persona_template_id = agent_model.persona_template_id
         self.personality_traits = agent_model.personality_traits or []
         self.communication_style = agent_model.communication_style
@@ -98,12 +90,12 @@ class BaseAgent(ABC):
         self.max_idle_time = kwargs.get("max_idle_time", 300)
 
         # Agent state and statistics
-        self.state = AgentStatus.idle  # Current agent state
-        self.total_executions = 0  # Total tasks completed
-        self.successful_executions = 0  # Successful tasks
-        self.failed_executions = 0  # Failed tasks
+        self.state = AgentStatus.idle  
+        self.total_executions = 0 
+        self.successful_executions = 0  
+        self.failed_executions = 0  
 
-        # Callbacks (for AgentPool compatibility)
+        # Callbacks 
         self.on_state_change = None
         self.on_execution_complete = None
         self.on_heartbeat = None
@@ -169,28 +161,8 @@ class BaseAgent(ABC):
 
     @abstractmethod
     async def handle_task(self, task: TaskContext) -> TaskResult:
-      
         """Handle assigned task.
-
-        This is the ONLY method agents need to implement.
-
-        Args:
-            task: TaskContext with task details
-
-        Returns:
-            TaskResult with output and success status
-
-        Example:
-            async def handle_task(self, task: TaskContext) -> TaskResult:
-                await self.message_user("progress", "Processing...", {"step": 1, "total": 2})
-                result = await self._process(task.content)
-                await self.message_user("progress", "Complete", {"step": 2, "total": 2})
-                
-                return TaskResult(
-                    success=True,
-                    output=result,
-                    structured_data={"key": "value"}
-                )
+        The ONLY method agents need to implement.
         """
         pass
 
@@ -208,31 +180,6 @@ class BaseAgent(ABC):
         **kwargs
     ) -> Optional[UUID]:
         """Send message/event to user with support for artifacts and questions.
-        
-        This is the unified messaging API for all agent-to-user communication:
-        - Simple messages/events (thinking, progress, response)
-        - Clarification questions (with DB persistence and pause handling)
-        - Artifacts (with DB persistence and file storage)
-        
-        Args:
-            event_type: Event type - determines behavior:
-                - "thinking", "tool_call", "progress", "response": Simple events
-                - "artifact": Creates artifact with persistence
-                - "question": Asks clarification question with pause
-                - "completed": Marks task complete
-            content: Message content (human-readable text)
-            details: Additional structured data for event payload
-            artifact_config: Configuration for artifact creation (when event_type="artifact")
-            question_config: Configuration for questions (when event_type="question")
-            save_to_db: Whether to persist to messages table (default: True)
-            broadcast_ws: Whether to broadcast to WebSocket (default: True)
-            **kwargs: Extra metadata
-        
-        Returns:
-            UUID: For artifacts/questions, returns the created ID
-            None: For simple messages
-        
-        Examples:
             # Simple message
             await self.message_user("response", "Analysis complete")
             
@@ -465,8 +412,6 @@ class BaseAgent(ABC):
         if not question_config:
             raise ValueError("question_config required for event_type='question'")
         
-        from sqlmodel import Session
-        from app.core.db import engine
         from app.models import AgentQuestion, QuestionType, QuestionStatus, Message, AuthorType
         from app.kafka.event_schemas import QuestionAskedEvent
         from datetime import timedelta
@@ -1560,18 +1505,7 @@ class BaseAgent(ABC):
             )
 
     async def _execute_task(self, task_data: Dict[str, Any]) -> None:
-        """Execute a single task (called by worker loop) with execution tracking.
-
-        This is the actual task execution logic. It:
-        1. Converts RouterTaskEvent → TaskContext
-        2. Creates AgentExecution record
-        3. Calls agent's handle_task()
-        4. Updates execution record with result
-        5. Publishes response
-
-        Args:
-            task_data: RouterTaskEvent as dict
-        """
+        """Execute a single task (called by worker loop) with execution tracking."""
         try:
             # Extract task info
             task_id = task_data.get("task_id")
@@ -1742,15 +1676,7 @@ class BaseAgent(ABC):
                     self.failed_executions += 1
                     self._consecutive_failures += 1
                     self._last_activity_at = datetime.now(timezone.utc)
-                
-                # Execution metrics recording removed - handled by execution service
-                
-                # Emit finish signal (commented out to avoid duplicate messages)
-                # if result.success:
-                #     await self.finish_execution("Task completed successfully")
-                # else:
-                #     await self.finish_execution(f"Task completed with issues: {result.error_message or 'Unknown'}")
-                
+       
             except Exception as e:
                 task_failed = True
                 self._consecutive_failures += 1
@@ -1777,12 +1703,22 @@ class BaseAgent(ABC):
                 raise  # Re-raise to let outer handler deal with it
             
             finally:
+                # Emit "idle" status BEFORE resetting task context
+                # (message_user requires _current_task_id to be set)
+                if not task_failed:
+                    await self.message_user("idle", "Task completed")
+                
                 # Return to idle
                 self.state = AgentStatus.idle
                 
-                # Emit "idle" status to clear frontend indicator (only if no error)
-                if not task_failed:
-                    await self.message_user("idle", "Task completed")
+                # Reset all task context to prevent data leakage between tasks
+                # (MUST be after message_user to avoid "no active task" warning)
+                self._current_task_id = None
+                self._current_execution_id = None
+                self._current_task_type = None
+                self._current_task_content = None
+                self._current_routing_reason = None
+                self._current_user_id = None
 
             # Log completion (only if task didn't raise exception)
             if not task_failed and 'result' in locals():
@@ -1819,23 +1755,20 @@ class BaseAgent(ABC):
             except Exception as e:
                 logger.debug(f"[{self.name}] Langfuse cleanup: {e}")
             
-            # Reset task state
+            # Reset ALL task state (defensive - ensure no data leakage)
             self._current_task_id = None
             self._current_execution_id = None
             self._current_trace_id = None
             self._current_trace = None
+            self._current_task_type = None
+            self._current_task_content = None
+            self._current_routing_reason = None
+            self._current_user_id = None
     
     # ===== Token Budget Methods =====
     
     async def _check_token_budget(self, estimated_tokens: int) -> Tuple[bool, str]:
-        """Check if project has token budget for task.
-        
-        Args:
-            estimated_tokens: Estimated tokens needed
-            
-        Returns:
-            Tuple of (allowed, reason)
-        """
+        """Check if project has token budget for task."""
         if not self.project_id:
             # No project - allow (shouldn't happen in production)
             return True, ""
@@ -1857,7 +1790,7 @@ class BaseAgent(ABC):
                 f"[{self.name}] Error checking token budget: {e}", 
                 exc_info=True
             )
-            # Fail open - allow task on error to avoid blocking
+
             return True, ""
     
     def _get_primary_model_used(self) -> str:

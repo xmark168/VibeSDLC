@@ -113,6 +113,7 @@ async def route_story_event(
     project_id: str,
     task_type: "AgentTaskType",
     priority: str = "medium",
+    user_id: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None
 ) -> bool:
     """Route a story-related event to an available agent.
@@ -151,6 +152,7 @@ async def route_story_event(
                 "pr_url": story.pr_url,
                 "worktree_path": story.worktree_path,
                 "branch_name": story.branch_name,
+                "user_id": user_id,
                 **(metadata or {})
             }
             

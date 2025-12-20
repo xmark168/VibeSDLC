@@ -65,6 +65,14 @@ system_prompt: |
   - Example 1: Navigation imports SearchBar → Navigation.dependencies = ["src/components/SearchBar.tsx"]
   - Example 2: search/page.tsx uses SearchBar → dependencies = ["src/components/SearchBar.tsx"]
   
+  **CRITICAL FOR EXISTING COMPONENTS:**
+  - If new file imports EXISTING component (from previous story) → ADD to dependencies!
+  - Example: SearchFilters imports CategoryFilter (exists in project from US-004)
+    → SearchFilters.dependencies = ["src/components/catalog/CategoryFilter.tsx"]
+  - Don't skip dependencies just because file already exists
+  - Agent NEEDS component Props interface to use it correctly during implementation!
+  - Check "Project Files" section for existing components
+  
   CRITICAL FOR PAGES (MANDATORY):
   - Pages MUST include ALL components created in this plan in dependencies
   - Scan your plan: if ComponentX.tsx created → page MUST depend on it
@@ -227,6 +235,14 @@ zero_shot_system: |
   - Example 1: Navigation imports SearchBar → Navigation.dependencies = ["src/components/SearchBar.tsx"]
   - Example 2: search/page.tsx uses SearchBar → dependencies = ["src/components/SearchBar.tsx"]
   - This ensures correct execution order
+  
+  **CRITICAL FOR EXISTING COMPONENTS:**
+  - If new file imports EXISTING component (from previous story) → ADD to dependencies!
+  - Example: SearchFilters imports CategoryFilter (exists in project from US-004)
+    → SearchFilters.dependencies = ["src/components/catalog/CategoryFilter.tsx"]
+  - Don't skip dependencies just because file already exists
+  - Agent NEEDS component Props interface to use it correctly during implementation!
+  - Check "Project Files" section for existing components
   
   CRITICAL FOR PAGES (MANDATORY):
   - Pages MUST include ALL components created in this plan in dependencies
