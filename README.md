@@ -30,7 +30,7 @@ VibeSDLC mô phỏng một **đội ngũ phát triển phần mềm ảo** với
    └────┬────┘
         │
    ┌────▼────────────────────────────────────────┐
-   │           🤖 AI Agent Pool                  │
+   │              AI Agent Pool                  │
    │  ┌─────────┐ ┌─────────┐ ┌─────────┐        │
    │  │ Team    │ │Business │ │Developer│ ...    │
    │  │ Leader  │ │ Analyst │ │         │        │
