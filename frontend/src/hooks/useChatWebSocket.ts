@@ -121,6 +121,11 @@ export function useChatWebSocket(
       case 'connected':
         break
       
+      case 'ping':
+        // Reply to server ping with pong to keep connection alive
+        sendJsonMessage({ type: 'pong', timestamp: msg.timestamp })
+        break
+      
       case 'messages_updated':
         handleMessagesUpdated()
         break
@@ -210,6 +215,10 @@ export function useChatWebSocket(
       
       case 'dev_server_log':
         handleDevServerLog(msg)
+        break
+      
+      case 'credit_update':
+        handleCreditUpdate(msg)
         break
       
       default:
@@ -461,6 +470,16 @@ export function useChatWebSocket(
       return updated
     })
     
+    // Dispatch custom event for Usage tab to refetch data
+    const event = new CustomEvent('agent_response_complete', {
+      detail: {
+        agent_name: msg.agent_name,
+        timestamp: msg.timestamp,
+        execution_context: msg.execution_context,
+      }
+    })
+    window.dispatchEvent(event)
+    
     // Mark background task as completed (if any)
     const taskId = msg.execution_context?.task_id || msg.task_id
     if (taskId && displayMode === 'progress_bar') {
@@ -681,6 +700,16 @@ export function useChatWebSocket(
     }))
   }
   
+  const handleCreditUpdate = (msg: any) => {
+    // Dispatch custom event for components to listen
+    window.dispatchEvent(new CustomEvent('credit_updated', {
+      detail: msg.data
+    }))
+    
+    // Log for debugging
+    console.log('💰 Credit updated:', msg.data)
+  }
+  
   const handleQuestionAnswerReceived = (msg: any) => {    
     // Mark question as answered and store user's answer
     setMessages(prev => prev.map(m => {
@@ -776,18 +805,23 @@ export function useChatWebSocket(
     selected_options?: string[]
   ) => {
     if (readyState !== ReadyState.OPEN) {
+      console.error('[WebSocket] Cannot send - connection not open. ReadyState:', readyState)
       return false
     }
     
     try {
-      sendJsonMessage({
+      const payload = {
         type: 'question_answer',
         question_id,
         answer: answer || '',
         selected_options: selected_options || [],
-      })
+      }
+      console.log('[WebSocket] Sending question_answer:', payload)
+      sendJsonMessage(payload)
+      console.log('[WebSocket] Message sent successfully')
       return true
     } catch (error) {
+      console.error('[WebSocket] Error sending question_answer:', error)
       return false
     }
   }

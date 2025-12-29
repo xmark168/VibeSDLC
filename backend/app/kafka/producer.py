@@ -12,7 +12,7 @@ from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from pydantic import BaseModel
 
-from app.core.config import settings
+from app.core.config import settings, kafka_settings
 from app.kafka.event_schemas import BaseKafkaEvent, KafkaTopics
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ class KafkaProducer:
             raise RuntimeError("Use get_kafka_producer() to get singleton instance")
 
         self.config = {
-            "bootstrap.servers": settings.KAFKA_BOOTSTRAP_SERVERS,
+            "bootstrap.servers": kafka_settings.BOOTSTRAP_SERVERS,
             "client.id": f"vibeSDLC-producer-{settings.ENVIRONMENT}",
             "acks": "all",  # Wait for all in-sync replicas
             "retries": 3,
@@ -48,12 +48,12 @@ class KafkaProducer:
         }
 
         # Add SASL authentication if configured
-        if settings.KAFKA_SASL_MECHANISM:
+        if kafka_settings.SASL_MECHANISM:
             self.config.update({
-                "security.protocol": settings.KAFKA_SECURITY_PROTOCOL,
-                "sasl.mechanism": settings.KAFKA_SASL_MECHANISM,
-                "sasl.username": settings.KAFKA_SASL_USERNAME,
-                "sasl.password": settings.KAFKA_SASL_PASSWORD,
+                "security.protocol": kafka_settings.SECURITY_PROTOCOL,
+                "sasl.mechanism": kafka_settings.SASL_MECHANISM,
+                "sasl.username": kafka_settings.SASL_USERNAME,
+                "sasl.password": kafka_settings.SASL_PASSWORD,
             })
 
         self.producer: Optional[Producer] = None
@@ -65,7 +65,7 @@ class KafkaProducer:
         try:
             self.producer = Producer(self.config)
             self.admin_client = AdminClient({
-                "bootstrap.servers": settings.KAFKA_BOOTSTRAP_SERVERS
+                "bootstrap.servers": kafka_settings.BOOTSTRAP_SERVERS
             })
 
             # Topics are now created by ensure_kafka_topics() in main.py startup

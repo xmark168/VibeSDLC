@@ -2,6 +2,7 @@ import json
 from typing import Any, Optional
 import redis
 from app.core.config import settings
+from app.core.config import redis_settings
 
 
 class RedisClient:
@@ -14,11 +15,11 @@ class RedisClient:
             return True
         try:
             self._client = redis.from_url(
-                settings.redis_url,
+                redis_settings.redis_url,
                 decode_responses=True,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                retry_on_timeout=True,
+                socket_connect_timeout=redis_settings.SOCKET_CONNECT_TIMEOUT,
+                socket_timeout=redis_settings.SOCKET_TIMEOUT,
+                retry_on_timeout=redis_settings.RETRY_ON_TIMEOUT,
                 health_check_interval=30
             )
             self._client.ping()

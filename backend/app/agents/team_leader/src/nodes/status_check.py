@@ -4,8 +4,8 @@ import logging
 from langchain.agents import create_agent
 
 from app.agents.team_leader.src.state import TeamLeaderState
-from app.core.agent.llm_factory import get_llm
-from app.core.agent.prompt_utils import get_task_prompts
+from app.agents.core.llm_factory import create_fast_llm
+from app.agents.core.prompt_utils import get_task_prompts
 from app.agents.team_leader.src.nodes._utils import get_callback_config, _PROMPTS
 from app.agents.team_leader.tools import get_team_leader_tools
 
@@ -18,7 +18,7 @@ async def status_check(state: TeamLeaderState, agent=None) -> TeamLeaderState:
         prompts = get_task_prompts(_PROMPTS, "status_check")
         
         status_agent = create_agent(
-            model=get_llm("respond"),
+            model=create_fast_llm(),
             tools=get_team_leader_tools(),
             system_prompt=prompts["system_prompt"]
         )

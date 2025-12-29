@@ -267,17 +267,22 @@ def get_flow_metrics(project_id: str) -> str:
         kanban_service, session = _get_kanban_service()
         
         with session:
-            metrics = kanban_service.get_project_flow_metrics(UUID(project_id))
+            # TODO: Re-implement get_project_flow_metrics
+            # metrics = kanban_service.get_project_flow_metrics(UUID(project_id))
+            metrics = {}  # Temporary: method not implemented
             
             lines = ["Flow Metrics:"]
             
             if metrics.get("avg_cycle_time_hours"):
                 lines.append(f"- Avg Cycle Time: {metrics['avg_cycle_time_hours']:.1f}h")
+            elif not metrics:
+                lines.append("- Flow metrics not available (feature in development)")
             
             if metrics.get("avg_lead_time_hours"):
                 lines.append(f"- Avg Lead Time: {metrics['avg_lead_time_hours']:.1f}h")
             
-            lines.append(f"- Throughput: {metrics.get('throughput_per_week', 0)} stories/week")
+            if metrics:
+                lines.append(f"- Throughput: {metrics.get('throughput_per_week', 0)} stories/week")
             lines.append(f"- Current WIP: {metrics.get('work_in_progress', 0)}")
             lines.append(f"- Total Completed: {metrics.get('total_completed', 0)}")
             

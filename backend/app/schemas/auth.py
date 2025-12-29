@@ -91,3 +91,16 @@ class ResetPasswordRequest(SQLModel):
 
 class ResetPasswordResponse(SQLModel):
     message: str
+
+
+# ===== Common/Shared Schemas (moved from common.py) =====
+
+class Message(SQLModel):
+    """Generic message response."""
+    message: str
+
+
+class NewPassword(SQLModel):
+    """Password reset schema."""
+    token: str
+    new_password: str

@@ -35,6 +35,7 @@ class DeveloperState(TypedDict, total=False):
 
     # Planning
     implementation_plan: List[dict]
+    logic_analysis: Optional[str]  # Design overview for all files
     current_step: int
     total_steps: int
     dependencies_content: Dict[str, str]
@@ -76,6 +77,7 @@ class DeveloperState(TypedDict, total=False):
 
     # Context
     project_context: Optional[str]
+    project_structure: Optional[str]  # File tree + components + APIs from plan
     project_config: Optional[Dict[str, Any]]
     agents_md: Optional[str]
 

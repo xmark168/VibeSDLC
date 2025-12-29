@@ -1,108 +1,44 @@
-"""Artifact schemas for structured agent outputs."""
+"""Artifact-related schemas."""
 
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Optional, List
+from uuid import UUID
+from pydantic import BaseModel
+from app.models.base import ArtifactStatus
 
-from pydantic import BaseModel, Field
 
-
-class RequirementItem(BaseModel):
-    id: str
+class ArtifactResponse(BaseModel):
+    """Artifact response schema."""
+    id: UUID
+    project_id: UUID
+    agent_id: Optional[UUID]
+    agent_name: str
+    artifact_type: str
     title: str
-    description: str
-    priority: str
-    type: str
+    description: Optional[str]
+    content: dict
+    file_path: Optional[str]
+    version: int
+    parent_artifact_id: Optional[UUID]
+    status: str
+    reviewed_by_user_id: Optional[UUID]
+    reviewed_at: Optional[datetime]
+    review_feedback: Optional[str]
+    tags: List[str]
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
 
 
-class PRDArtifact(BaseModel):
-    title: str
-    overview: str
-    goals: List[str]
-    target_users: List[str]
-    requirements: List[RequirementItem]
-    acceptance_criteria: List[str]
-    constraints: List[str]
-    risks: List[str]
-    next_steps: Optional[List[str]] = Field(default_factory=list)
+class ArtifactListResponse(BaseModel):
+    """List of artifacts response."""
+    artifacts: List[ArtifactResponse]
+    total: int
 
 
-class ArchitectureComponent(BaseModel):
-    name: str
-    type: str
-    technology: str
-    description: str
-    dependencies: List[str] = Field(default_factory=list)
-    interfaces: Optional[List[str]] = Field(default_factory=list)
-
-
-class ArchitectureArtifact(BaseModel):
-    title: str
-    overview: str
-    components: List[ArchitectureComponent]
-    data_flow: str
-    deployment: str
-    scalability_considerations: str
-    security_considerations: Optional[str] = None
-
-
-class UserStoryItem(BaseModel):
-    id: str
-    title: str
-    description: str
-    acceptance_criteria: List[str]
-    priority: str
-    story_points: Optional[int] = None
-
-
-class UserStoryArtifact(BaseModel):
-    epic_title: str
-    epic_description: str
-    stories: List[UserStoryItem]
-    total_story_points: Optional[int] = None
-
-
-class AnalysisSection(BaseModel):
-    title: str
-    content: str
-    findings: Optional[List[str]] = Field(default_factory=list)
-    recommendations: Optional[List[str]] = Field(default_factory=list)
-
-
-class AnalysisArtifact(BaseModel):
-    title: str
-    summary: str
-    sections: List[AnalysisSection]
-    conclusion: str
-    next_steps: List[str]
-
-
-class CodeFile(BaseModel):
-    filename: str
-    filepath: str
-    language: str
-    content: str
-    description: Optional[str] = None
-
-
-class CodeArtifact(BaseModel):
-    title: str
-    description: str
-    files: List[CodeFile]
-    dependencies: Optional[List[str]] = Field(default_factory=list)
-    setup_instructions: Optional[str] = None
-
-
-class TestCase(BaseModel):
-    id: str
-    title: str
-    description: str
-    steps: List[str]
-    expected_result: str
-    priority: str
-
-
-class TestPlanArtifact(BaseModel):
-    title: str
-    scope: str
-    test_cases: List[TestCase]
-    test_data_requirements: Optional[List[str]] = Field(default_factory=list)
-    environment_requirements: Optional[str] = None
+class UpdateArtifactStatusRequest(BaseModel):
+    """Request to update artifact status."""
+    status: ArtifactStatus
+    feedback: Optional[str] = None

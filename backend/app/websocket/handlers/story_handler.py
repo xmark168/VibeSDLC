@@ -42,11 +42,17 @@ class StoryHandler(BaseEventHandler):
                 logger.warning("Story updated event missing project_id")
                 return
 
+            # Check if story is DONE (implementation complete) → show dev server button
+            updated_fields = event_data.get("updated_fields", {})
+            status = updated_fields.get("status")
+            show_dev_server = status == "DONE"
+
             ws_message = {
                 "type": "kanban_update",
                 "action": "story_updated",
                 "story_id": str(event_data.get("story_id", "")),
-                "updated_fields": event_data.get("updated_fields", {}),
+                "updated_fields": updated_fields,
+                "show_dev_server_button": show_dev_server,
                 "timestamp": self._get_timestamp(event_data),
             }
 
@@ -64,16 +70,36 @@ class StoryHandler(BaseEventHandler):
                 logger.warning("Story status change event missing project_id")
                 return
 
+            # Check if new status is DONE → show dev server button
+            new_status = event_data.get("new_status", "")
+            show_dev_server = new_status == "DONE"
+
             ws_message = {
                 "type": "story_status_changed",
                 "story_id": str(event_data.get("story_id", "")),
-                "status": event_data.get("new_status", ""),
+                "status": new_status,
                 "old_status": event_data.get("old_status", ""),
-                "new_status": event_data.get("new_status", ""),
+                "new_status": new_status,
+                "show_dev_server_button": show_dev_server,
                 "timestamp": self._get_timestamp(event_data),
             }
 
             await self._broadcast(project_id, ws_message)
+
+            # If story moved to DONE and has affected stories, broadcast unblock event
+            if new_status == "DONE":
+                affected_stories = event_data.get("affected_stories", [])
+                if affected_stories:
+                    unblock_message = {
+                        "type": "dependencies_unblocked",
+                        "completed_story_id": str(event_data.get("story_id", "")),
+                        "affected_stories": affected_stories,
+                        "timestamp": self._get_timestamp(event_data),
+                    }
+                    await self._broadcast(project_id, unblock_message)
+                    logger.info(
+                        f"Broadcasted dependencies_unblocked for {len(affected_stories)} stories"
+                    )
 
         except Exception as e:
             logger.error(f"Error handling story status change: {e}", exc_info=True)

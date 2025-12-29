@@ -1,4 +1,4 @@
-"""Subscription Service - Manages subscription activation and lifecycle"""
+"""Subscription Service"""
 
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
@@ -39,8 +39,7 @@ class SubscriptionService:
         Activate subscription after successful payment
         Returns: (Subscription, CreditWallet, Invoice)
         """
-        # Cancel all existing active subscriptions for this user (upgrade/downgrade scenario)
-        # and calculate remaining credits to transfer
+        # Cancel all existing active subscriptions for this user and calculate remaining credits to transfer
         existing_subscriptions = self.session.exec(
             select(Subscription)
             .where(Subscription.user_id == user_id)

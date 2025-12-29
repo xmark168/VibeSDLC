@@ -14,23 +14,18 @@ from app.agents.developer.src.utils.llm_utils import get_langfuse_config as _cfg
 from app.agents.developer.src.utils.signal_utils import check_interrupt_signal
 from app.agents.developer.src.utils.prompt_utils import format_input_template as _format_input_template, build_system_prompt as _build_system_prompt
 from app.utils.token_utils import truncate_to_tokens
-from app.agents.developer.src.nodes._llm import implement_llm
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
 from app.agents.developer.src.skills import SkillRegistry
-from app.agents.developer.src.config import MAX_CONCURRENT, MAX_DEBUG_REVIEWS
+from app.core.config import llm_settings
 from app.utils.git_utils import git_commit_step
+
+MAX_CONCURRENT = llm_settings.MAX_CONCURRENT_TASKS
+MAX_DEBUG_REVIEWS = llm_settings.MAX_DEBUG_REVIEWS_DEVELOPER
 
 logger = logging.getLogger(__name__)
 
-_modified_files: set = set()
 
-def get_modified_files() -> list:
-    return list(_modified_files)
-
-def reset_modified_files():
-    _modified_files.clear()
-
-
-def git_revert_uncommitted(workspace_path: str) -> bool:
+async def git_revert_uncommitted(workspace_path: str) -> bool:
     """Revert uncommitted changes (used on pause)."""
     # Validate workspace_path
     if not workspace_path:
@@ -42,22 +37,21 @@ def git_revert_uncommitted(workspace_path: str) -> bool:
         logger.warning(f"[git] Cannot revert: workspace does not exist: {workspace_path}")
         return False
     
-    # Normalize path for Windows
+    # Normalize path to POSIX format
     workspace_path = str(workspace.resolve())
     
     try:
         # Discard unstaged changes with retry
-        git_with_retry(["git", "checkout", "."], cwd=workspace_path)
+        await git_with_retry(["git", "checkout", "."], cwd=workspace_path)
         # Remove untracked files
-        git_with_retry(["git", "clean", "-fd"], cwd=workspace_path)
-        logger.info(f"[git] Reverted uncommitted changes")
+        await git_with_retry(["git", "clean", "-fd"], cwd=workspace_path)
         return True
     except Exception as e:
         logger.warning(f"[git] Revert error: {e}")
         return False
 
 
-def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
+async def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
     """Reset all changes to base branch (used on cancel)."""
     # Validate workspace_path
     if not workspace_path:
@@ -69,7 +63,7 @@ def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
         logger.warning(f"[git] Cannot reset: workspace does not exist: {workspace_path}")
         return False
     
-    # Normalize path for Windows
+    # Normalize path to POSIX format
     workspace_path = str(workspace.resolve())
     
     try:
@@ -80,20 +74,18 @@ def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
         )
         if result.returncode == 0:
             base_commit = result.stdout.decode().strip()
-            git_with_retry(["git", "reset", "--hard", base_commit], cwd=workspace_path)
-            logger.info(f"[git] Reset to {base_commit[:8]}")
+            await git_with_retry(["git", "reset", "--hard", base_commit], cwd=workspace_path)
             return True
         else:
             # Fallback: just reset to origin/base_branch
-            git_with_retry(["git", "reset", "--hard", f"origin/{base_branch}"], cwd=workspace_path)
-            logger.info(f"[git] Reset to origin/{base_branch}")
+            await git_with_retry(["git", "reset", "--hard", f"origin/{base_branch}"], cwd=workspace_path)
             return True
     except Exception as e:
         logger.warning(f"[git] Reset error: {e}")
         return False
 
 
-def git_squash_wip_commits(workspace_path: str, base_branch: str = "main", final_message: str = None) -> bool:
+async def git_squash_wip_commits(workspace_path: str, base_branch: str = "main", final_message: str = None) -> bool:
     """Squash all WIP commits into a single commit."""
     # Validate workspace_path
     if not workspace_path:
@@ -105,7 +97,7 @@ def git_squash_wip_commits(workspace_path: str, base_branch: str = "main", final
         logger.warning(f"[git] Cannot squash: workspace does not exist: {workspace_path}")
         return False
     
-    # Normalize path for Windows
+    # Normalize path to POSIX format
     workspace_path = str(workspace.resolve())
     
     try:
@@ -120,12 +112,11 @@ def git_squash_wip_commits(workspace_path: str, base_branch: str = "main", final
         base_commit = result.stdout.decode().strip()
         
         # Soft reset to base with retry
-        git_with_retry(["git", "reset", "--soft", base_commit], cwd=workspace_path)
+        await git_with_retry(["git", "reset", "--soft", base_commit], cwd=workspace_path)
         
         # Commit with final message
         msg = final_message or "feat: implement story"
-        git_with_retry(["git", "commit", "-m", msg, "--no-verify"], cwd=workspace_path)
-        logger.info(f"[git] Squashed commits: {msg}")
+        await git_with_retry(["git", "commit", "-m", msg, "--no-verify"], cwd=workspace_path)
         return True
     except Exception as e:
         logger.warning(f"[git] Squash error: {e}")
@@ -167,6 +158,37 @@ def _build_dependencies_context(dependencies_content: dict, step_dependencies: l
     return f"<pre_loaded_context>\n{chr(10).join(parts)}\n</pre_loaded_context>" if parts else ""
 
 
+def _build_project_structure_context(state: dict) -> str:
+    """Build project structure context for implement prompt.
+    
+    Returns file tree, component imports, and API routes to help agent:
+    - Avoid duplicate components
+    - Use correct import paths
+    - Know existing API routes
+    - Understand project organization
+    """
+    project_structure = state.get("project_structure", "")
+    
+    # If already saved in state (from plan node), use it
+    if project_structure:
+        return truncate_to_tokens(project_structure, 2000)
+    
+    # Otherwise, build on-the-fly from workspace
+    workspace_path = state.get("workspace_path", "")
+    if not workspace_path or not os.path.exists(workspace_path):
+        return ""
+    
+    from app.agents.developer.src.nodes.plan import FileRepository
+    
+    try:
+        repo = FileRepository(workspace_path)
+        context = repo.to_context()
+        return truncate_to_tokens(context, 2000)
+    except Exception as e:
+        logger.warning(f"[implement] Failed to build project structure: {e}")
+        return ""
+
+
 def _build_debug_summary(state: dict) -> str:
     debug_count, review_count = state.get("debug_count", 0), state.get("review_count", 0)
     if debug_count == 0 and review_count == 0:
@@ -182,10 +204,6 @@ def _build_debug_summary(state: dict) -> str:
         parts.append(f"- Error: {state.get('error')}")
     parts.append("\nDon't repeat mistakes.")
     return "\n".join(parts)
-
-
-
-
 
 def _preload_skills(registry: SkillRegistry, skill_ids: list[str], include_bundled: bool = True) -> str:
     if not skill_ids:
@@ -218,7 +236,6 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
     story_logger = StoryLogger.from_state(state, agent).with_node("implement")
     story_id = state.get("story_id", "")
     
-    reset_modified_files()
     current_step, total_steps = state.get("current_step", 0), state.get("total_steps", 0)
     
     # Task update (transient) - show current step
@@ -227,8 +244,15 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
     
     debug_count = state.get("debug_count", 0)
     is_debug = state.get("task_type") == "bug_fix" or debug_count > 0
-    prev_step = state.get("_last_implement_step", -1)
-    review_count = state.get("review_count", 0) if is_debug else (0 if current_step != prev_step else state.get("review_count", 0))
+    
+    # Get current review count from state
+    review_count = state.get("review_count", 0)
+    
+    # Reset review_count when moving to new step (except in debug mode)
+    if not is_debug:
+        prev_step = state.get("_last_implement_step", -1)
+        if current_step != prev_step:
+            review_count = 0  # New step → reset counter
     
     if is_debug and review_count >= MAX_DEBUG_REVIEWS:
         return {**state, "review_count": review_count, "action": "VALIDATE"}
@@ -264,8 +288,36 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
         skill_registry = state.get("skill_registry") or SkillRegistry.load(tech_stack)
         skills_content = _preload_skills(skill_registry, step_skills)
         
-        deps_context = _build_dependencies_context(state.get("dependencies_content", {}), step_deps, workspace_path, file_path)
-        context_parts = [deps_context] if deps_context else []
+        # Optimization: Skip heavy context for seed files (only need schema.prisma)
+        is_seed_file = file_path and "seed.ts" in file_path.lower()
+        
+        if is_seed_file:
+            # Seed files only need schema.prisma as dependency
+            deps_context = _build_dependencies_context(
+                state.get("dependencies_content", {}), 
+                ["prisma/schema.prisma"],
+                workspace_path, 
+                file_path
+            )
+            project_structure = ""
+            logic_analysis = ""
+        else:
+            # Original logic for non-seed files
+            deps_context = _build_dependencies_context(
+                state.get("dependencies_content", {}), 
+                step_deps, 
+                workspace_path, 
+                file_path
+            )
+            project_structure = _build_project_structure_context(state)
+            logic_analysis = state.get("logic_analysis", "")
+        
+        # Combine: project structure first, then dependencies
+        context_parts = []
+        if project_structure:
+            context_parts.append(project_structure)
+        if deps_context:
+            context_parts.append(deps_context)
         
         feedback = ""
         if state.get("review_feedback"):
@@ -291,12 +343,18 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
                 except:
                     pass
         
-        input_text = _format_input_template("implement_step", step_number=current_step + 1, total_steps=len(plan_steps), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files=_build_modified_files_context(state.get("files_modified", [])), related_context=truncate_to_tokens("\n\n".join(context_parts), 4000), feedback_section=feedback, logic_analysis="", legacy_code=legacy_code, debug_logs=state.get("error", "")[:2000] if state.get("error") else "")
+        # Note: logic_analysis already set above based on is_seed_file condition
+        
+        input_text = _format_input_template("implement_step", step_number=current_step + 1, total_steps=len(plan_steps), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files=_build_modified_files_context(state.get("files_modified", [])), related_context=truncate_to_tokens("\n\n".join(context_parts), 4000), feedback_section=feedback, logic_analysis=logic_analysis, legacy_code=legacy_code, debug_logs=state.get("error", "")[:2000] if state.get("error") else "")
         
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
         # Use structured output
-        # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
+        # Use Haiku for seed files (template-based), Sonnet for complex logic
+        if is_seed_file:
+            implement_llm = create_medium_llm(max_tokens=16384)  # Higher limit for full seed template
+        else:
+            implement_llm = create_medium_llm()
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
         output = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
@@ -311,18 +369,11 @@ async def implement(state: DeveloperState, config: dict = None, agent=None) -> D
             os.makedirs(os.path.dirname(fp), exist_ok=True)
             with open(fp, 'w', encoding='utf-8') as f:
                 f.write(file_content)
-            _modified_files.add(file_path)
-        
-        new_modified = get_modified_files()
-        if any(f.replace("\\", "/").endswith("schema.prisma") for f in new_modified):
-            try:
-                subprocess.run("pnpm exec prisma generate", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-                subprocess.run("pnpm exec prisma db push --accept-data-loss", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-                seed_file = Path(workspace_path) / "prisma" / "seed.ts"
-                if seed_file.exists():
-                    subprocess.run("pnpm prisma db seed", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-            except:
-                pass
+            new_modified = [file_path]
+        else:
+            new_modified = []
+        # NOTE: Prisma generate/push/seed are now handled in run_code.py
+        # Removed duplicate operations here to avoid 2-3 min waste per implement step
         
         all_modified = list(set(state.get("files_modified", []) + new_modified))
         deps = state.get("dependencies_content", {})
@@ -368,8 +419,32 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
             step_skills = step_skills + ["frontend-component"]
         
         skills_content = _preload_skills(skill_registry, step_skills)
+        
+        # Optimization: Skip heavy context for seed files (only need schema.prisma)
+        is_seed_file = file_path and "seed.ts" in file_path.lower()
+        
+        if is_seed_file:
+            deps_ctx = _build_dependencies_context(
+                deps_content, 
+                ["prisma/schema.prisma"], 
+                workspace_path, 
+                file_path
+            )
+            project_structure = ""
+            logic_analysis = ""
+        else:
+            deps_ctx = _build_dependencies_context(
+                deps_content, 
+                step.get("dependencies", []), 
+                workspace_path, 
+                file_path
+            )
+            project_structure = _build_project_structure_context(state)
+            logic_analysis = state.get("logic_analysis", "")
+        
         context_parts = []
-        deps_ctx = _build_dependencies_context(deps_content, step.get("dependencies", []), workspace_path, file_path)
+        if project_structure:
+            context_parts.append(project_structure)
         if deps_ctx:
             context_parts.append(deps_ctx)
         if created_components:
@@ -388,12 +463,19 @@ async def _implement_single_step(step: Dict, state: DeveloperState, skill_regist
                 except:
                     pass
         
-        input_text = _format_input_template("implement_step", step_number=step.get("order", 1), total_steps=state.get("total_steps", 1), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files="", related_context="\n\n".join(context_parts), feedback_section="", logic_analysis="", legacy_code=legacy, debug_logs="")
+        # Note: logic_analysis already set above based on is_seed_file condition
+        
+        input_text = _format_input_template("implement_step", step_number=step.get("order", 1), total_steps=state.get("total_steps", 1), task_description=f"[{action.upper()}] {file_path}\n{task}" if file_path else task, modified_files="", related_context="\n\n".join(context_parts), feedback_section="", logic_analysis=logic_analysis, legacy_code=legacy, debug_logs="")
         
         system_prompt = _build_system_prompt("implement_step", skills_content=skills_content)
         
         # Use structured output
         # Get langfuse callbacks from runtime config (not state - avoids serialization issues)
+        # Use Haiku for seed files (template-based), Sonnet for complex logic
+        if is_seed_file:
+            implement_llm = create_fast_llm(max_tokens=16384)  # Higher limit for full seed template
+        else:
+            implement_llm = create_medium_llm()
         structured_llm = implement_llm.with_structured_output(ImplementOutput)
         output = await structured_llm.ainvoke(
             [SystemMessage(content=system_prompt), HumanMessage(content=input_text)], 
@@ -463,7 +545,7 @@ async def implement_parallel(state: DeveloperState, config: dict = None, agent=N
                 signal = check_interrupt_signal(story_id, agent)
                 if signal:
                     if signal == "cancel":
-                        from app.core.agent.mixins import StoryStoppedException
+                        from app.agents.core.mixins import StoryStoppedException
                         from app.models.base import StoryAgentState
                         raise StoryStoppedException(
                             story_id,
@@ -481,12 +563,21 @@ async def implement_parallel(state: DeveloperState, config: dict = None, agent=N
                         }
             
             layer_steps = layers[layer_num]
-            is_parallel = len(layer_steps) > 1 and layer_num >= 4  # CHANGED: từ 5 → 4
+            # Never parallel for seed layer (3.5)
+            is_parallel = (
+                len(layer_steps) > 1 
+                and layer_num >= 4 
+                and layer_num != 3.5  # Force sequential for seed
+            )
             
             # Log layer progress
             files_list = ", ".join([s.get("file_path", "").split("/")[-1] for s in layer_steps[:3]])
             more = f" +{len(layer_steps)-3}" if len(layer_steps) > 3 else ""
             await story_logger.info(f"📂 Layer {layer_idx}/{total_layers}: {files_list}{more}")
+            
+            # Special message for seed layer
+            if layer_num == 3.5:
+                await story_logger.info("🌱 Generating seed data (may take 2-3 minutes)...")
             
             if is_parallel:
                 results = await run_layer_parallel(layer_steps, lambda s, c=created_components: _implement_single_step(s, state, skill_registry, workspace_path, deps_content, c, config), state, MAX_CONCURRENT)
@@ -500,24 +591,24 @@ async def implement_parallel(state: DeveloperState, config: dict = None, agent=N
                     all_errors.append(f"{r.get('file_path')}: {r.get('error')}")
             
             if layer_num == 1 and any("schema.prisma" in str(r.get("file_path", "")) for r in results):
-                try:
-                    subprocess.run("pnpm exec prisma generate", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-                    subprocess.run("pnpm exec prisma db push --accept-data-loss", cwd=workspace_path, shell=True, capture_output=True, timeout=60)
-                    sp = os.path.join(workspace_path, "prisma/schema.prisma")
-                    if os.path.exists(sp):
-                        with open(sp, 'r', encoding='utf-8') as f:
-                            deps_content["prisma/schema.prisma"] = f.read()
-                except:
-                    pass
+                # NOTE: Prisma generate/push are now handled in run_code.py
+                # Just update deps_content for next steps
+                sp = os.path.join(workspace_path, "prisma/schema.prisma")
+                if os.path.exists(sp):
+                    with open(sp, 'r', encoding='utf-8') as f:
+                        deps_content["prisma/schema.prisma"] = f.read()
             elif layer_num == 2:
-                # Layer 2: Types (was layer 3)
+                # Layer 2: Types
                 tp = os.path.join(workspace_path, "src/types/index.ts")
                 if os.path.exists(tp):
                     with open(tp, 'r', encoding='utf-8') as f:
                         deps_content["src/types/index.ts"] = f.read()
+            elif layer_num == 3.5:
+                # Layer 3.5: Seed layer completed
+                await story_logger.info("✅ Seed data generated")
             elif layer_num >= 4:
-                # Layer 4+: API/Components (was layer 5+)
-                # Seed.ts is now in layer 4 and runs in parallel with API routes
+                # Layer 4+: API/Components
+                # Update created components for import hints
                 for r in results:
                     fp = r.get("file_path", "")
                     if fp and fp.endswith(".tsx"):
@@ -548,7 +639,7 @@ async def implement_parallel(state: DeveloperState, config: dict = None, agent=N
         return {**state, "current_step": len(plan_steps), "total_steps": len(plan_steps), "current_layer": total_layers, "files_modified": list(set(all_modified)), "dependencies_content": deps_content, "parallel_errors": all_errors if all_errors else None, "message": f"Implemented {len(all_modified)} files ({len(layers)} layers)", "action": "VALIDATE"}
     except Exception as e:
         from langgraph.errors import GraphInterrupt
-        from app.core.agent.mixins import StoryStoppedException
+        from app.agents.core.mixins import StoryStoppedException
         if isinstance(e, (GraphInterrupt, StoryStoppedException)):
             raise
         await story_logger.error(f"Parallel implementation failed: {str(e)}", exc=e)

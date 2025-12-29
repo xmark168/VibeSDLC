@@ -1,4 +1,4 @@
-"""Business Analyst Agent - Requirements analysis and PRD generation."""
+"""Business Analyst Agent"""
 
 from .business_analyst import BusinessAnalyst
 

@@ -48,7 +48,7 @@ def run_shell(command: str, working_directory: str, timeout: int = 120) -> Dict:
     
     try:
         result = subprocess.run(
-            ["cmd", "/c", command], cwd=str(work_dir), shell=False,
+            command, cwd=str(work_dir), shell=True,
             capture_output=True, text=True, timeout=timeout,
             encoding='utf-8', errors='replace',
         )

@@ -5,11 +5,11 @@ import logging
 from app.agents.tester.src.state import TesterState
 from app.agents.tester.src.prompts import get_system_prompt
 from app.agents.tester.src.nodes.helpers import get_llm_config, send_message
-from app.core.agent.llm_factory import get_llm
+from app.agents.core.llm_factory import create_fast_llm, create_medium_llm
 
 logger = logging.getLogger(__name__)
 
-_chat_llm = get_llm("default")
+_chat_llm = create_medium_llm()
 
 
 async def test_status(state: TesterState, agent=None) -> dict:

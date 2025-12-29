@@ -105,8 +105,8 @@ from .project_rules import (
     ProjectRulesPublic,
 )
 
-# Common schemas
-from .common import (
+# Common schemas (moved to auth.py)
+from .auth import (
     Message,
     NewPassword,
 )
@@ -181,6 +181,56 @@ from .linked_account import (
     UnlinkAccountRequest,
     UnlinkAccountResponse,
     LinkCallbackResponse,
+    InitiateLinkResponse,
+)
+
+# Profile schemas
+from .profile import (
+    ProfileUpdate,
+    ChangePasswordRequest,
+    SetPasswordRequest,
+    PasswordStatusResponse,
+    PasswordChangeResponse,
+    ProfileResponse,
+    AvatarUploadResponse,
+)
+
+# Credits schemas
+from .credits import (
+    CreditActivityItem,
+    CreditActivityResponse,
+    TokenMonitoringStats,
+)
+
+# Agent Management schemas
+from .agent_management import (
+    SystemStatusResponse,
+    EmergencyActionRequest,
+    AgentConfigSchema,
+    AgentConfigResponse,
+    BulkAgentRequest,
+    BulkSpawnRequest,
+    BulkOperationResponse,
+    ScalingTriggerType,
+    ScalingAction,
+    AutoScalingRule,
+    AutoScalingRuleCreate,
+    AgentTokenStats,
+    PoolTokenStats,
+    SystemTokenSummary,
+)
+
+# Artifacts schemas
+from .artifacts import (
+    ArtifactResponse,
+    ArtifactListResponse,
+    UpdateArtifactStatusRequest,
+)
+
+# Story additional schemas
+from .story import (
+    ReviewActionType,
+    ReviewActionRequest,
 )
 
 __all__ = [
@@ -334,4 +384,44 @@ __all__ = [
     "UnlinkAccountRequest",
     "UnlinkAccountResponse",
     "LinkCallbackResponse",
+    "InitiateLinkResponse",
+    
+    # Profile
+    "ProfileUpdate",
+    "ChangePasswordRequest",
+    "SetPasswordRequest",
+    "PasswordStatusResponse",
+    "PasswordChangeResponse",
+    "ProfileResponse",
+    "AvatarUploadResponse",
+    
+    # Credits
+    "CreditActivityItem",
+    "CreditActivityResponse",
+    "TokenMonitoringStats",
+    
+    # Agent Management
+    "SystemStatusResponse",
+    "EmergencyActionRequest",
+    "AgentConfigSchema",
+    "AgentConfigResponse",
+    "BulkAgentRequest",
+    "BulkSpawnRequest",
+    "BulkOperationResponse",
+    "ScalingTriggerType",
+    "ScalingAction",
+    "AutoScalingRule",
+    "AutoScalingRuleCreate",
+    "AgentTokenStats",
+    "PoolTokenStats",
+    "SystemTokenSummary",
+    
+    # Artifacts
+    "ArtifactResponse",
+    "ArtifactListResponse",
+    "UpdateArtifactStatusRequest",
+    
+    # Story (additional)
+    "ReviewActionType",
+    "ReviewActionRequest",
 ]

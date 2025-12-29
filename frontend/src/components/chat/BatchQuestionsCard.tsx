@@ -293,11 +293,19 @@ export function BatchQuestionsCard({
           }
         }
         
-        return {
+        const result = {
           question_id: questionId,
-          answer: ans.answer,
-          selected_options: q.question_type === 'multichoice' ? finalOptions : undefined
+          answer: ans.answer || '',
+          selected_options: q.question_type === 'multichoice' ? finalOptions : []
         }
+        
+        console.log('[BatchQuestionsCard] Building answer:', {
+          questionId,
+          questionType: q.question_type,
+          result
+        });
+        
+        return result
       })
       
       await onSubmit(allAnswers)

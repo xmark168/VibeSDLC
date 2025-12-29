@@ -18,7 +18,7 @@ from app.schemas.plan import (
     PlansPublic,
     PlanUpdate,
 )
-from app.schemas.common import Message
+from app.schemas.auth import Message
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 

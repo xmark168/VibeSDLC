@@ -198,7 +198,7 @@ function RouteComponent() {
                     />
                     <div className="relative h-20 w-20 rounded-full overflow-hidden shadow-xl ">
                       <img
-                        src="/assets/images/agent/1.png"
+                        src="/assets/images/agent/1.webp"
                         alt="Business Analyst"
                         className="h-full w-full object-cover"
                       />
@@ -270,7 +270,7 @@ function RouteComponent() {
                     />
                     <div className="relative h-20 w-20 rounded-full overflow-hidden shadow-xl ring-4 ring-white/80 ring-offset-2 ring-offset-transparent">
                       <img
-                        src="/assets/images/agent/tester.png"
+                        src="/assets/images/agent/4.webp"
                         alt="Tester"
                         className="h-full w-full object-cover"
                       />

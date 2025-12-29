@@ -1434,10 +1434,15 @@ export function ChatPanelWS({
               }}
               onSubmit={(answers) => {
                 const answer = answers[0];
+                console.log('[ChatPanel] Submitting single question:', {
+                  question_id: answer.question_id,
+                  answer: answer.answer,
+                  selected_options: answer.selected_options
+                });
                 sendQuestionAnswer(
                   answer.question_id,
-                  answer.answer,
-                  answer.selected_options
+                  answer.answer || '',
+                  answer.selected_options || []
                 )
                 setPendingQuestion(null) // Hide notification immediately
                 setBatchQuestionsAllAnswered(false);

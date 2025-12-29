@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { Play, Loader2, RefreshCw, ExternalLink, Monitor, Square, CheckCircle2, XCircle, Circle } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Play, Loader2, RefreshCw, ExternalLink, Monitor, Square, CheckCircle2, XCircle, Lock, Copy, ArrowRight } from "lucide-react"
 import { toast } from "@/lib/toast"
 
 interface LogEntry {
@@ -20,6 +21,9 @@ export function AppViewer({ projectId }: AppViewerProps) {
   const [runningPort, setRunningPort] = useState<number | null>(null)
   const [hasWorkspace, setHasWorkspace] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
+  const [currentUrl, setCurrentUrl] = useState<string>("")
+  const [inputUrl, setInputUrl] = useState<string>("")
+  const iframeRef = useRef<HTMLIFrameElement>(null)
 
   // Fetch initial status
   useEffect(() => {
@@ -90,6 +94,58 @@ export function AppViewer({ projectId }: AppViewerProps) {
       window.removeEventListener('dev_server_log', handleDevServerLog as EventListener)
     }
   }, [projectId])
+
+  // Sync URL state when port changes
+  useEffect(() => {
+    if (runningPort) {
+      const baseUrl = `http://localhost:${runningPort}`
+      setCurrentUrl(baseUrl)
+      setInputUrl(baseUrl)
+    }
+  }, [runningPort])
+
+  // Listen for navigation events from iframe via postMessage
+  // Note: Cannot directly access iframe.contentWindow.location due to cross-origin restrictions
+  // even though both are localhost (different ports = different origins)
+  useEffect(() => {
+    if (!runningPort) return
+
+    // Request iframe to send its current URL periodically
+    const requestIframeUrl = () => {
+      try {
+        iframeRef.current?.contentWindow?.postMessage({ type: 'REQUEST_URL' }, `http://localhost:${runningPort}`)
+      } catch (error) {
+        // Silently fail if iframe not ready
+      }
+    }
+
+    // Listen for URL updates from iframe
+    const handleMessage = (event: MessageEvent) => {
+      // Verify message is from our iframe
+      if (event.origin === `http://localhost:${runningPort}` && event.data?.type === 'URL_UPDATE') {
+        const iframeUrl = event.data.url
+        setCurrentUrl(prev => {
+          if (iframeUrl && iframeUrl !== prev) {
+            setInputUrl(iframeUrl)
+            return iframeUrl
+          }
+          return prev
+        })
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+
+    // Request URL immediately and then periodically
+    const initialTimer = setTimeout(requestIframeUrl, 500)
+    const interval = setInterval(requestIframeUrl, 1000)
+    
+    return () => {
+      window.removeEventListener('message', handleMessage)
+      clearTimeout(initialTimer)
+      clearInterval(interval)
+    }
+  }, [runningPort])
 
   const handleStartDevServer = async () => {
     if (!projectId) {
@@ -162,6 +218,22 @@ export function AppViewer({ projectId }: AppViewerProps) {
     setIframeKey(prev => prev + 1)
   }
 
+  const handleNavigate = () => {
+    // Validate URL starts with localhost
+    if (inputUrl.startsWith(`http://localhost:${runningPort}`)) {
+      setCurrentUrl(inputUrl)
+      setIframeKey(prev => prev + 1) // Force iframe reload
+    } else {
+      toast.error(`URL must start with http://localhost:${runningPort}`)
+      setInputUrl(currentUrl) // Reset to current URL
+    }
+  }
+
+  const handleCopyUrl = () => {
+    navigator.clipboard.writeText(currentUrl)
+    toast.success('URL copied to clipboard')
+  }
+
   // Show iframe if dev server is running
   if (runningPort) {
     const previewUrl = `http://localhost:${runningPort}`
@@ -179,7 +251,7 @@ export function AppViewer({ projectId }: AppViewerProps) {
               <RefreshCw className="w-4 h-4" />
             </Button>
             <Button variant="ghost" size="sm" asChild title="Open in new tab">
-              <a href={previewUrl} target="_blank" rel="noopener noreferrer">
+              <a href={currentUrl} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="w-4 h-4" />
               </a>
             </Button>
@@ -199,15 +271,72 @@ export function AppViewer({ projectId }: AppViewerProps) {
             </Button>
           </div>
         </div>
+
+        {/* Browser-like URL bar */}
+        <div className="flex items-center gap-2 px-4 py-2 border-b bg-muted/10">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Lock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            
+            <Input
+              value={inputUrl}
+              onChange={(e) => setInputUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleNavigate()
+              }}
+              className="flex-1 bg-background border-muted font-mono text-sm h-8 px-3"
+              placeholder={`http://localhost:${runningPort}`}
+            />
+            
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleNavigate}
+              title="Navigate"
+              className="flex-shrink-0"
+            >
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+            
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCopyUrl}
+              title="Copy URL"
+              className="flex-shrink-0"
+            >
+              <Copy className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
         
         {/* Iframe */}
         <div className="flex-1 overflow-hidden">
-          <iframe
-            key={iframeKey}
-            src={previewUrl}
-            className="w-full h-full border-0"
-            title="App Preview"
-          />
+          {currentUrl && (
+            <iframe
+              ref={iframeRef}
+              key={iframeKey}
+              src={currentUrl}
+              className="w-full h-full border-0"
+              title="App Preview"
+              onLoad={() => {
+                // Sync URL when iframe finishes loading
+                try {
+                  if (iframeRef.current?.contentWindow?.location) {
+                    const iframeUrl = iframeRef.current.contentWindow.location.href
+                    setCurrentUrl(prev => {
+                      if (iframeUrl && iframeUrl !== prev) {
+                        setInputUrl(iframeUrl)
+                        return iframeUrl
+                      }
+                      return prev
+                    })
+                  }
+                } catch {
+                  // Cannot access iframe URL (cross-origin)
+                }
+              }}
+            />
+          )}
         </div>
       </div>
     )

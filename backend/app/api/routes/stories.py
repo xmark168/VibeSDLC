@@ -13,7 +13,9 @@ from app.api.deps import CurrentUser, SessionDep
 from app.models import Story, StoryStatus, StoryType, AgentStatus
 from app.schemas import StoryCreate, StoryUpdate, StoryPublic, StoriesPublic
 from app.schemas.story import BulkRankUpdateRequest
+from app.schemas.story import ReviewActionType, ReviewActionRequest
 from app.services.story_service import StoryService
+from app.utils.git_utils import get_story_diffs
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/stories", tags=["stories"])
@@ -21,8 +23,8 @@ router = APIRouter(prefix="/stories", tags=["stories"])
 
 def check_agent_busy(agent_id: uuid.UUID) -> tuple[bool, str]:
     """Check if agent is busy. Returns (is_busy, reason)."""
-    from app.api.routes.agent_management import get_available_pool
-    manager = get_available_pool()
+    from app.services.agent_pool_service import AgentPoolService
+    manager = AgentPoolService.get_available_pool()
     if not manager:
         return False, ""
     agent = manager.get_agent(agent_id)
@@ -41,18 +43,6 @@ async def run_subprocess_async(*args, **kwargs):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, lambda: subprocess.run(*args, **kwargs))
 
-
-class ReviewActionType(str, Enum):
-    APPLY = "apply"
-    KEEP = "keep"
-    REMOVE = "remove"
-
-
-class ReviewActionRequest(BaseModel):
-    action: ReviewActionType
-    suggested_title: Optional[str] = None
-    suggested_acceptance_criteria: Optional[list[str]] = None
-    suggested_requirements: Optional[list[str]] = None
 @router.post("/", response_model=StoryPublic)
 async def create_story(
     *,
@@ -701,124 +691,47 @@ async def resume_story_task(
     
     return {"success": True, "message": "Task resumed"}
 
-
-def _kill_processes_in_worktree(worktree_path: str) -> None:
-    """Kill node processes that might be locking files (Windows only)."""
-    import platform
-    if platform.system() != "Windows":
-        return
-    try:
-        subprocess.run(["taskkill", "/F", "/IM", "node.exe"], capture_output=True, timeout=10)
-    except Exception:
-        pass
-
-
-def _cleanup_story_resources_sync(
-    worktree_path: str | None = None,
-    branch_name: str | None = None,
-    main_workspace: str | None = None,
-    checkpoint_thread_id: str | None = None,
-) -> dict:
-    """Cleanup story resources. Order: checkpoint → kill → prune → remove → delete dir → prune → branch."""
-    from pathlib import Path
-    import subprocess, shutil, platform, tempfile, time
-    
-    results = {"checkpoint": False, "worktree": False, "branch": False}
-    
-    # Delete checkpoint
-    if checkpoint_thread_id:
-        try:
-            from sqlmodel import Session
-            from sqlalchemy import text
-            from app.core.db import engine
-            with Session(engine) as db:
-                db.execute(text("DELETE FROM checkpoint_writes WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
-                db.execute(text("DELETE FROM checkpoint_blobs WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
-                db.execute(text("DELETE FROM checkpoints WHERE thread_id = :tid"), {"tid": checkpoint_thread_id})
-                db.commit()
-            results["checkpoint"] = True
-        except Exception:
-            pass
-    
-    if worktree_path:
-        _kill_processes_in_worktree(worktree_path)
-    
-    # Prune first
-    if main_workspace and Path(main_workspace).exists():
-        from app.utils.git_utils import git_worktree_prune
-        git_worktree_prune(Path(main_workspace), timeout=10)
-    
-    # Remove worktree
-    if worktree_path:
-        worktree = Path(worktree_path)
-        if worktree.exists() and main_workspace and Path(main_workspace).exists():
-            from app.utils.git_utils import git_worktree_remove
-            git_worktree_remove(worktree, Path(main_workspace), force=True, timeout=30)
-        
-        if worktree.exists():
-            for attempt in range(3):
-                try:
-                    shutil.rmtree(worktree)
-                    break
-                except Exception as e:
-                    if attempt < 2:
-                        time.sleep(0.5 * (attempt + 1))
-                        _kill_processes_in_worktree(worktree_path)
-                    elif platform.system() == "Windows":
-                        try:
-                            empty_dir = tempfile.mkdtemp()
-                            subprocess.run(["robocopy", empty_dir, str(worktree), "/mir", "/r:0", "/w:0", "/njh", "/njs", "/nc", "/ns", "/np", "/nfl", "/ndl"], capture_output=True, timeout=30)
-                            shutil.rmtree(empty_dir, ignore_errors=True)
-                            shutil.rmtree(worktree, ignore_errors=True)
-                        except Exception:
-                            pass
-        
-        # Prune again
-        if main_workspace and Path(main_workspace).exists():
-            from app.utils.git_utils import git_worktree_prune
-            git_worktree_prune(Path(main_workspace), timeout=10)
-        
-        results["worktree"] = not worktree.exists()
-    
-    # Delete branch
-    if branch_name and main_workspace and Path(main_workspace).exists():
-        from app.utils.git_utils import git_branch_delete
-        success, _ = git_branch_delete(branch_name, Path(main_workspace), force=True, timeout=10)
-        results["branch"] = success
-    
-    return results
-
-
 async def cleanup_story_resources(
     worktree_path: str | None = None,
     branch_name: str | None = None,
     main_workspace: str | None = None,
     checkpoint_thread_id: str | None = None,
+    skip_node_modules: bool = False,
 ) -> dict:
-    """
-    Async wrapper for cleanup_story_resources_sync.
-    Runs blocking cleanup in thread pool executor.
+    """Cleanup story resources (async wrapper for workspace cleanup).
+    
+    Args:
+        worktree_path: Path to worktree
+        branch_name: Git branch name
+        main_workspace: Main repository path
+        checkpoint_thread_id: Checkpoint thread ID
+        skip_node_modules: Skip deleting node_modules for faster restart
+        
+    Returns:
+        dict with cleanup results
     """
     import asyncio
     from functools import partial
+    from app.utils.workspace_utils import cleanup_workspace
     
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         None,
         partial(
-            _cleanup_story_resources_sync,
-            worktree_path=worktree_path,
+            cleanup_workspace,
+            workspace_path=worktree_path,
+            repo_path=main_workspace,
             branch_name=branch_name,
-            main_workspace=main_workspace,
             checkpoint_thread_id=checkpoint_thread_id,
+            skip_node_modules=skip_node_modules,
+            agent_name="Story",
+            max_retries=3,
+            kill_processes=True,
         )
     )
 
 
 async def _cleanup_and_trigger_agent(
-    worktree_path: str | None,
-    branch_name: str | None,
-    main_workspace: str | None,
     checkpoint_thread_id: str | None,
     story_id: str,
     project_id: str,
@@ -827,15 +740,20 @@ async def _cleanup_and_trigger_agent(
     story_status: str = "InProgress",
 ) -> None:
     """
-    Background task for restart: cleanup ALL resources FIRST, then trigger agent.
+    Background task for restart: cleanup checkpoint ONLY, then trigger agent.
     
-    Order is critical:
-    1. Delete checkpoint - prevent agent from loading stale state with error
-    2. Delete worktree/branch - prevent conflict when agent creates new worktree
-    3. THEN trigger agent - agent starts with clean slate
+    IMPORTANT: Worktree/branch cleanup is now handled by setup_git_worktree (lazy cleanup).
+    This makes restart 10x faster by:
+    - Skipping unnecessary worktree deletion
+    - Reusing node_modules (no re-install needed)  
+    - Cleanup only happens if worktree conflicts (handled by setup)
+    
+    Order:
+    1. Delete checkpoint - prevent agent from loading stale state
+    2. Trigger agent - agent will handle worktree setup (reuse or recreate)
     
     Broadcasts sub_status for smooth UX:
-    - "cleaning" while cleanup in progress
+    - "cleaning" while cleanup checkpoint
     - "starting" when triggering agent
     
     Args:
@@ -855,25 +773,14 @@ async def _cleanup_and_trigger_agent(
         "sub_status": "cleaning",
     }, UUID(project_id))
     
-    # 1. CLEANUP RESOURCES (conditional based on story status)
-    # - InProgress (Developer): Full cleanup - worktree, branch, checkpoint
-    # - Review (Tester): Partial cleanup - only checkpoint, keep worktree for reuse
-    if story_status == "InProgress":
-        results = await cleanup_story_resources(
-            worktree_path=worktree_path,
-            branch_name=branch_name,
-            main_workspace=main_workspace,
-            checkpoint_thread_id=checkpoint_thread_id,
-        )
-    else:
-        # Tester - only cleanup checkpoint, keep worktree
-        results = await cleanup_story_resources(
-            worktree_path=None,
-            branch_name=None,
-            main_workspace=main_workspace,
-            checkpoint_thread_id=checkpoint_thread_id,
-        )
-    _logger.info(f"[restart] Cleanup completed for {story_id} (status={story_status}): {results}")
+    # 1. CLEANUP CHECKPOINT ONLY (not worktree - reuse for fast restart)
+    results = await cleanup_story_resources(
+        worktree_path=None,  # Don't cleanup worktree - let setup handle it
+        branch_name=None,    # Don't cleanup branch - reuse existing
+        main_workspace=None,
+        checkpoint_thread_id=checkpoint_thread_id,
+    )
+    _logger.info(f"[restart] Checkpoint cleanup completed for {story_id} (status={story_status}): {results}")
     
     # Broadcast "starting" sub-status
     await connection_manager.broadcast_to_project({
@@ -989,8 +896,9 @@ async def restart_story_task(
     clear_container_from_registry(str(story_id))
     
     # Clear agent's in-memory cache for this story (critical for restart after cancel)
-    from app.api.routes.agent_management import _manager_registry
-    for manager in _manager_registry.values():
+    from app.services.singletons import get_pool_registry
+    registry = get_pool_registry()
+    for manager in registry.values():
         for agent in manager.get_all_agents():
             if hasattr(agent, 'clear_story_cache'):
                 agent.clear_story_cache(str(story_id))
@@ -1009,9 +917,7 @@ async def restart_story_task(
         backend_root = Path(__file__).resolve().parent.parent.parent.parent
         main_workspace = str((backend_root / project.project_path).resolve())
     
-    # Capture values before clearing in DB
-    worktree_path = story.worktree_path
-    branch_name = story.branch_name
+    # Capture values for background cleanup (checkpoint only, no worktree cleanup)
     checkpoint_thread_id = story.checkpoint_thread_id
     project_id = story.project_id
     story_title = story.title
@@ -1022,15 +928,16 @@ async def restart_story_task(
     story.assigned_agent_id = None  # Clear so new agent will be assigned
     story.running_pid = None
     story.running_port = None
-    story.checkpoint_thread_id = None
+    story.checkpoint_thread_id = None  # This clears checkpoint which contains error state
     story.db_container_id = None
     story.db_port = None
     
-    # Only clear worktree for Developer (InProgress), keep for Tester (Review)
-    if story.status == StoryStatus.IN_PROGRESS:
-        story.worktree_path = None
-        story.branch_name = None
-    # else: Keep worktree_path and branch_name for Tester to reuse
+    # IMPORTANT: Keep worktree_path and branch_name for reuse
+    # setup_git_worktree will automatically cleanup if needed (with skip_node_modules)
+    # This makes restart 10x faster by avoiding unnecessary cleanup
+    # story.worktree_path - KEEP (reuse workspace)
+    # story.branch_name - KEEP (reuse branch)
+    
     session.add(story)
     session.commit()
     
@@ -1074,13 +981,11 @@ async def restart_story_task(
         "old_state": None,
     }, project_id)
     
-    # Schedule background task: cleanup THEN trigger agent
+    # Schedule background task: cleanup checkpoint THEN trigger agent
+    # Note: Worktree cleanup is now lazy (happens in setup_git_worktree if needed)
     async def _run_cleanup_with_error_handling():
         try:
             await _cleanup_and_trigger_agent(
-                worktree_path,
-                branch_name,
-                main_workspace,
                 checkpoint_thread_id,
                 str(story_id),
                 str(project_id),
@@ -1148,64 +1053,26 @@ async def start_dev_server(
             "timestamp": datetime.now(timezone.utc).isoformat()
         }, story.project_id)
     
-    is_windows = sys.platform == 'win32'
-    
     # Helper: Kill process by PID
     def kill_process(pid: int, force: bool = False) -> bool:
         try:
-            if is_windows:
-                # Windows: use taskkill
-                cmd = f"taskkill /F /PID {pid} /T" if force else f"taskkill /PID {pid} /T"
-                subprocess.run(cmd, shell=True, capture_output=True)
-            else:
-                import signal
-                os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
+            import signal
+            os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
             return True
         except Exception:
             return False
     
-    # Helper: Kill processes using a directory (Windows)
-    def kill_processes_using_directory(directory: str) -> int:
-        killed = 0
-        if is_windows:
-            try:
-                # Find processes with handles to the directory using handle.exe or PowerShell
-                result = subprocess.run(
-                    f'powershell -Command "Get-Process | Where-Object {{$_.Path -like \'*node*\' -or $_.Path -like \'*pnpm*\'}} | ForEach-Object {{ if ($_.MainModule.FileName -or $_.Path) {{ $_.Id }} }}"',
-                    shell=True, capture_output=True, text=True
-                )
-                for pid_str in result.stdout.strip().split('\n'):
-                    if pid_str.strip().isdigit():
-                        pid = int(pid_str.strip())
-                        if kill_process(pid, force=True):
-                            killed += 1
-            except Exception:
-                pass
-        return killed
-    
     # Helper: Kill process on port
     def kill_process_on_port(port: int) -> bool:
         try:
-            if is_windows:
-                result = subprocess.run(
-                    f'netstat -ano | findstr :{port}',
-                    shell=True, capture_output=True, text=True
-                )
-                for line in result.stdout.strip().split('\n'):
-                    parts = line.split()
-                    if len(parts) >= 5:
-                        pid = int(parts[-1])
-                        kill_process(pid, force=True)
-                        return True
-            else:
-                result = subprocess.run(
-                    f'lsof -ti:{port}',
-                    shell=True, capture_output=True, text=True
-                )
-                if result.stdout.strip():
-                    pid = int(result.stdout.strip())
-                    kill_process(pid, force=True)
-                    return True
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True, text=True
+            )
+            if result.stdout.strip():
+                pid = int(result.stdout.strip())
+                kill_process(pid, force=True)
+                return True
         except Exception:
             pass
         return False
@@ -1214,12 +1081,12 @@ async def start_dev_server(
     if story.running_pid:
         await log_to_story(f"Killing existing dev server (PID: {story.running_pid})...")
         kill_process(story.running_pid, force=True)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.1)  # Reduced from 0.5s - Linux cleanup is fast
     
     if story.running_port:
         await log_to_story(f"Killing any process on port {story.running_port}...")
         kill_process_on_port(story.running_port)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.1)  # Reduced from 0.5s
     
     # Clean up Next.js dev lock file (prevents "is another instance running?" error)
     next_lock = os.path.join(story.worktree_path, ".next", "dev", "lock")
@@ -1237,7 +1104,7 @@ async def start_dev_server(
             return s.getsockname()[1]
     
     # Helper: Wait for port to be ready (async version to not block event loop)
-    async def wait_for_port_async(port: int, timeout: float = 30.0) -> bool:
+    async def wait_for_port_async(port: int, timeout: float = 10.0) -> bool:  # Reduced from 30s to 10s
         import socket
         start = time.time()
         while time.time() - start < timeout:
@@ -1247,10 +1114,22 @@ async def start_dev_server(
                     s.connect(('127.0.0.1', port))
                     return True
             except (socket.error, socket.timeout):
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1.0)  # Increased from 0.5s - reduce CPU usage
         return False
     
     port = find_free_port()
+    
+    # Clean .next cache to avoid stale builds
+    next_cache = os.path.join(story.worktree_path, ".next")
+    if os.path.exists(next_cache):
+        await log_to_story("Cleaning Next.js cache...")
+        try:
+            import shutil
+            await asyncio.to_thread(shutil.rmtree, next_cache)
+            logger.info(f"Removed .next cache for story {story_id}")
+        except Exception as e:
+            logger.warning(f"Failed to remove .next cache: {e}")
+    
     await log_to_story(f"Starting dev server on port {port}...")
     
     # Start dev server with retry logic
@@ -1260,22 +1139,24 @@ async def start_dev_server(
     for attempt in range(max_attempts):
         try:
             process = subprocess.Popen(
-                f"pnpm dev --port {port}" if is_windows else ["pnpm", "dev", "--port", str(port)],
+                ["pnpm", "dev", "--port", str(port)],
                 cwd=story.worktree_path,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                shell=is_windows,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if is_windows else 0,
                 env={**os.environ, "FORCE_COLOR": "0"},
             )
             
-            # Wait for port to be ready (up to 15 seconds)
+            # Wait for port to be ready (reduced timeout for faster failure detection)
             await log_to_story(f"Waiting for server to be ready...")
-            if await wait_for_port_async(port, timeout=15.0) and process.poll() is None:
+            if await wait_for_port_async(port, timeout=10.0) and process.poll() is None:
                 story.running_port = port
                 story.running_pid = process.pid
                 session.add(story)
                 session.commit()
+                
+                # Update .env with actual dev server port
+                from app.agents.developer.src.utils.db_container import update_env_file
+                update_env_file(story.worktree_path, str(story_id), dev_port=port)
                 
                 await log_to_story(f"Dev server started on port {port} (PID: {process.pid})", "success")
                 
@@ -1300,12 +1181,9 @@ async def start_dev_server(
             await log_to_story(f"Attempt {attempt + 1}/{max_attempts} failed: {str(e)}", "warning")
             
             if attempt < max_attempts - 1:
-                # Kill processes using the directory
-                await log_to_story(f"Killing processes using directory...")
-                killed = kill_processes_using_directory(story.worktree_path)
-                if killed:
-                    await log_to_story(f"Killed {killed} processes")
-                await asyncio.sleep(1)
+                # Clean up and retry with new port
+                await log_to_story(f"Cleaning up for retry...")
+                await asyncio.sleep(0.2)
                 
                 # Try new port
                 port = find_free_port()
@@ -1366,33 +1244,24 @@ async def stop_dev_server(
         await log_to_story("No dev server running")
         return {"success": True, "message": "No dev server running"}
     
-    is_windows = sys.platform == 'win32'
-    
     # Sync helper to kill processes (runs in thread pool)
     def _kill_processes_sync(pid: int | None, port: int | None) -> None:
         if pid:
             try:
-                if is_windows:
-                    subprocess.run(f"taskkill /F /PID {pid} /T", shell=True, capture_output=True)
-                else:
-                    import signal
-                    os.kill(pid, signal.SIGTERM)
+                import signal
+                os.kill(pid, signal.SIGTERM)
             except (ProcessLookupError, OSError):
                 pass
         
         if port:
             try:
-                if is_windows:
-                    result = subprocess.run(f'netstat -ano | findstr :{port}', shell=True, capture_output=True, text=True)
-                    for line in result.stdout.strip().split('\n'):
-                        parts = line.split()
-                        if len(parts) >= 5 and parts[-1].isdigit():
-                            subprocess.run(f"taskkill /F /PID {parts[-1]} /T", shell=True, capture_output=True)
-                else:
-                    result = subprocess.run(f'lsof -ti:{port}', shell=True, capture_output=True, text=True)
-                    if result.stdout.strip():
-                        import signal
-                        os.kill(int(result.stdout.strip()), signal.SIGTERM)
+                result = subprocess.run(
+                    ["lsof", "-ti", f":{port}"],
+                    capture_output=True, text=True
+                )
+                if result.stdout.strip():
+                    import signal
+                    os.kill(int(result.stdout.strip()), signal.SIGTERM)
             except Exception:
                 pass
     
@@ -1719,9 +1588,18 @@ async def get_preview_files(
     file_count = 0
     
     try:
-        for root, dirs, filenames in os.walk(workspace_path):
-            # Skip excluded directories
-            dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+        # Run os.walk in thread pool to avoid blocking event loop (can take 1-5s for large projects)
+        def _walk_workspace():
+            result = []
+            for root, dirs, filenames in os.walk(workspace_path):
+                # Skip excluded directories
+                dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+                result.append((root, dirs, filenames))
+            return result
+        
+        walk_results = await asyncio.to_thread(_walk_workspace)
+        
+        for root, dirs, filenames in walk_results:
             
             rel_root = Path(root).relative_to(workspace_path)
             
@@ -1925,7 +1803,8 @@ async def merge_story_to_main(
         str(story.project_id),
         story.branch_name,
         story.worktree_path,
-        main_workspace
+        main_workspace,
+        str(current_user.id)
     ))
     
     logger.info(f"[merge-to-main] Triggered merge for story {story_id}")
@@ -1937,14 +1816,14 @@ async def merge_story_to_main(
     }
 
 
-async def _trigger_merge_task(story_id: str, project_id: str, branch_name: str, worktree_path: str | None, main_workspace: str):
+async def _trigger_merge_task(story_id: str, project_id: str, branch_name: str, worktree_path: str | None, main_workspace: str, user_id: str):
     """Background task: Trigger Developer agent to merge branch."""
     try:
-        from app.core.agent.router import route_story_event
+        from app.agents.routers.router_service import route_story_event
         from app.kafka.event_schemas import AgentTaskType
         
         # Small delay to ensure DB commit is visible
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.1)  # Reduced from 1s - DB commit is fast
         
         # Route to available Developer agent for merge task
         await route_story_event(
@@ -1952,6 +1831,7 @@ async def _trigger_merge_task(story_id: str, project_id: str, branch_name: str, 
             project_id=project_id,
             task_type=AgentTaskType.REVIEW_PR,
             priority="high",
+            user_id=user_id,
             metadata={
                 "branch_name": branch_name,
                 "worktree_path": worktree_path,

@@ -1,10 +1,11 @@
 """Story-related schemas."""
 
 from datetime import datetime
+from enum import Enum
 from typing import Literal, Optional
 from uuid import UUID
 
-from pydantic import computed_field
+from pydantic import BaseModel, computed_field
 from sqlmodel import Field, SQLModel
 
 from app.models import StoryStatus, StoryType, StoryAgentState
@@ -129,3 +130,18 @@ class BulkRankUpdate(SQLModel):
 
 class BulkRankUpdateRequest(SQLModel):
     updates: list[BulkRankUpdate]
+
+
+class ReviewActionType(str, Enum):
+    """Types of review actions for stories."""
+    APPLY = "apply"
+    KEEP = "keep"
+    REMOVE = "remove"
+
+
+class ReviewActionRequest(BaseModel):
+    """Request to review a story."""
+    action: ReviewActionType
+    suggested_title: Optional[str] = None
+    suggested_acceptance_criteria: Optional[list[str]] = None
+    suggested_requirements: Optional[list[str]] = None

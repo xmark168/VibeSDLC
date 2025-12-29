@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 import subprocess
-import sys
 import os
 import asyncio
 from pathlib import Path
+import sys
 
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# Linux-only deployment, no Windows-specific event loop policy needed
 
 os.chdir(Path(__file__).parent)
 

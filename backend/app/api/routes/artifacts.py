@@ -7,57 +7,20 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlmodel import Session
 
 from app.api.deps import get_current_user, SessionDep
 from app.models import User, Artifact, ArtifactType, ArtifactStatus
 from app.services.artifact_service import ArtifactService
-from pydantic import BaseModel
-from datetime import datetime
+from app.schemas.artifacts import (
+    ArtifactResponse,
+    ArtifactListResponse,
+    UpdateArtifactStatusRequest,
+)
 
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/artifacts", tags=["artifacts"])
-
-
-# ==================== RESPONSE SCHEMAS ====================
-
-class ArtifactResponse(BaseModel):
-    """Artifact response schema"""
-    id: UUID
-    project_id: UUID
-    agent_id: Optional[UUID]
-    agent_name: str
-    artifact_type: str
-    title: str
-    description: Optional[str]
-    content: dict
-    file_path: Optional[str]
-    version: int
-    parent_artifact_id: Optional[UUID]
-    status: str
-    reviewed_by_user_id: Optional[UUID]
-    reviewed_at: Optional[datetime]
-    review_feedback: Optional[str]
-    tags: List[str]
-    created_at: datetime
-    updated_at: datetime
-    
-    class Config:
-        from_attributes = True
-
-
-class ArtifactListResponse(BaseModel):
-    """List of artifacts response"""
-    artifacts: List[ArtifactResponse]
-    total: int
-
-
-class UpdateArtifactStatusRequest(BaseModel):
-    """Request to update artifact status"""
-    status: ArtifactStatus
-    feedback: Optional[str] = None
 
 
 # ==================== ENDPOINTS ====================
@@ -66,24 +29,12 @@ class UpdateArtifactStatusRequest(BaseModel):
 async def list_project_artifacts(
     project_id: UUID,
     session: SessionDep,
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(get_current_user),
     artifact_type: Optional[ArtifactType] = Query(None, description="Filter by artifact type"),
     status: Optional[ArtifactStatus] = Query(None, description="Filter by status"),
     limit: int = Query(100, ge=1, le=500, description="Max results"),
 ):
-    """List all artifacts for a project.
-    
-    Args:
-        project_id: Project UUID
-        artifact_type: Optional filter by type
-        status: Optional filter by status
-        limit: Max results (1-500)
-        session: Database session
-        current_user: Current authenticated user
-        
-    Returns:
-        List of artifacts
-    """
+    """List all artifacts for a project."""
     try:
         service = ArtifactService(session)
         artifacts = service.get_project_artifacts(
@@ -184,18 +135,7 @@ async def create_artifact_version(
     current_user: User = Depends(get_current_user),
     description: Optional[str] = None,
 ):
-    """Create a new version of an artifact.
-    
-    Args:
-        artifact_id: Original artifact UUID
-        new_content: Updated content
-        description: Optional description of changes
-        session: Database session
-        current_user: Current authenticated user
-        
-    Returns:
-        New artifact version
-    """
+    """Create a new version of an artifact."""
     try:
         service = ArtifactService(session)
         new_artifact = service.create_version(
@@ -226,18 +166,7 @@ async def get_latest_artifact(
     current_user: User = Depends(get_current_user),
     title: Optional[str] = Query(None, description="Filter by title"),
 ):
-    """Get the latest version of an artifact.
-    
-    Args:
-        project_id: Project UUID
-        artifact_type: Artifact type
-        title: Optional title filter
-        session: Database session
-        current_user: Current authenticated user
-        
-    Returns:
-        Latest artifact version or None
-    """
+    """Get the latest version of an artifact."""
     try:
         service = ArtifactService(session)
         artifact = service.get_latest_version(

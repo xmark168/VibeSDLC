@@ -8,9 +8,9 @@ from uuid import UUID
 
 from sqlmodel import Session
 
-from app.core.agent.base_agent import BaseAgent, TaskContext, TaskResult
-from app.core.agent.mixins import PausableAgentMixin, StoryStoppedException
-from app.core.agent.graph_helpers import get_or_create_thread_id
+from app.agents.core.base_agent import BaseAgent, TaskContext, TaskResult
+from app.agents.core.mixins import PausableAgentMixin, StoryStoppedException
+from app.agents.core.graph_helpers import get_or_create_thread_id
 from app.agents.tester.src.graph import TesterGraph
 from app.core.db import engine
 from app.core.langfuse_client import flush_langfuse

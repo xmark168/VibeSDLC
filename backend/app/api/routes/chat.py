@@ -1,9 +1,12 @@
 """WebSocket Chat API."""
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from starlette.websockets import WebSocketState
 from uuid import UUID
+import asyncio
 import logging
 import json
 from datetime import datetime, timezone
+from typing import Optional
 from app.websocket.connection_manager import connection_manager
 from app.core.security import decode_access_token
 from app.models import User, Message as MessageModel, Project, AuthorType, MessageVisibility
@@ -12,6 +15,11 @@ from sqlmodel import select
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+# Ping/Pong configuration
+PING_INTERVAL = 30  # Send ping every 30 seconds
+PONG_TIMEOUT = 10   # Wait 10 seconds for pong response  
+MAX_MISSED_PONGS = 3  # Close connection after 3 missed pongs
 
 
 async def update_websocket_activity(project_id: UUID):
@@ -80,15 +88,74 @@ async def websocket_endpoint(
 
         logger.info(f"User {user.id} connected to project {project_id} via WebSocket")
 
+        # Add connection limits to prevent resource leaks
+        from datetime import timedelta
+        MAX_CONNECTION_DURATION = timedelta(hours=24)
+        connection_start = datetime.now()
+        
+        # Ping/pong state
+        last_pong_received = datetime.now()
+        ping_task: Optional[asyncio.Task] = None
+        should_close = False
+        
+        async def send_ping():
+            """Send periodic ping messages to keep connection alive."""
+            nonlocal should_close
+            while not should_close:
+                await asyncio.sleep(PING_INTERVAL)
+                if should_close:
+                    break
+                try:
+                    await websocket.send_json({
+                        "type": "ping",
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    })
+                    logger.debug(f"Sent ping to user {user.id}")
+                except Exception as e:
+                    logger.warning(f"Failed to send ping to user {user.id}: {e}")
+                    should_close = True
+                    break
+
         try:
-            # Keep connection alive and handle ping/pong
-            while True:
-                # Receive messages from client
-                data = await websocket.receive_text()
+            # Start ping task
+            ping_task = asyncio.create_task(send_ping())
+            
+            # Keep connection alive and handle messages
+            while not should_close:
+                # Check max connection duration (prevent infinite connections)
+                if datetime.now() - connection_start > MAX_CONNECTION_DURATION:
+                    logger.info(f"User {user.id} connection reached 24h limit, closing")
+                    await websocket.send_json({
+                        "type": "info",
+                        "message": "Connection time limit reached, please reconnect"
+                    })
+                    break
+                
+                # Check for missed pongs (connection health)
+                time_since_pong = (datetime.now() - last_pong_received).total_seconds()
+                if time_since_pong > PING_INTERVAL * MAX_MISSED_PONGS:
+                    logger.warning(f"User {user.id} missed {MAX_MISSED_PONGS} pongs ({time_since_pong:.0f}s), closing connection")
+                    break
+                
+                # Receive messages with timeout
+                try:
+                    data = await asyncio.wait_for(
+                        websocket.receive_text(),
+                        timeout=PING_INTERVAL + PONG_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    # Timeout is OK - ping/pong handles keepalive
+                    continue
 
                 try:
                     message = json.loads(data)
                     message_type = message.get("type")
+                    
+                    # Handle pong response
+                    if message_type == "pong":
+                        last_pong_received = datetime.now()
+                        logger.debug(f"Received pong from user {user.id}")
+                        continue
                     
                     # Update WebSocket activity timestamp
                     await update_websocket_activity(project_id)
@@ -127,17 +194,8 @@ async def websocket_endpoint(
                                     })
                                     continue
 
-                                # Deduct credit for user message
-                                from app.services.credit_service import CreditService
-                                credit_service = CreditService(db_session)
-                                if not credit_service.deduct_credit(user.id):
-                                    logger.warning(f"Insufficient credits for user {user.id}")
-                                    await websocket.send_json({
-                                        "type": "error",
-                                        "code": 402,
-                                        "message": "Insufficient credits"
-                                    })
-                                    continue
+                                # Note: Credit deduction is handled by agent execution flow after processing
+                                # This ensures accurate token tracking with proper context (agent_id, model, tokens, etc.)
 
                                 # Create message with agent routing info
                                 db_message = MessageModel(
@@ -224,11 +282,11 @@ async def websocket_endpoint(
                                 "project_id": str(project_id),
                                 "content": content,
                                 "author_type": "user",
-                                "created_at": db_message.created_at.isoformat(),
-                                "updated_at": db_message.updated_at.isoformat(),
+                                "created_at": db_message.created_at.isoformat() + 'Z',
+                                "updated_at": db_message.updated_at.isoformat() + 'Z',
                                 "user_id": str(user.id),
                                 "message_type": message.get("message_type", "text"),
-                                "timestamp": db_message.created_at.isoformat(),
+                                "timestamp": db_message.created_at.isoformat() + 'Z',
                             },
                             project_id
                         )
@@ -242,14 +300,17 @@ async def websocket_endpoint(
                         approved = message.get("approved")
                         modified_data = message.get("modified_data")
                         
+                        logger.info(f"[WS] Received question_answer: question_id={question_id_str}, answer={answer}, selected_options={selected_options}")
+                        
                         if not question_id_str:
+                            logger.error(f"[WS] Missing question_id in question_answer message")
                             await websocket.send_json({
                                 "type": "error",
                                 "message": "question_id is required"
                             })
                             continue
                         
-                        logger.info(f"[WS] User {user.id} answered question {question_id_str}")
+                        logger.info(f"[WS] User {user.id} answered question {question_id_str} with answer='{answer}', selected_options={selected_options}")
                         
                         # Load question to get agent info
                         from app.core.db import engine
@@ -303,8 +364,9 @@ async def websocket_endpoint(
                                     "question_id": question_id_str,
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                 })
+                                logger.info(f"[WS] Sent question_answer_received ack to user")
                             except Exception as e:
-                                logger.error(f"Failed to publish question answer: {e}")
+                                logger.error(f"[WS] Failed to publish question answer: {e}", exc_info=True)
                                 await websocket.send_json({
                                     "type": "error",
                                     "message": f"Failed to process answer: {str(e)}"
@@ -417,14 +479,26 @@ async def websocket_endpoint(
         except Exception as e:
             logger.error(f"WebSocket error for user {user.id}: {e}")
             connection_manager.disconnect(websocket)
-            await websocket.close(code=1011, reason="Internal server error")
+            # Only close if still connected
+            try:
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    await websocket.close(code=1011, reason="Internal server error")
+            except:
+                pass  # Already closed or closing
+        finally:
+            # Clean up ping task
+            should_close = True
+            if ping_task and not ping_task.done():
+                ping_task.cancel()
+                try:
+                    await ping_task
+                except asyncio.CancelledError:
+                    pass
 
     except Exception as e:
         logger.error(f"WebSocket connection error: {e}")
-        try:
-            await websocket.close(code=1011, reason=str(e))
-        except:
-            pass
+        # Don't try to close again - cleanup only
+        connection_manager.disconnect(websocket)
 
 
 @router.get("/health")

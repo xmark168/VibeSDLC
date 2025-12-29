@@ -13,7 +13,7 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 @router.get("/", response_model=AgentsPublic)
 def list_agents(
     session: SessionDep,
-    current_user: CurrentUser,
+    _: CurrentUser,
     name: str | None = Query(None),
     agent_type: str | None = Query(None),
     skip: int = 0,
@@ -39,11 +39,13 @@ def list_agents(
 def get_agent(
     agent_id: UUID,
     session: SessionDep,
-    _ : CurrentUser,
+    current_user : CurrentUser,
 ) -> Any:
     obj = session.get(AgentModel, agent_id)
     if not obj:
         raise HTTPException(status_code=404, detail="Agent not found")
+    if obj.project.owner_id != current_user.id:
+        raise HTTPException(status_code=401, detail="You don't have permission to access this agent")
     return obj
 
 

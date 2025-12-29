@@ -19,6 +19,17 @@ system_prompt: |
   - Link href="/books/[id]" → OK (just a link, page created in another story)
   - Creating src/app/books/[id]/page.tsx → ONLY if story EXPLICITLY says "create book detail page"
   
+  CRITICAL - ACCESSIBILITY FROM HOMEPAGE:
+  - When creating NEW public pages (catalog, search, about, contact, etc.), user MUST be able to access them
+  - Check if navigation/header exists with links to these pages
+  - If NOT: Add navigation links OR update existing navigation component
+  - Example: Creating /catalog page → Add "Browse Books" link to navigation or homepage
+  - Example: Creating /search page → Add search icon/button to header
+  - EXCEPTION: Do NOT add navigation for:
+    * Detail pages like /books/[id] (accessed via list items)
+    * Admin pages like /admin/* (separate navigation)
+    * Auth pages like /login, /register (separate flows)
+  
   OUT OF SCOPE - DO NOT CREATE:
   - Pages that story doesn't explicitly mention creating
   - Features for "future stories" or "might be needed"
@@ -54,6 +65,14 @@ system_prompt: |
   - Example 1: Navigation imports SearchBar → Navigation.dependencies = ["src/components/SearchBar.tsx"]
   - Example 2: search/page.tsx uses SearchBar → dependencies = ["src/components/SearchBar.tsx"]
   
+  **CRITICAL FOR EXISTING COMPONENTS:**
+  - If new file imports EXISTING component (from previous story) → ADD to dependencies!
+  - Example: SearchFilters imports CategoryFilter (exists in project from US-004)
+    → SearchFilters.dependencies = ["src/components/catalog/CategoryFilter.tsx"]
+  - Don't skip dependencies just because file already exists
+  - Agent NEEDS component Props interface to use it correctly during implementation!
+  - Check "Project Files" section for existing components
+  
   CRITICAL FOR PAGES (MANDATORY):
   - Pages MUST include ALL components created in this plan in dependencies
   - Scan your plan: if ComponentX.tsx created → page MUST depend on it
@@ -69,13 +88,30 @@ system_prompt: |
   CRITICAL FOR NAVIGATION: Components using router.push()/Link MUST include target page in dependencies
   - Example: SearchBar → dependencies = ["src/app/search/page.tsx"]
   
+  CRITICAL FOR CART/CHECKOUT/ORDER PAGES:
+  - Pages involving cart, checkout, order → MUST include "state-management" skill
+  - Check Dependencies for existing cart-store.ts or similar state file
+  - If cart-store.ts exists in Dependencies:
+    * Page MUST import from '@/lib/cart-store'
+    * Page MUST use useCartStore() hook
+    * DO NOT create manual localStorage parsing
+  - Example: 
+    * checkout/page.tsx → skills: ["frontend-component", "frontend-design", "state-management"]
+    * checkout/page.tsx → dependencies: ["src/lib/cart-store.ts"]
+  
   Skills by file type:
   | File | Skills |
   |------|--------|
   | prisma/schema.prisma | ["database-model"] |
   | src/app/api/**/route.ts | ["api-route"] |
+  | src/lib/stores/**/*-store.ts | ["state-management"] |
   | src/components/**/*.tsx | ["frontend-component", "frontend-design"] |
   | src/app/**/*.tsx (pages) | ["frontend-component", "frontend-design"] |
+  
+  SPECIAL CASES:
+  - Cart/checkout/order pages → Add "state-management" to skills array
+  - Pages using Zustand stores → Add "state-management" to skills array
+  - Components with complex UI state → Consider "state-management" skill
   </step_format>
   
   <example>
@@ -171,6 +207,17 @@ zero_shot_system: |
   - Link href="/books/[id]" → OK (just a link, page created in another story)
   - Creating src/app/books/[id]/page.tsx → ONLY if story EXPLICITLY says "create book detail page"
   
+  CRITICAL - ACCESSIBILITY FROM HOMEPAGE:
+  - When creating NEW public pages (catalog, search, about, contact, etc.), user MUST be able to access them
+  - Check if navigation/header exists with links to these pages
+  - If NOT: Add navigation links OR update existing navigation component
+  - Example: Creating /catalog page → Add "Browse Books" link to navigation or homepage
+  - Example: Creating /search page → Add search icon/button to header
+  - EXCEPTION: Do NOT add navigation for:
+    * Detail pages like /books/[id] (accessed via list items)
+    * Admin pages like /admin/* (separate navigation)
+    * Auth pages like /login, /register (separate flows)
+  
   OUT OF SCOPE - DO NOT CREATE:
   - Pages that story doesn't explicitly mention creating
   - Features for "future stories" or "might be needed"
@@ -188,6 +235,14 @@ zero_shot_system: |
   - Example 1: Navigation imports SearchBar → Navigation.dependencies = ["src/components/SearchBar.tsx"]
   - Example 2: search/page.tsx uses SearchBar → dependencies = ["src/components/SearchBar.tsx"]
   - This ensures correct execution order
+  
+  **CRITICAL FOR EXISTING COMPONENTS:**
+  - If new file imports EXISTING component (from previous story) → ADD to dependencies!
+  - Example: SearchFilters imports CategoryFilter (exists in project from US-004)
+    → SearchFilters.dependencies = ["src/components/catalog/CategoryFilter.tsx"]
+  - Don't skip dependencies just because file already exists
+  - Agent NEEDS component Props interface to use it correctly during implementation!
+  - Check "Project Files" section for existing components
   
   CRITICAL FOR PAGES (MANDATORY):
   - Pages MUST include ALL components created in this plan in dependencies

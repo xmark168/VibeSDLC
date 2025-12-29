@@ -98,15 +98,18 @@ export const useAuth = () => {
       setLoggingOut(true)
       // Cancel all pending queries to prevent 401 errors triggering refresh
       await queryClient.cancelQueries()
+      // Small delay to ensure all queries have stopped
+      await new Promise(resolve => setTimeout(resolve, 50))
       return AuthenticationService.logout()
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success("Logout successful")
       localStorage.removeItem("access_token")
       localStorage.removeItem("refresh_token")
       setUser(undefined)
+      // Navigate first, then clear cache to prevent refetch triggers
+      await navigate({ to: "/login" })
       queryClient.clear() // Clear all cached data
-      navigate({ to: "/login" })
       // Reset flag after navigation
       setTimeout(() => setLoggingOut(false), 100)
     },

@@ -1,16 +1,7 @@
-"""LangGraph State Schema for Business Analyst"""
-
-from typing import TypedDict, Literal, Annotated, Any
-from operator import add
-
+"""State Schema"""
+from typing import TypedDict, Literal, Any
 
 class BAState(TypedDict, total=False):
-    """Business Analyst workflow state
-    
-    This state is passed through all graph nodes and accumulates information
-    as the workflow progresses.
-    """
-    
     # Input
     user_message: str
     project_id: str

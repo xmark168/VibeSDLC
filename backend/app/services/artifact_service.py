@@ -1,7 +1,5 @@
 """
 Artifact Service - Manages agent-produced artifacts.
-
-Provides CRUD operations for artifacts with versioning support.
 """
 
 import logging
@@ -36,22 +34,7 @@ class ArtifactService:
         save_to_file: bool = True,
         tags: List[str] = None
     ) -> Artifact:
-        """Create a new artifact.
-        
-        Args:
-            project_id: Project ID
-            agent_id: Agent ID
-            agent_name: Agent name
-            artifact_type: Type of artifact
-            title: Artifact title
-            content: Structured content dict
-            description: Optional description
-            save_to_file: Whether to save to file system
-            tags: Optional tags for categorization
-            
-        Returns:
-            Created Artifact instance
-        """
+        """Create a new artifact"""
         artifact = Artifact(
             project_id=project_id,
             agent_id=agent_id,
@@ -72,7 +55,6 @@ class ArtifactService:
                 logger.info(f"Saved artifact to file: {file_path}")
             except Exception as e:
                 logger.warning(f"Failed to save artifact to file: {e}")
-                # Continue anyway - DB save is more important
         
         self.session.add(artifact)
         self.session.commit()
@@ -86,15 +68,7 @@ class ArtifactService:
         return artifact
     
     def _save_to_workspace(self, project_id: UUID, artifact: Artifact) -> str:
-        """Save artifact content to file system.
-        
-        Args:
-            project_id: Project ID
-            artifact: Artifact to save
-            
-        Returns:
-            Relative file path
-        """
+        """Save artifact content to file system."""
         # Create workspace directory
         workspace_dir = f"projects/{project_id}/artifacts"
         os.makedirs(workspace_dir, exist_ok=True)

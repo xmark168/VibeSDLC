@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List, Optional
 from confluent_kafka import Consumer, KafkaError, KafkaException
 from pydantic import ValidationError
 
-from app.core.config import settings
+from app.core.config import settings, kafka_settings
 from app.kafka.event_schemas import BaseKafkaEvent, get_event_schema
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class BaseKafkaConsumer(ABC):
 
         Args:
             topics: List of topics to subscribe to
-            group_id: Consumer group ID (defaults to settings.KAFKA_GROUP_ID)
+            group_id: Consumer group ID (defaults to kafka_settings.GROUP_ID)
             auto_commit: Whether to auto-commit offsets
             max_reconnect_attempts: Maximum number of reconnection attempts
             base_backoff_seconds: Base backoff time for exponential backoff
@@ -44,7 +44,7 @@ class BaseKafkaConsumer(ABC):
             auto_offset_reset: Override auto.offset.reset config ("earliest" or "latest")
         """
         self.topics = topics
-        self.group_id = group_id or settings.KAFKA_GROUP_ID
+        self.group_id = group_id or kafka_settings.GROUP_ID
         self.auto_commit = auto_commit
         self.auto_offset_reset = auto_offset_reset
         self.consumer: Optional[Consumer] = None
@@ -64,9 +64,9 @@ class BaseKafkaConsumer(ABC):
     def _build_config(self) -> Dict[str, Any]:
         """Build Kafka consumer configuration."""
         config = {
-            "bootstrap.servers": settings.KAFKA_BOOTSTRAP_SERVERS,
+            "bootstrap.servers": kafka_settings.BOOTSTRAP_SERVERS,
             "group.id": self.group_id,
-            "auto.offset.reset": self.auto_offset_reset or settings.KAFKA_AUTO_OFFSET_RESET,
+            "auto.offset.reset": self.auto_offset_reset or kafka_settings.AUTO_OFFSET_RESET,
             "enable.auto.commit": self.auto_commit,
             "session.timeout.ms": 30000,
             "max.poll.interval.ms": 300000,
@@ -74,12 +74,12 @@ class BaseKafkaConsumer(ABC):
         }
 
         # Add SASL authentication if configured
-        if settings.KAFKA_SASL_MECHANISM:
+        if kafka_settings.SASL_MECHANISM:
             config.update({
-                "security.protocol": settings.KAFKA_SECURITY_PROTOCOL,
-                "sasl.mechanism": settings.KAFKA_SASL_MECHANISM,
-                "sasl.username": settings.KAFKA_SASL_USERNAME,
-                "sasl.password": settings.KAFKA_SASL_PASSWORD,
+                "security.protocol": kafka_settings.SECURITY_PROTOCOL,
+                "sasl.mechanism": kafka_settings.SASL_MECHANISM,
+                "sasl.username": kafka_settings.SASL_USERNAME,
+                "sasl.password": kafka_settings.SASL_PASSWORD,
             })
 
         return config

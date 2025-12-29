@@ -19,6 +19,7 @@ from app.schemas import (
 )
 from app.services import LinkedAccountService
 
+from app.schemas.linked_account import InitiateLinkResponse
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/account", tags=["linked-accounts"])
 
@@ -44,10 +45,6 @@ def get_linked_accounts(
     )
 
 
-class InitiateLinkResponse(BaseModel):
-    """Response containing OAuth URL for account linking"""
-    auth_url: str
-    provider: str
 
 
 @router.post("/link/{provider}", response_model=InitiateLinkResponse)

@@ -74,14 +74,7 @@ class ConsumerRegistry:
         logger.info("All Kafka consumers stopped")
 
     def get_consumer(self, name: str) -> Optional[BaseKafkaConsumer]:
-        """Get a consumer by name.
-
-        Args:
-            name: Consumer name
-
-        Returns:
-            Consumer instance or None if not found
-        """
+        """Get a consumer by name"""
         return self.consumers.get(name)
 
 

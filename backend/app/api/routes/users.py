@@ -58,15 +58,7 @@ def user_to_public(user: User) -> UserPublic:
 
 
 def user_to_admin_public(user: User) -> UserAdminPublic:
-    """
-    Convert User model to UserAdminPublic schema with extended info.
-
-    Args:
-        user: User model instance
-
-    Returns:
-        UserAdminPublic schema
-    """
+    """Convert User model to UserAdminPublic schema with extended info.    """
     return UserAdminPublic(
         id=user.id,
         username=user.username,

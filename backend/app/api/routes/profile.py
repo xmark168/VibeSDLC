@@ -2,86 +2,39 @@
 
 import logging
 import os
-import re
 import uuid
 from io import BytesIO
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, status
 from PIL import Image
-from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
 from app.core.security import get_password_hash, verify_password
+from app.services.singletons import get_minio_service
+from app.schemas.profile import (
+    ProfileUpdate,
+    ChangePasswordRequest,
+    SetPasswordRequest,
+    PasswordStatusResponse,
+    PasswordChangeResponse,
+    ProfileResponse,
+    AvatarUploadResponse,
+)
+from app.utils.generators import get_avatar_url, DEFAULT_AVATAR_URL
+from app.utils.validators import validate_password
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/profile", tags=["profile"])
 
 # Avatar settings
+UPLOADS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "uploads")
+AVATARS_DIR = os.path.join(UPLOADS_DIR, "avatars")
+os.makedirs(AVATARS_DIR, exist_ok=True)
+
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 AVATAR_SIZE = (256, 256)  # Final avatar dimensions
-
-# Default avatar for email users
-DEFAULT_AVATAR_URL = "https://github.com/shadcn.png"
-
-# Uploads directory
-UPLOADS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "uploads")
-AVATARS_DIR = os.path.join(UPLOADS_DIR, "avatars")
-
-
-class ProfileUpdate(BaseModel):
-    """Request to update profile"""
-    full_name: str | None = None
-
-
-class ChangePasswordRequest(BaseModel):
-    """Request to change password (for users with existing password)"""
-    current_password: str
-    new_password: str
-    confirm_password: str
-
-
-class SetPasswordRequest(BaseModel):
-    """Request to set password (for OAuth users without password)"""
-    new_password: str
-    confirm_password: str
-
-
-class PasswordStatusResponse(BaseModel):
-    """Password status response"""
-    has_password: bool
-    login_provider: str | None
-
-
-class PasswordChangeResponse(BaseModel):
-    """Password change response"""
-    message: str
-
-
-class ProfileResponse(BaseModel):
-    """Profile response"""
-    id: str
-    email: str
-    full_name: str | None
-    avatar_url: str | None
-    login_provider: str | None
-
-    class Config:
-        from_attributes = True
-
-
-class AvatarUploadResponse(BaseModel):
-    """Avatar upload response"""
-    avatar_url: str
-    message: str
-
-
-def get_avatar_url(user) -> str:
-    """Get avatar URL for user, with fallback to default"""
-    if user.avatar_url:
-        return user.avatar_url
-    return DEFAULT_AVATAR_URL
 
 
 @router.get("/me", response_model=ProfileResponse)
@@ -192,16 +145,35 @@ async def upload_avatar(
                 except Exception as e:
                     logger.warning(f"Failed to delete old avatar: {e}")
 
-        # Save new avatar
-        image.save(filepath, "JPEG", quality=90)
+        # Save image to BytesIO for MinIO upload
+        output = BytesIO()
+        image.save(output, "JPEG", quality=90, optimize=True)
+        output.seek(0)
+        
+        # Upload to MinIO
+        minio = get_minio_service()
+        object_name = f"avatars/{filename}"
+        avatar_url = minio.upload_file(
+            file_data=output.getvalue(),
+            object_name=object_name,
+            content_type="image/jpeg"
+        )
+        
+        # Delete old avatar from MinIO if exists
+        if current_user.avatar_url and "avatars/" in current_user.avatar_url:
+            old_object = current_user.avatar_url.split("/images/")[-1]
+            try:
+                minio.delete_file(old_object)
+                logger.info(f"Deleted old avatar from MinIO: {old_object}")
+            except Exception as e:
+                logger.warning(f"Failed to delete old avatar from MinIO: {e}")
 
         # Update user's avatar_url
-        avatar_url = f"/uploads/avatars/{filename}"
         current_user.avatar_url = avatar_url
         session.add(current_user)
         session.commit()
 
-        logger.info(f"Avatar uploaded for user {current_user.id}: {avatar_url}")
+        logger.info(f"Avatar uploaded for user {current_user.id} to MinIO: {avatar_url}")
 
         return AvatarUploadResponse(
             avatar_url=avatar_url,
@@ -222,29 +194,21 @@ def delete_avatar(
     session: SessionDep,
 ):
     """Delete current user's avatar and reset to default"""
-    if current_user.avatar_url and current_user.avatar_url.startswith("/uploads/avatars/"):
-        filename = current_user.avatar_url.split("/")[-1]
-        filepath = os.path.join(AVATARS_DIR, filename)
-        if os.path.exists(filepath):
-            try:
-                os.remove(filepath)
-            except Exception as e:
-                logger.warning(f"Failed to delete avatar file: {e}")
+    # Delete from MinIO if exists
+    if current_user.avatar_url and "avatars/" in current_user.avatar_url:
+        minio = get_minio_service()
+        object_name = current_user.avatar_url.split("/images/")[-1]
+        try:
+            minio.delete_file(object_name)
+            logger.info(f"Deleted avatar from MinIO: {object_name}")
+        except Exception as e:
+            logger.warning(f"Failed to delete avatar from MinIO: {e}")
 
     current_user.avatar_url = None
     session.add(current_user)
     session.commit()
 
     return {"message": "Avatar deleted", "avatar_url": DEFAULT_AVATAR_URL}
-
-
-def validate_password(password: str) -> bool:
-    """Validate password: min 8 chars, at least 1 letter and 1 number"""
-    if len(password) < 8:
-        return False
-    has_letter = bool(re.search(r"[a-zA-Z]", password))
-    has_number = bool(re.search(r"\d", password))
-    return has_letter and has_number
 
 
 @router.get("/password-status", response_model=PasswordStatusResponse)
@@ -310,7 +274,7 @@ def change_password(
 
     logger.info(f"Password changed for user {current_user.id}")
 
-    return PasswordChangeResponse(message="Đổi mật khẩu thành công")
+    return PasswordChangeResponse(success=True, message="Đổi mật khẩu thành công")
 
 
 @router.post("/set-password", response_model=PasswordChangeResponse)
@@ -351,4 +315,7 @@ def set_password(
 
     logger.info(f"Password set for OAuth user {current_user.id}")
 
-    return PasswordChangeResponse(message="Tạo mật khẩu thành công. Bạn có thể đăng nhập bằng email và mật khẩu.")
+    return PasswordChangeResponse(
+        success=True,
+        message="Tạo mật khẩu thành công. Bạn có thể đăng nhập bằng email và mật khẩu."
+    )

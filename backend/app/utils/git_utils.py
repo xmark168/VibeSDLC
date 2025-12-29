@@ -283,16 +283,16 @@ def git_merge_abort(cwd: Path, timeout: int = 10) -> bool:
 def git_with_retry(
     cmd: List[str],
     cwd: str,
-    retries: int = 3,
-    timeout: int = 30
+    retries: int = 2,
+    timeout: int = 10
 ) -> subprocess.CompletedProcess:
     """Execute git command with retry logic.
     
     Args:
         cmd: Git command as list (e.g., ["git", "add", "file.txt"])
         cwd: Working directory
-        retries: Number of retry attempts
-        timeout: Command timeout in seconds
+        retries: Number of retry attempts (default: 2, reduced from 3)
+        timeout: Command timeout in seconds (default: 10s, reduced from 30s)
         
     Returns:
         CompletedProcess instance
@@ -316,7 +316,7 @@ def git_with_retry(
             
             # If failed but not last attempt, retry
             if attempt < retries - 1:
-                time.sleep(0.5 * (attempt + 1))
+                time.sleep(0.2 * (attempt + 1))
                 continue
             
             # Last attempt failed
@@ -324,12 +324,12 @@ def git_with_retry(
             
         except subprocess.TimeoutExpired:
             if attempt < retries - 1:
-                time.sleep(0.5 * (attempt + 1))
+                time.sleep(0.2 * (attempt + 1))
                 continue
             raise
         except Exception as e:
             if attempt < retries - 1:
-                time.sleep(0.5 * (attempt + 1))
+                time.sleep(0.2 * (attempt + 1))
                 continue
             raise
     
@@ -476,6 +476,146 @@ def git_reset_all(workspace_path: str, base_branch: str = "main") -> bool:
     except Exception as e:
         logger.warning(f"[git_reset_all] Reset error: {e}")
         return False
+
+
+def get_story_diffs(worktree_path: str) -> dict:
+    """Get git diffs for story workspace with statistics.
+    
+    Returns diff between base branch (master/main) and current HEAD,
+    including file changes, line counts, and full diff output.
+    
+    Args:
+        worktree_path: Path to the worktree directory
+        
+    Returns:
+        Dictionary containing:
+        - files: List of changed files with additions/deletions
+        - file_count: Total number of changed files
+        - total_additions: Total lines added
+        - total_deletions: Total lines deleted
+        - diff: Full diff output
+        - base_branch: Detected base branch name
+    """
+    import subprocess
+    
+    # Helper: Detect default branch (master or main)
+    def get_default_branch(cwd: str) -> str:
+        for branch in ['master', 'main']:
+            result = subprocess.run(
+                ["git", "rev-parse", "--verify", branch],
+                cwd=cwd,
+                capture_output=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return branch
+        return 'master'  # fallback
+    
+    base_branch = get_default_branch(worktree_path)
+    diff_ref = f"{base_branch}...HEAD"
+    
+    # Get changed files with line stats
+    result = subprocess.run(
+        ["git", "diff", "--numstat", diff_ref],
+        cwd=worktree_path,
+        capture_output=True,
+        text=True,
+        timeout=10
+    )
+    
+    files = []
+    diff_output = ""
+    total_additions = 0
+    total_deletions = 0
+    
+    if result.returncode == 0 and result.stdout.strip():
+        for line in result.stdout.strip().split("\n"):
+            if line:
+                parts = line.split("\t")
+                if len(parts) == 3:
+                    additions, deletions, filename = parts
+                    add_count = int(additions) if additions != '-' else 0
+                    del_count = int(deletions) if deletions != '-' else 0
+                    total_additions += add_count
+                    total_deletions += del_count
+                    files.append({
+                        "filename": filename,
+                        "additions": add_count,
+                        "deletions": del_count,
+                        "binary": additions == '-'
+                    })
+        
+        # Get file statuses (A/M/D)
+        status_result = subprocess.run(
+            ["git", "diff", "--name-status", diff_ref],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if status_result.returncode == 0:
+            status_map = {}
+            for line in status_result.stdout.strip().split("\n"):
+                if line:
+                    parts = line.split("\t", 1)
+                    if len(parts) == 2:
+                        status_map[parts[1]] = parts[0]
+            for f in files:
+                f["status"] = status_map.get(f["filename"], "M")
+        
+        # Get full diff
+        diff_result = subprocess.run(
+            ["git", "diff", diff_ref],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        diff_output = diff_result.stdout if diff_result.returncode == 0 else ""
+    else:
+        # Fallback: show uncommitted changes
+        result = subprocess.run(
+            ["git", "diff", "--numstat"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            for line in result.stdout.strip().split("\n"):
+                if line:
+                    parts = line.split("\t")
+                    if len(parts) == 3:
+                        additions, deletions, filename = parts
+                        add_count = int(additions) if additions != '-' else 0
+                        del_count = int(deletions) if deletions != '-' else 0
+                        total_additions += add_count
+                        total_deletions += del_count
+                        files.append({
+                            "filename": filename,
+                            "additions": add_count,
+                            "deletions": del_count,
+                            "status": "M",
+                            "binary": additions == '-'
+                        })
+            
+            diff_result = subprocess.run(
+                ["git", "diff"],
+                cwd=worktree_path,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            diff_output = diff_result.stdout if diff_result.returncode == 0 else ""
+    
+    return {
+        "files": files,
+        "file_count": len(files),
+        "total_additions": total_additions,
+        "total_deletions": total_deletions,
+        "diff": diff_output,
+        "base_branch": base_branch
+    }
 
 
 def git_squash_wip_commits(

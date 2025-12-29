@@ -40,8 +40,8 @@ class Project(BaseModel, table=True):
     websocket_last_seen: datetime | None = Field(default=None)
     
     # Token budget fields for cost control
-    token_budget_daily: int = Field(default=100000)
-    token_budget_monthly: int = Field(default=2000000)
+    token_budget_daily: int = Field(default=10000000)  # 10M tokens/day
+    token_budget_monthly: int = Field(default=200000000)  # 200M tokens/month
     tokens_used_today: int = Field(default=0)
     tokens_used_this_month: int = Field(default=0)
     budget_last_reset_daily: datetime | None = Field(default=None)

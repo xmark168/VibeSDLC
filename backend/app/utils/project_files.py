@@ -1,15 +1,4 @@
 """Project Files Manager - Inspired by MetaGPT's file-based approach.
-
-Manages project files like PRD and user stories.
-All files are stored in the project workspace for version control and team collaboration.
-
-File Structure:
-    projects/{project_id}/
-    ├── docs/
-    │   ├── prd.md              # Product Requirements Document
-    │   └── user-stories.md     # All user stories in one file
-    └── src/
-        └── ... (source code)
 """
 
 from pathlib import Path
@@ -36,19 +25,7 @@ class ProjectFiles:
         self.docs_path.mkdir(parents=True, exist_ok=True)
     
     async def archive_docs(self) -> bool:
-        """Move existing docs to archive folder with timestamp.
-        
-        Used when user chooses to replace project with a new one.
-        Files are moved to docs/archive/{timestamp}/ folder.
-        
-        Structure:
-            docs/archive/20231130_172100/
-            ├── prd.md
-            └── user-stories.md
-        
-        Returns:
-            True if archiving was successful
-        """
+        """Move existing docs to archive folder."""
         # Check if there are any files to archive
         files_to_archive = []
         if self.prd_path.exists():
@@ -86,16 +63,7 @@ class ProjectFiles:
         return True
     
     async def save_prd(self, prd_data: dict) -> Path:
-        """Save PRD to Markdown file (for human reading).
-        
-        Note: PRD data is stored in Artifact table for programmatic access.
-        
-        Args:
-            prd_data: Dictionary containing PRD content
-            
-        Returns:
-            Path to the saved markdown file
-        """
+        """Save PRD to Markdown file (for human reading)."""
         # Add metadata
         prd_data['updated_at'] = datetime.now(timezone.utc).isoformat()
         
@@ -107,15 +75,7 @@ class ProjectFiles:
         return self.prd_path
     
     async def save_user_stories(self, epics_data: list[dict] = None, stories_data: list[dict] = None) -> Path:
-        """Save epics and user stories to a single markdown file.
-        
-        Args:
-            epics_data: List of epic dictionaries (each containing stories)
-            stories_data: Flat list of story dictionaries (for backward compatibility)
-            
-        Returns:
-            Path to the saved user stories file
-        """
+        """Save epics and user stories to a single markdown file  """
         # Handle backward compatibility
         if epics_data is None:
             epics_data = []
@@ -128,34 +88,6 @@ class ProjectFiles:
             await f.write(md_content)
         
         return self.user_stories_path
-    
-    async def append_user_story(self, story_data: dict) -> Path:
-        """Append a single user story to the user-stories.md file.
-        
-        Args:
-            story_data: Story dictionary
-            
-        Returns:
-            Path to the updated user stories file
-        """
-        # Load existing stories first
-        existing_stories = await self.load_user_stories()
-        existing_stories.append(story_data)
-        
-        return await self.save_user_stories(existing_stories)
-    
-    async def load_user_stories(self) -> list[dict]:
-        """Load all user stories from file.
-        
-        Returns:
-            List of story dictionaries (empty list if file doesn't exist)
-        """
-        if not self.user_stories_path.exists():
-            return []
-        
-        # For now, return empty list - would need to parse markdown
-        # In practice, stories should be loaded from database, not parsed from file
-        return []
     
 
     

@@ -10,7 +10,7 @@ from sqlmodel import select, func, delete
 from app.api.deps import CurrentUser, SessionDep
 from app.models import Message as MessageModel, Project, Agent as AgentModel, AuthorType, MessageVisibility
 from app.schemas import ChatMessageCreate, ChatMessageUpdate, ChatMessagePublic, ChatMessagesPublic, Message
-from app.core.config import DOCUMENT_UPLOAD_LIMITS
+from app.core.config import document_upload_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/messages", tags=["messages"])
@@ -100,12 +100,8 @@ async def create_message(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Deduct credit for user messages
-    if message_in.author_type == AuthorType.USER:
-        from app.services.credit_service import CreditService
-        credit_service = CreditService(session)
-        if not credit_service.deduct_credit(current_user.id):
-            raise HTTPException(status_code=402, detail="Insufficient credits")
+    # Note: Credit deduction is handled by agent execution flow after processing
+    # This ensures accurate token tracking with proper context (agent_id, model, tokens, etc.)
 
     data = message_in.model_dump()
 
@@ -180,11 +176,8 @@ async def create_message_with_file(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Deduct credit for user message
-    from app.services.credit_service import CreditService
-    credit_service = CreditService(session)
-    if not credit_service.deduct_credit(current_user.id):
-        raise HTTPException(status_code=402, detail="Insufficient credits")
+    # Note: Credit deduction is handled by agent execution flow after processing
+    # This ensures accurate token tracking with proper context (agent_id, model, tokens, etc.)
     
     attachment = None
     
@@ -192,8 +185,8 @@ async def create_message_with_file(
         # Validate file size (read file first)
         file_bytes = await file.read()
         
-        if len(file_bytes) > DOCUMENT_UPLOAD_LIMITS["max_file_size"]:
-            max_mb = DOCUMENT_UPLOAD_LIMITS["max_file_size"] // 1024 // 1024
+        if len(file_bytes) > document_upload_settings.MAX_FILE_SIZE:
+            max_mb = document_upload_settings.MAX_FILE_SIZE // 1024 // 1024
             raise HTTPException(
                 status_code=413,
                 detail=f"File quá lớn. Giới hạn: {max_mb} MB"
@@ -201,10 +194,10 @@ async def create_message_with_file(
         
         # Validate extension
         ext = Path(file.filename).suffix.lower() if file.filename else ""
-        if ext not in DOCUMENT_UPLOAD_LIMITS["allowed_extensions"]:
+        if ext not in document_upload_settings.ALLOWED_EXTENSIONS:
             raise HTTPException(
                 status_code=400,
-                detail=f"Định dạng file không hỗ trợ. Chấp nhận: {', '.join(DOCUMENT_UPLOAD_LIMITS['allowed_extensions'])}"
+                detail=f"Định dạng file không hỗ trợ. Chấp nhận: {', '.join(document_upload_settings.ALLOWED_EXTENSIONS)}"
             )
         
         # Extract text from document
@@ -222,7 +215,7 @@ async def create_message_with_file(
         sanitized_name = sanitize_filename(file.filename)
         
         # Validate extracted text length
-        if len(extracted_text) > DOCUMENT_UPLOAD_LIMITS["max_text_length"]:
+        if len(extracted_text) > document_upload_settings.MAX_TEXT_LENGTH:
             raise HTTPException(
                 status_code=400,
                 detail=f"Nội dung file quá dài ({len(extracted_text):,} ký tự). Giới hạn: {DOCUMENT_UPLOAD_LIMITS['max_text_length']:,} ký tự"
